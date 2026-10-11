@@ -41,6 +41,71 @@
 | 3 | Multi-level gameplay: digging, stairs, floors, support rule, 3D rooms and roofs, layer view, building on any level | done |
 | 4 | Visual polish: walking/hop/fall animation, lamps, translucent water, fog, ambient occlusion, bloom, gunfire flashes | done (needs a visual check) |
 | 5 | Performance and saves: profiling, faster searches, versioned and compact save files | done |
+| 6 | Data-driven definitions: items, buildables, plants and recipes described in a data file, not code | |
+| 7 | Production chains: workbenches, job queues, Cooking/Crafting, new resources, stockpile filters | |
+| 8 | More buildables: furniture, shelves, windows, torches, fences, room quality | |
+| 9 | Sound: actions, ambience, interface | |
+| 10 | Graphics: real models, ramps, water shader, weather, seasons | |
+
+## Next phases (agreed 2026-10-11)
+
+Order matters: definitions first (so content is cheap to add), then content, then sound and graphics once
+the list of things has settled.
+
+### 6. Data-driven definitions
+- Today `ItemKind`, `BuildKind`, `Feature`, `Task` and their `match` statements hard-code every thing;
+  adding one touches 5–10 places (`map.rs`, `jobs.rs`, `world.rs`, `front/props.rs`, `front/input.rs`).
+- Move items, buildables, plants and (later) recipes into a definitions file (e.g. `assets/defs.ron` or
+  JSON via serde), loaded into a `Defs` registry. Refer to things by a small id (`ItemId(u16)`).
+  Keep genuinely special behaviour (walls block rooms, stairs connect levels, beds for sleep, lamps
+  give light) as flags or "behaviour" fields in the definition.
+- Each definition holds: name, cost, work time, passable / blocks room / blocks sight, which work type
+  and skill, what it drops when removed, and how the front end draws it (shape parts or, later, a model).
+- Saves store ids; bump `SAVE_VERSION`.
+- Keep all current tests passing; add a test that every definition loads and is used consistently.
+
+### 7. Production chains
+- Workbenches (buildables with a work spot) and bills: "make N", "make until you have N", "forever".
+- New work types and skills: Cooking, Crafting (later Smithing, Tailoring).
+- Starter chains:
+  - crops → cooked meals at a stove (raw food risks food poisoning: a new hediff in `health.rs`);
+  - wood → planks at a sawing bench, stone → blocks at a stonecutter;
+  - healroot (new crop) → herbal medicine;
+  - metal ore deposits in rock layers (generated in `Map::generate`) → steel at a smelter → weapons and
+    armour (armour reduces damage in `health.rs`), which gives deep digging a purpose;
+  - cotton (new crop) → cloth → clothing.
+- Stockpile filters (which item kinds go where) and priorities, needed once there are many items.
+- Haulers bring ingredients to workbenches; products go to stockpiles.
+
+### 8. More buildables
+- Tables and chairs (mood penalty for eating without a table), shelves (stack more per cell), windows,
+  torches, fences, maybe doors of different materials.
+- Room quality (size, furniture, cleanliness, light) feeding mood.
+
+### 9. Sound
+- Bevy audio is built in; it needs sound files. Use a CC0 pack (e.g. Kenney); the user downloads it into
+  `assets/` (the sandbox can't). Footsteps, chopping, mining, building, gunshots, impacts, interface
+  clicks, and background ambience for day, night and caves. Positional sound relative to the camera.
+
+### 10. Graphics
+- Replace code-built shapes with CC0 glTF models (Kenney, Quaternius) category by category, through the
+  definitions from phase 6.
+- Ramps on natural slopes (needs a terrain-model change: a ramp half-fills the lower cell), a water
+  shader with gentle waves, weather (rain, snow, fog) and seasons (colours, crop growth).
+- Phase 4 visuals still need a tuning pass from real play: lamp brightness, bloom/ambient occlusion
+  strength, water opacity, fog distance, hop height.
+
+## Working in this repo (handoff notes)
+
+- Build and test from the sandbox with
+  `PATH="$HOME/.cargo/bin:$PATH" CARGO_HOME="$TMPDIR/cargo-home" cargo test`
+  (the sandbox can read but not write `~/.cargo`; crates.io is allowed).
+- The sandbox has no GPU: the game can't be seen there. `cargo test --bin my-world` runs the whole app
+  headless for a few hundred frames (catches Bevy setup and query errors); the user checks visuals.
+- `cargo run --release --example profile` times the simulation and saving on a busy colony.
+- Don't touch `.git`; the user commits.
+- Bevy 0.20 / bevy_egui 0.43 / egui 0.36 are newer than most training data: check APIs in the
+  downloaded sources under `$TMPDIR/cargo-home/registry/src/` before using them.
 
 ## Notes
 
