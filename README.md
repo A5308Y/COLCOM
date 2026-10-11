@@ -1,12 +1,13 @@
 # My World
 
-A small RimWorld-style colony sim in Rust ([macroquad](https://macroquad.rs)).
+A small RimWorld-style colony sim in Rust, shown in 3D with [Bevy](https://bevy.org).
 
 ## Run
 
 ```sh
-cargo run --release
-cargo test            # headless simulation tests
+cargo run --release            # first build takes several minutes (Bevy)
+cargo run --features dev       # faster rebuilds while developing (dynamic linking)
+cargo test                     # simulation tests + a headless run of the whole app
 ```
 
 (No Rust yet? `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
@@ -26,7 +27,9 @@ according to their **work priorities** (press `P`).
 | Left drag | Paint the current tool over a rectangle |
 | `F` | Draft the selected colonist (or everyone if nothing is selected) |
 | Right click | With a drafted colonist: move there, or attack the clicked raider |
-| `WASD` / arrows / middle or right drag / wheel | Pan and zoom |
+| `WASD` / arrows, middle-drag | Pan the camera |
+| `Q` / `E`, right-drag | Rotate and tilt the camera |
+| Mouse wheel | Zoom |
 | `Space` / `Tab` | Pause / cycle speed 1x-2x-3x |
 | `P` / `H` / `C` | Work priorities / help / center camera |
 | `K` / `L` | Save / load (`savegame.json`) |
@@ -75,4 +78,9 @@ The simulation is a library with no rendering code, so it can be tested headless
 - `src/combat.rs`: shooting, injuries, raider AI
 - `src/story.rs`: storyteller events
 
-The binary (`main.rs`, `camera.rs`, `render.rs`, `ui.rs`) handles the window, drawing and input.
+The binary (`src/main.rs` and `src/front/`) is the Bevy app: `terrain.rs` (chunked ground, rock and wall
+meshes), `props.rs` (trees, plants, furniture, doors, items), `pawns.rs` (3D figures), `scene.rs`
+(sun, moon, sky), `camera.rs`, `input.rs` (picking, tools, gizmo markers), `ui.rs` and `overlay.rs`
+(egui interface and labels over the 3D view).
+
+See `PLAN.md` for the roadmap to a multi-level 3D world.
