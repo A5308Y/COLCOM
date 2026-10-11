@@ -39,15 +39,26 @@ according to their **work priorities** (press `P`).
   grabbing the same thing.
 - **Work priorities and skills:** each colonist has 1–4 (or off) per work type. Skills make work faster
   and improve with practice.
-- **Needs:** hunger (eat food from the ground or stockpiles), rest (sleep in a bed, or on the ground if
-  there isn't one) and health.
+- **Needs:** hunger (eat food from the ground or stockpiles) and rest (sleep in a bed, or on the ground if
+  there isn't one). Going hungry leads to malnutrition.
+- **Health (RimWorld-style):** the body is 29 parts (organs inside the torso, brain inside the skull, limbs
+  down to hands and feet), each with its own hit points. Hits land on outer parts and can go deeper. Wounds
+  (cuts, gunshots, bruises) bleed and hurt; destroyed parts are gone for good. Untended wounds don't heal and
+  can get infected; healed ones sometimes scar. Flu outbreaks happen. Capacities like consciousness,
+  moving, manipulation and sight follow from all this and affect work speed, walking and aim. Too much pain,
+  blood loss or a crippled body knocks pawns down; losing a vital organ, bleeding out, an infection or the
+  flu winning can kill.
+- **Doctors and medicine:** colonists with the Doctor work type rescue downed colonists to a bed, tend
+  wounds and diseases (quality depends on Medicine skill, medicine and bed rest), and feed bedridden
+  patients. Wounded or sick colonists go to bed on their own. A lone doctor tends their own wounds. Click a
+  colonist and open the **Health** tab for the full picture.
 - **Rooms:** areas fully enclosed by walls, doors or rock get a roof (shown as a wooden floor). Sleeping
   in a bed indoors gives a mood bonus.
 - **Mood:** built from needs and memories (see the inspector). Low mood can cause mental breaks.
-- **Storyteller:** raids that grow with colony wealth and age, wanderers who join, cargo pods and crop
-  blight.
-- **Combat:** drafted colonists shoot raiders in range with line of sight. Badly hurt colonists go down
-  and recover over time. Badly hurt raiders flee.
+- **Storyteller:** raids that grow with colony wealth and age, wanderers who join, cargo pods (sometimes
+  medicine), flu outbreaks and crop blight.
+- **Combat:** drafted colonists shoot raiders in range with line of sight. Wounds land on body parts (see
+  Health). Hurt raiders flee, and downed ones die if left lying.
 
 ## Code layout
 
@@ -57,6 +68,8 @@ The simulation is a library with no rendering code, so it can be tested headless
 - `src/map.rs`: tiles, items, zones, room detection, map generation
 - `src/pathing.rs`: BFS distance fields, line of sight
 - `src/pawn.rs`: pawns, skills, mood, jobs
+- `src/health.rs`: body parts, injuries, diseases, capacities, bleeding, healing
+- `src/medical.rs`: doctors (rescue, tend, feed) and patients
 - `src/world.rs`: world state, fixed-step tick, needs, movement, orders, save/load
 - `src/jobs.rs`: finding work by priority and carrying out jobs
 - `src/combat.rs`: shooting, injuries, raider AI

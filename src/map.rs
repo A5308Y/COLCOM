@@ -26,16 +26,18 @@ pub enum ItemKind {
     Wood,
     Stone,
     Food,
+    Medicine,
 }
 
 impl ItemKind {
-    pub const ALL: [ItemKind; 3] = [ItemKind::Wood, ItemKind::Stone, ItemKind::Food];
+    pub const ALL: [ItemKind; 4] = [ItemKind::Wood, ItemKind::Stone, ItemKind::Food, ItemKind::Medicine];
 
     pub fn name(self) -> &'static str {
         match self {
             ItemKind::Wood => "Wood",
             ItemKind::Stone => "Stone",
             ItemKind::Food => "Food",
+            ItemKind::Medicine => "Medicine",
         }
     }
 }
@@ -165,6 +167,9 @@ pub struct Map {
     pub items: Vec<Option<Stack>>,
     pub desig: Vec<Option<Desig>>,
     pub zone: Vec<Zone>,
+    /// Blood stains, 0..1, fading over time.
+    #[serde(default)]
+    pub blood: Vec<f32>,
     /// Room id per tile; 0 means outdoors. Derived from structures, so not saved.
     #[serde(skip)]
     pub room: Vec<u32>,
@@ -186,6 +191,7 @@ impl Map {
             items: vec![None; n],
             desig: vec![None; n],
             zone: vec![Zone::None; n],
+            blood: vec![0.0; n],
             room: Vec::new(),
             room_sizes: Vec::new(),
             rooms_dirty: true,

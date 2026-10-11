@@ -206,6 +206,15 @@ fn draw_ground(m: &Map, x: usize, y: usize, v: &View, s: f32, o: f32, t: f32) {
         }
     }
 
+    let blood = m.blood.get(i).copied().unwrap_or(0.0);
+    if blood > 0.02 {
+        let c = Color::new(0.45, 0.02, 0.04, (blood * 0.8).min(0.8));
+        for k in 0..3 {
+            let (bx, by) = (sx + s * (0.25 + 0.5 * hash(xi, yi, 50 + k)), sy + s * (0.25 + 0.5 * hash(xi, yi, 60 + k)));
+            draw_circle(bx, by, s * (0.06 + 0.08 * hash(xi, yi, 70 + k)), c);
+        }
+    }
+
     if m.zone[i] == Zone::Stockpile {
         draw_rectangle(sx, sy, s, s, Color::new(0.8, 0.8, 1.0, 0.1));
         let edge = Color::new(0.85, 0.85, 1.0, 0.55);
@@ -428,6 +437,12 @@ pub fn draw_item_icon(cx: f32, cy: f32, s: f32, kind: ItemKind, o: f32) {
             }
             draw_line(cx, cy - s * 0.12, cx + s * 0.08, cy - s * 0.22, o * 1.5, LEAF_LIGHT);
         }
+        ItemKind::Medicine => {
+            // A white medkit with a red cross.
+            rrect_o(cx - s * 0.24, cy - s * 0.17, s * 0.48, s * 0.36, s * 0.06, SHEET, o);
+            draw_rectangle(cx - s * 0.05, cy - s * 0.12, s * 0.1, s * 0.26, BERRY);
+            draw_rectangle(cx - s * 0.13, cy - s * 0.04, s * 0.26, s * 0.1, BERRY);
+        }
     }
 }
 
@@ -462,13 +477,13 @@ fn facing(p: &Pawn) -> f32 {
 fn draw_pawn(m: &Map, p: &Pawn, v: &View, s: f32, o: f32) {
     let (cx, cy) = v.tile_to_screen(p.x + 0.5, p.y + 0.5);
     let look = pawn_look(p);
-    let in_bed = p.sleeping && m.feature[m.idx(p.pos)] == Feature::Bed;
+    let in_bed = p.lying() && !p.dead && m.feature[m.idx(p.pos)] == Feature::Bed;
     if in_bed {
         // Tucked in: just the head on the pillow.
         draw_head(cx, cy - s * 0.22, s * 0.9, &look, 1.0, o);
         return;
     }
-    if p.dead || p.downed || p.sleeping {
+    if p.dead || p.lying() {
         draw_lying(cx, cy, s, &look, o);
         return;
     }
@@ -496,10 +511,19 @@ fn draw_pawn_overlay(p: &Pawn, v: &View, s: f32, o: f32, selected: bool) {
     }
     let bar_w = s * 0.7;
     let mut by = cy - s * 0.5 - 6.0;
-    if p.health < 99.0 {
+    let health = p.health.summary();
+    if health < 0.99 {
         draw_rectangle(cx - bar_w / 2.0, by, bar_w, 3.0, Color::new(0.25, 0.0, 0.0, 0.9));
-        draw_rectangle(cx - bar_w / 2.0, by, bar_w * (p.health / 100.0).max(0.0), 3.0, RED);
+        draw_rectangle(cx - bar_w / 2.0, by, bar_w * health, 3.0, RED);
         by -= 5.0;
+    }
+    if p.health.bleed_rate() > 0.0 {
+        // Pulsing blood drop.
+        let pulse = 0.7 + 0.3 * (get_time() as f32 * 5.0).sin();
+        let (dx, dy) = (cx - s * 0.42, cy - s * 0.3);
+        let r = s * 0.08 * pulse;
+        draw_triangle(vec2(dx - r, dy), vec2(dx + r, dy), vec2(dx, dy - r * 2.2), BERRY);
+        draw_circle(dx, dy, r, BERRY);
     }
     if let Some(Job::Work { .. }) = p.job {
         if p.job_progress > 0.0 {

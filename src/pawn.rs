@@ -1,5 +1,6 @@
 //! Pawns (colonists and raiders): needs, skills, mood, weapons and jobs.
 
+use crate::health::{DamageKind, Health};
 use crate::map::{Pos, Stack};
 use crate::rng::Rng;
 use crate::DAY_LEN;
@@ -19,16 +20,18 @@ pub enum Skill {
     Plants,
     Shooting,
     Melee,
+    Medicine,
 }
 
 impl Skill {
-    pub const ALL: [Skill; 6] = [
+    pub const ALL: [Skill; 7] = [
         Skill::Construction,
         Skill::Growing,
         Skill::Mining,
         Skill::Plants,
         Skill::Shooting,
         Skill::Melee,
+        Skill::Medicine,
     ];
 
     pub fn name(self) -> &'static str {
@@ -39,12 +42,14 @@ impl Skill {
             Skill::Plants => "Plants",
             Skill::Shooting => "Shooting",
             Skill::Melee => "Melee",
+            Skill::Medicine => "Medicine",
         }
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum WorkType {
+    Doctor,
     Construction,
     Growing,
     Mining,
@@ -53,7 +58,8 @@ pub enum WorkType {
 }
 
 impl WorkType {
-    pub const ALL: [WorkType; 5] = [
+    pub const ALL: [WorkType; 6] = [
+        WorkType::Doctor,
         WorkType::Construction,
         WorkType::Growing,
         WorkType::Mining,
@@ -63,6 +69,7 @@ impl WorkType {
 
     pub fn name(self) -> &'static str {
         match self {
+            WorkType::Doctor => "Doctor",
             WorkType::Construction => "Construct",
             WorkType::Growing => "Grow",
             WorkType::Mining => "Mine",
@@ -73,6 +80,7 @@ impl WorkType {
 
     pub fn skill(self) -> Option<Skill> {
         match self {
+            WorkType::Doctor => Some(Skill::Medicine),
             WorkType::Construction => Some(Skill::Construction),
             WorkType::Growing => Some(Skill::Growing),
             WorkType::Mining => Some(Skill::Mining),
@@ -132,6 +140,7 @@ pub enum Weapon {
     Rifle,
     Pistol,
     Club,
+    Knife,
 }
 
 impl Weapon {
@@ -139,7 +148,7 @@ impl Weapon {
         match self {
             Weapon::Rifle => 11.0,
             Weapon::Pistol => 7.0,
-            Weapon::Club => 1.5,
+            Weapon::Club | Weapon::Knife => 1.5,
         }
     }
 
@@ -148,6 +157,15 @@ impl Weapon {
             Weapon::Rifle => (9.0, 14.0),
             Weapon::Pistol => (7.0, 11.0),
             Weapon::Club => (8.0, 13.0),
+            Weapon::Knife => (6.0, 11.0),
+        }
+    }
+
+    pub fn damage_kind(self) -> DamageKind {
+        match self {
+            Weapon::Rifle | Weapon::Pistol => DamageKind::Gunshot,
+            Weapon::Club => DamageKind::Bruise,
+            Weapon::Knife => DamageKind::Cut,
         }
     }
 
@@ -156,11 +174,12 @@ impl Weapon {
             Weapon::Rifle => 1.8,
             Weapon::Pistol => 1.3,
             Weapon::Club => 1.2,
+            Weapon::Knife => 1.0,
         }
     }
 
     pub fn ranged(self) -> bool {
-        self != Weapon::Club
+        matches!(self, Weapon::Rifle | Weapon::Pistol)
     }
 
     pub fn name(self) -> &'static str {
@@ -168,6 +187,7 @@ impl Weapon {
             Weapon::Rifle => "rifle",
             Weapon::Pistol => "pistol",
             Weapon::Club => "club",
+            Weapon::Knife => "knife",
         }
     }
 }
@@ -184,6 +204,14 @@ pub enum Job {
     Sleep { bed: Option<Pos> },
     Attack { target: u32 },
     Leave { to: Pos },
+    /// Lie in bed (or on the ground) to be treated and recover.
+    Patient { bed: Option<Pos> },
+    /// Fetch medicine (if any) and treat a patient (possibly oneself).
+    Tend { patient: u32, medicine: Option<Pos>, picked: bool },
+    /// Carry a downed colonist to a bed.
+    Rescue { patient: u32, bed: Pos, carrying: bool },
+    /// Bring food to a downed colonist.
+    Feed { patient: u32, food: Pos, picked: bool },
 }
 
 impl Job {
@@ -198,6 +226,10 @@ impl Job {
             Job::Sleep { .. } => "sleeping",
             Job::Attack { .. } => "fighting",
             Job::Leave { .. } => "leaving",
+            Job::Patient { .. } => "resting in bed",
+            Job::Tend { .. } => "tending",
+            Job::Rescue { .. } => "rescuing",
+            Job::Feed { .. } => "feeding a patient",
         }
     }
 }
@@ -266,19 +298,22 @@ pub struct Pawn {
     pub hunger: f32,
     pub rest: f32,
     pub mood: f32,
-    pub health: f32,
-    pub skills: [u8; 6],
-    pub xp: [f32; 6],
+    pub health: Health,
+    pub skills: [u8; 7],
+    pub xp: [f32; 7],
     /// Per work type: 0 = disabled, 1 = highest .. 4 = lowest.
-    pub priorities: [u8; 5],
+    pub priorities: [u8; 6],
     pub weapon: Weapon,
     pub cooldown: f32,
     pub drafted: bool,
     pub downed: bool,
+    pub downed_time: f32,
     pub dead: bool,
     /// Raider left the map; removed at the end of the tick.
     pub left: bool,
     pub sleeping: bool,
+    /// Lying down awake (as a patient).
+    pub resting: bool,
     pub memories: Vec<MemoryEntry>,
     pub bed: Option<Pos>,
     pub color: [f32; 3],
@@ -304,17 +339,19 @@ impl Pawn {
             hunger: rng.range_f32(75.0, 100.0),
             rest: rng.range_f32(75.0, 100.0),
             mood: 55.0,
-            health: 100.0,
-            skills: [0; 6],
-            xp: [0.0; 6],
-            priorities: [3; 5],
+            health: Health::new(),
+            skills: [0; 7],
+            xp: [0.0; 7],
+            priorities: [3; 6],
             weapon: Weapon::Rifle,
             cooldown: 0.0,
             drafted: false,
             downed: false,
+            downed_time: 0.0,
             dead: false,
             left: false,
             sleeping: false,
+            resting: false,
             memories: Vec::new(),
             bed: None,
             color: [rng.range_f32(0.5, 1.0), rng.range_f32(0.45, 0.95), rng.range_f32(0.45, 0.95)],
@@ -330,18 +367,25 @@ impl Pawn {
             *s = rng.below(7) as u8;
         }
         // One thing they're genuinely good at.
-        let passion = rng.below(6);
+        let passion = rng.below(Skill::ALL.len());
         p.skills[passion] = (p.skills[passion] + 5 + rng.below(6) as u8).min(20);
         p
     }
 
     pub fn new_raider(id: u32, name: String, pos: Pos, rng: &mut Rng) -> Pawn {
         let mut p = Pawn::base(id, name, Faction::Raider, pos, rng);
-        p.weapon = if rng.chance(0.6) { Weapon::Pistol } else { Weapon::Club };
+        let roll = rng.f32();
+        p.weapon = if roll < 0.5 {
+            Weapon::Pistol
+        } else if roll < 0.75 {
+            Weapon::Club
+        } else {
+            Weapon::Knife
+        };
         p.skills[Skill::Shooting as usize] = 3 + rng.below(6) as u8;
         p.skills[Skill::Melee as usize] = 3 + rng.below(6) as u8;
         p.color = [0.85, 0.2, 0.2];
-        p.priorities = [0; 5];
+        p.priorities = [0; 6];
         p.leave_timer = 100.0;
         p
     }
@@ -355,30 +399,29 @@ impl Pawn {
         !self.dead && !self.downed && !self.left
     }
 
+    /// Lying down where a doctor can work on them.
+    pub fn lying(&self) -> bool {
+        self.downed || self.sleeping || self.resting
+    }
+
     pub fn skill(&self, s: Skill) -> u8 {
         self.skills[s as usize]
     }
 
     pub fn work_speed(&self, s: Skill) -> f32 {
-        let mut speed = 0.6 + 0.07 * self.skill(s) as f32;
-        if self.health < 50.0 {
-            speed *= 0.7;
-        }
+        let caps = &self.health.caps;
+        let mut speed = (0.6 + 0.07 * self.skill(s) as f32) * caps.manipulation.min(1.0) * (0.7 + 0.3 * caps.sight.min(1.0));
         if self.mood > 70.0 {
             speed *= 1.1;
         } else if self.mood < 25.0 {
             speed *= 0.85;
         }
-        speed
+        speed.max(0.05)
     }
 
     pub fn move_speed(&self) -> f32 {
         let base = if self.is_colonist() { 4.0 } else { 3.6 };
-        if self.health < 50.0 {
-            base * 0.6
-        } else {
-            base
-        }
+        base * self.health.caps.moving.clamp(0.15, 1.0)
     }
 
     /// Add experience; returns true if the skill levelled up.
@@ -417,8 +460,21 @@ impl Pawn {
         } else if self.rest < 25.0 {
             t.push(("Tired", -5.0));
         }
-        if self.health < 60.0 {
-            t.push(("In pain", -8.0));
+        let pain = self.health.pain;
+        if pain >= 0.6 {
+            t.push(("Mind-shattering pain", -20.0));
+        } else if pain >= 0.4 {
+            t.push(("Intense pain", -14.0));
+        } else if pain >= 0.2 {
+            t.push(("Serious pain", -8.0));
+        } else if pain >= 0.05 {
+            t.push(("Minor pain", -3.0));
+        }
+        if self.health.hediffs.iter().any(|h| h.kind == crate::health::HediffKind::Missing) {
+            t.push(("Missing a body part", -5.0));
+        }
+        if self.health.has_disease() {
+            t.push(("Sick", -5.0));
         }
         for m in &self.memories {
             t.push((m.kind.label(), m.kind.mood()));
@@ -436,7 +492,10 @@ impl Pawn {
             return "dead".into();
         }
         if self.downed {
-            return "downed".into();
+            return match self.health.downed_reason() {
+                Some(r) => format!("downed ({})", r),
+                None => "downed".into(),
+            };
         }
         if self.break_timer > 0.0 {
             return "mental break".into();
@@ -474,5 +533,17 @@ mod tests {
         let happy = p.mood_target();
         p.hunger = 0.0;
         assert!(p.mood_target() < happy - 15.0);
+    }
+
+    #[test]
+    fn injuries_slow_work_and_walking() {
+        let mut rng = Rng::new(1);
+        let mut p = Pawn::new_colonist(1, "Test".into(), (0, 0), &mut rng);
+        let (work, walk) = (p.work_speed(Skill::Mining), p.move_speed());
+        p.health.injure(crate::health::Part::RightHand, 15.0, DamageKind::Cut, &mut rng);
+        p.health.injure(crate::health::Part::LeftLeg, 20.0, DamageKind::Bruise, &mut rng);
+        p.health.recompute();
+        assert!(p.work_speed(Skill::Mining) < work);
+        assert!(p.move_speed() < walk);
     }
 }

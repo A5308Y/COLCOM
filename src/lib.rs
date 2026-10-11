@@ -2,8 +2,10 @@
 //! whole colony can be simulated (and unit tested) without a window.
 
 pub mod combat;
+pub mod health;
 pub mod jobs;
 pub mod map;
+pub mod medical;
 pub mod pathing;
 pub mod pawn;
 pub mod rng;

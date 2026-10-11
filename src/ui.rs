@@ -4,10 +4,11 @@ use crate::art::{draw_head, pawn_look, Look};
 use crate::camera::View;
 use crate::render::draw_world;
 use macroquad::prelude::*;
+use my_world::health::HediffKind;
 use my_world::map::{BuildKind, Desig, Feature, ItemKind, Pos, Zone};
-use my_world::pawn::{Faction, Skill, WorkType};
+use my_world::pawn::{Faction, Pawn, Skill, WorkType};
 use my_world::world::{Order, World};
-use my_world::TICK;
+use my_world::{DAY_LEN, TICK};
 
 const HUD_H: f32 = 112.0;
 const SAVE_PATH: &str = "savegame.json";
@@ -32,7 +33,7 @@ const TOOLS: [(Tool, &str, KeyCode); 11] = [
     (Tool::Paint(Order::Cancel), "0 Cancel", KeyCode::Key0),
 ];
 
-const HELP: [&str; 16] = [
+const HELP: [&str; 18] = [
     "You don't control colonists directly - you give orders and they pick up the work.",
     "",
     "1-3   Designate trees to chop, rock/structures to mine, berry bushes to forage",
@@ -43,6 +44,8 @@ const HELP: [&str; 16] = [
     "",
     "Enclosed rooms get a roof. Colonists sleeping in a bed indoors are happier.",
     "Hungry, tired or upset colonists have low mood and may have mental breaks.",
+    "Wounds bleed and can get infected. Doctors (see P) rescue downed colonists to a bed",
+    "and tend them - better with medicine and skill. Click a colonist, then Health for details.",
     "Raids come every few days: select a colonist and press F to draft (F with nothing",
     "selected drafts everyone). Drafted colonists shoot enemies in range; right-click to move,",
     "right-click an enemy to attack.",
@@ -69,6 +72,7 @@ pub struct App {
     last_tile: Option<Pos>,
     show_work: bool,
     show_help: bool,
+    inspector_health: bool,
     ui_hover: bool,
 }
 
@@ -103,6 +107,7 @@ impl App {
             last_tile: None,
             show_work: false,
             show_help: false,
+            inspector_health: false,
             ui_hover: false,
         };
         app.center_on_colony();
@@ -422,13 +427,14 @@ impl App {
         let w = &self.world;
         let hour = w.hour();
         let status = format!(
-            "Day {}  {:02}:{:02}    Wood {}   Stone {}   Food {}    Colonists {}    Speed {}x{}",
+            "Day {}  {:02}:{:02}    Wood {}   Stone {}   Food {}   Medicine {}    Colonists {}    Speed {}x{}",
             w.day(),
             hour as u32,
             ((hour - hour.floor()) * 60.0) as u32,
             w.map.count_items(ItemKind::Wood),
             w.map.count_items(ItemKind::Stone),
             w.map.count_items(ItemKind::Food),
+            w.map.count_items(ItemKind::Medicine),
             w.colonists_alive(),
             self.speed,
             if self.paused { "  [PAUSED]" } else { "" }
@@ -480,7 +486,7 @@ impl App {
             .iter()
             .filter(|p| p.is_colonist())
             .map(|p| {
-                let trouble = p.downed || p.hunger <= 0.0 || p.break_timer > 0.0;
+                let trouble = p.downed || p.hunger <= 0.0 || p.break_timer > 0.0 || p.health.bleed_rate() > 0.0;
                 (p.id, p.name.clone(), p.mood, p.status(), p.drafted, trouble || p.dead, pawn_look(p))
             })
             .collect();
@@ -519,25 +525,38 @@ impl App {
 
     fn draw_pawn_inspector(&mut self, id: u32) {
         let Some(p) = self.world.pawn(id).cloned() else { return };
-        let mut lines = 6 + p.thoughts().len();
-        if p.is_colonist() {
-            lines += 4;
-        }
-        let r = Rect::new(8.0, 56.0, 300.0, 40.0 + lines as f32 * 18.0);
+        let health_tab = self.inspector_health;
+        let rows = if health_tab {
+            3 + 9 + p.health.hediffs.len().max(1)
+        } else {
+            4 + p.thoughts().len() + if p.is_colonist() { 7 } else { 0 }
+        };
+        let r = Rect::new(8.0, 56.0, 360.0, 64.0 + rows as f32 * 18.0);
         self.panel(r);
+        if self.button(Rect::new(r.x + r.w - 150.0, r.y + 6.0, 74.0, 22.0), "Overview", !health_tab) {
+            self.inspector_health = false;
+        }
+        if self.button(Rect::new(r.x + r.w - 72.0, r.y + 6.0, 64.0, 22.0), "Health", health_tab) {
+            self.inspector_health = true;
+        }
         let (x, mut y) = (r.x + 10.0, r.y + 22.0);
         let title = if p.is_colonist() { p.name.clone() } else { format!("{} (raider)", p.name) };
         draw_text(&title, x, y, 22.0, WHITE);
         y += 20.0;
         draw_text(&format!("{} - {}", p.status(), p.weapon.name()), x, y, 16.0, LIGHTGRAY);
-        y += 20.0;
+        y += 22.0;
+
+        if health_tab {
+            draw_health_tab(&p, x, y);
+            return;
+        }
 
         let mut need = |label: &str, value: f32, color: Color| {
             draw_text(label, x, y, 16.0, WHITE);
             bar(x + 70.0, y - 9.0, 200.0, value / 100.0, color);
             y += 18.0;
         };
-        need("Health", p.health, RED);
+        need("Health", p.health.summary() * 100.0, RED);
         if p.is_colonist() {
             need("Mood", p.mood, mood_color(p.mood));
             need("Food", p.hunger, ORANGE);
@@ -547,11 +566,11 @@ impl App {
         if p.is_colonist() {
             y += 4.0;
             for (k, s) in Skill::ALL.iter().enumerate() {
-                let col = (k % 2) as f32 * 140.0;
+                let col = (k % 2) as f32 * 150.0;
                 let row = (k / 2) as f32 * 18.0;
                 draw_text(&format!("{} {}", s.name(), p.skill(*s)), x + col, y + row, 16.0, LIGHTGRAY);
             }
-            y += 3.0 * 18.0 + 6.0;
+            y += ((Skill::ALL.len() + 1) / 2) as f32 * 18.0 + 6.0;
         }
 
         for (label, value) in p.thoughts() {
@@ -603,7 +622,7 @@ impl App {
     }
 
     fn draw_work_panel(&mut self) {
-        let rows: Vec<(u32, String, [u8; 5], [u8; 6])> = self
+        let rows: Vec<(u32, String, [u8; 6], [u8; 7])> = self
             .world
             .pawns
             .iter()
@@ -656,5 +675,83 @@ fn mood_color(mood: f32) -> Color {
         ORANGE
     } else {
         GREEN
+    }
+}
+
+fn capacity_color(v: f32) -> Color {
+    if v < 0.5 {
+        RED
+    } else if v < 0.85 {
+        ORANGE
+    } else {
+        GREEN
+    }
+}
+
+/// RimWorld-style health tab: overall state, capacities, and every condition.
+fn draw_health_tab(p: &Pawn, x: f32, mut y: f32) {
+    let h = &p.health;
+    let pain = match h.pain {
+        v if v >= 0.6 => "mind-shattering",
+        v if v >= 0.4 => "intense",
+        v if v >= 0.2 => "serious",
+        v if v >= 0.05 => "minor",
+        _ => "none",
+    };
+    let overall = format!("Overall {:.0}%     Pain {:.0}% ({})", h.summary() * 100.0, h.pain * 100.0, pain);
+    draw_text(&overall, x, y, 16.0, WHITE);
+    y += 18.0;
+
+    let bleed = h.bleed_rate();
+    let (text, color) = match h.time_to_bleed_out() {
+        Some(secs) => (format!("Bleeding {:.0}%/day - bleeds out in ~{:.0}h", bleed * 100.0, secs / DAY_LEN * 24.0), RED),
+        None if bleed > 0.0 => (format!("Bleeding {:.0}%/day (body keeps up)", bleed * 100.0), ORANGE),
+        None => ("Not bleeding".to_string(), LIGHTGRAY),
+    };
+    draw_text(&text, x, y, 16.0, color);
+    y += 18.0;
+    let mut extra = Vec::new();
+    if h.blood_loss > 0.01 {
+        extra.push(format!("Blood loss {:.0}%", h.blood_loss * 100.0));
+    }
+    if h.malnutrition > 0.01 {
+        extra.push(format!("Malnutrition {:.0}%", h.malnutrition * 100.0));
+    }
+    draw_text(&extra.join("     "), x, y, 16.0, ORANGE);
+    y += 22.0;
+
+    for (name, v) in h.caps.list() {
+        draw_text(name, x, y, 15.0, LIGHTGRAY);
+        bar(x + 125.0, y - 9.0, 150.0, v, capacity_color(v));
+        draw_text(&format!("{:.0}%", v * 100.0), x + 285.0, y, 15.0, WHITE);
+        y += 18.0;
+    }
+    y += 6.0;
+
+    if h.hediffs.is_empty() {
+        draw_text("No injuries or illnesses", x, y, 15.0, GREEN);
+        return;
+    }
+    for d in &h.hediffs {
+        let part = d.part.map_or("Whole body", |p| p.name());
+        let (detail, color) = match d.kind {
+            HediffKind::Injury { permanent: true, .. } => (String::new(), GRAY),
+            HediffKind::Injury { .. } => (format!(" {:.0}", d.severity), if d.bleed() > 0.0 { RED } else { ORANGE }),
+            HediffKind::Missing => (String::new(), if d.bleed() > 0.0 { RED } else { GRAY }),
+            HediffKind::Infection { immunity } | HediffKind::Flu { immunity } => {
+                (format!(" {:.0}% (immunity {:.0}%)", d.severity * 100.0, immunity * 100.0), YELLOW)
+            }
+        };
+        let mut text = format!("{}: {}{}", part, d.label(), detail);
+        if d.bleed() > 0.0 {
+            text += ", bleeding";
+        }
+        match d.tend {
+            Some(q) => text += &format!(", tended {:.0}%", q * 100.0),
+            None if d.needs_tending() => text += ", needs tending",
+            None => {}
+        }
+        draw_text(&text, x, y, 15.0, color);
+        y += 18.0;
     }
 }

@@ -5,7 +5,7 @@ use crate::pathing::{bfs, DistField};
 use crate::pawn::{Job, Memory, Pawn, Task, WorkType};
 use crate::world::{Step, World};
 
-type Nearest = [Option<(i32, Pos)>; 3];
+type Nearest = [Option<(i32, Pos)>; ItemKind::ALL.len()];
 
 impl World {
     /// Highest-priority, then nearest, available job for `p`.
@@ -16,8 +16,8 @@ impl World {
 
         // Nearest free stack of each item kind (for deliveries) and nearest
         // stockpile cell that can take each kind (for hauling).
-        let mut nearest_item: Nearest = [None; 3];
-        let mut nearest_cell: Nearest = [None; 3];
+        let mut nearest_item: Nearest = [None; ItemKind::ALL.len()];
+        let mut nearest_cell: Nearest = [None; ItemKind::ALL.len()];
         for i in 0..n {
             let pos = m.pos(i);
             let Some(d) = df.dist(pos) else { continue };
@@ -41,6 +41,16 @@ impl World {
             let mut best: Option<(i32, Job)> = None;
             for wt in WorkType::ALL {
                 if p.priorities[wt as usize] != prio {
+                    continue;
+                }
+                if wt == WorkType::Doctor {
+                    let medicine = nearest_item[ItemKind::Medicine as usize].map(|(_, pos)| pos);
+                    let food = nearest_item[ItemKind::Food as usize].map(|(_, pos)| pos);
+                    if let Some((d, job)) = self.doctor_candidate(p, &df, medicine, food) {
+                        if best.map_or(true, |(bd, _)| d < bd) {
+                            best = Some((d, job));
+                        }
+                    }
                     continue;
                 }
                 for i in 0..n {
@@ -115,6 +125,8 @@ impl World {
                     return Some((d + di, Job::Haul { from, to: pos, to_blueprint: true, picked: false }));
                 }
             }
+            // Handled per patient in `doctor_candidate`.
+            WorkType::Doctor => {}
             WorkType::Hauling => {
                 let s = m.items[i]?;
                 if self.res_item[i] == 0 && m.zone[i] != Zone::Stockpile {
@@ -145,6 +157,10 @@ impl World {
             Job::Haul { from, to, to_blueprint, picked } => self.run_haul(p, from, to, to_blueprint, picked, dt),
             Job::Eat { from, picked } => self.run_eat(p, from, picked, dt),
             Job::Sleep { bed } => self.run_sleep(p, bed, dt),
+            Job::Patient { bed } => self.run_patient(p, bed, dt),
+            Job::Tend { patient, medicine, picked } => self.run_tend(p, patient, medicine, picked, dt),
+            Job::Rescue { patient, bed, carrying } => self.run_rescue(p, patient, bed, carrying, dt),
+            Job::Feed { patient, food, picked } => self.run_feed(p, patient, food, picked, dt),
         }
     }
 
@@ -383,22 +399,8 @@ impl World {
 
     /// Start eating the nearest reachable food. Returns false if there is none.
     pub(crate) fn try_eat(&mut self, p: &mut Pawn) -> bool {
-        let df = bfs(&self.map, p.pos);
-        let mut best: Option<(i32, Pos)> = None;
-        for i in 0..self.map.items.len() {
-            let Some(s) = self.map.items[i] else { continue };
-            if s.kind != ItemKind::Food || self.res_item[i] != 0 {
-                continue;
-            }
-            let pos = self.map.pos(i);
-            if let Some(d) = df.dist(pos) {
-                if best.map_or(true, |(bd, _)| d < bd) {
-                    best = Some((d, pos));
-                }
-            }
-        }
-        match best {
-            Some((_, from)) => {
+        match self.nearest_free_item(p.pos, ItemKind::Food) {
+            Some(from) => {
                 self.end_job(p);
                 self.start_job(p, Job::Eat { from, picked: false });
                 true

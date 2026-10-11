@@ -85,9 +85,10 @@ impl World {
 
     fn random_event(&mut self) {
         let has_crops = self.map.feature.iter().any(|f| matches!(f, Feature::Crop { .. }));
-        match self.rng.below(3) {
+        match self.rng.below(4) {
             0 if self.colonists_alive() < 10 => self.wanderer_joins(),
             1 if has_crops => self.blight(),
+            2 if self.day() >= 3 => self.flu_outbreak(),
             _ => self.cargo_pods(),
         }
     }
@@ -110,6 +111,26 @@ impl World {
         self.push_log(format!("Blight! {} crops withered.", lost));
     }
 
+    fn flu_outbreak(&mut self) {
+        let candidates: Vec<usize> =
+            (0..self.pawns.len()).filter(|&i| self.pawns[i].is_colonist() && !self.pawns[i].dead).collect();
+        if candidates.is_empty() {
+            return;
+        }
+        let victims = 1 + self.rng.below(2);
+        let mut names = Vec::new();
+        for _ in 0..victims {
+            let i = candidates[self.rng.below(candidates.len())];
+            if !self.pawns[i].health.has_disease() {
+                self.pawns[i].health.add_flu();
+                names.push(self.pawns[i].name.clone());
+            }
+        }
+        if !names.is_empty() {
+            self.push_log(format!("Flu! {} fell ill. Doctors can treat it; bed rest helps.", names.join(" and ")));
+        }
+    }
+
     fn cargo_pods(&mut self) {
         let colonists: Vec<Pos> = self.pawns.iter().filter(|p| p.is_colonist() && !p.dead).map(|p| p.pos).collect();
         if colonists.is_empty() {
@@ -119,8 +140,8 @@ impl World {
         let cy = colonists.iter().map(|p| p.1).sum::<usize>() / colonists.len();
         let x = (cx as i32 + self.rng.below(13) as i32 - 6).clamp(0, self.map.w as i32 - 1) as usize;
         let y = (cy as i32 + self.rng.below(13) as i32 - 6).clamp(0, self.map.h as i32 - 1) as usize;
-        let kind = ItemKind::ALL[self.rng.below(3)];
-        let count = 15 + self.rng.below(26) as u32;
+        let kind = ItemKind::ALL[self.rng.below(ItemKind::ALL.len())];
+        let count = (if kind == ItemKind::Medicine { 3 + self.rng.below(6) } else { 15 + self.rng.below(26) }) as u32;
         self.map.drop_item((x, y), Stack { kind, count });
         self.push_log(format!("Cargo pods crashed nearby: {} {}.", count, kind.name().to_lowercase()));
     }

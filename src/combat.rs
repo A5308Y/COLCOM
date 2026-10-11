@@ -1,8 +1,9 @@
 //! Shooting, melee, injuries and raider behaviour.
 
+use crate::health::DamageKind;
 use crate::map::Pos;
 use crate::pathing::{bfs, line_of_sight};
-use crate::pawn::{Faction, Job, Memory, Pawn, Skill};
+use crate::pawn::{Job, Memory, Pawn, Skill};
 use crate::world::{Effect, Step, World};
 
 fn dist(a: &Pawn, b: &Pawn) -> f32 {
@@ -49,11 +50,10 @@ impl World {
         let (tx, ty) = (self.pawns[ti].x, self.pawns[ti].y);
         let d = ((tx - p.x).powi(2) + (ty - p.y).powi(2)).sqrt();
         let level = p.skill(skill) as f32;
-        let chance = if w.ranged() {
-            (0.55 + level * 0.025 - d * 0.025).clamp(0.1, 0.95)
-        } else {
-            (0.6 + level * 0.02).min(0.95)
-        };
+        let base = if w.ranged() { 0.55 + level * 0.025 - d * 0.025 } else { 0.6 + level * 0.02 };
+        // Bad eyes or hands make for bad aim.
+        let caps = &p.health.caps;
+        let chance = (base * (0.4 + 0.6 * caps.sight.min(1.0)) * (0.5 + 0.5 * caps.manipulation.min(1.0))).clamp(0.05, 0.95);
         let hit = self.rng.chance(chance);
         p.cooldown = w.cooldown();
         p.learn(skill, 2.0);
@@ -68,24 +68,35 @@ impl World {
         if hit {
             let (lo, hi) = w.damage();
             let dmg = self.rng.range_f32(lo, hi);
-            self.damage(ti, dmg, &p.name);
+            self.damage(ti, dmg, w.damage_kind(), &p.name);
         }
     }
 
-    pub fn damage(&mut self, ti: usize, dmg: f32, by: &str) {
+    pub fn damage(&mut self, ti: usize, amount: f32, kind: DamageKind, by: &str) {
         let mut t = self.pawns[ti].clone();
         if t.dead {
             return;
         }
-        t.health -= dmg;
-        // Raiders don't lie around downed; they're simply out of the fight.
-        if t.health <= 0.0 || (t.faction == Faction::Raider && t.health < 25.0) {
-            self.kill(&mut t, &format!("was killed by {}", by));
-        } else if t.health < 25.0 && !t.downed {
-            self.end_job(&mut t);
-            t.downed = true;
-            t.drafted = false;
-            self.push_log(format!("{} was downed by {}.", t.name, by));
+        let hit = t.health.apply_damage(amount, kind, &mut self.rng);
+        t.health.recompute();
+        let wound = hit.map_or(String::new(), |h| {
+            format!(" ({} to the {})", kind.name().to_lowercase(), h.part.name().to_lowercase())
+        });
+        if t.health.death_cause().is_some() {
+            self.kill(&mut t, &format!("was killed by {}{}", by, wound));
+        } else {
+            if let Some(h) = hit.filter(|h| h.destroyed) {
+                self.push_log(format!("{}'s {} was destroyed by {}.", t.name, h.part.name().to_lowercase(), by));
+            }
+            if !t.downed {
+                if let Some(reason) = t.health.downed_reason() {
+                    self.end_job(&mut t);
+                    t.downed = true;
+                    t.drafted = false;
+                    t.downed_time = 0.0;
+                    self.push_log(format!("{} was downed by {}{}: {}.", t.name, by, wound, reason));
+                }
+            }
         }
         self.pawns[ti] = t;
     }
@@ -136,8 +147,9 @@ impl World {
             return;
         }
         p.leave_timer -= dt;
-        if p.leave_timer <= 0.0 || p.health < 50.0 {
-            if p.health < 50.0 {
+        let hurt = p.health.pain > 0.35 || p.health.summary() < 0.6;
+        if p.leave_timer <= 0.0 || hurt {
+            if hurt {
                 self.push_log(format!("{} is fleeing.", p.name));
             }
             self.end_job(p);

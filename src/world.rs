@@ -1,5 +1,6 @@
 //! The whole simulation state and its fixed-step update.
 
+use crate::health::TickCtx;
 use crate::map::{BuildKind, Desig, Feature, ItemKind, Map, Pos, Stack, Terrain, Zone};
 use crate::pawn::{Faction, Job, Memory, Pawn, WorkType};
 use crate::pathing::bfs;
@@ -51,6 +52,9 @@ pub struct World {
     pub res_target: Vec<u32>,
     pub res_item: Vec<u32>,
     pub res_cell: Vec<u32>,
+    /// (patient, doctor) pairs, so two doctors don't treat the same patient.
+    #[serde(default)]
+    pub res_patient: Vec<(u32, u32)>,
     pub time: f32,
     pub rng: Rng,
     pub next_id: u32,
@@ -78,6 +82,7 @@ impl World {
         }
         w.map.drop_item((cx - 4, cy + 2), Stack { kind: ItemKind::Wood, count: 80 });
         w.map.drop_item((cx + 1, cy + 4), Stack { kind: ItemKind::Food, count: 40 });
+        w.map.drop_item((cx - 1, cy + 4), Stack { kind: ItemKind::Medicine, count: 8 });
         w.push_log("Three colonists crash-landed. Press H for help.".into());
         w
     }
@@ -91,6 +96,7 @@ impl World {
             res_target: vec![0; n],
             res_item: vec![0; n],
             res_cell: vec![0; n],
+            res_patient: Vec::new(),
             time: DAY_LEN * 0.25,
             rng,
             next_id: 1,
@@ -147,14 +153,35 @@ impl World {
             out.push((format!("Raid: {} raiders", raiders), true));
         }
         let colonists: Vec<&Pawn> = self.pawns.iter().filter(|p| p.is_colonist() && !p.dead).collect();
+        let mut needs_tending = false;
         for p in &colonists {
-            if p.downed {
+            let h = &p.health;
+            if let Some(secs) = h.time_to_bleed_out() {
+                let hours = secs / DAY_LEN * 24.0;
+                out.push((format!("{} bleeding out (~{:.0}h)", p.name, hours.max(1.0)), true));
+            } else if p.downed && !self.in_bed(p) {
+                out.push((format!("{} needs rescue", p.name), true));
+            } else if p.downed {
                 out.push((format!("{} is downed", p.name), true));
-            } else if p.hunger <= 0.0 {
+            } else if h.malnutrition > 0.0 && p.hunger <= 0.0 {
                 out.push((format!("{} is starving", p.name), true));
             } else if p.break_timer > 0.0 {
                 out.push((format!("{}: mental break", p.name), false));
             }
+            for d in h.hediffs.iter().filter(|d| d.is_disease()) {
+                let urgent = d.severity > d.immunity().unwrap_or(0.0);
+                out.push((format!("{}: {} {:.0}%", p.name, d.label().to_lowercase(), d.severity * 100.0), urgent));
+            }
+            needs_tending |= h.needs_tending();
+        }
+        let medicine = self.map.count_items(ItemKind::Medicine);
+        if needs_tending && medicine == 0 {
+            out.push(("No medicine".into(), true));
+        } else if medicine < 3 {
+            out.push((format!("Low medicine ({} left)", medicine), false));
+        }
+        if !colonists.iter().any(|p| p.active() && p.priorities[WorkType::Doctor as usize] > 0) {
+            out.push(("No doctor available".into(), needs_tending));
         }
         let food = self.map.count_items(ItemKind::Food);
         if (food as usize) < colonists.len() * 4 {
@@ -216,6 +243,10 @@ impl World {
         }
         self.grow_plants(dt);
         self.storyteller_tick();
+        let fade = dt / (1.5 * DAY_LEN);
+        for b in self.map.blood.iter_mut() {
+            *b = (*b - fade).max(0.0);
+        }
 
         // Each pawn is updated on a copy so it can freely read and modify the
         // rest of the world (including other pawns) while it thinks.
@@ -264,16 +295,18 @@ impl World {
             return;
         }
         p.cooldown = (p.cooldown - dt).max(0.0);
+        self.update_health(p, dt);
+        if p.dead {
+            return;
+        }
         if p.is_colonist() {
             self.update_needs(p, dt);
-            if p.dead {
-                return;
-            }
         }
         if p.downed {
-            if p.health >= 35.0 {
-                p.downed = false;
-                self.push_log(format!("{} got back up.", p.name));
+            p.downed_time += dt;
+            // Nobody treats raiders; left lying long enough, they die.
+            if p.faction == Faction::Raider && p.downed_time > 120.0 {
+                self.kill(p, "succumbed to their wounds");
             }
             return;
         }
@@ -284,20 +317,44 @@ impl World {
         self.run_job(p, dt);
     }
 
+    fn update_health(&mut self, p: &mut Pawn, dt: f32) {
+        let lying = p.lying();
+        let ctx = TickCtx { in_bed: lying && self.in_bed(p), resting: lying, fed: !p.is_colonist() || p.hunger > 0.0 };
+        let events = p.health.tick(dt, ctx, &mut self.rng);
+        p.health.recompute();
+        for e in events {
+            self.push_log(format!("{} {}", p.name, e));
+        }
+        if let Some(cause) = p.health.death_cause() {
+            self.kill(p, &cause);
+            return;
+        }
+        // Bleeding leaves a trail.
+        let bleed = p.health.bleed_rate();
+        if bleed > 0.0 && self.rng.chance(bleed * dt * 0.5) {
+            let i = self.map.idx(p.pos);
+            self.map.blood[i] = (self.map.blood[i] + 0.5).min(1.0);
+        }
+        match (p.downed, p.health.downed_reason()) {
+            (false, Some(reason)) => {
+                self.end_job(p);
+                p.downed = true;
+                p.drafted = false;
+                p.downed_time = 0.0;
+                self.push_log(format!("{} collapsed ({}).", p.name, reason));
+            }
+            (true, None) => {
+                p.downed = false;
+                self.push_log(format!("{} got back up.", p.name));
+            }
+            _ => {}
+        }
+    }
+
     fn update_needs(&mut self, p: &mut Pawn, dt: f32) {
         p.hunger = (p.hunger - 0.4 * dt).max(0.0);
         if !p.sleeping {
             p.rest = (p.rest - 0.33 * dt).max(0.0);
-        }
-        if p.hunger <= 0.0 {
-            p.health -= 0.25 * dt;
-            if p.health <= 0.0 {
-                self.kill(p, "starved to death");
-                return;
-            }
-        } else if p.health < 100.0 {
-            let rate = if p.sleeping || p.downed { 0.3 } else { 0.08 };
-            p.health = (p.health + rate * dt).min(100.0);
         }
 
         for m in p.memories.iter_mut() {
@@ -345,10 +402,30 @@ impl World {
             if p.hunger < 20.0 && self.try_eat(p) {
                 return;
             }
-            if p.rest < 8.0 {
+            if p.rest < 8.0 && !matches!(p.job, Some(Job::Patient { .. })) {
                 self.end_job(p);
                 let bed = self.find_bed(p);
                 self.start_job(p, Job::Sleep { bed });
+                return;
+            }
+        }
+        let tending_self = matches!(p.job, Some(Job::Tend { patient, .. }) if patient == p.id);
+        let resting = matches!(p.job, Some(Job::Patient { .. }));
+        if !on_need && !tending_self && p.health.wants_bed_rest() {
+            // With no one else to treat them, doctors patch themselves up first.
+            if p.health.needs_tending()
+                && p.priorities[WorkType::Doctor as usize] > 0
+                && !self.other_doctor_available(p.id)
+            {
+                let job = self.self_tend_job(p);
+                self.end_job(p);
+                self.start_job(p, job);
+                return;
+            }
+            if !resting {
+                self.end_job(p);
+                let bed = self.find_bed(p);
+                self.start_job(p, Job::Patient { bed });
                 return;
             }
         }
@@ -382,6 +459,7 @@ impl World {
                 }
             }
         }
+        self.res_patient.retain(|&(_, doctor)| doctor != id);
     }
 
     pub(crate) fn start_job(&mut self, p: &mut Pawn, job: Job) {
@@ -404,7 +482,27 @@ impl World {
                 let i = self.map.idx(from);
                 self.res_item[i] = id;
             }
-            Job::Sleep { bed: Some(b) } => p.bed = Some(b),
+            Job::Sleep { bed: Some(b) } | Job::Patient { bed: Some(b) } => p.bed = Some(b),
+            Job::Tend { patient, medicine, .. } => {
+                if let Some(m) = medicine {
+                    let i = self.map.idx(m);
+                    self.res_item[i] = id;
+                }
+                if patient != id {
+                    self.res_patient.push((patient, id));
+                }
+            }
+            Job::Rescue { patient, bed, .. } => {
+                self.res_patient.push((patient, id));
+                if let Some(pi) = self.pawn_index(patient) {
+                    self.pawns[pi].bed = Some(bed);
+                }
+            }
+            Job::Feed { patient, food, .. } => {
+                let i = self.map.idx(food);
+                self.res_item[i] = id;
+                self.res_patient.push((patient, id));
+            }
             _ => {}
         }
         p.job = Some(job);
@@ -424,6 +522,7 @@ impl World {
         p.path.clear();
         p.path_goal = None;
         p.sleeping = false;
+        p.resting = false;
     }
 
     /// Walk towards `goal` (or next to it if `adjacent`), planning a path as needed.
@@ -557,6 +656,13 @@ impl World {
     pub fn load_json(s: &str) -> Result<World, serde_json::Error> {
         let mut w: World = serde_json::from_str(s)?;
         w.map.recompute_rooms();
+        let n = w.map.w * w.map.h;
+        if w.map.blood.len() != n {
+            w.map.blood = vec![0.0; n];
+        }
+        for p in w.pawns.iter_mut() {
+            p.health.recompute();
+        }
         Ok(w)
     }
 }
@@ -699,8 +805,61 @@ mod tests {
         let ri = w.pawn_index(rid).unwrap();
         w.pawns[ri].weapon = Weapon::Club;
         run(&mut w, 10.0);
-        let hurt_or_gone = w.pawn(rid).map_or(true, |r| r.health < 100.0);
+        let hurt_or_gone = w.pawn(rid).map_or(true, |r| !r.health.hediffs.is_empty() || r.dead);
         assert!(hurt_or_gone);
+    }
+
+    fn wound(w: &mut World, id: u32, part: crate::health::Part, amount: f32, kind: crate::health::DamageKind) {
+        let i = w.pawn_index(id).unwrap();
+        let mut rng = Rng::new(99);
+        w.pawns[i].health.injure(part, amount, kind, &mut rng);
+        w.pawns[i].health.recompute();
+    }
+
+    #[test]
+    fn doctor_tends_a_wounded_colonist_with_medicine() {
+        use crate::health::{DamageKind, Part};
+        let mut w = test_world(20, 20);
+        let doctor = colonist(&mut w, (2, 2));
+        let patient = colonist(&mut w, (10, 10));
+        w.set_priority(patient, WorkType::Doctor, 0);
+        let med = w.map.idx((5, 5));
+        w.map.items[med] = Some(Stack { kind: ItemKind::Medicine, count: 2 });
+        wound(&mut w, patient, Part::LeftLeg, 10.0, DamageKind::Gunshot);
+        run(&mut w, 25.0);
+        let p = w.pawn(patient).unwrap();
+        assert!(!p.health.needs_tending(), "patient should have been tended");
+        assert_eq!(p.health.bleed_rate(), 0.0);
+        assert_eq!(w.map.count_items(ItemKind::Medicine), 1);
+        assert!(w.pawn(doctor).unwrap().job.map_or(true, |j| !matches!(j, Job::Tend { .. })));
+    }
+
+    #[test]
+    fn downed_colonists_are_carried_to_bed() {
+        use crate::health::{DamageKind, Part};
+        let mut w = test_world(20, 20);
+        colonist(&mut w, (2, 2));
+        let patient = colonist(&mut w, (12, 12));
+        w.set_priority(patient, WorkType::Doctor, 0);
+        let bed = w.map.idx((4, 15));
+        w.map.feature[bed] = Feature::Bed;
+        // Both legs gone: conscious, but unable to walk.
+        wound(&mut w, patient, Part::LeftLeg, 100.0, DamageKind::Bruise);
+        wound(&mut w, patient, Part::RightLeg, 100.0, DamageKind::Bruise);
+        run(&mut w, 30.0);
+        let p = w.pawn(patient).unwrap();
+        assert!(p.downed);
+        assert_eq!(p.pos, (4, 15), "patient should be in the bed");
+    }
+
+    #[test]
+    fn a_lone_doctor_treats_themselves() {
+        use crate::health::{DamageKind, Part};
+        let mut w = test_world(20, 20);
+        let id = colonist(&mut w, (5, 5));
+        wound(&mut w, id, Part::LeftArm, 6.0, DamageKind::Cut);
+        run(&mut w, 15.0);
+        assert!(!w.pawn(id).unwrap().health.needs_tending());
     }
 
     #[test]
