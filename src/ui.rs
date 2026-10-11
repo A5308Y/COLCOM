@@ -1,7 +1,8 @@
 //! Input handling and the immediate-mode interface around the map.
 
+use crate::art::{draw_head, pawn_look, Look};
 use crate::camera::View;
-use crate::render::{draw_world, rgb};
+use crate::render::draw_world;
 use macroquad::prelude::*;
 use my_world::map::{BuildKind, Desig, Feature, ItemKind, Pos, Zone};
 use my_world::pawn::{Faction, Skill, WorkType};
@@ -473,18 +474,18 @@ impl App {
     }
 
     fn draw_colonist_bar(&mut self) {
-        let cards: Vec<(u32, String, f32, String, bool, bool, Color)> = self
+        let cards: Vec<(u32, String, f32, String, bool, bool, Look)> = self
             .world
             .pawns
             .iter()
             .filter(|p| p.is_colonist())
             .map(|p| {
                 let trouble = p.downed || p.hunger <= 0.0 || p.break_timer > 0.0;
-                (p.id, p.name.clone(), p.mood, p.status(), p.drafted, trouble || p.dead, rgb(p.color))
+                (p.id, p.name.clone(), p.mood, p.status(), p.drafted, trouble || p.dead, pawn_look(p))
             })
             .collect();
         let mut x = 8.0;
-        for (id, name, mood, status, drafted, trouble, color) in cards {
+        for (id, name, mood, status, drafted, trouble, look) in cards {
             let r = Rect::new(x, 8.0, 124.0, 40.0);
             let selected = self.selected == Some(Selection::Pawn(id));
             self.panel(r);
@@ -495,8 +496,8 @@ impl App {
             } else if trouble {
                 draw_rectangle_lines(r.x, r.y, r.w, r.h, 2.0, RED);
             }
-            draw_circle(r.x + 10.0, r.y + 11.0, 5.0, color);
-            draw_text(&name, r.x + 20.0, r.y + 16.0, 16.0, WHITE);
+            draw_head(r.x + 12.0, r.y + 11.0, 36.0, &look, 1.0, 1.0);
+            draw_text(&name, r.x + 24.0, r.y + 16.0, 16.0, WHITE);
             bar(r.x + 6.0, r.y + 21.0, r.w - 12.0, mood / 100.0, mood_color(mood));
             draw_text(&status, r.x + 6.0, r.y + 37.0, 13.0, LIGHTGRAY);
             if mouse_in(r) && is_mouse_button_pressed(MouseButton::Left) {
