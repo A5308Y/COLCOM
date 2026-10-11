@@ -5,6 +5,7 @@
 //! every chunk is compared with the last one, and only changed chunks are
 //! rebuilt.
 
+use super::input::UiState;
 use super::look::*;
 use super::sim::Sim;
 use bevy::asset::RenderAssetUsages;
@@ -17,6 +18,8 @@ const CHUNK: usize = 16;
 pub const LEVEL_H: f32 = 1.0;
 /// Water surfaces sit a little below the top of their cell.
 const WATER_DIP: f32 = 0.12;
+/// Thickness of a built floor slab.
+pub const FLOOR_T: f32 = 0.08;
 
 /// What a cell looks like to the mesher.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -28,7 +31,11 @@ enum Look3 {
     Water,
 }
 
-fn look_at(m: &Map, p: Pos) -> Look3 {
+/// How a cell looks with everything above level `cut` hidden (layer view).
+fn look_at(m: &Map, p: Pos, cut: usize) -> Look3 {
+    if p.2 > cut {
+        return Look3::Open;
+    }
     let i = m.idx(p);
     match (m.block[i], m.feature[i]) {
         (Block::Soil, _) => Look3::Soil,
@@ -69,8 +76,15 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>
     commands.insert_resource(Chunks { generation: u64::MAX, cols: 0, rows: 0, sigs: Vec::new(), entities: Vec::new(), material });
 }
 
-fn update_chunks(mut commands: Commands, sim: Res<Sim>, chunks: ResMut<Chunks>, mut meshes: ResMut<Assets<Mesh>>) {
+fn update_chunks(
+    mut commands: Commands,
+    sim: Res<Sim>,
+    ui: Res<UiState>,
+    chunks: ResMut<Chunks>,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
     let m = &sim.world.map;
+    let cut = ui.top_level(m);
     let chunks = chunks.into_inner();
     let (cols, rows) = (m.w.div_ceil(CHUNK), m.h.div_ceil(CHUNK));
     if chunks.generation != sim.generation || chunks.cols != cols || chunks.rows != rows {
@@ -86,12 +100,12 @@ fn update_chunks(mut commands: Commands, sim: Res<Sim>, chunks: ResMut<Chunks>, 
     for cy in 0..rows {
         for cx in 0..cols {
             let ci = cy * cols + cx;
-            let sig = signature(m, cx, cy);
+            let sig = signature(m, cx, cy, cut);
             if sig == chunks.sigs[ci] {
                 continue;
             }
             chunks.sigs[ci] = sig;
-            let mesh = meshes.add(build_chunk(m, cx, cy));
+            let mesh = meshes.add(build_chunk(m, cx, cy, cut));
             match chunks.entities[ci] {
                 Some(e) => {
                     commands.entity(e).insert(Mesh3d(mesh));
@@ -113,10 +127,11 @@ fn blood_level(m: &Map, i: usize) -> u8 {
 
 /// Everything that affects a chunk's mesh, including a one-column border
 /// (neighbouring cells decide which faces are visible).
-fn signature(m: &Map, cx: usize, cy: usize) -> u64 {
+fn signature(m: &Map, cx: usize, cy: usize, cut: usize) -> u64 {
     // FNV-1a over small codes: cheap enough to run on every chunk every frame.
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     let mut mix = |v: u8| h = (h ^ v as u64).wrapping_mul(0x0000_0100_0000_01b3);
+    mix(cut as u8);
     let x0 = (cx * CHUNK).saturating_sub(1);
     let y0 = (cy * CHUNK).saturating_sub(1);
     let x1 = ((cx + 1) * CHUNK + 1).min(m.w);
@@ -125,11 +140,12 @@ fn signature(m: &Map, cx: usize, cy: usize) -> u64 {
         for y in y0..y1 {
             for x in x0..x1 {
                 let p = (x, y, z);
-                let look = look_at(m, p);
+                let look = look_at(m, p, cut);
                 mix(look as u8);
-                if look == Look3::Open {
-                    // Open cells colour the ground below them.
+                if look == Look3::Open && z <= cut {
+                    // Open cells colour the ground below them, or carry a floor.
                     let i = m.idx(p);
+                    mix(m.floor[i] as u8);
                     mix(m.zone[i] as u8);
                     mix(m.room.get(i).is_some_and(|&r| r != 0) as u8);
                     mix(blood_level(m, i));
@@ -223,21 +239,50 @@ fn ground_color(m: &Map, solid: Pos, look: Look3) -> Rgb {
     c
 }
 
-fn build_chunk(m: &Map, cx: usize, cy: usize) -> Mesh {
+/// Built floors: planks with whatever zone or blood is on them.
+fn floor_color(m: &Map, p: Pos) -> Rgb {
+    let i = m.idx(p);
+    let mut c = FLOOR.shade(0.9 + hash(p.0 as i32, p.1 as i32 + 57 * p.2 as i32, 9) * 0.1);
+    match m.zone[i] {
+        Zone::Stockpile => c = c.mix(STOCKPILE, 0.22),
+        Zone::Grow => c = c.mix(SOIL, 0.5),
+        Zone::None => {}
+    }
+    let blood = blood_level(m, i);
+    if blood > 0 {
+        c = c.mix(BLOOD, 0.22 * blood as f32);
+    }
+    c
+}
+
+fn build_chunk(m: &Map, cx: usize, cy: usize, cut: usize) -> Mesh {
     let mut b = MeshBuf::default();
-    let look_off = |x: i32, y: i32, z: i32| m.at(x, y, z).map(|p| look_at(m, p));
-    for z in 0..m.d {
+    let look_off = |x: i32, y: i32, z: i32| m.at(x, y, z).map(|p| look_at(m, p, cut));
+    for z in 0..=cut.min(m.d - 1) {
         for y in cy * CHUNK..((cy + 1) * CHUNK).min(m.h) {
             for x in cx * CHUNK..((cx + 1) * CHUNK).min(m.w) {
                 let p = (x, y, z);
-                let look = look_at(m, p);
-                if look == Look3::Open {
-                    continue;
-                }
+                let look = look_at(m, p, cut);
                 let (fx, fz) = (x as f32, y as f32);
                 let (xi, yi, zi) = (x as i32, y as i32, z as i32);
                 let (lo, hi) = (z as f32 * LEVEL_H, (z + 1) as f32 * LEVEL_H);
+                if look == Look3::Open {
+                    if m.floor[m.idx(p)] {
+                        let top = lo + FLOOR_T;
+                        b.flat(fx, fz, top, Vec3::Y, floor_color(m, p));
+                        b.flat(fx, fz, lo, Vec3::NEG_Y, FLOOR.shade(0.6));
+                        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                            let edge = m.at(xi + dx, yi + dz, zi).is_none_or(|q| !m.floor[m.idx(q)]);
+                            if edge && !look_off(xi + dx, yi + dz, zi).is_some_and(|l| l.opaque()) {
+                                b.side(fx, fz, dx, dz, lo, top, FLOOR.shade(0.7));
+                            }
+                        }
+                    }
+                    continue;
+                }
                 let above = look_off(xi, yi, zi + 1);
+                // Cut open by the layer view: show the cross-section darker.
+                let sliced = z == cut && m.above(p).is_some_and(|a| look_at(m, a, usize::MAX).opaque());
 
                 if look == Look3::Water {
                     // Only the surface, where open air meets it.
@@ -255,7 +300,7 @@ fn build_chunk(m: &Map, cx: usize, cy: usize) -> Mesh {
                     _ => (ground_color(m, p, look), SOIL.shade(0.78 * tone)),
                 };
                 if !above.is_some_and(|a| a.opaque()) {
-                    b.flat(fx, fz, hi, Vec3::Y, top);
+                    b.flat(fx, fz, hi, Vec3::Y, if sliced { top.shade(0.55) } else { top });
                 }
                 if z > 0 && !look_off(xi, yi, zi - 1).is_some_and(|l| l.opaque()) {
                     // Ceiling of a cave or overhang.

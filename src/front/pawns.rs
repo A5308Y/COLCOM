@@ -1,6 +1,8 @@
 //! Colonists and raiders as small 3D figures kept in sync with the simulation.
 
+use super::input::UiState;
 use super::look::*;
+use super::terrain::FLOOR_T;
 use super::props::{lit, PropAssets};
 use super::sim::Sim;
 use super::tile_point;
@@ -131,6 +133,7 @@ fn lerp_angle(a: f32, b: f32, t: f32) -> f32 {
 fn sync_pawns(
     mut commands: Commands,
     sim: Res<Sim>,
+    ui: Res<UiState>,
     time: Res<Time>,
     visuals: ResMut<PawnVisuals>,
     assets: Res<PawnAssets>,
@@ -179,7 +182,9 @@ fn sync_pawns(
         }
         let lying = p.dead || p.lying();
         let in_bed = lying && !p.dead && m.feature[m.idx(p.pos)] == Feature::Bed;
-        let base = tile_point(p.x, p.y, p.z);
+        // Standing on a built floor slab rather than the cell's bottom.
+        let on_slab = m.floor[m.idx(p.pos)] && (p.z - p.pos.2 as f32).abs() < 0.01;
+        let base = tile_point(p.x, p.y, p.z) + Vec3::Y * if on_slab { FLOOR_T } else { 0.0 };
         let root_tf = if lying {
             // Model is upright along +Y; tip it over so the head points along -Z (towards a bed's pillow).
             let yaw = if in_bed { 0.0 } else { v.yaw };
@@ -193,6 +198,9 @@ fn sync_pawns(
         };
         if let Ok(mut tf) = transforms.get_mut(v.root) {
             *tf = root_tf;
+        }
+        if let Ok(mut vis) = visibility.get_mut(v.root) {
+            *vis = if ui.shows(m, p.z) { Visibility::Inherited } else { Visibility::Hidden };
         }
 
         // Weapon in hand when fighting or drafted.

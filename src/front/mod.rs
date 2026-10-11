@@ -16,6 +16,8 @@ use bevy::prelude::*;
 use my_world::map::Pos;
 
 #[cfg(test)]
+pub use input::UiState;
+#[cfg(test)]
 pub use sim::Sim;
 
 pub struct FrontPlugin;

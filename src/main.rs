@@ -68,5 +68,27 @@ mod tests {
         // Terrain chunks, trees, items and pawns all become meshes.
         let meshes = app.world_mut().query::<&Mesh3d>().iter(app.world()).count();
         assert!(meshes > 1000, "only {} meshes in the scene", meshes);
+
+        // Build a floor and stairs by hand, then look at them in the layer view.
+        {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            let m = &mut sim.world.map;
+            let (cx, cy) = (m.w / 2, m.h / 2);
+            let z = m.surface(cx, cy).unwrap();
+            let stairs = m.idx((cx + 3, cy, z));
+            m.feature[stairs] = my_world::map::Feature::Stairs;
+            for x in cx + 3..cx + 7 {
+                let i = m.idx((x, cy, z + 1));
+                m.set_floor(i, true);
+            }
+        }
+        app.world_mut().resource_mut::<front::UiState>().view_level = Some(5);
+        for _ in 0..30 {
+            app.update();
+        }
+        app.world_mut().resource_mut::<front::UiState>().view_level = None;
+        for _ in 0..10 {
+            app.update();
+        }
     }
 }

@@ -14,16 +14,20 @@ use my_world::map::{Block, Feature, ItemKind, Pos, Zone};
 use my_world::pawn::{Pawn, Skill, WorkType};
 use my_world::DAY_LEN;
 
-const HELP: [&str; 19] = [
+const HELP: [&str; 23] = [
     "You don't control colonists directly - you give orders and they pick up the work.",
     "",
     "1-3   Designate trees to chop, rock/structures to mine, berry bushes to forage",
     "4/5   Paint stockpile zones (items get hauled there) and grow zones (crops)",
     "6-8   Place walls (4 stone), doors (4 wood), beds (8 wood); colonists haul materials",
+    "-/=   Floors (2 wood) and stairs (6 wood). Floors need a wall, stairs or ground below within 3 cells.",
+    "      Use the layer view to place floors in mid-air: PageDown/PageUp (or [ and ]).",
     "9/0   Clear zones / cancel designations and blueprints",
     "      Left-drag to paint a rectangle. Right-click goes back to Select.",
     "",
-    "Enclosed rooms get a roof (wooden floor). Sleeping in a bed indoors makes colonists happier.",
+    "A room needs walls and a roof: build floors on top. Sleeping in a roofed bedroom makes colonists happier.",
+    "Mining also digs soil and removes floors. Dig straight down to sink a shaft; put stairs in it.",
+    "Anything left with nothing underneath falls - more than one level hurts.",
     "Wounds bleed and can get infected. Doctors (see P) rescue downed colonists to a bed",
     "and tend them - better with medicine and skill. Click a colonist, then Health for details.",
     "Raids come every few days: press F to draft the selected colonist (or everyone).",
@@ -53,7 +57,8 @@ fn draw_ui(
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
     let (cam, gt) = *camera;
-    overlay::draw(&ctx, &sim.world, cam, gt, rig.distance);
+    let cut = st.top_level(&sim.world.map);
+    overlay::draw(&ctx, &sim.world, cam, gt, rig.distance, cut);
 
     hud(&ctx, &mut sim, &mut st, &mut rig);
     colonist_bar(&ctx, &sim, &mut st);
@@ -147,6 +152,21 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 }
             });
             ui.horizontal(|ui| {
+                let view = match st.view_level {
+                    Some(l) => format!("Viewing level {} of {}", l, sim.world.map.d - 1),
+                    None => "Viewing all levels".to_string(),
+                };
+                ui.label(RichText::new(view).strong());
+                if ui.button("Down (PgDn / [)").clicked() {
+                    input::level_down(sim, st, rig);
+                }
+                if ui.button("Up (PgUp / ])").clicked() {
+                    input::level_up(sim, st);
+                }
+                if st.view_level.is_some() && ui.button("Show all").clicked() {
+                    st.view_level = None;
+                }
+                ui.separator();
                 if ui.add(egui::Button::new("Work (P)").selected(st.show_work)).clicked() {
                     st.show_work = !st.show_work;
                 }
@@ -383,6 +403,9 @@ fn tile_inspector(ctx: &egui::Context, sim: &Sim, t: Pos) {
                 }
             };
             ui.label(what);
+            if m.floor[i] {
+                ui.label("Built floor");
+            }
             if m.covered(t) && !m.roofed(t) {
                 ui.label("Covered overhead");
             }

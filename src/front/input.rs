@@ -3,7 +3,7 @@
 
 use super::camera::{colony_center, CameraRig, DragTracker, MainCamera};
 use super::sim::{seed, Sim};
-use super::terrain::LEVEL_H;
+use super::terrain::{FLOOR_T, LEVEL_H};
 use super::{tile_center, tile_point};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
@@ -21,7 +21,7 @@ pub enum Tool {
     Paint(Order),
 }
 
-pub const TOOLS: [(Tool, &str, KeyCode); 11] = [
+pub const TOOLS: [(Tool, &str, KeyCode); 13] = [
     (Tool::Select, "Esc Select", KeyCode::Escape),
     (Tool::Paint(Order::Desig(Desig::Chop)), "1 Chop", KeyCode::Digit1),
     (Tool::Paint(Order::Desig(Desig::Mine)), "2 Mine", KeyCode::Digit2),
@@ -31,6 +31,8 @@ pub const TOOLS: [(Tool, &str, KeyCode); 11] = [
     (Tool::Paint(Order::Build(BuildKind::Wall)), "6 Wall", KeyCode::Digit6),
     (Tool::Paint(Order::Build(BuildKind::Door)), "7 Door", KeyCode::Digit7),
     (Tool::Paint(Order::Build(BuildKind::Bed)), "8 Bed", KeyCode::Digit8),
+    (Tool::Paint(Order::Build(BuildKind::Floor)), "- Floor", KeyCode::Minus),
+    (Tool::Paint(Order::Build(BuildKind::Stairs)), "= Stairs", KeyCode::Equal),
     (Tool::Paint(Order::Zone(Zone::None)), "9 Clear zone", KeyCode::Digit9),
     (Tool::Paint(Order::Cancel), "0 Cancel", KeyCode::Digit0),
 ];
@@ -60,6 +62,20 @@ pub struct UiState {
     pub show_work: bool,
     pub show_help: bool,
     pub inspector_health: bool,
+    /// Layer view: hide everything above this level (None = show all).
+    pub view_level: Option<usize>,
+}
+
+impl UiState {
+    /// Highest level being shown.
+    pub fn top_level(&self, m: &Map) -> usize {
+        self.view_level.unwrap_or(m.d - 1).min(m.d - 1)
+    }
+
+    /// Whether something at (fractional) level `z` is visible in the layer view.
+    pub fn shows(&self, m: &Map, z: f32) -> bool {
+        z < self.top_level(m) as f32 + 0.5
+    }
 }
 
 pub struct InputPlugin;
@@ -74,6 +90,7 @@ impl Plugin for InputPlugin {
             show_work: false,
             show_help: false,
             inspector_health: false,
+            view_level: None,
         })
         .add_systems(
             Update,
@@ -97,8 +114,11 @@ fn stops_ray(m: &Map, p: Pos) -> bool {
     m.block[i] != Block::Air || m.feature[i] == Feature::Wall
 }
 
-/// Step along the camera ray until it enters something solid.
-fn pick(m: &Map, ray: Ray3d) -> Option<Hover> {
+/// Step along the camera ray until it enters something solid, ignoring
+/// levels above `cut` (layer view). With a layer view, empty air on the
+/// viewed level can be picked too, so floors can be placed there.
+fn pick(m: &Map, ray: Ray3d, cut: usize) -> Option<Hover> {
+    let layered = cut + 1 < m.d;
     let (o, d) = (ray.origin, *ray.direction);
     let top = m.d as f32 * LEVEL_H;
     // Start where the ray comes down to the top of the world, end below the bottom.
@@ -116,6 +136,15 @@ fn pick(m: &Map, ray: Ray3d) -> Option<Hover> {
     for k in 0..=steps {
         let p = o + d * (t0 + k as f32 * step);
         let Some(cell) = m.at(p.x.floor() as i32, p.z.floor() as i32, (p.y / LEVEL_H).floor() as i32) else { continue };
+        if cell.2 > cut {
+            continue;
+        }
+        let i = m.idx(cell);
+        let in_slab = p.y - cell.2 as f32 * LEVEL_H < FLOOR_T * 2.0;
+        if (m.floor[i] && in_slab) || (layered && cell.2 == cut && !stops_ray(m, cell)) {
+            // On a floor, or on the open plane of the viewed level.
+            return Some(Hover { solid: m.below(cell).unwrap_or(cell), stand: cell });
+        }
         if stops_ray(m, cell) {
             let stand = m.above(cell).unwrap_or(cell);
             return Some(Hover { solid: cell, stand });
@@ -143,7 +172,8 @@ fn update_hover(
     let (cam, gt) = *camera;
     let Some(cursor) = window.cursor_position() else { return };
     let Ok(ray) = cam.viewport_to_world(gt, cursor) else { return };
-    if let Some(h) = pick(&sim.world.map, ray) {
+    let cut = ui.top_level(&sim.world.map);
+    if let Some(h) = pick(&sim.world.map, ray, cut) {
         ui.hover = Some(h);
     }
 }
@@ -211,6 +241,24 @@ pub fn new_colony(sim: &mut Sim, ui: &mut UiState, rig: &mut CameraRig) {
     rig.focus = colony_center(sim);
 }
 
+/// Layer view one level lower; the first step starts at the ground under the camera.
+pub fn level_down(sim: &Sim, ui: &mut UiState, rig: &CameraRig) {
+    let m = &sim.world.map;
+    ui.view_level = Some(match ui.view_level {
+        None => ((rig.focus.y / LEVEL_H).round() as usize).clamp(1, m.d - 1),
+        Some(l) => l.saturating_sub(1).max(1),
+    });
+}
+
+/// Layer view one level higher; past the top it shows everything again.
+pub fn level_up(sim: &Sim, ui: &mut UiState) {
+    let top = sim.world.map.d - 1;
+    ui.view_level = match ui.view_level {
+        Some(l) if l + 1 < top => Some(l + 1),
+        _ => None,
+    };
+}
+
 pub fn center_on_selection(sim: &Sim, ui: &UiState, rig: &mut CameraRig) {
     rig.focus = match ui.selected {
         Some(Selection::Pawn(id)) => match sim.world.pawn(id) {
@@ -244,6 +292,12 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
     }
     if keys.just_pressed(KeyCode::KeyP) {
         ui.show_work = !ui.show_work;
+    }
+    if keys.any_just_pressed([KeyCode::PageDown, KeyCode::BracketLeft]) {
+        level_down(&sim, &mut ui, &rig);
+    }
+    if keys.any_just_pressed([KeyCode::PageUp, KeyCode::BracketRight]) {
+        level_up(&sim, &mut ui);
     }
     if keys.just_pressed(KeyCode::KeyH) {
         ui.show_help = !ui.show_help;
@@ -361,11 +415,15 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
     let w = &sim.world;
     let m = &w.map;
 
+    let cut = ui.top_level(m);
     for i in 0..m.len() {
         let Some(d) = m.desig[i] else { continue };
         let p = m.pos(i);
+        if p.2 > cut {
+            continue;
+        }
         match d {
-            Desig::Mine if m.block[i] == Block::Rock => cell_outline(&mut gizmos, p, Color::srgb(0.45, 0.8, 1.0)),
+            Desig::Mine if m.block[i].solid() => cell_outline(&mut gizmos, p, Color::srgb(0.45, 0.8, 1.0)),
             Desig::Mine => floor_outline(&mut gizmos, p, 0.12, Color::srgb(0.45, 0.8, 1.0)),
             Desig::Chop => floor_outline(&mut gizmos, p, 0.12, Color::srgb(1.0, 0.6, 0.1)),
             Desig::Forage => floor_outline(&mut gizmos, p, 0.12, Color::srgb(1.0, 0.5, 0.75)),
@@ -396,7 +454,7 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
         gizmos.rect(Isometry3d::new(c, Quat::from_rotation_x(FRAC_PI_2)), size, Color::WHITE);
     }
 
-    for p in w.pawns.iter().filter(|p| !p.left && !p.dead) {
+    for p in w.pawns.iter().filter(|p| !p.left && !p.dead && ui.shows(m, p.z)) {
         let feet = Isometry3d::new(tile_point(p.x, p.y, p.z) + Vec3::Y * 0.03, Quat::from_rotation_x(FRAC_PI_2));
         if ui.selected == Some(Selection::Pawn(p.id)) {
             gizmos.circle(feet, 0.48, Color::WHITE);

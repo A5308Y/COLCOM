@@ -22,7 +22,8 @@ fn bar(painter: &egui::Painter, center: Pos2, width: f32, frac: f32, fill: Color
     painter.rect_filled(inner, 1.0, fill);
 }
 
-pub fn draw(ctx: &egui::Context, w: &SimWorld, cam: &Camera, gt: &GlobalTransform, distance: f32) {
+/// `cut` is the highest level shown (layer view); anything above is skipped.
+pub fn draw(ctx: &egui::Context, w: &SimWorld, cam: &Camera, gt: &GlobalTransform, distance: f32, cut: usize) {
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("world_overlay")));
     let screen = ctx.viewport_rect();
     let to_screen = |p: Vec3| {
@@ -30,7 +31,7 @@ pub fn draw(ctx: &egui::Context, w: &SimWorld, cam: &Camera, gt: &GlobalTransfor
     };
     let m = &w.map;
 
-    for p in w.pawns.iter().filter(|p| !p.left) {
+    for p in w.pawns.iter().filter(|p| !p.left && p.z < cut as f32 + 0.5) {
         let base = tile_point(p.x, p.y, p.z);
         let lying = p.dead || p.lying();
         let Some(top) = to_screen(base + Vec3::Y * if lying { 0.7 } else { 1.15 }) else { continue };
@@ -71,6 +72,9 @@ pub fn draw(ctx: &egui::Context, w: &SimWorld, cam: &Camera, gt: &GlobalTransfor
     if distance < 24.0 {
         for i in 0..m.len() {
             let pos = m.pos(i);
+            if pos.2 > cut {
+                continue;
+            }
             let c = tile_center(pos) + Vec3::Y * 0.45;
             if let Some(s) = m.items[i] {
                 if let Some(sp) = to_screen(c) {

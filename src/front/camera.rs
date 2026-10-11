@@ -2,6 +2,7 @@
 //!
 //! WASD/arrows pan, Q/E rotate, wheel zooms, right-drag orbits, middle-drag pans.
 
+use super::input::UiState;
 use super::sim::Sim;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
 use bevy::prelude::*;
@@ -145,6 +146,7 @@ fn mouse_controls(
 
 fn apply_rig(
     sim: Res<Sim>,
+    ui: Res<UiState>,
     time: Res<Time>,
     mut rig: ResMut<CameraRig>,
     mut camera: Single<&mut Transform, With<MainCamera>>,
@@ -153,7 +155,10 @@ fn apply_rig(
     rig.focus.x = rig.focus.x.clamp(0.0, m.w as f32 - 0.01);
     rig.focus.z = rig.focus.z.clamp(0.0, m.h as f32 - 0.01);
     // Glide up and down with the ground under the focus point.
-    let ground = m.surface(rig.focus.x as usize, rig.focus.z as usize).map_or(0.0, |z| z as f32 * super::terrain::LEVEL_H);
+    // (In the layer view, never above the viewed level.)
+    let (fx, fz) = (rig.focus.x as usize, rig.focus.z as usize);
+    let level = m.surface(fx, fz).unwrap_or(0).min(ui.top_level(m));
+    let ground = level as f32 * super::terrain::LEVEL_H;
     let k = (time.delta_secs() * 4.0).min(1.0);
     rig.focus.y += (ground - rig.focus.y) * k;
     **camera = rig.transform();

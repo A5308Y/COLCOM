@@ -244,6 +244,9 @@ impl World {
         if self.map.rooms_dirty {
             self.map.recompute_rooms();
         }
+        if self.map.support_dirty {
+            self.settle_unsupported();
+        }
         self.grow_plants(dt);
         self.storyteller_tick();
         let fade = dt / (1.5 * DAY_LEN);
@@ -295,10 +298,53 @@ impl World {
         }
     }
 
+    /// Items drop to the next support; plants that lost their ground die.
+    fn settle_unsupported(&mut self) {
+        self.map.support_dirty = false;
+        for i in 0..self.map.len() {
+            let p = self.map.pos(i);
+            if p.2 == 0 || self.map.block[i] != Block::Air || self.map.supported(p) {
+                continue;
+            }
+            if matches!(self.map.feature[i], Feature::Tree | Feature::Bush | Feature::Crop { .. }) {
+                self.map.set_feature(i, Feature::None);
+            }
+            if let Some(s) = self.map.items[i].take() {
+                let land = self.map.landing(p);
+                self.map.drop_item(land, s);
+            }
+        }
+    }
+
+    /// A pawn left standing on nothing drops to the next support. Falls of
+    /// two levels or more hurt.
+    fn fall_if_unsupported(&mut self, p: &mut Pawn) {
+        let i = self.map.idx(p.pos);
+        if p.pos.2 == 0 || self.map.block[i] != Block::Air || self.map.supported(p.pos) {
+            return;
+        }
+        let land = self.map.landing(p.pos);
+        let levels = p.pos.2 - land.2;
+        p.pos = land;
+        p.x = land.0 as f32;
+        p.y = land.1 as f32;
+        p.z = land.2 as f32;
+        p.path.clear();
+        p.path_goal = None;
+        if levels >= 2 {
+            for _ in 0..levels - 1 {
+                p.health.apply_damage(7.0, crate::health::DamageKind::Bruise, &mut self.rng);
+            }
+            p.health.recompute();
+            self.push_log(format!("{} fell {} levels.", p.name, levels));
+        }
+    }
+
     fn update_pawn(&mut self, p: &mut Pawn, dt: f32) {
         if p.dead || p.left {
             return;
         }
+        self.fall_if_unsupported(p);
         p.cooldown = (p.cooldown - dt).max(0.0);
         self.update_health(p, dt);
         if p.dead {
@@ -578,10 +624,14 @@ impl World {
         let f = m.feature[i];
         match order {
             Order::Desig(Desig::Chop) => f == Feature::Tree,
-            Order::Desig(Desig::Mine) => m.block[i] == Block::Rock || f.built_from().is_some(),
+            Order::Desig(Desig::Mine) => m.mineable(p),
             Order::Desig(Desig::Forage) => f == Feature::Bush,
             Order::Zone(Zone::None) => m.zone[i] != Zone::None,
             Order::Zone(_) => m.standable(p) && matches!(f, Feature::None | Feature::Crop { .. }),
+            Order::Build(BuildKind::Floor) => m.floor_buildable(p),
+            Order::Build(BuildKind::Stairs) => {
+                m.standable(p) && f == Feature::None && m.above(p).is_some_and(|a| m.block[m.idx(a)] == Block::Air)
+            }
             Order::Build(_) => m.standable(p) && f == Feature::None,
             Order::Cancel => m.desig[i].is_some() || matches!(f, Feature::Blueprint { .. }),
         }
@@ -953,6 +1003,104 @@ mod tests {
         for p in w.pawns.iter().filter(|p| !p.dead) {
             assert!(w.map.standable(p.pos) || p.path.is_empty(), "{} is somewhere sensible", p.name);
         }
+    }
+
+    /// A test world on soil `ground` levels deep, `d` levels in total.
+    fn deep_world(w: usize, h: usize, d: usize, ground: usize) -> World {
+        let mut m = Map::empty(w, h, d);
+        for y in 0..h {
+            for x in 0..w {
+                for z in 0..ground {
+                    let i = m.idx((x, y, z));
+                    m.block[i] = Block::Soil;
+                }
+            }
+        }
+        m.recompute_rooms();
+        let mut world = World::with_map(m, Rng::new(7));
+        world.story.next_raid = f32::MAX;
+        world.story.next_event = f32::MAX;
+        world.regrow_timer = f32::MAX;
+        world
+    }
+
+    #[test]
+    fn digging_down_drops_whoever_stands_there() {
+        let mut w = deep_world(12, 12, 6, 3);
+        let digger = colonist(&mut w, (2, 2, 3));
+        let bystander = colonist(&mut w, (6, 6, 3));
+        w.set_priority(bystander, WorkType::Mining, 0);
+        // Keep the bystander standing still on the spot being dug out.
+        w.set_drafted(bystander, true);
+        assert!(w.apply_order((6, 6, 2), Order::Desig(Desig::Mine)), "soil can be dug");
+        run(&mut w, 30.0);
+        assert_eq!(w.map.block[w.map.idx((6, 6, 2))], Block::Air);
+        assert_eq!(w.pawn(bystander).unwrap().pos, (6, 6, 2), "fell into the hole");
+        assert!(w.pawn(digger).is_some());
+    }
+
+    #[test]
+    fn long_falls_hurt() {
+        let mut w = deep_world(8, 8, 8, 1);
+        let ledge = w.map.idx((4, 4, 5));
+        w.map.floor[ledge] = true;
+        let id = colonist(&mut w, (4, 4, 5));
+        w.set_drafted(id, true);
+        let i = w.map.idx((4, 4, 5));
+        w.map.set_floor(i, false);
+        run(&mut w, 0.5);
+        let p = w.pawn(id).unwrap();
+        assert_eq!(p.pos, (4, 4, 1));
+        assert!(!p.health.hediffs.is_empty(), "a four-level fall should bruise");
+    }
+
+    #[test]
+    fn colonists_roof_a_room_from_inside() {
+        let mut w = test_world(16, 16);
+        colonist(&mut w, (7, 7, Z));
+        for y in 5..=9 {
+            for x in 5..=9 {
+                if x == 5 || x == 9 || y == 5 || y == 9 {
+                    let i = w.map.idx((x, y, Z));
+                    w.map.set_feature(i, if (x, y) == (5, 7) { Feature::Door } else { Feature::Wall });
+                }
+            }
+        }
+        w.map.recompute_rooms();
+        assert!(!w.map.roofed((7, 7, Z)));
+        let mut placed = 0;
+        for y in 5..=9 {
+            for x in 5..=9 {
+                placed += w.apply_order((x, y, Z + 1), Order::Build(BuildKind::Floor)) as usize;
+            }
+        }
+        assert_eq!(placed, 25, "every cell over the room has wall support nearby");
+        w.map.drop_item((7, 7, Z), Stack { kind: ItemKind::Wood, count: 50 });
+        run(&mut w, 120.0);
+        let built = (5..=9).flat_map(|y| (5..=9).map(move |x| (x, y))).filter(|&(x, y)| w.map.floor[w.map.idx((x, y, Z + 1))]).count();
+        assert_eq!(built, 25, "all floors built");
+        assert!(w.map.roofed((7, 7, Z)), "now it's a room");
+    }
+
+    #[test]
+    fn stairs_lead_to_an_upper_floor() {
+        let mut w = test_world(16, 4);
+        colonist(&mut w, (1, 1, Z));
+        let stairs = w.map.idx((4, 1, Z));
+        w.map.feature[stairs] = Feature::Stairs;
+        for x in 4..12 {
+            let i = w.map.idx((x, 1, Z + 1));
+            w.map.floor[i] = true;
+        }
+        for x in 1..4 {
+            let i = w.map.idx((x, 2, Z));
+            w.map.zone[i] = Zone::Stockpile;
+        }
+        let src = w.map.idx((11, 1, Z + 1));
+        w.map.items[src] = Some(Stack { kind: ItemKind::Stone, count: 10 });
+        run(&mut w, 30.0);
+        assert!(w.map.items[src].is_none(), "fetched from upstairs");
+        assert_eq!(w.map.count_items(ItemKind::Stone), 10);
     }
 
     #[test]

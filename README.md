@@ -22,6 +22,8 @@ according to their **work priorities** (press `P`).
 | `1` / `2` / `3` | Designate trees to chop / rock or structures to mine / berry bushes to forage |
 | `4` / `5` | Stockpile zone (loose items get hauled there) / grow zone (crops get planted) |
 | `6` / `7` / `8` | Blueprint a wall (4 stone) / door (4 wood) / bed (8 wood) |
+| `-` / `=` | Blueprint a floor (2 wood) / stairs (6 wood) |
+| `PageDown` / `PageUp` (or `[` / `]`) | Layer view: hide everything above a level, and build on that level |
 | `9` / `0` | Clear zones / cancel designations and blueprints (refunds materials) |
 | `Esc` | Select tool: click colonists or tiles to inspect them |
 | Left drag | Paint the current tool over a rectangle |
@@ -56,10 +58,13 @@ according to their **work priorities** (press `P`).
   patients. Wounded or sick colonists go to bed on their own. A lone doctor tends their own wounds. Click a
   colonist and open the **Health** tab for the full picture.
 - **Terrain:** the world is a 3D grid of soil, rock and water, 16 levels deep, with rolling hills, lakes and
-  rocky mountains. Pawns walk up and down one-level slopes but can't climb cliffs or walls. Mining rock
-  digs tunnels into mountains.
-- **Rooms:** areas fully enclosed by walls, doors or rock get a roof (shown as a wooden floor). Sleeping
-  in a bed indoors gives a mood bonus.
+  rocky mountains. Pawns walk up and down one-level slopes of natural ground but can't climb cliffs,
+  walls or floors. Mining digs tunnels into rock and shafts down through soil.
+- **Building upwards:** floors make upper storeys and roofs; each needs a wall, stairs or ground beneath
+  some cell within 3 steps. Stairs connect a cell to the one above. Use the layer view to place floors in
+  mid-air. Pawns and items with nothing underneath fall, and falls of two levels or more hurt.
+- **Rooms:** areas enclosed by walls, doors or rock *and* covered overhead (by floors or rock) are rooms
+  (shown with a wooden floor). Sleeping in a bed in a room gives a mood bonus.
 - **Mood:** built from needs and memories (see the inspector). Low mood can cause mental breaks.
 - **Storyteller:** raids that grow with colony wealth and age, wanderers who join, cargo pods (sometimes
   medicine), flu outbreaks and crop blight.

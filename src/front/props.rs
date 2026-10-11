@@ -3,9 +3,10 @@
 //! Each frame the wanted object for every tile is compared with what is
 //! spawned; changed tiles get their entity replaced.
 
+use super::input::UiState;
 use super::look::*;
 use super::sim::Sim;
-use super::terrain::LEVEL_H as WALL_H;
+use super::terrain::{FLOOR_T, LEVEL_H as WALL_H};
 use super::tile_center;
 use bevy::prelude::*;
 use my_world::map::{BuildKind, Feature, ItemKind, Map, Pos};
@@ -19,6 +20,7 @@ enum PropKey {
     Crop { stage: u8 },
     Bed { owner: Option<u32> },
     Door { horizontal: bool, open: bool },
+    Stairs,
     Blueprint { kind: BuildKind },
 }
 
@@ -31,6 +33,8 @@ struct ItemKey {
 #[derive(Resource, Default)]
 struct Props {
     generation: Option<u64>,
+    /// Layer view level the visibilities were last set for.
+    view: Option<usize>,
     /// Spawned objects per cell (flat arrays: cheaper than maps when scanning every cell each frame).
     features: Vec<Option<(PropKey, Entity)>>,
     items: Vec<Option<(ItemKey, Entity)>>,
@@ -143,6 +147,7 @@ fn is_wallish(m: &Map, x: i32, y: i32, z: usize) -> bool {
 fn sync_props(
     mut commands: Commands,
     sim: Res<Sim>,
+    ui: Res<UiState>,
     props: ResMut<Props>,
     assets: Res<PropAssets>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -150,6 +155,8 @@ fn sync_props(
     let props = props.into_inner();
     let w = &sim.world;
     let m = &w.map;
+    let cut = ui.top_level(m);
+    let hidden = |pos: Pos| pos.2 > cut;
     if props.generation != Some(sim.generation) || props.features.len() != m.len() {
         for (_, e) in props.features.drain(..).flatten() {
             commands.entity(e).despawn();
@@ -160,6 +167,18 @@ fn sync_props(
         props.features = vec![None; m.len()];
         props.items = vec![None; m.len()];
         props.generation = Some(sim.generation);
+        props.view = None;
+    }
+
+    // Layer view changed: show or hide everything by level.
+    if props.view != Some(cut) {
+        for i in 0..m.len() {
+            let vis = if hidden(m.pos(i)) { Visibility::Hidden } else { Visibility::Inherited };
+            for e in [props.features[i].map(|f| f.1), props.items[i].map(|f| f.1)].into_iter().flatten() {
+                commands.entity(e).insert(vis);
+            }
+        }
+        props.view = Some(cut);
     }
 
     let mut owners: HashMap<Pos, (u32, [f32; 3])> = HashMap::new();
@@ -190,6 +209,7 @@ fn sync_props(
                 let horizontal = is_wallish(m, xi - 1, yi, pos.2) || is_wallish(m, xi + 1, yi, pos.2);
                 Some(PropKey::Door { horizontal, open })
             }
+            Feature::Stairs => Some(PropKey::Stairs),
             Feature::Blueprint { kind, .. } => Some(PropKey::Blueprint { kind }),
             Feature::None | Feature::Wall => None,
         };
@@ -206,7 +226,11 @@ fn sync_props(
                     }
                     _ => assets.blanket_free.clone(),
                 };
-                let e = spawn_feature(&mut commands, &assets, key, pos, blanket);
+                let lift = if m.floor[i] { FLOOR_T } else { 0.0 };
+                let e = spawn_feature(&mut commands, &assets, key, pos, lift, blanket);
+                if hidden(pos) {
+                    commands.entity(e).insert(Visibility::Hidden);
+                }
                 props.features[i] = Some((key, e));
             }
         }
@@ -218,7 +242,11 @@ fn sync_props(
                 commands.entity(e).despawn();
             }
             if let Some(key) = want_item {
-                let e = spawn_item(&mut commands, &assets, key, pos);
+                let lift = if m.floor[i] { FLOOR_T } else { 0.0 };
+                let e = spawn_item(&mut commands, &assets, key, pos, lift);
+                if hidden(pos) {
+                    commands.entity(e).insert(Visibility::Hidden);
+                }
                 props.items[i] = Some((key, e));
             }
         }
@@ -243,13 +271,15 @@ fn spawn_feature(
     a: &PropAssets,
     key: PropKey,
     pos: Pos,
+    lift: f32,
     blanket: Handle<StandardMaterial>,
 ) -> Entity {
+    let base = tile_center(pos) + Vec3::Y * lift;
     let (xi, yi) = (pos.0 as i32, pos.1 as i32);
     let natural = matches!(key, PropKey::Tree | PropKey::Bush | PropKey::Crop { .. });
     let yaw = if natural { hash(xi, yi, 22) * TAU } else { 0.0 };
     let mut root = commands.spawn((
-        Transform::from_translation(tile_center(pos)).with_rotation(Quat::from_rotation_y(yaw)),
+        Transform::from_translation(base).with_rotation(Quat::from_rotation_y(yaw)),
         Visibility::default(),
     ));
     match key {
@@ -309,7 +339,7 @@ fn spawn_feature(
         PropKey::Door { horizontal, open } => {
             // Modelled spanning X; rotated a quarter turn when the walls run along Z.
             root.insert(
-                Transform::from_translation(tile_center(pos))
+                Transform::from_translation(base)
                     .with_rotation(Quat::from_rotation_y(if horizontal { 0.0 } else { FRAC_PI_2 })),
             );
             root.with_children(|c| {
@@ -326,11 +356,23 @@ fn spawn_feature(
                 }
             });
         }
+        PropKey::Stairs => {
+            // Four steps rising to the floor of the level above.
+            root.with_children(|c| {
+                for k in 0..4 {
+                    let h = (k + 1) as f32 * WALL_H / 4.0;
+                    let at = Vec3::new(-0.375 + k as f32 * 0.25, h / 2.0, 0.0);
+                    c.spawn(part(&a.cube, &a.wood_light, at, Vec3::new(0.25, h, 0.9)));
+                }
+            });
+        }
         PropKey::Blueprint { kind } => {
             let (size, y) = match kind {
                 BuildKind::Wall => (Vec3::new(0.98, WALL_H, 0.98), WALL_H / 2.0),
                 BuildKind::Door => (Vec3::new(0.98, WALL_H, 0.3), WALL_H / 2.0),
                 BuildKind::Bed => (Vec3::new(0.82, 0.36, 0.92), 0.18),
+                BuildKind::Floor => (Vec3::new(0.98, FLOOR_T, 0.98), FLOOR_T / 2.0),
+                BuildKind::Stairs => (Vec3::new(0.98, WALL_H, 0.9), WALL_H / 2.0),
             };
             root.with_children(|c| {
                 c.spawn(part(&a.cube, &a.blueprint, Vec3::new(0.0, y, 0.0), size));
@@ -340,12 +382,14 @@ fn spawn_feature(
     root.id()
 }
 
-fn spawn_item(commands: &mut Commands, a: &PropAssets, key: ItemKey, pos: Pos) -> Entity {
+fn spawn_item(commands: &mut Commands, a: &PropAssets, key: ItemKey, pos: Pos, lift: f32) -> Entity {
     let (xi, yi) = (pos.0 as i32, pos.1 as i32);
     let yaw = hash(xi, yi, 24) * TAU;
     let s = if key.big { 1.25 } else { 1.0 };
     let mut root = commands.spawn((
-        Transform::from_translation(tile_center(pos)).with_rotation(Quat::from_rotation_y(yaw)).with_scale(Vec3::splat(s)),
+        Transform::from_translation(tile_center(pos) + Vec3::Y * lift)
+            .with_rotation(Quat::from_rotation_y(yaw))
+            .with_scale(Vec3::splat(s)),
         Visibility::default(),
     ));
     root.with_children(|c| match key.kind {

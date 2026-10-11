@@ -2,9 +2,10 @@
 //! placed in open cells (plants, walls, furniture), items, designations,
 //! zones, and the rooms derived from walls and rock.
 //!
-//! A pawn stands in an open cell whose cell below is solid ground. It can walk
-//! to a horizontal neighbour on the same level, or step one level up or down
-//! onto natural ground when there is headroom. Built walls are never climbable.
+//! A pawn stands in an open cell that has support: solid ground below, a
+//! built floor, or stairs below. It can walk to a horizontal neighbour on the
+//! same level, step one level up or down between cells on natural ground when
+//! there is headroom, or use stairs. Built walls and floors are never climbed.
 
 use crate::rng::Rng;
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,8 @@ pub const STACK_MAX: u32 = 50;
 const MAX_ROOM: usize = 400;
 /// Standing level of the flat maps used by tests and `Map::flat`.
 pub const FLAT_Z: usize = 1;
+/// A floor needs something holding it up within this many steps on its level.
+pub const SUPPORT_RANGE: i32 = 3;
 /// Water fills low ground up to this level.
 const WATER_LEVEL: usize = 4;
 /// Standing level of plains and the landing zone.
@@ -27,9 +30,11 @@ pub fn manhattan(a: Pos, b: Pos) -> usize {
     a.0.abs_diff(b.0) + a.1.abs_diff(b.1) + a.2.abs_diff(b.2)
 }
 
-/// Next to each other: one step apart horizontally, at most one level apart.
-pub fn adjacent(a: Pos, b: Pos) -> bool {
-    a.0.abs_diff(b.0) + a.1.abs_diff(b.1) == 1 && a.2.abs_diff(b.2) <= 1
+/// Close enough to work on `target` from `a`: one step away horizontally (up
+/// to one level up or down), or directly above or below it.
+pub fn adjacent(a: Pos, target: Pos) -> bool {
+    let flat = a.0.abs_diff(target.0) + a.1.abs_diff(target.1);
+    (flat == 1 && a.2.abs_diff(target.2) <= 1) || (flat == 0 && a.2.abs_diff(target.2) == 1)
 }
 
 const DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
@@ -90,6 +95,8 @@ pub enum BuildKind {
     Wall,
     Door,
     Bed,
+    Floor,
+    Stairs,
 }
 
 impl BuildKind {
@@ -98,6 +105,8 @@ impl BuildKind {
             BuildKind::Wall => Stack { kind: ItemKind::Stone, count: 4 },
             BuildKind::Door => Stack { kind: ItemKind::Wood, count: 4 },
             BuildKind::Bed => Stack { kind: ItemKind::Wood, count: 8 },
+            BuildKind::Floor => Stack { kind: ItemKind::Wood, count: 2 },
+            BuildKind::Stairs => Stack { kind: ItemKind::Wood, count: 6 },
         }
     }
 
@@ -106,14 +115,19 @@ impl BuildKind {
             BuildKind::Wall => 3.0,
             BuildKind::Door => 3.0,
             BuildKind::Bed => 5.0,
+            BuildKind::Floor => 2.0,
+            BuildKind::Stairs => 4.0,
         }
     }
 
-    pub fn built(self) -> Feature {
+    /// The feature it becomes; floors are a flag on the cell instead.
+    pub fn built(self) -> Option<Feature> {
         match self {
-            BuildKind::Wall => Feature::Wall,
-            BuildKind::Door => Feature::Door,
-            BuildKind::Bed => Feature::Bed,
+            BuildKind::Wall => Some(Feature::Wall),
+            BuildKind::Door => Some(Feature::Door),
+            BuildKind::Bed => Some(Feature::Bed),
+            BuildKind::Stairs => Some(Feature::Stairs),
+            BuildKind::Floor => None,
         }
     }
 
@@ -122,6 +136,8 @@ impl BuildKind {
             BuildKind::Wall => "Wall",
             BuildKind::Door => "Door",
             BuildKind::Bed => "Bed",
+            BuildKind::Floor => "Floor",
+            BuildKind::Stairs => "Stairs",
         }
     }
 }
@@ -135,6 +151,8 @@ pub enum Feature {
     Wall,
     Door,
     Bed,
+    /// Connects this cell with the one directly above.
+    Stairs,
     Crop { growth: f32 },
     Blueprint { kind: BuildKind, delivered: u32 },
 }
@@ -143,7 +161,12 @@ impl Feature {
     pub fn passable(self) -> bool {
         matches!(
             self,
-            Feature::None | Feature::Door | Feature::Bed | Feature::Crop { .. } | Feature::Blueprint { .. }
+            Feature::None
+                | Feature::Door
+                | Feature::Bed
+                | Feature::Stairs
+                | Feature::Crop { .. }
+                | Feature::Blueprint { .. }
         )
     }
 
@@ -161,6 +184,7 @@ impl Feature {
             Feature::Wall => Some(BuildKind::Wall),
             Feature::Door => Some(BuildKind::Door),
             Feature::Bed => Some(BuildKind::Bed),
+            Feature::Stairs => Some(BuildKind::Stairs),
             _ => None,
         }
     }
@@ -173,6 +197,7 @@ impl Feature {
             Feature::Wall => "Wall",
             Feature::Door => "Door",
             Feature::Bed => "Bed",
+            Feature::Stairs => "Stairs",
             Feature::Crop { .. } => "Crop",
             Feature::Blueprint { .. } => "Blueprint",
         }
@@ -204,6 +229,9 @@ pub struct Map {
     pub items: Vec<Option<Stack>>,
     pub desig: Vec<Option<Desig>>,
     pub zone: Vec<Zone>,
+    /// Built floor slabs (at the bottom of the cell).
+    #[serde(default)]
+    pub floor: Vec<bool>,
     /// Blood stains, 0..1, fading over time.
     #[serde(default)]
     pub blood: Vec<f32>,
@@ -215,6 +243,9 @@ pub struct Map {
     pub room_sizes: Vec<usize>,
     #[serde(skip)]
     pub rooms_dirty: bool,
+    /// Something that held things up changed; check for falling.
+    #[serde(skip)]
+    pub support_dirty: bool,
 }
 
 impl Map {
@@ -230,10 +261,12 @@ impl Map {
             items: vec![None; n],
             desig: vec![None; n],
             zone: vec![Zone::None; n],
+            floor: vec![false; n],
             blood: vec![0.0; n],
             room: Vec::new(),
             room_sizes: Vec::new(),
             rooms_dirty: true,
+            support_dirty: false,
         };
         m.recompute_rooms();
         m
@@ -291,9 +324,21 @@ impl Map {
         self.block[i] == Block::Air && self.feature[i].passable()
     }
 
-    /// Open, with solid ground underneath: a pawn can stand here.
+    /// Solid natural ground directly underneath.
+    pub fn on_ground(&self, p: Pos) -> bool {
+        self.below(p).is_some_and(|b| self.solid(b))
+    }
+
+    /// Something to stand on: ground, a built floor, or the top of stairs.
+    pub fn supported(&self, p: Pos) -> bool {
+        self.on_ground(p)
+            || self.floor[self.idx(p)]
+            || self.below(p).is_some_and(|b| self.feature[self.idx(b)] == Feature::Stairs)
+    }
+
+    /// Open and supported: a pawn can stand here.
     pub fn standable(&self, p: Pos) -> bool {
-        self.open(p) && self.below(p).is_some_and(|b| self.solid(b))
+        self.open(p) && self.supported(p)
     }
 
     /// Alias kept for readability at call sites about movement.
@@ -303,7 +348,11 @@ impl Map {
 
     /// Where a pawn standing at `p` can get to in one step.
     pub fn walk_neighbors(&self, p: Pos) -> impl Iterator<Item = Pos> + '_ {
-        DIRS.into_iter().filter_map(move |(dx, dy)| self.step(p, dx, dy))
+        let flat = DIRS.into_iter().filter_map(move |(dx, dy)| self.step(p, dx, dy));
+        // Stairs lead straight up from their cell, and down into it.
+        let up = self.above(p).filter(|&a| self.feature[self.idx(p)] == Feature::Stairs && self.standable(a));
+        let down = self.below(p).filter(|&b| self.feature[self.idx(b)] == Feature::Stairs && self.standable(b));
+        flat.chain(up).chain(down)
     }
 
     fn step(&self, p: Pos, dx: i32, dy: i32) -> Option<Pos> {
@@ -313,15 +362,19 @@ impl Map {
         if self.standable(same) {
             return Some(same);
         }
+        // Slopes only exist in natural ground: never climb onto floors or walls.
+        if !self.on_ground(p) {
+            return None;
+        }
         // Up onto a one-level rise, if there's headroom above us.
         if let (Some(up), Some(head)) = (self.at(x, y, z + 1), self.above(p)) {
-            if self.standable(up) && self.open(head) {
+            if self.standable(up) && self.on_ground(up) && self.open(head) {
                 return Some(up);
             }
         }
         // Down a one-level drop, through the open cell beside us.
         if let Some(down) = self.at(x, y, z - 1) {
-            if self.standable(down) && self.open(same) {
+            if self.standable(down) && self.on_ground(down) && self.open(same) {
                 return Some(down);
             }
         }
@@ -338,12 +391,33 @@ impl Map {
         })
     }
 
-    /// Cells a pawn standing next to `p` could reach it from: horizontal
-    /// neighbours one level below, at, or above it.
+    /// Cells a pawn could work on `p` from: horizontal neighbours one level
+    /// below, at, or above it, and the cells directly above (digging down)
+    /// and below (building a ceiling overhead).
     pub fn around(&self, p: Pos) -> impl Iterator<Item = Pos> + '_ {
-        DIRS.into_iter().flat_map(move |(dx, dy)| {
-            (-1..=1).filter_map(move |dz| self.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32 + dz))
-        })
+        DIRS.into_iter()
+            .flat_map(move |(dx, dy)| {
+                (-1..=1).filter_map(move |dz| self.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32 + dz))
+            })
+            .chain(self.above(p))
+            .chain(self.below(p))
+    }
+
+    /// Something a Mine order can remove: rock or soil, a structure, or a floor.
+    pub fn mineable(&self, p: Pos) -> bool {
+        let i = self.idx(p);
+        self.block[i].solid() || self.feature[i].built_from().is_some() || self.floor[i]
+    }
+
+    /// Where a floor could be built: open air with nothing in it, not already
+    /// on the ground, and held up by something nearby.
+    pub fn floor_buildable(&self, p: Pos) -> bool {
+        let i = self.idx(p);
+        self.block[i] == Block::Air
+            && self.feature[i] == Feature::None
+            && !self.floor[i]
+            && !self.on_ground(p)
+            && self.floor_supported(p)
     }
 
     /// Highest cell in a column that can be stood on.
@@ -362,20 +436,59 @@ impl Map {
     pub fn set_block(&mut self, i: usize, b: Block) {
         if self.block[i] != b {
             self.rooms_dirty = true;
+            self.support_dirty = true;
         }
         self.block[i] = b;
     }
 
-    /// Inside an enclosed room (which counts as having a roof).
+    pub fn set_floor(&mut self, i: usize, on: bool) {
+        if self.floor[i] != on {
+            self.rooms_dirty = true;
+            self.support_dirty = true;
+        }
+        self.floor[i] = on;
+    }
+
+    /// Whether a floor at `p` would be held up: solid ground, a wall or
+    /// stairs directly beneath some cell within `SUPPORT_RANGE` on its level.
+    pub fn floor_supported(&self, p: Pos) -> bool {
+        let (x, y, z) = (p.0 as i32, p.1 as i32, p.2 as i32);
+        let r = SUPPORT_RANGE;
+        (-r..=r).any(|dy| {
+            (-r..=r).any(|dx| {
+                dx.abs() + dy.abs() <= r
+                    && self.at(x + dx, y + dy, z - 1).is_some_and(|q| {
+                        let i = self.idx(q);
+                        self.block[i].solid() || matches!(self.feature[i], Feature::Wall | Feature::Stairs)
+                    })
+            })
+        })
+    }
+
+    /// Where something unsupported at `p` comes to rest: the first supported
+    /// cell straight down (or the bottom of the world).
+    pub fn landing(&self, p: Pos) -> Pos {
+        let mut q = p;
+        while q.2 > 0 && !self.supported(q) {
+            let next = (q.0, q.1, q.2 - 1);
+            if self.block[self.idx(next)] != Block::Air {
+                break;
+            }
+            q = next;
+        }
+        q
+    }
+
+    /// Inside an enclosed room with a roof.
     pub fn roofed(&self, p: Pos) -> bool {
         self.room.get(self.idx(p)).is_some_and(|&r| r != 0)
     }
 
-    /// Something solid overhead: rock, soil or a wall somewhere above.
+    /// Something overhead: rock, soil, a wall, or a floor on a level above.
     pub fn covered(&self, p: Pos) -> bool {
         (p.2 + 1..self.d).any(|z| {
             let i = self.idx((p.0, p.1, z));
-            self.block[i].solid() || self.feature[i].blocks_room()
+            self.block[i].solid() || self.feature[i].blocks_room() || self.floor[i]
         })
     }
 
@@ -430,8 +543,8 @@ impl Map {
     }
 
     /// Flood-fill each level's open cells, bounded by walls, doors and solid
-    /// ground. An enclosed region that doesn't touch the map edge is a room
-    /// if it is walled by the colony or fully covered from above (a cave).
+    /// ground. An enclosed region that doesn't touch the map edge and is
+    /// covered everywhere (floors above, rock overhead) is a room.
     pub fn recompute_rooms(&mut self) {
         let n = self.len();
         self.room = vec![0; n];
@@ -446,7 +559,6 @@ impl Map {
             let mut region = vec![start];
             let mut stack = vec![start];
             let mut touches_edge = false;
-            let mut walled = false;
             while let Some(i) = stack.pop() {
                 let p = self.pos(i);
                 if p.0 == 0 || p.1 == 0 || p.0 == self.w - 1 || p.1 == self.h - 1 {
@@ -454,28 +566,17 @@ impl Map {
                 }
                 for nb in self.neighbors(p) {
                     let ni = self.idx(nb);
-                    if room_open(self, ni) {
-                        if !seen[ni] {
-                            seen[ni] = true;
-                            stack.push(ni);
-                            region.push(ni);
-                        }
-                    } else if self.feature[ni].blocks_room() {
-                        walled = true;
+                    if room_open(self, ni) && !seen[ni] {
+                        seen[ni] = true;
+                        stack.push(ni);
+                        region.push(ni);
                     }
                 }
             }
             if touches_edge || region.len() > MAX_ROOM {
                 continue;
             }
-            let covered = region.iter().all(|&i| {
-                let (x, y, z) = self.pos(i);
-                (z + 1..self.d).any(|zz| {
-                    let j = self.idx((x, y, zz));
-                    self.block[j].solid() || self.feature[j].blocks_room()
-                })
-            });
-            if walled || covered {
+            if region.iter().all(|&i| self.covered(self.pos(i))) {
                 let id = self.room_sizes.len() as u32;
                 self.room_sizes.push(region.len());
                 for &i in &region {
@@ -567,12 +668,17 @@ mod tests {
 
     const Z: usize = FLAT_Z;
 
-    fn wall_box(m: &mut Map, x0: usize, y0: usize, x1: usize, y1: usize) {
+    /// Walls around a rectangle, optionally with a floor on top as a roof.
+    fn wall_box(m: &mut Map, x0: usize, y0: usize, x1: usize, y1: usize, roof: bool) {
         for y in y0..=y1 {
             for x in x0..=x1 {
                 if x == x0 || x == x1 || y == y0 || y == y1 {
                     let i = m.idx((x, y, Z));
                     m.set_feature(i, Feature::Wall);
+                }
+                if roof {
+                    let i = m.idx((x, y, Z + 1));
+                    m.set_floor(i, true);
                 }
             }
         }
@@ -580,10 +686,18 @@ mod tests {
     }
 
     #[test]
+    fn walls_alone_are_not_a_room() {
+        let mut m = Map::flat(20, 20);
+        wall_box(&mut m, 5, 5, 9, 9, false);
+        assert!(!m.roofed((7, 7, Z)), "no roof yet");
+    }
+
+    #[test]
     fn enclosed_area_becomes_a_roofed_room() {
         let mut m = Map::flat(20, 20);
-        wall_box(&mut m, 5, 5, 9, 9);
+        wall_box(&mut m, 5, 5, 9, 9, true);
         assert!(m.roofed((7, 7, Z)));
+        assert!(m.covered((7, 7, Z)));
         assert!(!m.roofed((2, 2, Z)));
         assert_eq!(m.room_sizes[m.room[m.idx((7, 7, Z))] as usize], 9);
 
@@ -597,7 +711,7 @@ mod tests {
     #[test]
     fn doors_close_rooms() {
         let mut m = Map::flat(20, 20);
-        wall_box(&mut m, 5, 5, 9, 9);
+        wall_box(&mut m, 5, 5, 9, 9, true);
         let i = m.idx((5, 7, Z));
         m.set_feature(i, Feature::Door);
         m.recompute_rooms();
@@ -658,6 +772,56 @@ mod tests {
         m.set_feature(i, Feature::Wall);
         let next: Vec<Pos> = m.walk_neighbors((1, 1, Z)).collect();
         assert!(!next.iter().any(|p| p.0 == 2), "{:?}", next);
+    }
+
+    #[test]
+    fn floors_can_be_stood_on_but_not_climbed_onto() {
+        let mut m = Map::flat(10, 3);
+        let i = m.idx((5, 1, Z + 1));
+        m.set_floor(i, true);
+        assert!(m.standable((5, 1, Z + 1)));
+        let from_ground: Vec<Pos> = m.walk_neighbors((4, 1, Z)).collect();
+        assert!(!from_ground.contains(&(5, 1, Z + 1)), "a platform needs stairs");
+    }
+
+    #[test]
+    fn stairs_connect_levels() {
+        let mut m = Map::flat(10, 3);
+        let stairs = m.idx((3, 1, Z));
+        m.set_feature(stairs, Feature::Stairs);
+        for x in 3..8 {
+            let i = m.idx((x, 1, Z + 1));
+            m.set_floor(i, true);
+        }
+        assert!(m.standable((3, 1, Z + 1)), "the top of the stairs is supported by them");
+        let up: Vec<Pos> = m.walk_neighbors((3, 1, Z)).collect();
+        assert!(up.contains(&(3, 1, Z + 1)), "{:?}", up);
+        let down: Vec<Pos> = m.walk_neighbors((3, 1, Z + 1)).collect();
+        assert!(down.contains(&(3, 1, Z)), "{:?}", down);
+        let df = crate::pathing::bfs(&m, (0, 1, Z));
+        assert_eq!(df.dist((7, 1, Z + 1)), Some(3 + 1 + 4), "walk, climb, walk along the floor");
+    }
+
+    #[test]
+    fn floors_need_support_nearby() {
+        let mut m = Map::flat(20, 3);
+        // A wall at x=5 holds up floors up to SUPPORT_RANGE away.
+        let w = m.idx((5, 1, Z));
+        m.set_feature(w, Feature::Wall);
+        assert!(m.floor_buildable((5 + SUPPORT_RANGE as usize, 1, Z + 1)));
+        assert!(!m.floor_buildable((5 + SUPPORT_RANGE as usize + 1, 1, Z + 1)));
+        assert!(!m.floor_buildable((5, 1, Z)), "not inside a wall");
+        assert!(!m.floor_buildable((2, 1, Z)), "no floors directly on the ground");
+    }
+
+    #[test]
+    fn things_land_on_the_next_support() {
+        let mut m = Map::flat(5, 5);
+        let top = m.d - 1;
+        assert_eq!(m.landing((2, 2, top)), (2, 2, Z));
+        let i = m.idx((2, 2, Z + 1));
+        m.set_floor(i, true);
+        assert_eq!(m.landing((2, 2, top)), (2, 2, Z + 1));
     }
 
     #[test]

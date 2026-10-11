@@ -119,7 +119,7 @@ impl World {
                 }
             }
             WorkType::Mining => {
-                if free && m.desig[i] == Some(Desig::Mine) && (m.block[i] == Block::Rock || f.built_from().is_some()) {
+                if free && m.desig[i] == Some(Desig::Mine) && m.mineable(m.pos(i)) {
                     return work(Task::Mine, true);
                 }
             }
@@ -223,7 +223,7 @@ impl World {
         let d = m.desig[i];
         match task {
             Task::Chop => d == Some(Desig::Chop) && f == Feature::Tree,
-            Task::Mine => d == Some(Desig::Mine) && (m.block[i] == Block::Rock || f.built_from().is_some()),
+            Task::Mine => d == Some(Desig::Mine) && m.mineable(target),
             Task::Forage => d == Some(Desig::Forage) && f == Feature::Bush,
             Task::Plant => plantable(m, i),
             Task::HarvestCrop => matches!(f, Feature::Crop { growth } if growth >= 1.0),
@@ -258,11 +258,19 @@ impl World {
                     }
                     None => drop(ItemKind::Stone, 6),
                 };
-                if self.map.block[i] == Block::Rock {
-                    // Dug out: the rock becomes open space (a tunnel if there's rock above).
+                let dug = self.map.block[i];
+                if dug.solid() {
+                    // Dug out: rock or soil becomes open space (a tunnel if there's more above).
                     self.map.set_block(i, Block::Air);
-                } else {
+                    if dug == Block::Soil {
+                        return;
+                    }
+                } else if f.built_from().is_some() {
                     self.map.set_feature(i, Feature::None);
+                } else if self.map.floor[i] {
+                    self.map.set_floor(i, false);
+                    self.map.drop_item(self.map.landing(target), drop(ItemKind::Wood, 1));
+                    return;
                 }
                 if refund.count > 0 {
                     self.map.drop_item(target, refund);
@@ -279,7 +287,13 @@ impl World {
             }
             Task::Construct => {
                 if let Feature::Blueprint { kind, .. } = f {
-                    self.map.set_feature(i, kind.built());
+                    match kind.built() {
+                        Some(built) => self.map.set_feature(i, built),
+                        None => {
+                            self.map.set_feature(i, Feature::None);
+                            self.map.set_floor(i, true);
+                        }
+                    }
                     // Shove anything lying here out of the way.
                     if let Some(s) = self.map.items[i].take() {
                         self.map.drop_item(target, s);
