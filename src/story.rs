@@ -1,6 +1,7 @@
 //! The storyteller: schedules raids and random events.
 
-use crate::map::{Feature, ItemKind, Pos, Stack};
+use crate::defs::ItemId;
+use crate::map::{Feature, Pos, Stack};
 use crate::pathing::bfs;
 use crate::world::World;
 use crate::DAY_LEN;
@@ -47,7 +48,7 @@ impl World {
     /// Rough colony value; bigger colonies attract bigger raids.
     pub fn wealth(&self) -> u32 {
         let items: u32 = self.map.items.iter().flatten().map(|s| s.count).sum();
-        let structures = self.map.feature.iter().filter(|f| f.built_from().is_some()).count() as u32;
+        let structures = self.map.feature.iter().filter(|f| f.structure().is_some()).count() as u32;
         items + structures * 10
     }
 
@@ -84,7 +85,7 @@ impl World {
     }
 
     fn random_event(&mut self) {
-        let has_crops = self.map.feature.iter().any(|f| matches!(f, Feature::Crop { .. }));
+        let has_crops = self.map.feature.iter().any(|f| f.is_crop());
         match self.rng.below(4) {
             0 if self.colonists_alive() < 10 => self.wanderer_joins(),
             1 if has_crops => self.blight(),
@@ -103,7 +104,7 @@ impl World {
     fn blight(&mut self) {
         let mut lost = 0;
         for i in 0..self.map.feature.len() {
-            if matches!(self.map.feature[i], Feature::Crop { .. }) && self.rng.chance(0.5) {
+            if self.map.feature[i].is_crop() && self.rng.chance(0.5) {
                 self.map.set_feature(i, Feature::None);
                 lost += 1;
             }
@@ -141,8 +142,12 @@ impl World {
         let x = (cx as i32 + self.rng.below(13) as i32 - 6).clamp(0, self.map.w as i32 - 1) as usize;
         let y = (cy as i32 + self.rng.below(13) as i32 - 6).clamp(0, self.map.h as i32 - 1) as usize;
         let Some(z) = self.map.surface(x, y) else { return };
-        let kind = ItemKind::ALL[self.rng.below(ItemKind::ALL.len())];
-        let count = (if kind == ItemKind::Medicine { 3 + self.rng.below(6) } else { 15 + self.rng.below(26) }) as u32;
+        let kinds: Vec<(ItemId, (u32, u32))> = ItemId::all().filter_map(|k| k.def().pods.map(|r| (k, r))).collect();
+        if kinds.is_empty() {
+            return;
+        }
+        let (kind, (lo, hi)) = kinds[self.rng.below(kinds.len())];
+        let count = lo + self.rng.below((hi - lo + 1) as usize) as u32;
         self.map.drop_item((x, y, z), Stack { kind, count });
         self.push_log(format!("Cargo pods crashed nearby: {} {}.", count, kind.name().to_lowercase()));
     }

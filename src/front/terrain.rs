@@ -11,7 +11,7 @@ use super::sim::Sim;
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
-use my_world::map::{Block, Feature, Map, Pos, Zone};
+use my_world::map::{Block, Map, Pos, Zone};
 
 const CHUNK: usize = 16;
 /// World units per level.
@@ -41,7 +41,7 @@ fn look_at(m: &Map, p: Pos, cut: usize) -> Look3 {
         (Block::Soil, _) => Look3::Soil,
         (Block::Rock, _) => Look3::Rock,
         (Block::Water, _) => Look3::Water,
-        (Block::Air, Feature::Wall) => Look3::Wall,
+        (Block::Air, f) if f.is_block() => Look3::Wall,
         (Block::Air, _) => Look3::Open,
     }
 }

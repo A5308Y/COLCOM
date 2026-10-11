@@ -10,22 +10,27 @@ use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, ProgressBar, RichText};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::health::HediffKind;
-use my_world::map::{Block, Feature, ItemKind, Pos, Zone};
+use my_world::defs::{BuildId, ItemId};
+use my_world::map::{Block, Feature, Pos, Zone};
 use my_world::pawn::{Pawn, Skill, WorkType};
 use my_world::DAY_LEN;
 
-const HELP: [&str; 25] = [
+const HELP_ORDERS: [&str; 7] = [
     "You don't control colonists directly - you give orders and they pick up the work.",
     "",
     "1-3   Designate trees to chop, rock/structures to mine, berry bushes to forage",
     "4/5   Paint stockpile zones (items get hauled there) and grow zones (crops)",
-    "6-8   Place walls (4 stone), doors (4 wood), beds (8 wood); colonists haul materials",
-    "-/=   Floors (2 wood) and stairs (6 wood). Floors need a wall, stairs or ground below within 3 cells.",
-    "      Use the layer view to place floors in mid-air: PageDown/PageUp (or [ and ]).",
-    "      Stairs rise away from where you walk onto them; you can't walk across them.",
-    "B     Lamps (3 wood) light up rooms and caves - nights are dark.",
     "9/0   Clear zones / cancel designations and blueprints",
     "      Left-drag to paint a rectangle. Right-click goes back to Select.",
+    "",
+];
+
+const HELP_REST: [&str; 19] = [
+    "Colonists haul the materials to blueprints, then build them.",
+    "Floors need a wall, stairs or ground below within 3 cells.",
+    "      Use the layer view to place floors in mid-air: PageDown/PageUp (or [ and ]).",
+    "Stairs rise away from where you walk onto them; you can't walk across them.",
+    "Lamps light up rooms and caves - nights are dark.",
     "",
     "A room needs walls and a roof: build floors on top. Sleeping in a roofed bedroom makes colonists happier.",
     "Mining also digs soil and removes floors. Dig straight down to sink a shaft; put stairs in it.",
@@ -41,6 +46,17 @@ const HELP: [&str; 25] = [
     "",
     "H or Esc closes this help.",
 ];
+
+/// One line per buildable: shortcut, name and cost.
+fn help_builds() -> Vec<String> {
+    BuildId::all()
+        .map(|kind| {
+            let def = kind.def();
+            let key = def.key.as_deref().unwrap_or("").to_uppercase();
+            format!("{:<5} {} ({} {})", key, def.name, def.cost.count, def.cost.item.name().to_lowercase())
+        })
+        .collect()
+}
 
 pub struct UiPlugin;
 
@@ -78,7 +94,13 @@ fn draw_ui(
             Align2::CENTER_CENTER,
             [0.0, 0.0],
         ).show(&ctx, |ui| {
-            for line in HELP {
+            for line in HELP_ORDERS {
+                ui.label(line);
+            }
+            for line in help_builds() {
+                ui.label(line);
+            }
+            for line in HELP_REST {
                 ui.label(line);
             }
         });
@@ -126,7 +148,7 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
             let hour = w.hour();
             let clock = format!("Day {}  {:02}:{:02}", w.day(), hour as u32, ((hour - hour.floor()) * 60.0) as u32);
             let stock: Vec<String> =
-                ItemKind::ALL.iter().map(|k| format!("{} {}", k.name(), w.map.count_items(*k))).collect();
+                ItemId::all().map(|k| format!("{} {}", k.name(), w.map.count_items(k))).collect();
             let colonists = format!("Colonists {}", w.colonists_alive());
             ui.horizontal(|ui| {
                 ui.label(RichText::new(clock).strong());
@@ -146,9 +168,9 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 }
             });
             ui.horizontal(|ui| {
-                for (tool, label, _) in TOOLS {
-                    if ui.add(egui::Button::new(label).selected(st.tool == tool)).clicked() {
-                        st.tool = tool;
+                for (tool, label, _) in TOOLS.iter() {
+                    if ui.add(egui::Button::new(label.as_str()).selected(st.tool == *tool)).clicked() {
+                        st.tool = *tool;
                         st.drag_start = None;
                     }
                 }
@@ -393,10 +415,10 @@ fn tile_inspector(ctx: &egui::Context, sim: &Sim, t: Pos) {
         .resizable(false)
         .show(ctx, |ui| {
             let what = match m.feature[i] {
-                Feature::Crop { growth } => format!("Crop, {:.0}% grown", growth * 100.0),
+                f @ Feature::Plant { growth, .. } if f.is_crop() => format!("{}, {:.0}% grown", f.name(), growth * 100.0),
                 Feature::Blueprint { kind, delivered } => {
-                    let c = kind.cost();
-                    format!("{} blueprint ({}/{} {})", kind.name(), delivered, c.count, c.kind.name().to_lowercase())
+                    let c = &kind.def().cost;
+                    format!("{} blueprint ({}/{} {})", kind.name(), delivered, c.count, c.item.name().to_lowercase())
                 }
                 Feature::None if m.block[i] != Block::Air => m.block[i].name().to_string(),
                 f => {

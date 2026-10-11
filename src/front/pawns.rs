@@ -7,7 +7,7 @@ use super::props::{lit, PropAssets};
 use super::sim::Sim;
 use super::tile_point;
 use bevy::prelude::*;
-use my_world::map::{Feature, ItemKind};
+use my_world::defs::ItemId;
 use my_world::pawn::{Faction, Job, Pawn, Weapon};
 use my_world::world::World as SimWorld;
 use std::collections::HashMap;
@@ -26,7 +26,7 @@ struct PawnVis {
     weapon: Entity,
     carry: Entity,
     weapon_kind: Option<Weapon>,
-    carry_kind: Option<ItemKind>,
+    carry_kind: Option<ItemId>,
     dead: bool,
     yaw: f32,
     /// 0 standing still .. 1 walking; eases in and out.
@@ -221,7 +221,7 @@ fn sync_pawns(
             v.yaw = lerp_angle(v.yaw, target, (dt * 10.0).min(1.0));
         }
         let lying = p.dead || p.lying();
-        let in_bed = lying && !p.dead && m.feature[m.idx(p.pos)] == Feature::Bed;
+        let in_bed = lying && !p.dead && m.feature[m.idx(p.pos)].is_bed();
         // Standing on a built floor slab rather than the cell's bottom.
         let on_slab = m.floor[m.idx(p.pos)] && (p.z - p.pos.2 as f32).abs() < 0.01;
         let mut base = tile_point(p.x, p.y, p.z) + Vec3::Y * if on_slab { FLOOR_T } else { 0.0 };

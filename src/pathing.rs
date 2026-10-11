@@ -126,7 +126,7 @@ mod tests {
         let mut m = Map::flat(10, 5);
         for y in 0..4 {
             let i = m.idx((5, y, Z));
-            m.feature[i] = Feature::Wall;
+            m.feature[i] = Feature::built("wall");
         }
         let df = bfs(&m, (0, 0, Z));
         let d = df.dist((9, 0, Z)).expect("reachable through the gap at y=4");
@@ -143,7 +143,7 @@ mod tests {
         let mut m = Map::flat(10, 5);
         for y in 0..5 {
             let i = m.idx((5, y, Z));
-            m.feature[i] = Feature::Wall;
+            m.feature[i] = Feature::built("wall");
         }
         let df = bfs(&m, (0, 0, Z));
         assert!(df.dist((9, 0, Z)).is_none());
@@ -169,7 +169,7 @@ mod tests {
         let mut m = Map::flat(10, 10);
         assert!(line_of_sight(&m, (0, 0, Z), (9, 9, Z)));
         let i = m.idx((5, 5, Z));
-        m.feature[i] = Feature::Wall;
+        m.feature[i] = Feature::built("wall");
         assert!(!line_of_sight(&m, (0, 0, Z), (9, 9, Z)));
 
         let mut m = Map::flat(10, 3);

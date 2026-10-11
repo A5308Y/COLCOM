@@ -1,0 +1,306 @@
+// Definitions of everything in the world that isn't terrain: items, buildables
+// and plants. The game builds this file in (`src/defs.rs`); `cargo test`
+// checks that it loads and that every definition can actually be used.
+//
+// Things refer to each other by `id`. Saves store ids too, so renaming an id
+// breaks old saves, but adding, removing or reordering definitions doesn't.
+//
+// Looks are lists of parts: a unit `Cube`, `Sphere`, `Cylinder` or `Cone`
+// scaled to `size`, placed at `at` (x, up, y) relative to the floor centre of
+// the cell, optionally turned by `turn` degrees around each axis, coloured
+// from the palette below.
+(
+    // sRGB colours used by looks.
+    palette: {
+        "wood": (0.55, 0.37, 0.2),
+        "wood_light": (0.76, 0.57, 0.35),
+        "trunk": (0.44, 0.296, 0.16),
+        "leaf": (0.2, 0.42, 0.18),
+        "leaf_mid": (0.27, 0.5, 0.22),
+        "leaf_light": (0.34, 0.58, 0.26),
+        "sprout": (0.374, 0.638, 0.286),
+        "pine": (0.13, 0.33, 0.21),
+        "pine_light": (0.156, 0.396, 0.252),
+        "berry": (0.84, 0.16, 0.24),
+        "veg": (0.93, 0.52, 0.16),
+        "wheat": (0.91, 0.77, 0.32),
+        "sheet": (0.93, 0.91, 0.86),
+        "pillow": (0.97, 0.97, 0.97),
+        "stone": (0.575, 0.552, 0.529),
+        "white": (0.95, 0.95, 0.95),
+        "wall": (0.6, 0.57, 0.53),
+    },
+    // Glowing colours (linear, above 1 blooms). Lamps use these.
+    glow: {
+        "lamp_glow": (9.0, 6.5, 3.2),
+    },
+
+    items: [
+        (
+            id: "wood",
+            name: "Wood",
+            color: "wood",
+            pods: Some((15, 40)),
+            look: [
+                (shape: Cylinder, color: "wood", at: (0.0, 0.07, -0.08), size: (0.14, 0.6, 0.14), turn: (0.0, 0.0, 90.0)),
+                (shape: Cylinder, color: "wood", at: (0.0, 0.07, 0.08), size: (0.14, 0.6, 0.14), turn: (0.0, 0.0, 90.0)),
+                (shape: Cylinder, color: "wood", at: (0.0, 0.19, 0.0), size: (0.14, 0.6, 0.14), turn: (0.0, 0.0, 90.0)),
+            ],
+        ),
+        (
+            id: "stone",
+            name: "Stone",
+            color: "stone",
+            pods: Some((15, 40)),
+            look: [
+                (shape: Cube, color: "stone", at: (-0.12, 0.09, 0.0), size: (0.2, 0.2, 0.2)),
+                (shape: Cube, color: "stone", at: (0.12, 0.08, 0.05), size: (0.18, 0.18, 0.18)),
+                (shape: Cube, color: "stone", at: (0.0, 0.24, -0.02), size: (0.17, 0.17, 0.17)),
+            ],
+        ),
+        (
+            id: "food",
+            name: "Food",
+            color: "berry",
+            // Hunger restored per unit eaten (out of 100).
+            nutrition: 45.0,
+            pods: Some((15, 40)),
+            look: [
+                (shape: Sphere, color: "berry", at: (-0.12, 0.08, 0.0), size: (0.16, 0.16, 0.16)),
+                (shape: Sphere, color: "veg", at: (0.1, 0.08, 0.06), size: (0.16, 0.16, 0.16)),
+                (shape: Sphere, color: "berry", at: (0.0, 0.08, -0.12), size: (0.16, 0.16, 0.16)),
+                (shape: Sphere, color: "veg", at: (0.02, 0.08, 0.12), size: (0.16, 0.16, 0.16)),
+                (shape: Sphere, color: "berry", at: (0.13, 0.08, -0.08), size: (0.16, 0.16, 0.16)),
+            ],
+        ),
+        (
+            id: "medicine",
+            name: "Medicine",
+            color: "white",
+            // How much it improves tending (1 = full medicine).
+            medicine: 1.0,
+            pods: Some((3, 8)),
+            look: [
+                (shape: Cube, color: "white", at: (0.0, 0.1, 0.0), size: (0.4, 0.2, 0.3)),
+                (shape: Cube, color: "berry", at: (0.0, 0.205, 0.0), size: (0.08, 0.02, 0.22)),
+                (shape: Cube, color: "berry", at: (0.0, 0.205, 0.0), size: (0.24, 0.02, 0.08)),
+            ],
+        ),
+    ],
+
+    // What the colonists land with, dropped in their stockpile.
+    start_items: [("wood", 80), ("food", 40), ("medicine", 8)],
+    // What mining one cell of rock yields (soil yields nothing).
+    rock_drops: ("stone", 6),
+
+    // Player-built structures. `special` marks behaviour the game handles in
+    // code: `Floor` (a slab others stand on, built in the air), `Stairs`
+    // (connect a cell to the one above), `Bed` (sleep and recover), `Door`
+    // (swings open, faces along its walls). Removing a structure drops `drops`,
+    // or half its cost if not given. `look: Block` means it is drawn as a
+    // solid block with the terrain (walls); its parts only matter otherwise.
+    builds: [
+        (
+            id: "wall",
+            name: "Wall",
+            key: Some("6"),
+            cost: ("stone", 4),
+            work_time: 3.0,
+            passable: false,
+            blocks_room: true,
+            blocks_sight: true,
+            holds_floors: true,
+            look: Block,
+        ),
+        (
+            id: "door",
+            name: "Door",
+            key: Some("7"),
+            cost: ("wood", 4),
+            work_time: 3.0,
+            passable: true,
+            blocks_room: true,
+            blocks_sight: true,
+            special: Door,
+            look: Parts([
+                (shape: Cube, color: "wall", at: (-0.45, 0.5, 0.0), size: (0.1, 1.0, 0.34)),
+                (shape: Cube, color: "wall", at: (0.45, 0.5, 0.0), size: (0.1, 1.0, 0.34)),
+                (shape: Cube, color: "wall", at: (0.0, 0.92, 0.0), size: (1.0, 0.16, 0.34)),
+                // Swings open around its left edge.
+                (shape: Cube, color: "wood_light", at: (0.0, 0.55, 0.0), size: (0.8, 1.1, 0.07), hinge: true),
+            ]),
+        ),
+        (
+            id: "bed",
+            name: "Bed",
+            key: Some("8"),
+            cost: ("wood", 8),
+            work_time: 5.0,
+            passable: true,
+            special: Bed,
+            look: Parts([
+                (shape: Cube, color: "wood", at: (0.0, 0.13, 0.0), size: (0.82, 0.26, 0.92)),
+                (shape: Cube, color: "sheet", at: (0.0, 0.29, 0.0), size: (0.74, 0.08, 0.84)),
+                (shape: Cube, color: "pillow", at: (0.0, 0.35, -0.3), size: (0.52, 0.08, 0.2)),
+                // "owner" is the colour of whoever sleeps here.
+                (shape: Cube, color: "owner", at: (0.0, 0.33, 0.13), size: (0.76, 0.1, 0.56)),
+            ]),
+        ),
+        (
+            id: "floor",
+            name: "Floor",
+            key: Some("-"),
+            cost: ("wood", 2),
+            work_time: 2.0,
+            passable: true,
+            special: Floor,
+            look: Parts([
+                (shape: Cube, color: "wood_light", at: (0.0, 0.04, 0.0), size: (0.98, 0.08, 0.98)),
+            ]),
+        ),
+        (
+            id: "stairs",
+            name: "Stairs",
+            key: Some("="),
+            cost: ("wood", 6),
+            work_time: 4.0,
+            passable: true,
+            holds_floors: true,
+            special: Stairs,
+            // Rising towards +x; turned to face the way they're built.
+            look: Parts([
+                (shape: Cube, color: "wood_light", at: (-0.375, 0.125, 0.0), size: (0.25, 0.25, 0.9)),
+                (shape: Cube, color: "wood_light", at: (-0.125, 0.25, 0.0), size: (0.25, 0.5, 0.9)),
+                (shape: Cube, color: "wood_light", at: (0.125, 0.375, 0.0), size: (0.25, 0.75, 0.9)),
+                (shape: Cube, color: "wood_light", at: (0.375, 0.5, 0.0), size: (0.25, 1.0, 0.9)),
+            ]),
+        ),
+        (
+            id: "lamp",
+            name: "Lamp",
+            key: Some("B"),
+            cost: ("wood", 3),
+            work_time: 2.0,
+            passable: false,
+            light: Some((color: (1.0, 0.82, 0.6), intensity: 400000.0, range: 10.0, at: (0.0, 0.86, 0.0))),
+            look: Parts([
+                (shape: Cylinder, color: "wood", at: (0.0, 0.03, 0.0), size: (0.3, 0.06, 0.3)),
+                (shape: Cylinder, color: "wood", at: (0.0, 0.42, 0.0), size: (0.06, 0.8, 0.06)),
+                (shape: Sphere, color: "lamp_glow", at: (0.0, 0.86, 0.0), size: (0.22, 0.22, 0.22)),
+            ]),
+        ),
+    ],
+
+    // Plants grow in open cells on soil. `growth` runs from 0 to 1 over
+    // `grow_time` seconds of daylight; wild plants appear fully grown.
+    // `sow`: planted in grow zones. `wild`: share of open soil covered when the
+    // map is made, and relative chance of being the one that regrows.
+    // `harvest`: work that removes the plant and drops its yield once grown,
+    // on cells designated `desig` (or automatically if there is none).
+    // Looks: `stages` by growth, each with variants picked at random per cell,
+    // scaled by a random factor in `scale`.
+    plants: [
+        (
+            id: "tree",
+            name: "Tree",
+            passable: false,
+            wild: Some((density: 0.11, regrow: 0.6)),
+            harvest: (desig: Some(Chop), work: PlantCutting, skill: Plants, time: 3.0, yields: ("wood", 10), verb: "chopping"),
+            scale: (0.85, 1.2),
+            stages: [
+                (from: 0.0, variants: [
+                    [
+                        (shape: Cylinder, color: "trunk", at: (0.0, 0.35, 0.0), size: (0.16, 0.7, 0.16)),
+                        (shape: Sphere, color: "leaf", at: (-0.16, 0.9, 0.05), size: (0.62, 0.62, 0.62)),
+                        (shape: Sphere, color: "leaf", at: (0.17, 0.85, -0.1), size: (0.56, 0.56, 0.56)),
+                        (shape: Sphere, color: "leaf", at: (0.0, 1.15, 0.0), size: (0.62, 0.62, 0.62)),
+                        (shape: Sphere, color: "leaf", at: (0.05, 0.82, 0.18), size: (0.5, 0.5, 0.5)),
+                    ],
+                    [
+                        (shape: Cylinder, color: "trunk", at: (0.0, 0.35, 0.0), size: (0.16, 0.7, 0.16)),
+                        (shape: Sphere, color: "leaf_mid", at: (-0.16, 0.9, 0.05), size: (0.62, 0.62, 0.62)),
+                        (shape: Sphere, color: "leaf_mid", at: (0.17, 0.85, -0.1), size: (0.56, 0.56, 0.56)),
+                        (shape: Sphere, color: "leaf_mid", at: (0.0, 1.15, 0.0), size: (0.62, 0.62, 0.62)),
+                        (shape: Sphere, color: "leaf_mid", at: (0.05, 0.82, 0.18), size: (0.5, 0.5, 0.5)),
+                    ],
+                    [
+                        (shape: Cylinder, color: "trunk", at: (0.0, 0.35, 0.0), size: (0.16, 0.7, 0.16)),
+                        (shape: Sphere, color: "leaf_light", at: (-0.16, 0.9, 0.05), size: (0.62, 0.62, 0.62)),
+                        (shape: Sphere, color: "leaf_light", at: (0.17, 0.85, -0.1), size: (0.56, 0.56, 0.56)),
+                        (shape: Sphere, color: "leaf_light", at: (0.0, 1.15, 0.0), size: (0.62, 0.62, 0.62)),
+                        (shape: Sphere, color: "leaf_light", at: (0.05, 0.82, 0.18), size: (0.5, 0.5, 0.5)),
+                    ],
+                    // Conifers.
+                    [
+                        (shape: Cylinder, color: "trunk", at: (0.0, 0.35, 0.0), size: (0.16, 0.7, 0.16)),
+                        (shape: Cone, color: "pine", at: (0.0, 0.775, 0.0), size: (0.95, 0.75, 0.95)),
+                        (shape: Cone, color: "pine", at: (0.0, 1.075, 0.0), size: (0.75, 0.65, 0.75)),
+                        (shape: Cone, color: "pine", at: (0.0, 1.325, 0.0), size: (0.5, 0.55, 0.5)),
+                    ],
+                    [
+                        (shape: Cylinder, color: "trunk", at: (0.0, 0.35, 0.0), size: (0.16, 0.7, 0.16)),
+                        (shape: Cone, color: "pine_light", at: (0.0, 0.775, 0.0), size: (0.95, 0.75, 0.95)),
+                        (shape: Cone, color: "pine_light", at: (0.0, 1.075, 0.0), size: (0.75, 0.65, 0.75)),
+                        (shape: Cone, color: "pine_light", at: (0.0, 1.325, 0.0), size: (0.5, 0.55, 0.5)),
+                    ],
+                ]),
+            ],
+        ),
+        (
+            id: "berry_bush",
+            name: "Berry bush",
+            passable: false,
+            wild: Some((density: 0.025, regrow: 0.4)),
+            harvest: (desig: Some(Forage), work: Growing, skill: Growing, time: 1.5, yields: ("food", 4), verb: "foraging"),
+            stages: [
+                (from: 0.0, variants: [[
+                    (shape: Sphere, color: "leaf", at: (-0.12, 0.17, 0.05), size: (0.38, 0.304, 0.38)),
+                    (shape: Sphere, color: "leaf", at: (0.13, 0.17, 0.06), size: (0.34, 0.272, 0.34)),
+                    (shape: Sphere, color: "leaf", at: (0.0, 0.17, -0.1), size: (0.4, 0.32, 0.4)),
+                    (shape: Sphere, color: "berry", at: (-0.2, 0.25, 0.1), size: (0.08, 0.08, 0.08)),
+                    (shape: Sphere, color: "berry", at: (0.15, 0.3, -0.12), size: (0.08, 0.08, 0.08)),
+                    (shape: Sphere, color: "berry", at: (0.05, 0.33, 0.15), size: (0.08, 0.08, 0.08)),
+                    (shape: Sphere, color: "berry", at: (0.22, 0.2, 0.08), size: (0.08, 0.08, 0.08)),
+                ]]),
+            ],
+        ),
+        (
+            id: "crop",
+            name: "Crop",
+            passable: true,
+            grow_time: 180.0,
+            sow: Some((work: Growing, skill: Growing, time: 1.5)),
+            harvest: (work: Growing, skill: Growing, time: 1.5, yields: ("food", 6), verb: "harvesting"),
+            stages: [
+                (from: 0.0, variants: [[
+                    (shape: Cylinder, color: "sprout", at: (-0.22, 0.07, -0.22), size: (0.04, 0.14, 0.04)),
+                    (shape: Cylinder, color: "sprout", at: (0.22, 0.07, -0.22), size: (0.04, 0.14, 0.04)),
+                    (shape: Cylinder, color: "sprout", at: (-0.22, 0.07, 0.22), size: (0.04, 0.14, 0.04)),
+                    (shape: Cylinder, color: "sprout", at: (0.22, 0.07, 0.22), size: (0.04, 0.14, 0.04)),
+                ]]),
+                (from: 0.25, variants: [[
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.0855, -0.22), size: (0.19, 0.171, 0.19)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.0855, -0.22), size: (0.19, 0.171, 0.19)),
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.0855, 0.22), size: (0.19, 0.171, 0.19)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.0855, 0.22), size: (0.19, 0.171, 0.19)),
+                ]]),
+                (from: 0.6, variants: [[
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.117, -0.22), size: (0.26, 0.234, 0.26)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.117, -0.22), size: (0.26, 0.234, 0.26)),
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.117, 0.22), size: (0.26, 0.234, 0.26)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.117, 0.22), size: (0.26, 0.234, 0.26)),
+                ]]),
+                (from: 1.0, variants: [[
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.1485, -0.22), size: (0.33, 0.297, 0.33)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.1485, -0.22), size: (0.33, 0.297, 0.33)),
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.1485, 0.22), size: (0.33, 0.297, 0.33)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.1485, 0.22), size: (0.33, 0.297, 0.33)),
+                    (shape: Sphere, color: "wheat", at: (-0.22, 0.3135, -0.22), size: (0.1, 0.1, 0.1)),
+                    (shape: Sphere, color: "wheat", at: (0.22, 0.3135, -0.22), size: (0.1, 0.1, 0.1)),
+                    (shape: Sphere, color: "wheat", at: (-0.22, 0.3135, 0.22), size: (0.1, 0.1, 0.1)),
+                    (shape: Sphere, color: "wheat", at: (0.22, 0.3135, 0.22), size: (0.1, 0.1, 0.1)),
+                ]]),
+            ],
+        ),
+    ],
+)

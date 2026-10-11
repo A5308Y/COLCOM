@@ -8,10 +8,12 @@ use super::{tile_center, tile_point};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::{egui_wants_any_keyboard_input, EguiWantsInput};
-use my_world::map::{Block, BuildKind, Desig, Feature, Map, Pos, Zone};
+use my_world::defs::BuildId;
+use my_world::map::{Block, Desig, Map, Pos, Zone};
 use my_world::pawn::Faction;
 use my_world::world::{Order, World as SimWorld};
 use std::f32::consts::FRAC_PI_2;
+use std::sync::LazyLock;
 
 pub const SAVE_PATH: &str = "savegame.json";
 
@@ -21,22 +23,117 @@ pub enum Tool {
     Paint(Order),
 }
 
-pub const TOOLS: [(Tool, &str, KeyCode); 14] = [
-    (Tool::Select, "Esc Select", KeyCode::Escape),
-    (Tool::Paint(Order::Desig(Desig::Chop)), "1 Chop", KeyCode::Digit1),
-    (Tool::Paint(Order::Desig(Desig::Mine)), "2 Mine", KeyCode::Digit2),
-    (Tool::Paint(Order::Desig(Desig::Forage)), "3 Forage", KeyCode::Digit3),
-    (Tool::Paint(Order::Zone(Zone::Stockpile)), "4 Stockpile", KeyCode::Digit4),
-    (Tool::Paint(Order::Zone(Zone::Grow)), "5 Grow zone", KeyCode::Digit5),
-    (Tool::Paint(Order::Build(BuildKind::Wall)), "6 Wall", KeyCode::Digit6),
-    (Tool::Paint(Order::Build(BuildKind::Door)), "7 Door", KeyCode::Digit7),
-    (Tool::Paint(Order::Build(BuildKind::Bed)), "8 Bed", KeyCode::Digit8),
-    (Tool::Paint(Order::Build(BuildKind::Floor)), "- Floor", KeyCode::Minus),
-    (Tool::Paint(Order::Build(BuildKind::Stairs)), "= Stairs", KeyCode::Equal),
-    (Tool::Paint(Order::Build(BuildKind::Lamp)), "B Lamp", KeyCode::KeyB),
-    (Tool::Paint(Order::Zone(Zone::None)), "9 Clear zone", KeyCode::Digit9),
-    (Tool::Paint(Order::Cancel), "0 Cancel", KeyCode::Digit0),
+/// Toolbar entries (tool, label, shortcut): fixed tools around one per
+/// buildable in the definitions.
+pub static TOOLS: LazyLock<Vec<(Tool, String, Option<KeyCode>)>> = LazyLock::new(|| {
+    let fixed = |tool, label: &str, key| (tool, label.to_string(), Some(key));
+    let mut tools = vec![
+        fixed(Tool::Select, "Esc Select", KeyCode::Escape),
+        fixed(Tool::Paint(Order::Desig(Desig::Chop)), "1 Chop", KeyCode::Digit1),
+        fixed(Tool::Paint(Order::Desig(Desig::Mine)), "2 Mine", KeyCode::Digit2),
+        fixed(Tool::Paint(Order::Desig(Desig::Forage)), "3 Forage", KeyCode::Digit3),
+        fixed(Tool::Paint(Order::Zone(Zone::Stockpile)), "4 Stockpile", KeyCode::Digit4),
+        fixed(Tool::Paint(Order::Zone(Zone::Grow)), "5 Grow zone", KeyCode::Digit5),
+    ];
+    for kind in BuildId::all() {
+        let def = kind.def();
+        let key = def.key.as_deref().and_then(|k| match parse_key(k) {
+            Some(code) if !RESERVED.contains(&code) => Some((k, code)),
+            _ => {
+                warn!("{}: key \"{}\" can't be used as a shortcut", def.id, k);
+                None
+            }
+        });
+        let label = match key {
+            Some((k, _)) => format!("{} {}", k.to_uppercase(), def.name),
+            None => def.name.clone(),
+        };
+        tools.push((Tool::Paint(Order::Build(kind)), label, key.map(|k| k.1)));
+    }
+    tools.push(fixed(Tool::Paint(Order::Zone(Zone::None)), "9 Clear zone", KeyCode::Digit9));
+    tools.push(fixed(Tool::Paint(Order::Cancel), "0 Cancel", KeyCode::Digit0));
+    tools
+});
+
+/// Keys with fixed meanings, which buildables can't use as shortcuts.
+const RESERVED: [KeyCode; 21] = [
+    KeyCode::Escape,
+    KeyCode::Digit1,
+    KeyCode::Digit2,
+    KeyCode::Digit3,
+    KeyCode::Digit4,
+    KeyCode::Digit5,
+    KeyCode::Digit9,
+    KeyCode::Digit0,
+    KeyCode::KeyW,
+    KeyCode::KeyA,
+    KeyCode::KeyS,
+    KeyCode::KeyD,
+    KeyCode::KeyQ,
+    KeyCode::KeyE,
+    KeyCode::KeyP,
+    KeyCode::KeyH,
+    KeyCode::KeyF,
+    KeyCode::KeyC,
+    KeyCode::KeyK,
+    KeyCode::KeyL,
+    KeyCode::KeyN,
 ];
+
+const LETTERS: [KeyCode; 26] = [
+    KeyCode::KeyA,
+    KeyCode::KeyB,
+    KeyCode::KeyC,
+    KeyCode::KeyD,
+    KeyCode::KeyE,
+    KeyCode::KeyF,
+    KeyCode::KeyG,
+    KeyCode::KeyH,
+    KeyCode::KeyI,
+    KeyCode::KeyJ,
+    KeyCode::KeyK,
+    KeyCode::KeyL,
+    KeyCode::KeyM,
+    KeyCode::KeyN,
+    KeyCode::KeyO,
+    KeyCode::KeyP,
+    KeyCode::KeyQ,
+    KeyCode::KeyR,
+    KeyCode::KeyS,
+    KeyCode::KeyT,
+    KeyCode::KeyU,
+    KeyCode::KeyV,
+    KeyCode::KeyW,
+    KeyCode::KeyX,
+    KeyCode::KeyY,
+    KeyCode::KeyZ,
+];
+
+const DIGITS: [KeyCode; 10] = [
+    KeyCode::Digit0,
+    KeyCode::Digit1,
+    KeyCode::Digit2,
+    KeyCode::Digit3,
+    KeyCode::Digit4,
+    KeyCode::Digit5,
+    KeyCode::Digit6,
+    KeyCode::Digit7,
+    KeyCode::Digit8,
+    KeyCode::Digit9,
+];
+
+/// A shortcut written in the definitions: one letter, digit, `-` or `=`.
+fn parse_key(key: &str) -> Option<KeyCode> {
+    let mut chars = key.chars();
+    let (Some(c), None) = (chars.next(), chars.next()) else { return None };
+    match c.to_ascii_uppercase() {
+        c @ 'A'..='Z' => Some(LETTERS[(c as u8 - b'A') as usize]),
+        c @ '0'..='9' => Some(DIGITS[(c as u8 - b'0') as usize]),
+        '-' => Some(KeyCode::Minus),
+        '=' => Some(KeyCode::Equal),
+        _ => None,
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Selection {
@@ -112,7 +209,7 @@ impl Plugin for InputPlugin {
 /// Solid for picking: ground, rock, water, or a wall.
 fn stops_ray(m: &Map, p: Pos) -> bool {
     let i = m.idx(p);
-    m.block[i] != Block::Air || m.feature[i] == Feature::Wall
+    m.block[i] != Block::Air || m.feature[i].is_block()
 }
 
 /// Step along the camera ray until it enters something solid, ignoring
@@ -293,9 +390,9 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
         ui.show_help = false;
         ui.show_work = false;
     }
-    for (tool, _, key) in TOOLS {
-        if keys.just_pressed(key) {
-            ui.tool = tool;
+    for (tool, _, key) in TOOLS.iter() {
+        if key.is_some_and(|k| keys.just_pressed(k)) {
+            ui.tool = *tool;
             ui.drag_start = None;
         }
     }
@@ -341,7 +438,7 @@ fn mouse(
         Tool::Select => {
             if buttons.just_pressed(MouseButton::Left) && !over_ui {
                 if let Some(h) = hover {
-                    let wall = sim.world.map.feature[sim.world.map.idx(h.solid)] == Feature::Wall;
+                    let wall = sim.world.map.feature[sim.world.map.idx(h.solid)].is_block();
                     ui.selected = Some(match pawn_at(&sim.world, h.stand) {
                         Some(id) => Selection::Pawn(id),
                         None => Selection::Tile(if wall { h.solid } else { h.stand }),
@@ -455,7 +552,7 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
         }
     }
     if let Some(Selection::Tile(t)) = ui.selected {
-        if m.feature[m.idx(t)] == Feature::Wall {
+        if m.feature[m.idx(t)].is_block() {
             cell_outline(&mut gizmos, t, Color::srgb(1.0, 0.9, 0.2));
         } else {
             floor_outline(&mut gizmos, t, 0.0, Color::srgb(1.0, 0.9, 0.2));
@@ -493,5 +590,22 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
         gizmos.sphere(Isometry3d::from_translation(from), 0.05 + 0.1 * fade, flash);
         let puff = if e.hit { LinearRgba::rgb(1.6, 0.15, 0.1) } else { LinearRgba::rgb(0.7, 0.62, 0.5) };
         gizmos.sphere(Isometry3d::from_translation(to), 0.25 * (1.0 - fade) + 0.05, Color::LinearRgba(puff * fade));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_buildable_has_a_usable_distinct_shortcut() {
+        let keys: Vec<KeyCode> = TOOLS.iter().filter_map(|t| t.2).collect();
+        for (k, key) in keys.iter().enumerate() {
+            assert!(!keys[k + 1..].contains(key), "{:?} used twice", key);
+        }
+        for kind in BuildId::all() {
+            let tool = TOOLS.iter().find(|t| t.0 == Tool::Paint(Order::Build(kind))).expect("on the toolbar");
+            assert_eq!(tool.2.is_some(), kind.def().key.is_some(), "{} shortcut", kind.def().id);
+        }
     }
 }

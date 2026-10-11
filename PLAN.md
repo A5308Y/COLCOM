@@ -41,7 +41,7 @@
 | 3 | Multi-level gameplay: digging, stairs, floors, support rule, 3D rooms and roofs, layer view, building on any level | done |
 | 4 | Visual polish: walking/hop/fall animation, lamps, translucent water, fog, ambient occlusion, bloom, gunfire flashes | done (needs a visual check) |
 | 5 | Performance and saves: profiling, faster searches, versioned and compact save files | done |
-| 6 | Data-driven definitions: items, buildables, plants and recipes described in a data file, not code | |
+| 6 | Data-driven definitions: items, buildables, plants and recipes described in a data file, not code | done (recipes come with phase 7) |
 | 7 | Production chains: workbenches, job queues, Cooking/Crafting, new resources, stockpile filters | |
 | 8 | More buildables: furniture, shelves, windows, torches, fences, room quality | |
 | 9 | Sound: actions, ambience, interface | |
@@ -108,6 +108,26 @@ the list of things has settled.
   downloaded sources under `$TMPDIR/cargo-home/registry/src/` before using them.
 
 ## Notes
+
+- Phase 6: `assets/defs.ron` (RON, built in with `include_str!`) holds items, buildables and plants;
+  `src/defs.rs` loads it once into a global registry (`defs()`), checks it (unique ids, known items and
+  colours, sensible numbers) and hands out `ItemId` / `BuildId` / `PlantId` (u16 indexes).
+  `Feature` is now `None | Plant { kind, growth } | Built { kind, dir } | Blueprint { kind, delivered }`;
+  tasks are `Harvest(plant) | Sow(plant) | Mine | Construct`, with skill and time from the definition.
+  Code-handled behaviour is fields: `nutrition`, `medicine` (potency), `pods`, `special` (`Floor`,
+  `Stairs`, `Bed`, `Door`), `passable` / `blocks_room` / `blocks_sight` / `holds_floors`, `light`,
+  `drops` (default half the cost), `sow`, `wild` (density, regrow weight), `harvest` (designation,
+  work type, skill, time, yield, verb). Looks are lists of unit shapes with palette colours; plants
+  have growth stages with random variants. Blueprints now show a see-through copy of the real model.
+  Toolbar entries and shortcuts for buildables come from the file too (`key`; letters/digits/`-`/`=`,
+  fixed keys are refused).
+- Saves store definition ids as text (`"wood"`, `"tree"`), so adding or reordering definitions keeps
+  saves loadable; renaming an id doesn't. `SAVE_VERSION` is 2. Eating now holds the food item while
+  eating (dropped again if interrupted), so its nutrition is known when done.
+- Still in code: blocks (soil, rock, water; rock yields `rock_drops`), work types, skills, designations
+  and zones. Floors are still one kind (`Map::floor` is a bool), so only one buildable may be the floor.
+  Grow zones plant the first plant with `sow`; choosing per zone comes with phase 7's crops.
+- Phase 6 performance: unchanged (0.051 ms per tick in `--example profile`, headless frame 1.4 ms).
 
 - Phase 5 measurements (`cargo run --release --example profile`: 10 colonists, 240 work orders, two
   in-game days on an M4 Max): about 0.05 ms per simulation tick on average (under 0.5% of a 60 fps frame

@@ -1,7 +1,8 @@
-//! Simulation core for My World. Nothing in here touches macroquad, so the
+//! Simulation core for My World. Nothing in here touches Bevy, so the
 //! whole colony can be simulated (and unit tested) without a window.
 
 pub mod combat;
+pub mod defs;
 pub mod health;
 pub mod jobs;
 pub mod map;

@@ -1,7 +1,8 @@
 //! The whole simulation state and its fixed-step update.
 
 use crate::health::TickCtx;
-use crate::map::{Block, BuildKind, Desig, Feature, ItemKind, Map, Pos, Stack, Zone};
+use crate::defs::{defs, BuildId, PlantId, Special};
+use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone};
 use crate::pawn::{Faction, Job, Memory, Pawn, WorkType};
 use crate::pathing::bfs;
 use crate::rng::Rng;
@@ -12,8 +13,6 @@ use serde::{Deserialize, Serialize};
 pub const MAP_W: usize = 100;
 pub const MAP_H: usize = 70;
 pub const MAP_D: usize = 16;
-/// Daylight seconds for a crop to ripen.
-const CROP_GROW_TIME: f32 = 180.0;
 
 const COLONIST_NAMES: [&str; 16] = [
     "Ada", "Bram", "Cleo", "Dax", "Eve", "Finn", "Gus", "Hana", "Ivo", "Juno", "Kai", "Lia", "Milo", "Nell",
@@ -34,7 +33,7 @@ pub struct Effect {
 pub enum Order {
     Desig(Desig),
     Zone(Zone),
-    Build(BuildKind),
+    Build(BuildId),
     Cancel,
 }
 
@@ -80,15 +79,19 @@ impl World {
         for k in 0..3 {
             w.spawn_colonist((cx - 1 + k, cy, z));
         }
+        let mut stockpile = Vec::new();
         for y in cy + 2..cy + 5 {
             for x in cx - 4..cx + 2 {
                 let i = w.map.idx((x, y, z));
                 w.map.zone[i] = Zone::Stockpile;
+                stockpile.push((x, y, z));
             }
         }
-        w.map.drop_item((cx - 4, cy + 2, z), Stack { kind: ItemKind::Wood, count: 80 });
-        w.map.drop_item((cx + 1, cy + 4, z), Stack { kind: ItemKind::Food, count: 40 });
-        w.map.drop_item((cx - 1, cy + 4, z), Stack { kind: ItemKind::Medicine, count: 8 });
+        // Starting supplies, a few cells apart in the stockpile.
+        for (k, a) in defs().start_items.iter().enumerate() {
+            let at = stockpile[(k * 7) % stockpile.len()];
+            w.map.drop_item(at, Stack { kind: a.item, count: a.count });
+        }
         w.push_log("Three colonists crash-landed. Press H for help.".into());
         w
     }
@@ -180,7 +183,7 @@ impl World {
             }
             needs_tending |= h.needs_tending();
         }
-        let medicine = self.map.count_items(ItemKind::Medicine);
+        let medicine = self.map.count_items_where(|k| defs().is_medicine(k));
         if needs_tending && medicine == 0 {
             out.push(("No medicine".into(), true));
         } else if medicine < 3 {
@@ -189,11 +192,11 @@ impl World {
         if !colonists.iter().any(|p| p.active() && p.priorities[WorkType::Doctor as usize] > 0) {
             out.push(("No doctor available".into(), needs_tending));
         }
-        let food = self.map.count_items(ItemKind::Food);
+        let food = self.map.count_items_where(|k| defs().is_food(k));
         if (food as usize) < colonists.len() * 4 {
             out.push((format!("Low food ({} left)", food), false));
         }
-        let beds = self.map.feature.iter().filter(|f| **f == Feature::Bed).count();
+        let beds = self.map.feature.iter().filter(|f| f.is_bed()).count();
         if beds < colonists.len() {
             out.push((format!("Need beds ({}/{})", beds, colonists.len()), false));
         }
@@ -274,10 +277,12 @@ impl World {
 
     fn grow_plants(&mut self, dt: f32) {
         if !self.is_night() {
-            let g = dt / CROP_GROW_TIME;
             for f in self.map.feature.iter_mut() {
-                if let Feature::Crop { growth } = f {
-                    *growth = (*growth + g).min(1.0);
+                if let Feature::Plant { kind, growth } = f {
+                    if *growth < 1.0 {
+                        let t = kind.def().grow_time;
+                        *growth = if t > 0.0 { (*growth + dt / t).min(1.0) } else { 1.0 };
+                    }
                 }
             }
         }
@@ -295,10 +300,26 @@ impl World {
                 && !m.covered((x, y, z))
                 && !self.pawns.iter().any(|p| m.idx(p.pos) == i);
             if free {
-                let f = if self.rng.chance(0.6) { Feature::Tree } else { Feature::Bush };
-                self.map.set_feature(i, f);
+                if let Some(kind) = self.pick_regrowing() {
+                    self.map.set_feature(i, Feature::Plant { kind, growth: 1.0 });
+                }
             }
         }
+    }
+
+    /// A wild plant, weighted by how readily each regrows.
+    fn pick_regrowing(&mut self) -> Option<PlantId> {
+        let wild: Vec<(PlantId, f32)> =
+            PlantId::all().filter_map(|k| k.def().wild.as_ref().map(|w| (k, w.regrow))).collect();
+        let total: f32 = wild.iter().map(|w| w.1).sum();
+        let mut r = self.rng.f32() * total;
+        for &(kind, weight) in &wild {
+            if r < weight {
+                return Some(kind);
+            }
+            r -= weight;
+        }
+        wild.last().map(|w| w.0)
     }
 
     /// Items drop to the next support; plants that lost their ground die.
@@ -309,7 +330,7 @@ impl World {
             if p.2 == 0 || self.map.block[i] != Block::Air || self.map.supported(p) {
                 continue;
             }
-            if matches!(self.map.feature[i], Feature::Tree | Feature::Bush | Feature::Crop { .. }) {
+            if matches!(self.map.feature[i], Feature::Plant { .. }) {
                 self.map.set_feature(i, Feature::None);
             }
             if let Some(s) = self.map.items[i].take() {
@@ -626,16 +647,17 @@ impl World {
         let i = m.idx(p);
         let f = m.feature[i];
         match order {
-            Order::Desig(Desig::Chop) => f == Feature::Tree,
             Order::Desig(Desig::Mine) => m.mineable(p),
-            Order::Desig(Desig::Forage) => f == Feature::Bush,
+            Order::Desig(d) => f.harvest_desig() == Some(d),
             Order::Zone(Zone::None) => m.zone[i] != Zone::None,
-            Order::Zone(_) => m.standable(p) && matches!(f, Feature::None | Feature::Crop { .. }),
-            Order::Build(BuildKind::Floor) => m.floor_buildable(p),
-            Order::Build(BuildKind::Stairs) => {
-                m.standable(p) && f == Feature::None && m.above(p).is_some_and(|a| m.block[m.idx(a)] == Block::Air)
-            }
-            Order::Build(_) => m.standable(p) && f == Feature::None,
+            Order::Zone(_) => m.standable(p) && (f == Feature::None || f.is_crop()),
+            Order::Build(kind) => match kind.def().special {
+                Special::Floor => m.floor_buildable(p),
+                Special::Stairs => {
+                    m.standable(p) && f == Feature::None && m.above(p).is_some_and(|a| m.block[m.idx(a)] == Block::Air)
+                }
+                _ => m.standable(p) && f == Feature::None,
+            },
             Order::Cancel => m.desig[i].is_some() || matches!(f, Feature::Blueprint { .. }),
         }
     }
@@ -655,7 +677,7 @@ impl World {
                 if let Feature::Blueprint { kind, delivered } = self.map.feature[i] {
                     self.map.feature[i] = Feature::None;
                     if delivered > 0 {
-                        self.map.drop_item(p, Stack { kind: kind.cost().kind, count: delivered });
+                        self.map.drop_item(p, Stack { kind: kind.def().cost.item, count: delivered });
                     }
                 }
             }
@@ -750,11 +772,15 @@ fn move_towards(p: &mut Pawn, t: Pos, dt: f32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::Feature;
+    use crate::defs::ItemId;
     use crate::pawn::Weapon;
     use crate::TICK;
 
     const Z: usize = crate::map::FLAT_Z;
+
+    fn item(id: &str) -> ItemId {
+        ItemId::named(id)
+    }
 
     fn test_world(w: usize, h: usize) -> World {
         let mut world = World::with_map(Map::flat(w, h), Rng::new(7));
@@ -787,7 +813,7 @@ mod tests {
             w.map.zone[i] = Zone::Stockpile;
         }
         let src = w.map.idx((12, 12, Z));
-        w.map.items[src] = Some(Stack { kind: ItemKind::Wood, count: 20 });
+        w.map.items[src] = Some(Stack { kind: item("wood"), count: 20 });
         run(&mut w, 30.0);
         assert!(w.map.items[src].is_none(), "wood should have been picked up");
         let stored: u32 = (2..5).filter_map(|x| w.map.items[w.map.idx((x, 10, Z))]).map(|s| s.count).sum();
@@ -799,11 +825,11 @@ mod tests {
         let mut w = test_world(20, 20);
         colonist(&mut w, (2, 2, Z));
         let stone = w.map.idx((3, 8, Z));
-        w.map.items[stone] = Some(Stack { kind: ItemKind::Stone, count: 4 });
-        w.apply_order((10, 10, Z), Order::Build(BuildKind::Wall));
+        w.map.items[stone] = Some(Stack { kind: item("stone"), count: 4 });
+        w.apply_order((10, 10, Z), Order::Build(BuildId::named("wall")));
         run(&mut w, 40.0);
-        assert_eq!(w.map.feature[w.map.idx((10, 10, Z))], Feature::Wall);
-        assert_eq!(w.map.count_items(ItemKind::Stone), 0);
+        assert_eq!(w.map.feature[w.map.idx((10, 10, Z))], Feature::built("wall"));
+        assert_eq!(w.map.count_items(item("stone")), 0);
     }
 
     #[test]
@@ -811,11 +837,11 @@ mod tests {
         let mut w = test_world(20, 20);
         colonist(&mut w, (2, 2, Z));
         let t = w.map.idx((8, 8, Z));
-        w.map.feature[t] = Feature::Tree;
+        w.map.feature[t] = Feature::plant("tree");
         w.apply_order((8, 8, Z), Order::Desig(Desig::Chop));
         run(&mut w, 20.0);
         assert_eq!(w.map.feature[t], Feature::None);
-        assert!(w.map.count_items(ItemKind::Wood) > 0);
+        assert!(w.map.count_items(item("wood")) > 0);
     }
 
     #[test]
@@ -825,10 +851,10 @@ mod tests {
         let i = w.pawn_index(id).unwrap();
         w.pawns[i].hunger = 15.0;
         let f = w.map.idx((6, 6, Z));
-        w.map.items[f] = Some(Stack { kind: ItemKind::Food, count: 3 });
+        w.map.items[f] = Some(Stack { kind: item("food"), count: 3 });
         run(&mut w, 10.0);
         assert!(w.pawn(id).unwrap().hunger > 40.0);
-        assert_eq!(w.map.count_items(ItemKind::Food), 2);
+        assert_eq!(w.map.count_items(item("food")), 2);
     }
 
     #[test]
@@ -838,7 +864,7 @@ mod tests {
         let i = w.map.idx((6, 6, Z));
         w.apply_order((6, 6, Z), Order::Zone(Zone::Grow));
         run(&mut w, 10.0);
-        assert!(matches!(w.map.feature[i], Feature::Crop { .. }));
+        assert!(w.map.feature[i].is_crop());
     }
 
     #[test]
@@ -849,7 +875,7 @@ mod tests {
         w.set_priority(id, WorkType::Mining, 1);
         // The tree is closer, but mining has the higher priority.
         let tree = w.map.idx((3, 2, Z));
-        w.map.feature[tree] = Feature::Tree;
+        w.map.feature[tree] = Feature::plant("tree");
         w.apply_order((3, 2, Z), Order::Desig(Desig::Chop));
         let rock = w.map.idx((15, 15, Z));
         w.map.block[rock] = Block::Rock;
@@ -889,13 +915,13 @@ mod tests {
         let patient = colonist(&mut w, (10, 10, Z));
         w.set_priority(patient, WorkType::Doctor, 0);
         let med = w.map.idx((5, 5, Z));
-        w.map.items[med] = Some(Stack { kind: ItemKind::Medicine, count: 2 });
+        w.map.items[med] = Some(Stack { kind: item("medicine"), count: 2 });
         wound(&mut w, patient, Part::LeftLeg, 10.0, DamageKind::Gunshot);
         run(&mut w, 25.0);
         let p = w.pawn(patient).unwrap();
         assert!(!p.health.needs_tending(), "patient should have been tended");
         assert_eq!(p.health.bleed_rate(), 0.0);
-        assert_eq!(w.map.count_items(ItemKind::Medicine), 1);
+        assert_eq!(w.map.count_items(item("medicine")), 1);
         assert!(w.pawn(doctor).unwrap().job.map_or(true, |j| !matches!(j, Job::Tend { .. })));
     }
 
@@ -907,7 +933,7 @@ mod tests {
         let patient = colonist(&mut w, (12, 12, Z));
         w.set_priority(patient, WorkType::Doctor, 0);
         let bed = w.map.idx((4, 15, Z));
-        w.map.feature[bed] = Feature::Bed;
+        w.map.feature[bed] = Feature::built("bed");
         // Both legs gone: conscious, but unable to walk.
         wound(&mut w, patient, Part::LeftLeg, 100.0, DamageKind::Bruise);
         wound(&mut w, patient, Part::RightLeg, 100.0, DamageKind::Bruise);
@@ -950,10 +976,10 @@ mod tests {
             w.map.zone[i] = Zone::Stockpile;
         }
         let src = w.map.idx((15, 15, Z + 1));
-        w.map.items[src] = Some(Stack { kind: ItemKind::Wood, count: 20 });
+        w.map.items[src] = Some(Stack { kind: item("wood"), count: 20 });
         run(&mut w, 40.0);
         assert!(w.map.items[src].is_none(), "wood on the hill should have been fetched");
-        assert_eq!(w.map.count_items(ItemKind::Wood), 20);
+        assert_eq!(w.map.count_items(item("wood")), 20);
     }
 
     #[test]
@@ -966,7 +992,7 @@ mod tests {
             w.map.zone[i] = Zone::Stockpile;
         }
         let src = w.map.idx((15, 15, Z + 2));
-        w.map.items[src] = Some(Stack { kind: ItemKind::Wood, count: 20 });
+        w.map.items[src] = Some(Stack { kind: item("wood"), count: 20 });
         run(&mut w, 30.0);
         assert!(w.map.items[src].is_some(), "nobody can climb a two-level cliff");
     }
@@ -994,7 +1020,7 @@ mod tests {
         assert!(w.map.standable((10, 5, Z)), "the tunnel floor can be walked on");
         assert!(w.map.covered((10, 5, Z)), "rock overhead");
         assert!(!w.map.roofed((10, 5, Z)), "but open at one end, so not an enclosed room");
-        assert!(w.map.count_items(ItemKind::Stone) >= 18);
+        assert!(w.map.count_items(item("stone")) >= 18);
     }
 
     #[test]
@@ -1067,7 +1093,7 @@ mod tests {
             for x in 5..=9 {
                 if x == 5 || x == 9 || y == 5 || y == 9 {
                     let i = w.map.idx((x, y, Z));
-                    w.map.set_feature(i, if (x, y) == (5, 7) { Feature::Door } else { Feature::Wall });
+                    w.map.set_feature(i, if (x, y) == (5, 7) { Feature::built("door") } else { Feature::built("wall") });
                 }
             }
         }
@@ -1076,11 +1102,11 @@ mod tests {
         let mut placed = 0;
         for y in 5..=9 {
             for x in 5..=9 {
-                placed += w.apply_order((x, y, Z + 1), Order::Build(BuildKind::Floor)) as usize;
+                placed += w.apply_order((x, y, Z + 1), Order::Build(BuildId::named("floor"))) as usize;
             }
         }
         assert_eq!(placed, 25, "every cell over the room has wall support nearby");
-        w.map.drop_item((7, 7, Z), Stack { kind: ItemKind::Wood, count: 50 });
+        w.map.drop_item((7, 7, Z), Stack { kind: item("wood"), count: 50 });
         run(&mut w, 120.0);
         let built = (5..=9).flat_map(|y| (5..=9).map(move |x| (x, y))).filter(|&(x, y)| w.map.floor[w.map.idx((x, y, Z + 1))]).count();
         assert_eq!(built, 25, "all floors built");
@@ -1092,7 +1118,7 @@ mod tests {
         let mut w = test_world(16, 4);
         colonist(&mut w, (1, 1, Z));
         let stairs = w.map.idx((4, 1, Z));
-        w.map.feature[stairs] = Feature::Stairs { dir: 0 };
+        w.map.feature[stairs] = Feature::built("stairs");
         for x in 4..12 {
             let i = w.map.idx((x, 1, Z + 1));
             w.map.floor[i] = true;
@@ -1102,10 +1128,78 @@ mod tests {
             w.map.zone[i] = Zone::Stockpile;
         }
         let src = w.map.idx((11, 1, Z + 1));
-        w.map.items[src] = Some(Stack { kind: ItemKind::Stone, count: 10 });
+        w.map.items[src] = Some(Stack { kind: item("stone"), count: 10 });
         run(&mut w, 30.0);
         assert!(w.map.items[src].is_none(), "fetched from upstairs");
-        assert_eq!(w.map.count_items(ItemKind::Stone), 10);
+        assert_eq!(w.map.count_items(item("stone")), 10);
+    }
+
+    /// Every buildable in the definitions can be placed, built from its
+    /// materials, and mined away again for what it drops.
+    #[test]
+    fn every_buildable_can_be_built_and_removed() {
+        for kind in BuildId::all() {
+            let def = kind.def();
+            let mut w = test_world(16, 16);
+            colonist(&mut w, (2, 2, Z));
+            let at = if def.special == Special::Floor {
+                // Floors go in the air, held up by rock nearby.
+                let rock = w.map.idx((8, 8, Z));
+                w.map.set_block(rock, Block::Rock);
+                (9, 8, Z + 1)
+            } else {
+                (8, 8, Z)
+            };
+            w.map.drop_item((3, 3, Z), Stack { kind: def.cost.item, count: def.cost.count });
+            assert!(w.apply_order(at, Order::Build(kind)), "{} can be placed", def.id);
+            run(&mut w, 60.0);
+            let i = w.map.idx(at);
+            match def.special {
+                Special::Floor => assert!(w.map.floor[i], "{} built", def.id),
+                _ => assert!(matches!(w.map.feature[i], Feature::Built { kind: k, .. } if k == kind), "{} built", def.id),
+            }
+            assert_eq!(w.map.count_items(def.cost.item), 0, "{} used its materials", def.id);
+
+            assert!(w.apply_order(at, Order::Desig(Desig::Mine)), "{} can be removed", def.id);
+            run(&mut w, 30.0);
+            assert_eq!(w.map.feature[i], Feature::None, "{} removed", def.id);
+            assert!(!w.map.floor[i], "{} removed", def.id);
+            let (item, count) = def.drops();
+            assert_eq!(w.map.count_items(item), count, "{} drops", def.id);
+        }
+    }
+
+    /// Every plant can be harvested (designated or automatically) for its yield.
+    #[test]
+    fn every_plant_can_be_harvested() {
+        for kind in PlantId::all() {
+            let def = kind.def();
+            let mut w = test_world(16, 16);
+            colonist(&mut w, (2, 2, Z));
+            let i = w.map.idx((8, 8, Z));
+            w.map.set_feature(i, Feature::Plant { kind, growth: 1.0 });
+            if let Some(d) = def.harvest.desig {
+                assert!(w.apply_order((8, 8, Z), Order::Desig(d)), "{} can be designated", def.id);
+            }
+            run(&mut w, 30.0);
+            assert_eq!(w.map.feature[i], Feature::None, "{} harvested", def.id);
+            assert_eq!(w.map.count_items(def.harvest.yields.item), def.harvest.yields.count, "{} yields", def.id);
+        }
+    }
+
+    #[test]
+    fn crops_ripen_and_get_harvested() {
+        let mut w = test_world(12, 12);
+        colonist(&mut w, (2, 2, Z));
+        w.apply_order((6, 6, Z), Order::Zone(Zone::Grow));
+        let yields = &defs().sown().unwrap().def().harvest.yields;
+        // Crops only grow in daylight, so this can take more than a day.
+        let harvested = (0..(3.0 * DAY_LEN) as usize).any(|_| {
+            run(&mut w, 1.0);
+            w.pawns.iter_mut().for_each(|p| p.hunger = 100.0);
+            w.map.count_items(yields.item) >= yields.count
+        });
+        assert!(harvested, "a harvest came in");
     }
 
     #[test]

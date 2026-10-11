@@ -45,14 +45,6 @@ pub const STOCKPILE: Rgb = Rgb(0.75, 0.75, 0.95);
 pub const BLOOD: Rgb = Rgb(0.45, 0.03, 0.04);
 
 pub const WOOD: Rgb = Rgb(0.55, 0.37, 0.2);
-pub const WOOD_LIGHT: Rgb = Rgb(0.76, 0.57, 0.35);
-pub const LEAF: Rgb = Rgb(0.2, 0.42, 0.18);
-pub const LEAF_LIGHT: Rgb = Rgb(0.34, 0.58, 0.26);
-pub const PINE: Rgb = Rgb(0.13, 0.33, 0.21);
-pub const BERRY: Rgb = Rgb(0.84, 0.16, 0.24);
-pub const VEG: Rgb = Rgb(0.93, 0.52, 0.16);
-pub const WHEAT: Rgb = Rgb(0.91, 0.77, 0.32);
-pub const SHEET: Rgb = Rgb(0.93, 0.91, 0.86);
 pub const METAL: Rgb = Rgb(0.25, 0.26, 0.28);
 
 /// Stable pseudo-random value in [0, 1) for a tile, so decoration doesn't flicker.

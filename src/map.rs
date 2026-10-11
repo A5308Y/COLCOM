@@ -7,6 +7,7 @@
 //! same level, step one level up or down between cells on natural ground when
 //! there is headroom, or use stairs. Built walls and floors are never climbed.
 
+use crate::defs::{BuildDef, BuildId, ItemId, PlantId, Special};
 use crate::rng::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -37,7 +38,8 @@ pub fn adjacent(a: Pos, target: Pos) -> bool {
     (flat == 1 && a.2.abs_diff(target.2) <= 1) || (flat == 0 && a.2.abs_diff(target.2) == 1)
 }
 
-const DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+/// The four horizontal directions; stairs and other turned structures store an index into this.
+pub const DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Block {
@@ -64,138 +66,81 @@ impl Block {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub enum ItemKind {
-    Wood,
-    Stone,
-    Food,
-    Medicine,
-}
-
-impl ItemKind {
-    pub const ALL: [ItemKind; 4] = [ItemKind::Wood, ItemKind::Stone, ItemKind::Food, ItemKind::Medicine];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            ItemKind::Wood => "Wood",
-            ItemKind::Stone => "Stone",
-            ItemKind::Food => "Food",
-            ItemKind::Medicine => "Medicine",
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Stack {
-    pub kind: ItemKind,
+    pub kind: ItemId,
     pub count: u32,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub enum BuildKind {
-    Wall,
-    Door,
-    Bed,
-    Floor,
-    Stairs,
-    Lamp,
-}
-
-impl BuildKind {
-    pub fn cost(self) -> Stack {
-        match self {
-            BuildKind::Wall => Stack { kind: ItemKind::Stone, count: 4 },
-            BuildKind::Door => Stack { kind: ItemKind::Wood, count: 4 },
-            BuildKind::Bed => Stack { kind: ItemKind::Wood, count: 8 },
-            BuildKind::Floor => Stack { kind: ItemKind::Wood, count: 2 },
-            BuildKind::Stairs => Stack { kind: ItemKind::Wood, count: 6 },
-            BuildKind::Lamp => Stack { kind: ItemKind::Wood, count: 3 },
-        }
-    }
-
-    pub fn work_time(self) -> f32 {
-        match self {
-            BuildKind::Wall => 3.0,
-            BuildKind::Door => 3.0,
-            BuildKind::Bed => 5.0,
-            BuildKind::Floor => 2.0,
-            BuildKind::Stairs => 4.0,
-            BuildKind::Lamp => 2.0,
-        }
-    }
-
-    /// The feature it becomes; floors are a flag on the cell instead.
-    pub fn built(self) -> Option<Feature> {
-        match self {
-            BuildKind::Wall => Some(Feature::Wall),
-            BuildKind::Door => Some(Feature::Door),
-            BuildKind::Bed => Some(Feature::Bed),
-            // Facing is decided when they're finished (see `Map::stairs_facing`).
-            BuildKind::Stairs => Some(Feature::Stairs { dir: 0 }),
-            BuildKind::Lamp => Some(Feature::Lamp),
-            BuildKind::Floor => None,
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            BuildKind::Wall => "Wall",
-            BuildKind::Door => "Door",
-            BuildKind::Bed => "Bed",
-            BuildKind::Floor => "Floor",
-            BuildKind::Stairs => "Stairs",
-            BuildKind::Lamp => "Lamp",
-        }
-    }
 }
 
 /// Whatever occupies an open cell.
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Feature {
     None,
-    Tree,
-    Bush,
-    Wall,
-    Door,
-    Bed,
-    /// Connects this cell with the one directly above. Steps rise towards
-    /// `DIRS[dir]`; the only way in or out at this level is from the foot
-    /// (the opposite side).
-    Stairs { dir: u8 },
-    /// A standing lamp: lights its surroundings.
-    Lamp,
-    Crop { growth: f32 },
-    Blueprint { kind: BuildKind, delivered: u32 },
+    /// Trees, bushes, crops. `growth` runs from 0 to 1.
+    Plant { kind: PlantId, growth: f32 },
+    /// A finished structure. For stairs, the steps rise towards `DIRS[dir]`
+    /// and the only way in or out at this level is from the foot (the
+    /// opposite side).
+    Built { kind: BuildId, dir: u8 },
+    Blueprint { kind: BuildId, delivered: u32 },
 }
 
 impl Feature {
+    /// A finished structure, by definition id (tests and fixed content).
+    pub fn built(id: &str) -> Feature {
+        Feature::Built { kind: BuildId::named(id), dir: 0 }
+    }
+
+    /// A fully grown plant, by definition id.
+    pub fn plant(id: &str) -> Feature {
+        Feature::Plant { kind: PlantId::named(id), growth: 1.0 }
+    }
+
+    /// The finished structure here, if any.
+    pub fn structure(self) -> Option<&'static BuildDef> {
+        match self {
+            Feature::Built { kind, .. } => Some(kind.def()),
+            _ => None,
+        }
+    }
+
     pub fn passable(self) -> bool {
-        matches!(
-            self,
-            Feature::None
-                | Feature::Door
-                | Feature::Bed
-                | Feature::Stairs { .. }
-                | Feature::Crop { .. }
-                | Feature::Blueprint { .. }
-        )
+        match self {
+            Feature::None | Feature::Blueprint { .. } => true,
+            Feature::Plant { kind, .. } => kind.def().passable,
+            Feature::Built { kind, .. } => kind.def().passable,
+        }
     }
 
     pub fn blocks_room(self) -> bool {
-        matches!(self, Feature::Wall | Feature::Door)
+        self.structure().is_some_and(|d| d.blocks_room)
     }
 
     pub fn blocks_sight(self) -> bool {
-        matches!(self, Feature::Wall | Feature::Door)
+        self.structure().is_some_and(|d| d.blocks_sight)
     }
 
-    /// The build kind this feature was constructed from, if it is a player structure.
-    pub fn built_from(self) -> Option<BuildKind> {
+    /// A structure drawn as a solid block (walls).
+    pub fn is_block(self) -> bool {
+        self.structure().is_some_and(|d| d.is_block())
+    }
+
+    pub fn is_special(self, s: Special) -> bool {
+        self.structure().is_some_and(|d| d.special == s)
+    }
+
+    pub fn is_bed(self) -> bool {
+        self.is_special(Special::Bed)
+    }
+
+    /// A sown plant (crops in grow zones).
+    pub fn is_crop(self) -> bool {
+        matches!(self, Feature::Plant { kind, .. } if kind.def().sow.is_some())
+    }
+
+    /// The designation a player uses to have this harvested, if it's a plant that needs one.
+    pub fn harvest_desig(self) -> Option<Desig> {
         match self {
-            Feature::Wall => Some(BuildKind::Wall),
-            Feature::Door => Some(BuildKind::Door),
-            Feature::Bed => Some(BuildKind::Bed),
-            Feature::Stairs { .. } => Some(BuildKind::Stairs),
-            Feature::Lamp => Some(BuildKind::Lamp),
+            Feature::Plant { kind, .. } => kind.def().harvest.desig,
             _ => None,
         }
     }
@@ -203,14 +148,8 @@ impl Feature {
     pub fn name(self) -> &'static str {
         match self {
             Feature::None => "Ground",
-            Feature::Tree => "Tree",
-            Feature::Bush => "Berry bush",
-            Feature::Wall => "Wall",
-            Feature::Door => "Door",
-            Feature::Bed => "Bed",
-            Feature::Stairs { .. } => "Stairs",
-            Feature::Lamp => "Lamp",
-            Feature::Crop { .. } => "Crop",
+            Feature::Plant { kind, .. } => kind.name(),
+            Feature::Built { kind, .. } => kind.name(),
             Feature::Blueprint { .. } => "Blueprint",
         }
     }
@@ -375,7 +314,7 @@ impl Map {
     /// Rising direction of stairs in cell `p`, if there are stairs.
     pub fn stairs_dir(&self, p: Pos) -> Option<(i32, i32)> {
         match self.feature[self.idx(p)] {
-            Feature::Stairs { dir } => Some(DIRS[dir as usize % 4]),
+            Feature::Built { kind, dir } if kind.def().special == Special::Stairs => Some(DIRS[dir as usize % 4]),
             _ => None,
         }
     }
@@ -454,7 +393,7 @@ impl Map {
     /// Something a Mine order can remove: rock or soil, a structure, or a floor.
     pub fn mineable(&self, p: Pos) -> bool {
         let i = self.idx(p);
-        self.block[i].solid() || self.feature[i].built_from().is_some() || self.floor[i]
+        self.block[i].solid() || self.feature[i].structure().is_some() || self.floor[i]
     }
 
     /// Where a floor could be built: open air with nothing in it, not already
@@ -497,8 +436,9 @@ impl Map {
         self.floor[i] = on;
     }
 
-    /// Whether a floor at `p` would be held up: solid ground, a wall or
-    /// stairs directly beneath some cell within `SUPPORT_RANGE` on its level.
+    /// Whether a floor at `p` would be held up: solid ground or a structure
+    /// that holds floors (walls, stairs) directly beneath some cell within
+    /// `SUPPORT_RANGE` on its level.
     pub fn floor_supported(&self, p: Pos) -> bool {
         let (x, y, z) = (p.0 as i32, p.1 as i32, p.2 as i32);
         let r = SUPPORT_RANGE;
@@ -507,7 +447,7 @@ impl Map {
                 dx.abs() + dy.abs() <= r
                     && self.at(x + dx, y + dy, z - 1).is_some_and(|q| {
                         let i = self.idx(q);
-                        self.block[i].solid() || matches!(self.feature[i], Feature::Wall | Feature::Stairs { .. })
+                        self.block[i].solid() || self.feature[i].structure().is_some_and(|d| d.holds_floors)
                     })
             })
         })
@@ -541,14 +481,14 @@ impl Map {
     }
 
     /// Whether `kind` can be put down in cell `i`.
-    pub fn can_accept(&self, i: usize, kind: ItemKind) -> bool {
+    pub fn can_accept(&self, i: usize, kind: ItemId) -> bool {
         self.standable(self.pos(i))
             && !matches!(self.feature[i], Feature::Blueprint { .. })
             && self.items[i].map_or(true, |s| s.kind == kind && s.count < STACK_MAX)
     }
 
     /// Take up to `max` of `kind` from cell `i`.
-    pub fn take_item(&mut self, i: usize, kind: ItemKind, max: u32) -> Option<Stack> {
+    pub fn take_item(&mut self, i: usize, kind: ItemId, max: u32) -> Option<Stack> {
         let s = self.items[i]?;
         if s.kind != kind || max == 0 {
             return None;
@@ -586,8 +526,13 @@ impl Map {
         }
     }
 
-    pub fn count_items(&self, kind: ItemKind) -> u32 {
-        self.items.iter().flatten().filter(|s| s.kind == kind).map(|s| s.count).sum()
+    pub fn count_items(&self, kind: ItemId) -> u32 {
+        self.count_items_where(|k| k == kind)
+    }
+
+    /// Total of all items whose kind passes `f` (all food, say).
+    pub fn count_items_where(&self, f: impl Fn(ItemId) -> bool) -> u32 {
+        self.items.iter().flatten().filter(|s| f(s.kind)).map(|s| s.count).sum()
     }
 
     /// Flood-fill each level's open cells, bounded by walls, doors and solid
@@ -636,7 +581,7 @@ impl Map {
     }
 
     /// Hills from layered noise, rocky mountains, lakes in the low ground,
-    /// trees and bushes, and a flat clearing in the middle.
+    /// wild plants, and a flat clearing in the middle.
     pub fn generate(w: usize, h: usize, d: usize, rng: &mut Rng) -> Map {
         let mut m = Map::empty(w, h, d);
         let salts: [u32; 4] = [rng.next_u64() as u32, rng.next_u64() as u32, rng.next_u64() as u32, rng.next_u64() as u32];
@@ -663,7 +608,9 @@ impl Map {
                 }
             }
         }
-        // Trees and bushes on open soil.
+        // Wild plants on open soil, each covering its share of it.
+        let wild: Vec<(PlantId, f32)> =
+            PlantId::all().filter_map(|k| k.def().wild.as_ref().map(|w| (k, w.density))).collect();
         for y in 0..h {
             for x in 0..w {
                 let landing = x.abs_diff(cx) <= 8 && y.abs_diff(cy) <= 6;
@@ -671,12 +618,14 @@ impl Map {
                 if landing || m.block[m.idx((x, y, z - 1))] != Block::Soil {
                     continue;
                 }
-                let r = rng.f32();
+                let mut r = rng.f32();
                 let i = m.idx((x, y, z));
-                if r < 0.11 {
-                    m.feature[i] = Feature::Tree;
-                } else if r < 0.135 {
-                    m.feature[i] = Feature::Bush;
+                for &(kind, density) in &wild {
+                    if r < density {
+                        m.feature[i] = Feature::Plant { kind, growth: 1.0 };
+                        break;
+                    }
+                    r -= density;
                 }
             }
         }
@@ -716,13 +665,21 @@ mod tests {
 
     const Z: usize = FLAT_Z;
 
+    fn wood() -> ItemId {
+        ItemId::named("wood")
+    }
+
+    fn food() -> ItemId {
+        ItemId::named("food")
+    }
+
     /// Walls around a rectangle, optionally with a floor on top as a roof.
     fn wall_box(m: &mut Map, x0: usize, y0: usize, x1: usize, y1: usize, roof: bool) {
         for y in y0..=y1 {
             for x in x0..=x1 {
                 if x == x0 || x == x1 || y == y0 || y == y1 {
                     let i = m.idx((x, y, Z));
-                    m.set_feature(i, Feature::Wall);
+                    m.set_feature(i, Feature::built("wall"));
                 }
                 if roof {
                     let i = m.idx((x, y, Z + 1));
@@ -761,7 +718,7 @@ mod tests {
         let mut m = Map::flat(20, 20);
         wall_box(&mut m, 5, 5, 9, 9, true);
         let i = m.idx((5, 7, Z));
-        m.set_feature(i, Feature::Door);
+        m.set_feature(i, Feature::built("door"));
         m.recompute_rooms();
         assert!(m.roofed((7, 7, Z)));
     }
@@ -817,7 +774,7 @@ mod tests {
     fn walls_are_not_climbable() {
         let mut m = Map::flat(5, 3);
         let i = m.idx((2, 1, Z));
-        m.set_feature(i, Feature::Wall);
+        m.set_feature(i, Feature::built("wall"));
         let next: Vec<Pos> = m.walk_neighbors((1, 1, Z)).collect();
         assert!(!next.iter().any(|p| p.0 == 2), "{:?}", next);
     }
@@ -836,7 +793,7 @@ mod tests {
     fn stairs_connect_levels() {
         let mut m = Map::flat(10, 3);
         let stairs = m.idx((3, 1, Z));
-        m.set_feature(stairs, Feature::Stairs { dir: 0 }); // rising towards +x
+        m.set_feature(stairs, Feature::built("stairs")); // rising towards +x
         for x in 3..8 {
             let i = m.idx((x, 1, Z + 1));
             m.set_floor(i, true);
@@ -854,7 +811,7 @@ mod tests {
     fn stairs_cannot_be_walked_across() {
         let mut m = Map::flat(10, 3);
         let stairs = m.idx((3, 1, Z));
-        m.set_feature(stairs, Feature::Stairs { dir: 0 });
+        m.set_feature(stairs, Feature::built("stairs"));
         let from_side: Vec<Pos> = m.walk_neighbors((3, 0, Z)).collect();
         assert!(!from_side.contains(&(3, 1, Z)), "only from the foot");
         let from_stairs: Vec<Pos> = m.walk_neighbors((3, 1, Z)).collect();
@@ -882,7 +839,7 @@ mod tests {
         let mut m = Map::flat(20, 3);
         // A wall at x=5 holds up floors up to SUPPORT_RANGE away.
         let w = m.idx((5, 1, Z));
-        m.set_feature(w, Feature::Wall);
+        m.set_feature(w, Feature::built("wall"));
         assert!(m.floor_buildable((5 + SUPPORT_RANGE as usize, 1, Z + 1)));
         assert!(!m.floor_buildable((5 + SUPPORT_RANGE as usize + 1, 1, Z + 1)));
         assert!(!m.floor_buildable((5, 1, Z)), "not inside a wall");
@@ -902,8 +859,8 @@ mod tests {
     #[test]
     fn drop_item_spills_over_full_cells() {
         let mut m = Map::flat(10, 10);
-        m.drop_item((5, 5, Z), Stack { kind: ItemKind::Wood, count: 120 });
-        assert_eq!(m.count_items(ItemKind::Wood), 120);
+        m.drop_item((5, 5, Z), Stack { kind: wood(), count: 120 });
+        assert_eq!(m.count_items(wood()), 120);
         assert_eq!(m.items[m.idx((5, 5, Z))].unwrap().count, STACK_MAX);
     }
 
@@ -911,10 +868,10 @@ mod tests {
     fn take_item_respects_kind_and_amount() {
         let mut m = Map::flat(5, 5);
         let i = m.idx((1, 1, Z));
-        m.items[i] = Some(Stack { kind: ItemKind::Food, count: 3 });
-        assert!(m.take_item(i, ItemKind::Wood, 1).is_none());
-        assert_eq!(m.take_item(i, ItemKind::Food, 2).unwrap().count, 2);
-        assert_eq!(m.take_item(i, ItemKind::Food, 5).unwrap().count, 1);
+        m.items[i] = Some(Stack { kind: food(), count: 3 });
+        assert!(m.take_item(i, wood(), 1).is_none());
+        assert_eq!(m.take_item(i, food(), 2).unwrap().count, 2);
+        assert_eq!(m.take_item(i, food(), 5).unwrap().count, 1);
         assert!(m.items[i].is_none());
     }
 

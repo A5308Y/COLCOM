@@ -25,6 +25,8 @@ according to their **work priorities** (press `P`).
 | `6` / `7` / `8` | Blueprint a wall (4 stone) / door (4 wood) / bed (8 wood) |
 | `-` / `=` | Blueprint a floor (2 wood) / stairs (6 wood) |
 | `B` | Blueprint a lamp (3 wood) |
+
+(Build shortcuts and costs come from `assets/defs.ron`; the help screen (`H`) lists the current ones.)
 | `PageDown` / `PageUp` (or `[` / `]`) | Layer view: hide everything above a level, and build on that level |
 | `9` / `0` | Clear zones / cancel designations and blueprints (refunds materials) |
 | `Esc` | Select tool: click colonists or tiles to inspect them |
@@ -81,7 +83,9 @@ according to their **work priorities** (press `P`).
 
 The simulation is a library with no rendering code, so it can be tested headlessly:
 
+- `assets/defs.ron`: items, buildables and plants (costs, work, behaviour flags, looks)
 - `src/lib.rs`: module list and constants (day length, tick length)
+- `src/defs.rs`: loads and checks the definitions; `ItemId`, `BuildId`, `PlantId`
 - `src/map.rs`: 3D cells (blocks, features, items, zones), walking rules, rooms, terrain generation
 - `src/pathing.rs`: BFS distance fields over the walking graph, 3D line of sight
 - `src/pawn.rs`: pawns, skills, mood, jobs
@@ -98,4 +102,14 @@ meshes), `props.rs` (trees, plants, furniture, doors, items), `pawns.rs` (3D fig
 (sun, moon, sky), `camera.rs`, `input.rs` (picking, tools, gizmo markers), `ui.rs` and `overlay.rs`
 (egui interface and labels over the 3D view).
 
-See `PLAN.md` for the roadmap to a multi-level 3D world.
+### Adding content
+
+Items, buildables and plants are described in `assets/defs.ron` (built into the game, so rebuild after
+editing). A new definition there gets a toolbar button, a shortcut (if it has a `key`), a look made of
+simple shapes, and works in hauling, building, mining, harvesting and saves without code changes.
+Behaviour the code has to know about is a field: `nutrition` (food), `medicine`, `special` (`Floor`,
+`Stairs`, `Bed`, `Door`), `blocks_room`, `holds_floors`, `light`, `sow`, `wild`, `harvest`.
+`cargo test` checks that the file loads and that every buildable can be built and removed and every plant
+harvested.
+
+See `PLAN.md` for the roadmap.

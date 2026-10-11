@@ -1,7 +1,8 @@
 //! Doctoring: rescuing downed colonists, tending wounds and diseases,
 //! feeding bedridden patients, and patients resting in bed.
 
-use crate::map::{Feature, ItemKind, Pos, Stack};
+use crate::defs::{defs, Defs, ItemId};
+use crate::map::{Pos, Stack};
 use crate::pathing::{bfs, DistField};
 use crate::pawn::{Job, Pawn, Skill, WorkType};
 use crate::world::{Step, World};
@@ -13,7 +14,7 @@ const TEND_BATCH: usize = 3;
 
 impl World {
     pub(crate) fn in_bed(&self, p: &Pawn) -> bool {
-        self.map.feature[self.map.idx(p.pos)] == Feature::Bed
+        self.map.feature[self.map.idx(p.pos)].is_bed()
     }
 
     pub(crate) fn patient_reserved(&self, patient: u32) -> bool {
@@ -32,17 +33,24 @@ impl World {
         })
     }
 
-    pub(crate) fn nearest_free_item(&self, from: Pos, kind: ItemKind) -> Option<Pos> {
+    /// Nearest unreserved stack of any item that `is` (food, medicine).
+    pub(crate) fn nearest_free_item(&self, from: Pos, is: fn(&Defs, ItemId) -> bool) -> Option<Pos> {
         // Reachable cells come nearest first.
         let df = bfs(&self.map, from);
         df.order
             .iter()
-            .find(|&&i| self.res_item[i] == 0 && self.map.items[i].is_some_and(|s| s.kind == kind))
+            .find(|&&i| self.res_item[i] == 0 && self.map.items[i].is_some_and(|s| is(defs(), s.kind)))
             .map(|&i| self.map.pos(i))
     }
 
+    /// Take one unit of whatever item in cell `i` passes `is`.
+    pub(crate) fn take_one(&mut self, i: usize, is: fn(&Defs, ItemId) -> bool) -> Option<Stack> {
+        let kind = self.map.items[i].map(|s| s.kind).filter(|&k| is(defs(), k))?;
+        self.map.take_item(i, kind, 1)
+    }
+
     pub(crate) fn self_tend_job(&self, p: &Pawn) -> Job {
-        Job::Tend { patient: p.id, medicine: self.nearest_free_item(p.pos, ItemKind::Medicine), picked: false }
+        Job::Tend { patient: p.id, medicine: self.nearest_free_item(p.pos, Defs::is_medicine), picked: false }
     }
 
     /// Most urgent medical job for doctor `p`: rescue > tend > feed, then nearest.
@@ -79,11 +87,12 @@ impl World {
         best
     }
 
-    fn tend_quality(&mut self, doctor: &Pawn, medicine: bool, self_tend: bool, in_bed: bool) -> f32 {
+    /// `medicine` is the potency of the medicine used (0 = none).
+    fn tend_quality(&mut self, doctor: &Pawn, medicine: f32, self_tend: bool, in_bed: bool) -> f32 {
         let caps = &doctor.health.caps;
         let skill = doctor.skill(Skill::Medicine) as f32;
         let mut q = (0.25 + 0.04 * skill) * caps.manipulation.min(1.0) * (0.6 + 0.4 * caps.sight.min(1.0));
-        q = if medicine { q + 0.25 } else { q * 0.6 };
+        q = if medicine > 0.0 { q + 0.25 * medicine } else { q * 0.6 };
         if in_bed {
             q += 0.08;
         }
@@ -99,7 +108,7 @@ impl World {
             return;
         }
         if let Some(b) = bed {
-            if self.map.feature[self.map.idx(b)] != Feature::Bed {
+            if !self.map.feature[self.map.idx(b)].is_bed() {
                 p.job = Some(Job::Patient { bed: None });
                 return;
             }
@@ -150,7 +159,7 @@ impl World {
                 Step::Unreachable => p.job = Some(Job::Tend { patient, medicine: None, picked: false }),
                 Step::Arrived => {
                     let i = self.map.idx(m);
-                    p.carrying = self.map.take_item(i, ItemKind::Medicine, 1);
+                    p.carrying = self.take_one(i, Defs::is_medicine);
                     self.res_item[i] = 0;
                     p.job = Some(Job::Tend { patient, medicine, picked: true });
                 }
@@ -182,11 +191,12 @@ impl World {
             return;
         }
 
-        let has_med = matches!(p.carrying, Some(Stack { kind: ItemKind::Medicine, .. }));
+        let potency = p.carrying.map_or(0.0, |s| s.kind.def().medicine);
+        let has_med = potency > 0.0;
         if has_med {
             p.carrying = None;
         }
-        let quality = self.tend_quality(p, has_med, self_tend, in_bed);
+        let quality = self.tend_quality(p, potency, self_tend, in_bed);
         let who = match target {
             Some(pi) => {
                 let o = &mut self.pawns[pi];
@@ -210,7 +220,7 @@ impl World {
             self.end_job(p);
             return;
         };
-        let bed_ok = self.map.feature[self.map.idx(bed)] == Feature::Bed;
+        let bed_ok = self.map.feature[self.map.idx(bed)].is_bed();
         if self.pawns[pi].dead || !self.pawns[pi].downed || !bed_ok {
             self.end_job(p);
             return;
@@ -261,7 +271,7 @@ impl World {
                 Step::Unreachable => self.end_job(p),
                 Step::Arrived => {
                     let i = self.map.idx(food);
-                    match self.map.take_item(i, ItemKind::Food, 1) {
+                    match self.take_one(i, Defs::is_food) {
                         Some(s) => {
                             p.carrying = Some(s);
                             self.res_item[i] = 0;
@@ -280,9 +290,9 @@ impl World {
             Step::Arrived => {
                 p.job_progress += dt / 2.0;
                 if p.job_progress >= 1.0 {
-                    p.carrying = None;
+                    let nutrition = p.carrying.take().map_or(0.0, |s| s.kind.def().nutrition);
                     let o = &mut self.pawns[pi];
-                    o.hunger = (o.hunger + 45.0).min(100.0);
+                    o.hunger = (o.hunger + nutrition).min(100.0);
                     self.end_job(p);
                 }
             }

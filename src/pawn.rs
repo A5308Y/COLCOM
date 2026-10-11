@@ -1,5 +1,6 @@
 //! Pawns (colonists and raiders): needs, skills, mood, weapons and jobs.
 
+use crate::defs::PlantId;
 use crate::health::{DamageKind, Health};
 use crate::map::{Pos, Stack};
 use crate::rng::Rng;
@@ -90,46 +91,24 @@ impl WorkType {
     }
 }
 
-/// Work done at a single tile.
+/// Work done at a single tile. How long it takes and which skill it uses
+/// come from the plant or blueprint there (see `World::task_skill_time`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Task {
-    Chop,
+    /// Remove a grown plant for its yield (chop, forage, harvest).
+    Harvest(PlantId),
+    /// Plant in a grow zone.
+    Sow(PlantId),
     Mine,
-    Forage,
-    Plant,
-    HarvestCrop,
     Construct,
 }
 
 impl Task {
-    /// Base seconds of work at skill-speed 1.0. Construction uses the build kind instead.
-    pub fn work_time(self) -> f32 {
-        match self {
-            Task::Chop => 3.0,
-            Task::Mine => 5.0,
-            Task::Forage => 1.5,
-            Task::Plant => 1.5,
-            Task::HarvestCrop => 1.5,
-            Task::Construct => 3.0,
-        }
-    }
-
-    pub fn skill(self) -> Skill {
-        match self {
-            Task::Chop => Skill::Plants,
-            Task::Mine => Skill::Mining,
-            Task::Forage | Task::Plant | Task::HarvestCrop => Skill::Growing,
-            Task::Construct => Skill::Construction,
-        }
-    }
-
     pub fn verb(self) -> &'static str {
         match self {
-            Task::Chop => "chopping",
+            Task::Harvest(kind) => &kind.def().harvest.verb,
+            Task::Sow(_) => "planting",
             Task::Mine => "mining",
-            Task::Forage => "foraging",
-            Task::Plant => "planting",
-            Task::HarvestCrop => "harvesting",
             Task::Construct => "building",
         }
     }

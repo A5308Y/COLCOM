@@ -2,7 +2,7 @@
 //!
 //! `cargo run --release --example profile`
 
-use my_world::map::{Block, Desig, Feature, Zone};
+use my_world::map::{Block, Desig, Zone};
 use my_world::world::{Order, World};
 use my_world::{DAY_LEN, TICK};
 use std::time::Instant;
@@ -23,7 +23,7 @@ fn main() {
     let mut mines = 0;
     for i in 0..w.map.len() {
         let p = w.map.pos(i);
-        if w.map.feature[i] == Feature::Tree && chops < 120 && w.apply_order(p, Order::Desig(Desig::Chop)) {
+        if w.map.feature[i].harvest_desig() == Some(Desig::Chop) && chops < 120 && w.apply_order(p, Order::Desig(Desig::Chop)) {
             chops += 1;
         }
         let exposed = w.map.above(p).is_some_and(|a| w.map.block[w.map.idx(a)] == Block::Air);

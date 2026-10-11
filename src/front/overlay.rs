@@ -83,7 +83,7 @@ pub fn draw(ctx: &egui::Context, w: &SimWorld, cam: &Camera, gt: &GlobalTransfor
             }
             if let Feature::Blueprint { kind, delivered } = m.feature[i] {
                 if let Some(sp) = to_screen(c + Vec3::Y * 0.9) {
-                    let label = format!("{}/{}", delivered, kind.cost().count);
+                    let label = format!("{}/{}", delivered, kind.def().cost.count);
                     shadow_text(&painter, sp, Align2::CENTER_BOTTOM, &label, 12.0, Color32::from_rgb(170, 210, 255));
                 }
             }

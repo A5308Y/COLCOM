@@ -1,4 +1,5 @@
-//! Per-tile 3D objects: trees, bushes, crops, beds, doors, blueprints and items.
+//! Per-tile 3D objects: plants, structures, blueprints and items, built from
+//! the parts listed in their definitions (`assets/defs.ron`).
 //!
 //! Each frame the wanted object for every tile is compared with what is
 //! spawned; changed tiles get their entity replaced.
@@ -6,28 +7,26 @@
 use super::input::UiState;
 use super::look::*;
 use super::sim::Sim;
-use super::terrain::{FLOOR_T, LEVEL_H as WALL_H};
+use super::terrain::{FLOOR_T, LEVEL_H};
 use super::tile_center;
 use bevy::prelude::*;
-use my_world::map::{BuildKind, Feature, ItemKind, Map, Pos};
+use my_world::defs::{defs, BuildId, BuildLook, ItemId, Part, PlantId, Shape, Special};
+use my_world::map::{Feature, Map, Pos, DIRS};
 use std::collections::HashMap;
 use std::f32::consts::{FRAC_PI_2, TAU};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum PropKey {
-    Tree,
-    Bush,
-    Crop { stage: u8 },
-    Bed { owner: Option<u32> },
-    Door { horizontal: bool, open: bool },
-    Stairs { dir: u8 },
-    Lamp,
-    Blueprint { kind: BuildKind },
+    Plant { kind: PlantId, stage: u8 },
+    /// Turned so the model's +x faces `DIRS[dir]`. `owner`: who sleeps in
+    /// a bed. `open`: a door someone is passing through.
+    Built { kind: BuildId, dir: u8, owner: Option<u32>, open: bool },
+    Blueprint { kind: BuildId },
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 struct ItemKey {
-    kind: ItemKind,
+    kind: ItemId,
     big: bool,
 }
 
@@ -44,38 +43,33 @@ struct Props {
 /// Shared unit meshes and materials for props (and carried items on pawns).
 #[derive(Resource)]
 pub struct PropAssets {
-    pub cube: Handle<Mesh>,
-    pub sphere: Handle<Mesh>,
-    pub cylinder: Handle<Mesh>,
-    pub cone: Handle<Mesh>,
-    trunk: Handle<StandardMaterial>,
-    leaf: [Handle<StandardMaterial>; 3],
-    pine: [Handle<StandardMaterial>; 2],
-    berry: Handle<StandardMaterial>,
-    veg: Handle<StandardMaterial>,
-    wheat: Handle<StandardMaterial>,
-    sprout: Handle<StandardMaterial>,
-    wood: Handle<StandardMaterial>,
-    wood_light: Handle<StandardMaterial>,
-    sheet: Handle<StandardMaterial>,
-    pillow: Handle<StandardMaterial>,
-    stone: Handle<StandardMaterial>,
-    white: Handle<StandardMaterial>,
-    red: Handle<StandardMaterial>,
-    wall: Handle<StandardMaterial>,
+    cube: Handle<Mesh>,
+    sphere: Handle<Mesh>,
+    cylinder: Handle<Mesh>,
+    cone: Handle<Mesh>,
+    /// One material per palette and glow colour of the definitions.
+    paints: HashMap<String, Handle<StandardMaterial>>,
     blueprint: Handle<StandardMaterial>,
     blanket_free: Handle<StandardMaterial>,
-    lamp_glow: Handle<StandardMaterial>,
 }
 
 impl PropAssets {
     /// Material for a carried or stored item of this kind.
-    pub fn item_material(&self, kind: ItemKind) -> Handle<StandardMaterial> {
-        match kind {
-            ItemKind::Wood => self.wood.clone(),
-            ItemKind::Stone => self.stone.clone(),
-            ItemKind::Food => self.berry.clone(),
-            ItemKind::Medicine => self.white.clone(),
+    pub fn item_material(&self, kind: ItemId) -> Handle<StandardMaterial> {
+        self.paint(&kind.def().color)
+    }
+
+    fn paint(&self, color: &str) -> Handle<StandardMaterial> {
+        // Unknown colours are caught when the definitions load.
+        self.paints.get(color).unwrap_or(&self.blanket_free).clone()
+    }
+
+    fn mesh(&self, shape: Shape) -> &Handle<Mesh> {
+        match shape {
+            Shape::Cube => &self.cube,
+            Shape::Sphere => &self.sphere,
+            Shape::Cylinder => &self.cylinder,
+            Shape::Cone => &self.cone,
         }
     }
 }
@@ -93,63 +87,49 @@ pub fn lit(materials: &mut Assets<StandardMaterial>, c: Rgb) -> Handle<StandardM
 }
 
 fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
+    let d = defs();
+    let mut paints = HashMap::new();
+    for (name, &(r, g, b)) in &d.palette {
+        paints.insert(name.clone(), lit(&mut materials, Rgb(r, g, b)));
+    }
+    // Bright enough to bloom.
+    for (name, &(r, g, b)) in &d.glow {
+        let glow = StandardMaterial {
+            base_color: Color::srgb(r.min(1.0), g.min(1.0), b.min(1.0)),
+            emissive: LinearRgba::rgb(r, g, b),
+            ..default()
+        };
+        paints.insert(name.clone(), materials.add(glow));
+    }
     let blueprint = materials.add(StandardMaterial {
         base_color: Color::srgba(0.38, 0.68, 1.0, 0.35),
         alpha_mode: AlphaMode::Blend,
         ..default()
     });
-    // Bright enough to bloom.
-    let lamp_glow = materials.add(StandardMaterial {
-        base_color: Color::srgb(1.0, 0.9, 0.7),
-        emissive: LinearRgba::rgb(9.0, 6.5, 3.2),
-        ..default()
-    });
-    let mut mat = |c: Rgb| lit(&mut materials, c);
     let assets = PropAssets {
         cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
         sphere: meshes.add(Sphere::new(0.5)),
         cylinder: meshes.add(Cylinder::new(0.5, 1.0)),
         cone: meshes.add(Cone::new(0.5, 1.0)),
-        trunk: mat(WOOD.shade(0.8)),
-        leaf: [mat(LEAF), mat(LEAF.mix(LEAF_LIGHT, 0.5)), mat(LEAF_LIGHT)],
-        pine: [mat(PINE), mat(PINE.shade(1.2))],
-        berry: mat(BERRY),
-        veg: mat(VEG),
-        wheat: mat(WHEAT),
-        sprout: mat(LEAF_LIGHT.shade(1.1)),
-        wood: mat(WOOD),
-        wood_light: mat(WOOD_LIGHT),
-        sheet: mat(SHEET),
-        pillow: mat(Rgb(0.97, 0.97, 0.97)),
-        stone: mat(ROCK_TOP.shade(1.15)),
-        white: mat(Rgb(0.95, 0.95, 0.95)),
-        red: mat(BERRY),
-        wall: mat(WALL_FACE),
+        paints,
         blueprint,
-        blanket_free: mat(Rgb(0.55, 0.58, 0.62)),
-        lamp_glow,
+        blanket_free: lit(&mut materials, Rgb(0.55, 0.58, 0.62)),
     };
     commands.insert_resource(assets);
-}
-
-fn crop_stage(growth: f32) -> u8 {
-    if growth >= 1.0 {
-        3
-    } else if growth >= 0.6 {
-        2
-    } else if growth >= 0.25 {
-        1
-    } else {
-        0
-    }
 }
 
 /// A wall or door (or solid ground) beside a door decides which way it faces.
 fn is_wallish(m: &Map, x: i32, y: i32, z: usize) -> bool {
     m.at(x, y, z as i32).is_some_and(|p| {
         let i = m.idx(p);
-        m.block[i].solid() || matches!(m.feature[i], Feature::Wall | Feature::Door)
+        m.block[i].solid() || m.feature[i].blocks_room()
     })
+}
+
+/// Rotation that turns +x towards `DIRS[dir]`.
+fn facing(dir: u8) -> Quat {
+    let (dx, dy) = DIRS[dir as usize % 4];
+    Quat::from_rotation_y((-dy as f32).atan2(dx as f32))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -201,27 +181,29 @@ fn sync_props(
         let pos = m.pos(i);
         let (xi, yi) = (pos.0 as i32, pos.1 as i32);
         let want = match m.feature[i] {
-            Feature::Tree => Some(PropKey::Tree),
-            Feature::Bush => Some(PropKey::Bush),
-            Feature::Crop { growth } => Some(PropKey::Crop { stage: crop_stage(growth) }),
-            Feature::Bed => Some(PropKey::Bed { owner: owners.get(&pos).map(|o| o.0) }),
-            Feature::Door => {
-                let open = w
-                    .pawns
-                    .iter()
-                    .any(|p| {
-                        !p.dead
-                            && (p.x - pos.0 as f32).abs() < 0.9
-                            && (p.y - pos.1 as f32).abs() < 0.9
-                            && (p.z - pos.2 as f32).abs() < 0.9
-                    });
-                let horizontal = is_wallish(m, xi - 1, yi, pos.2) || is_wallish(m, xi + 1, yi, pos.2);
-                Some(PropKey::Door { horizontal, open })
-            }
-            Feature::Stairs { dir } => Some(PropKey::Stairs { dir }),
-            Feature::Lamp => Some(PropKey::Lamp),
+            Feature::None => None,
+            Feature::Plant { kind, growth } => Some(PropKey::Plant { kind, stage: kind.def().stage(growth) as u8 }),
+            // Drawn with the terrain.
+            f if f.is_block() => None,
+            Feature::Built { kind, dir } => Some(match kind.def().special {
+                Special::Bed => PropKey::Built { kind, dir, owner: owners.get(&pos).map(|o| o.0), open: false },
+                Special::Door => {
+                    let open = w
+                        .pawns
+                        .iter()
+                        .any(|p| {
+                            !p.dead
+                                && (p.x - pos.0 as f32).abs() < 0.9
+                                && (p.y - pos.1 as f32).abs() < 0.9
+                                && (p.z - pos.2 as f32).abs() < 0.9
+                        });
+                    // Modelled spanning x; a quarter turn when the walls run along y.
+                    let horizontal = is_wallish(m, xi - 1, yi, pos.2) || is_wallish(m, xi + 1, yi, pos.2);
+                    PropKey::Built { kind, dir: if horizontal { 0 } else { 3 }, owner: None, open }
+                }
+                _ => PropKey::Built { kind, dir, owner: None, open: false },
+            }),
             Feature::Blueprint { kind, .. } => Some(PropKey::Blueprint { kind }),
-            Feature::None | Feature::Wall => None,
         };
         let have = props.features[i].map(|(k, _)| k);
         if want != have {
@@ -230,7 +212,7 @@ fn sync_props(
             }
             if let Some(key) = want {
                 let blanket = match key {
-                    PropKey::Bed { owner: Some(_) } => {
+                    PropKey::Built { owner: Some(_), .. } => {
                         let c = owners[&pos].1;
                         lit(&mut materials, Rgb(c[0], c[1], c[2]).shade(0.8))
                     }
@@ -263,17 +245,39 @@ fn sync_props(
     }
 }
 
-/// A child part: unit mesh scaled and placed relative to the prop's root.
-fn part(mesh: &Handle<Mesh>, mat: &Handle<StandardMaterial>, at: Vec3, scale: Vec3) -> impl Bundle {
-    (Mesh3d(mesh.clone()), MeshMaterial3d(mat.clone()), Transform::from_translation(at).with_scale(scale))
-}
-
-fn part_rot(mesh: &Handle<Mesh>, mat: &Handle<StandardMaterial>, at: Vec3, rot: Quat, scale: Vec3) -> impl Bundle {
-    (
-        Mesh3d(mesh.clone()),
-        MeshMaterial3d(mat.clone()),
-        Transform::from_translation(at).with_rotation(rot).with_scale(scale),
-    )
+/// Parts as children of a root at `root`. `ghost` draws them all in the
+/// blueprint material; `owner` replaces the "owner" colour; `open` swings
+/// hinged parts open.
+fn spawn_parts(
+    commands: &mut Commands,
+    a: &PropAssets,
+    root: Transform,
+    parts: &[Part],
+    ghost: bool,
+    owner: &Handle<StandardMaterial>,
+    open: bool,
+) -> Entity {
+    let mut e = commands.spawn((root, Visibility::default()));
+    e.with_children(|c| {
+        for p in parts {
+            let mat = match p.color.as_str() {
+                _ if ghost => a.blueprint.clone(),
+                "owner" => owner.clone(),
+                color => a.paint(color),
+            };
+            let (tx, ty, tz) = p.turn;
+            let at = Vec3::new(p.at.0, p.at.1, p.at.2);
+            let mut t = Transform::from_translation(at)
+                .with_rotation(Quat::from_euler(EulerRot::XYZ, tx.to_radians(), ty.to_radians(), tz.to_radians()))
+                .with_scale(Vec3::new(p.size.0, p.size.1, p.size.2));
+            if p.hinge && open {
+                // A quarter turn around its left edge.
+                t.rotate_around(at - Vec3::X * p.size.0 / 2.0, Quat::from_rotation_y(-FRAC_PI_2));
+            }
+            c.spawn((Mesh3d(a.mesh(p.shape).clone()), MeshMaterial3d(mat), t));
+        }
+    });
+    e.id()
 }
 
 fn spawn_feature(
@@ -284,167 +288,59 @@ fn spawn_feature(
     lift: f32,
     blanket: Handle<StandardMaterial>,
 ) -> Entity {
-    let base = tile_center(pos) + Vec3::Y * lift;
+    let base = Transform::from_translation(tile_center(pos) + Vec3::Y * lift);
     let (xi, yi) = (pos.0 as i32, pos.1 as i32);
-    let natural = matches!(key, PropKey::Tree | PropKey::Bush | PropKey::Crop { .. });
-    let yaw = if natural { hash(xi, yi, 22) * TAU } else { 0.0 };
-    let mut root = commands.spawn((
-        Transform::from_translation(base).with_rotation(Quat::from_rotation_y(yaw)),
-        Visibility::default(),
-    ));
     match key {
-        PropKey::Tree => {
-            let size = 0.85 + hash(xi, yi, 20) * 0.35;
-            let conifer = hash(xi, yi, 21) < 0.35;
-            root.with_children(|c| {
-                c.spawn(part(&a.cylinder, &a.trunk, Vec3::new(0.0, 0.35 * size, 0.0), Vec3::new(0.16, 0.7, 0.16) * size));
-                if conifer {
-                    let mat = &a.pine[(hash(xi, yi, 23) * 2.0) as usize % 2];
-                    for (base, width, height) in [(0.4, 0.95, 0.75), (0.75, 0.75, 0.65), (1.05, 0.5, 0.55)] {
-                        let at = Vec3::new(0.0, (base + height / 2.0) * size, 0.0);
-                        c.spawn(part(&a.cone, mat, at, Vec3::new(width, height, width) * size));
-                    }
-                } else {
-                    let mat = &a.leaf[(hash(xi, yi, 23) * 3.0) as usize % 3];
-                    let blobs = [(-0.16, 0.9, 0.05, 0.62), (0.17, 0.85, -0.1, 0.56), (0.0, 1.15, 0.0, 0.62), (0.05, 0.82, 0.18, 0.5)];
-                    for (x, y, z, d) in blobs {
-                        c.spawn(part(&a.sphere, mat, Vec3::new(x, y, z) * size, Vec3::splat(d * size)));
-                    }
-                }
-            });
+        PropKey::Plant { kind, stage } => {
+            let def = kind.def();
+            let variants = &def.stages[stage as usize].variants;
+            let parts = &variants[(hash(xi, yi, 23) * variants.len() as f32) as usize % variants.len()];
+            let (lo, hi) = def.scale;
+            let root = base
+                .with_rotation(Quat::from_rotation_y(hash(xi, yi, 22) * TAU))
+                .with_scale(Vec3::splat(lo + hash(xi, yi, 20) * (hi - lo)));
+            spawn_parts(commands, a, root, parts, false, &blanket, false)
         }
-        PropKey::Bush => {
-            root.with_children(|c| {
-                for (x, z, d) in [(-0.12, 0.05, 0.38), (0.13, 0.06, 0.34), (0.0, -0.1, 0.4)] {
-                    c.spawn(part(&a.sphere, &a.leaf[0], Vec3::new(x, 0.17, z), Vec3::new(d, d * 0.8, d)));
-                }
-                for (x, y, z) in [(-0.2, 0.25, 0.1), (0.15, 0.3, -0.12), (0.05, 0.33, 0.15), (0.22, 0.2, 0.08)] {
-                    c.spawn(part(&a.sphere, &a.berry, Vec3::new(x, y, z), Vec3::splat(0.08)));
-                }
-            });
-        }
-        PropKey::Crop { stage } => {
-            root.with_children(|c| {
-                for (x, z) in [(-0.22, -0.22), (0.22, -0.22), (-0.22, 0.22), (0.22, 0.22)] {
-                    if stage == 0 {
-                        c.spawn(part(&a.cylinder, &a.sprout, Vec3::new(x, 0.07, z), Vec3::new(0.04, 0.14, 0.04)));
-                        continue;
-                    }
-                    let d = 0.12 + 0.07 * stage as f32;
-                    c.spawn(part(&a.sphere, &a.sprout, Vec3::new(x, d * 0.45, z), Vec3::new(d, d * 0.9, d)));
-                    if stage == 3 {
-                        c.spawn(part(&a.sphere, &a.wheat, Vec3::new(x, d * 0.95, z), Vec3::splat(0.1)));
-                    }
-                }
-            });
-        }
-        PropKey::Bed { .. } => {
-            root.with_children(|c| {
-                c.spawn(part(&a.cube, &a.wood, Vec3::new(0.0, 0.13, 0.0), Vec3::new(0.82, 0.26, 0.92)));
-                c.spawn(part(&a.cube, &a.sheet, Vec3::new(0.0, 0.29, 0.0), Vec3::new(0.74, 0.08, 0.84)));
-                c.spawn(part(&a.cube, &a.pillow, Vec3::new(0.0, 0.35, -0.3), Vec3::new(0.52, 0.08, 0.2)));
-                c.spawn(part(&a.cube, &blanket, Vec3::new(0.0, 0.33, 0.13), Vec3::new(0.76, 0.1, 0.56)));
-            });
-        }
-        PropKey::Door { horizontal, open } => {
-            // Modelled spanning X; rotated a quarter turn when the walls run along Z.
-            root.insert(
-                Transform::from_translation(base)
-                    .with_rotation(Quat::from_rotation_y(if horizontal { 0.0 } else { FRAC_PI_2 })),
-            );
-            root.with_children(|c| {
-                for x in [-0.45, 0.45] {
-                    c.spawn(part(&a.cube, &a.wall, Vec3::new(x, WALL_H / 2.0, 0.0), Vec3::new(0.1, WALL_H, 0.34)));
-                }
-                c.spawn(part(&a.cube, &a.wall, Vec3::new(0.0, WALL_H - 0.08, 0.0), Vec3::new(1.0, 0.16, 0.34)));
-                if open {
-                    // Swung open against the frame.
-                    let at = Vec3::new(-0.36, 0.55, 0.36);
-                    c.spawn(part_rot(&a.cube, &a.wood_light, at, Quat::from_rotation_y(FRAC_PI_2), Vec3::new(0.78, 1.1, 0.07)));
-                } else {
-                    c.spawn(part(&a.cube, &a.wood_light, Vec3::new(0.0, 0.55, 0.0), Vec3::new(0.8, 1.1, 0.07)));
-                }
-            });
-        }
-        PropKey::Stairs { dir } => {
-            // Four steps rising to the floor of the level above, towards `dir`.
-            let (dx, dy) = [(1.0f32, 0.0f32), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)][dir as usize % 4];
-            root.insert(Transform::from_translation(base).with_rotation(Quat::from_rotation_y((-dy).atan2(dx))));
-            root.with_children(|c| {
-                for k in 0..4 {
-                    let h = (k + 1) as f32 * WALL_H / 4.0;
-                    let at = Vec3::new(-0.375 + k as f32 * 0.25, h / 2.0, 0.0);
-                    c.spawn(part(&a.cube, &a.wood_light, at, Vec3::new(0.25, h, 0.9)));
-                }
-            });
-        }
-        PropKey::Lamp => {
-            root.with_children(|c| {
-                c.spawn(part(&a.cylinder, &a.wood, Vec3::new(0.0, 0.03, 0.0), Vec3::new(0.3, 0.06, 0.3)));
-                c.spawn(part(&a.cylinder, &a.wood, Vec3::new(0.0, 0.42, 0.0), Vec3::new(0.06, 0.8, 0.06)));
-                c.spawn(part(&a.sphere, &a.lamp_glow, Vec3::new(0.0, 0.86, 0.0), Vec3::splat(0.22)));
-                c.spawn((
+        PropKey::Built { kind, dir, open, .. } => {
+            let def = kind.def();
+            let BuildLook::Parts(parts) = &def.look else { return commands.spawn(base).id() };
+            let e = spawn_parts(commands, a, base.with_rotation(facing(dir)), parts, false, &blanket, open);
+            if let Some(l) = &def.light {
+                commands.entity(e).with_child((
                     PointLight {
-                        color: Color::srgb(1.0, 0.82, 0.6),
-                        intensity: 400_000.0,
-                        range: 10.0,
+                        color: Color::srgb(l.color.0, l.color.1, l.color.2),
+                        intensity: l.intensity,
+                        range: l.range,
                         shadow_maps_enabled: false,
                         ..default()
                     },
-                    Transform::from_xyz(0.0, 0.86, 0.0),
+                    Transform::from_xyz(l.at.0, l.at.1, l.at.2),
                 ));
-            });
+            }
+            e
         }
-        PropKey::Blueprint { kind } => {
-            let (size, y) = match kind {
-                BuildKind::Wall => (Vec3::new(0.98, WALL_H, 0.98), WALL_H / 2.0),
-                BuildKind::Door => (Vec3::new(0.98, WALL_H, 0.3), WALL_H / 2.0),
-                BuildKind::Bed => (Vec3::new(0.82, 0.36, 0.92), 0.18),
-                BuildKind::Floor => (Vec3::new(0.98, FLOOR_T, 0.98), FLOOR_T / 2.0),
-                BuildKind::Stairs => (Vec3::new(0.98, WALL_H, 0.9), WALL_H / 2.0),
-                BuildKind::Lamp => (Vec3::new(0.2, 0.9, 0.2), 0.45),
-            };
-            root.with_children(|c| {
-                c.spawn(part(&a.cube, &a.blueprint, Vec3::new(0.0, y, 0.0), size));
-            });
-        }
+        PropKey::Blueprint { kind } => match &kind.def().look {
+            BuildLook::Parts(parts) => spawn_parts(commands, a, base, parts, true, &blanket, false),
+            BuildLook::Block => {
+                let block = Part {
+                    shape: Shape::Cube,
+                    color: String::new(),
+                    at: (0.0, LEVEL_H / 2.0, 0.0),
+                    size: (0.98, LEVEL_H, 0.98),
+                    turn: (0.0, 0.0, 0.0),
+                    hinge: false,
+                };
+                spawn_parts(commands, a, base, &[block], true, &blanket, false)
+            }
+        },
     }
-    root.id()
 }
 
 fn spawn_item(commands: &mut Commands, a: &PropAssets, key: ItemKey, pos: Pos, lift: f32) -> Entity {
     let (xi, yi) = (pos.0 as i32, pos.1 as i32);
-    let yaw = hash(xi, yi, 24) * TAU;
     let s = if key.big { 1.25 } else { 1.0 };
-    let mut root = commands.spawn((
-        Transform::from_translation(tile_center(pos) + Vec3::Y * lift)
-            .with_rotation(Quat::from_rotation_y(yaw))
-            .with_scale(Vec3::splat(s)),
-        Visibility::default(),
-    ));
-    root.with_children(|c| match key.kind {
-        ItemKind::Wood => {
-            let lying = Quat::from_rotation_z(FRAC_PI_2);
-            for (y, z) in [(0.07, -0.08), (0.07, 0.08), (0.19, 0.0)] {
-                c.spawn(part_rot(&a.cylinder, &a.wood, Vec3::new(0.0, y, z), lying, Vec3::new(0.14, 0.6, 0.14)));
-            }
-        }
-        ItemKind::Stone => {
-            for (x, y, z, d) in [(-0.12, 0.09, 0.0, 0.2), (0.12, 0.08, 0.05, 0.18), (0.0, 0.24, -0.02, 0.17)] {
-                c.spawn(part(&a.cube, &a.stone, Vec3::new(x, y, z), Vec3::splat(d)));
-            }
-        }
-        ItemKind::Food => {
-            for (k, (x, z)) in [(-0.12, 0.0), (0.1, 0.06), (0.0, -0.12), (0.02, 0.12), (0.13, -0.08)].into_iter().enumerate() {
-                let mat = if k % 2 == 0 { &a.berry } else { &a.veg };
-                c.spawn(part(&a.sphere, mat, Vec3::new(x, 0.08, z), Vec3::splat(0.16)));
-            }
-        }
-        ItemKind::Medicine => {
-            c.spawn(part(&a.cube, &a.white, Vec3::new(0.0, 0.1, 0.0), Vec3::new(0.4, 0.2, 0.3)));
-            c.spawn(part(&a.cube, &a.red, Vec3::new(0.0, 0.205, 0.0), Vec3::new(0.08, 0.02, 0.22)));
-            c.spawn(part(&a.cube, &a.red, Vec3::new(0.0, 0.205, 0.0), Vec3::new(0.24, 0.02, 0.08)));
-        }
-    });
-    root.id()
+    let root = Transform::from_translation(tile_center(pos) + Vec3::Y * lift)
+        .with_rotation(Quat::from_rotation_y(hash(xi, yi, 24) * TAU))
+        .with_scale(Vec3::splat(s));
+    spawn_parts(commands, a, root, &key.kind.def().look, false, &a.blanket_free, false)
 }
