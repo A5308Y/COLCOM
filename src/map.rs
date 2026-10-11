@@ -1,24 +1,61 @@
-//! The tile grid: terrain, plants and structures, items on the ground,
-//! designations, zones, and the rooms derived from walls.
+//! The world as a 3D grid of cells: natural blocks (soil, rock, water), things
+//! placed in open cells (plants, walls, furniture), items, designations,
+//! zones, and the rooms derived from walls and rock.
+//!
+//! A pawn stands in an open cell whose cell below is solid ground. It can walk
+//! to a horizontal neighbour on the same level, or step one level up or down
+//! onto natural ground when there is headroom. Built walls are never climbable.
 
 use crate::rng::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
-pub type Pos = (usize, usize);
+/// (x, y, level). Level 0 is the bottom of the world.
+pub type Pos = (usize, usize, usize);
 
 pub const STACK_MAX: u32 = 50;
 /// Enclosed regions larger than this count as outdoors.
 const MAX_ROOM: usize = 400;
+/// Standing level of the flat maps used by tests and `Map::flat`.
+pub const FLAT_Z: usize = 1;
+/// Water fills low ground up to this level.
+const WATER_LEVEL: usize = 4;
+/// Standing level of plains and the landing zone.
+const PLAINS: usize = 5;
 
 pub fn manhattan(a: Pos, b: Pos) -> usize {
-    a.0.abs_diff(b.0) + a.1.abs_diff(b.1)
+    a.0.abs_diff(b.0) + a.1.abs_diff(b.1) + a.2.abs_diff(b.2)
 }
 
+/// Next to each other: one step apart horizontally, at most one level apart.
+pub fn adjacent(a: Pos, b: Pos) -> bool {
+    a.0.abs_diff(b.0) + a.1.abs_diff(b.1) == 1 && a.2.abs_diff(b.2) <= 1
+}
+
+const DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub enum Terrain {
-    Grass,
+pub enum Block {
+    Air,
+    Soil,
+    Rock,
     Water,
+}
+
+impl Block {
+    /// Solid ground: something to stand on, and impassable.
+    pub fn solid(self) -> bool {
+        matches!(self, Block::Soil | Block::Rock)
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Block::Air => "Open",
+            Block::Soil => "Soil",
+            Block::Rock => "Rock",
+            Block::Water => "Water",
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -89,12 +126,11 @@ impl BuildKind {
     }
 }
 
-/// Whatever occupies a tile on top of its terrain.
+/// Whatever occupies an open cell.
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Feature {
     None,
     Tree,
-    Rock,
     Bush,
     Wall,
     Door,
@@ -112,11 +148,11 @@ impl Feature {
     }
 
     pub fn blocks_room(self) -> bool {
-        matches!(self, Feature::Wall | Feature::Door | Feature::Rock)
+        matches!(self, Feature::Wall | Feature::Door)
     }
 
     pub fn blocks_sight(self) -> bool {
-        matches!(self, Feature::Wall | Feature::Door | Feature::Rock)
+        matches!(self, Feature::Wall | Feature::Door)
     }
 
     /// The build kind this feature was constructed from, if it is a player structure.
@@ -133,7 +169,6 @@ impl Feature {
         match self {
             Feature::None => "Ground",
             Feature::Tree => "Tree",
-            Feature::Rock => "Rock",
             Feature::Bush => "Berry bush",
             Feature::Wall => "Wall",
             Feature::Door => "Door",
@@ -162,7 +197,9 @@ pub enum Zone {
 pub struct Map {
     pub w: usize,
     pub h: usize,
-    pub terrain: Vec<Terrain>,
+    /// Number of levels.
+    pub d: usize,
+    pub block: Vec<Block>,
     pub feature: Vec<Feature>,
     pub items: Vec<Option<Stack>>,
     pub desig: Vec<Option<Desig>>,
@@ -170,10 +207,10 @@ pub struct Map {
     /// Blood stains, 0..1, fading over time.
     #[serde(default)]
     pub blood: Vec<f32>,
-    /// Room id per tile; 0 means outdoors. Derived from structures, so not saved.
+    /// Room id per cell; 0 means outdoors. Derived from walls and rock, so not saved.
     #[serde(skip)]
     pub room: Vec<u32>,
-    /// Tile count per room id (index 0 unused).
+    /// Cell count per room id (index 0 unused).
     #[serde(skip)]
     pub room_sizes: Vec<usize>,
     #[serde(skip)]
@@ -181,12 +218,14 @@ pub struct Map {
 }
 
 impl Map {
-    pub fn new(w: usize, h: usize) -> Map {
-        let n = w * h;
+    /// All air.
+    pub fn empty(w: usize, h: usize, d: usize) -> Map {
+        let n = w * h * d;
         let mut m = Map {
             w,
             h,
-            terrain: vec![Terrain::Grass; n],
+            d,
+            block: vec![Block::Air; n],
             feature: vec![Feature::None; n],
             items: vec![None; n],
             desig: vec![None; n],
@@ -200,35 +239,119 @@ impl Map {
         m
     }
 
+    /// Flat soil with open ground at level `FLAT_Z` (used by tests).
+    pub fn flat(w: usize, h: usize) -> Map {
+        let mut m = Map::empty(w, h, FLAT_Z + 3);
+        for y in 0..h {
+            for x in 0..w {
+                for z in 0..FLAT_Z {
+                    let i = m.idx((x, y, z));
+                    m.block[i] = Block::Soil;
+                }
+            }
+        }
+        m.recompute_rooms();
+        m
+    }
+
+    pub fn len(&self) -> usize {
+        self.w * self.h * self.d
+    }
+
     pub fn idx(&self, p: Pos) -> usize {
-        p.1 * self.w + p.0
+        (p.2 * self.h + p.1) * self.w + p.0
     }
 
     pub fn pos(&self, i: usize) -> Pos {
-        (i % self.w, i / self.w)
+        let layer = self.w * self.h;
+        (i % self.w, (i % layer) / self.w, i / layer)
     }
 
+    /// Cell at signed coordinates, if inside the map.
+    pub fn at(&self, x: i32, y: i32, z: i32) -> Option<Pos> {
+        (x >= 0 && y >= 0 && z >= 0 && (x as usize) < self.w && (y as usize) < self.h && (z as usize) < self.d)
+            .then(|| (x as usize, y as usize, z as usize))
+    }
+
+    pub fn below(&self, p: Pos) -> Option<Pos> {
+        (p.2 > 0).then(|| (p.0, p.1, p.2 - 1))
+    }
+
+    pub fn above(&self, p: Pos) -> Option<Pos> {
+        (p.2 + 1 < self.d).then(|| (p.0, p.1, p.2 + 1))
+    }
+
+    pub fn solid(&self, p: Pos) -> bool {
+        self.block[self.idx(p)].solid()
+    }
+
+    /// Open air that nothing blocks (room to walk through or stand in).
+    pub fn open(&self, p: Pos) -> bool {
+        let i = self.idx(p);
+        self.block[i] == Block::Air && self.feature[i].passable()
+    }
+
+    /// Open, with solid ground underneath: a pawn can stand here.
+    pub fn standable(&self, p: Pos) -> bool {
+        self.open(p) && self.below(p).is_some_and(|b| self.solid(b))
+    }
+
+    /// Alias kept for readability at call sites about movement.
+    pub fn passable(&self, p: Pos) -> bool {
+        self.standable(p)
+    }
+
+    /// Where a pawn standing at `p` can get to in one step.
+    pub fn walk_neighbors(&self, p: Pos) -> impl Iterator<Item = Pos> + '_ {
+        DIRS.into_iter().filter_map(move |(dx, dy)| self.step(p, dx, dy))
+    }
+
+    fn step(&self, p: Pos, dx: i32, dy: i32) -> Option<Pos> {
+        let (x, y) = (p.0 as i32 + dx, p.1 as i32 + dy);
+        let z = p.2 as i32;
+        let same = self.at(x, y, z)?;
+        if self.standable(same) {
+            return Some(same);
+        }
+        // Up onto a one-level rise, if there's headroom above us.
+        if let (Some(up), Some(head)) = (self.at(x, y, z + 1), self.above(p)) {
+            if self.standable(up) && self.open(head) {
+                return Some(up);
+            }
+        }
+        // Down a one-level drop, through the open cell beside us.
+        if let Some(down) = self.at(x, y, z - 1) {
+            if self.standable(down) && self.open(same) {
+                return Some(down);
+            }
+        }
+        None
+    }
+
+    /// Same-level horizontal neighbours inside the map.
     pub fn neighbors(&self, p: Pos) -> impl Iterator<Item = Pos> {
         let (w, h) = (self.w as i32, self.h as i32);
-        let (x, y) = (p.0 as i32, p.1 as i32);
-        [(1, 0), (-1, 0), (0, 1), (0, -1)]
-            .into_iter()
-            .filter_map(move |(dx, dy)| {
-                let (nx, ny) = (x + dx, y + dy);
-                if nx >= 0 && ny >= 0 && nx < w && ny < h {
-                    Some((nx as usize, ny as usize))
-                } else {
-                    None
-                }
-            })
+        let (x, y, z) = (p.0 as i32, p.1 as i32, p.2);
+        DIRS.into_iter().filter_map(move |(dx, dy)| {
+            let (nx, ny) = (x + dx, y + dy);
+            (nx >= 0 && ny >= 0 && nx < w && ny < h).then(|| (nx as usize, ny as usize, z))
+        })
     }
 
-    pub fn passable(&self, p: Pos) -> bool {
-        let i = self.idx(p);
-        self.terrain[i] != Terrain::Water && self.feature[i].passable()
+    /// Cells a pawn standing next to `p` could reach it from: horizontal
+    /// neighbours one level below, at, or above it.
+    pub fn around(&self, p: Pos) -> impl Iterator<Item = Pos> + '_ {
+        DIRS.into_iter().flat_map(move |(dx, dy)| {
+            (-1..=1).filter_map(move |dz| self.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32 + dz))
+        })
     }
 
-    /// Replace a tile's feature, flagging rooms for recomputation if walls changed.
+    /// Highest cell in a column that can be stood on.
+    pub fn surface(&self, x: usize, y: usize) -> Option<usize> {
+        (1..self.d).rev().find(|&z| self.standable((x, y, z)))
+    }
+
+    /// Replace a cell's feature, flagging rooms for recomputation if walls changed.
     pub fn set_feature(&mut self, i: usize, f: Feature) {
         if self.feature[i].blocks_room() != f.blocks_room() {
             self.rooms_dirty = true;
@@ -236,18 +359,34 @@ impl Map {
         self.feature[i] = f;
     }
 
-    pub fn roofed(&self, p: Pos) -> bool {
-        self.room.get(self.idx(p)).map_or(false, |&r| r != 0)
+    pub fn set_block(&mut self, i: usize, b: Block) {
+        if self.block[i] != b {
+            self.rooms_dirty = true;
+        }
+        self.block[i] = b;
     }
 
-    /// Whether `kind` can be put down on tile `i`.
+    /// Inside an enclosed room (which counts as having a roof).
+    pub fn roofed(&self, p: Pos) -> bool {
+        self.room.get(self.idx(p)).is_some_and(|&r| r != 0)
+    }
+
+    /// Something solid overhead: rock, soil or a wall somewhere above.
+    pub fn covered(&self, p: Pos) -> bool {
+        (p.2 + 1..self.d).any(|z| {
+            let i = self.idx((p.0, p.1, z));
+            self.block[i].solid() || self.feature[i].blocks_room()
+        })
+    }
+
+    /// Whether `kind` can be put down in cell `i`.
     pub fn can_accept(&self, i: usize, kind: ItemKind) -> bool {
-        self.passable(self.pos(i))
+        self.standable(self.pos(i))
             && !matches!(self.feature[i], Feature::Blueprint { .. })
             && self.items[i].map_or(true, |s| s.kind == kind && s.count < STACK_MAX)
     }
 
-    /// Take up to `max` of `kind` from tile `i`.
+    /// Take up to `max` of `kind` from cell `i`.
     pub fn take_item(&mut self, i: usize, kind: ItemKind, max: u32) -> Option<Stack> {
         let s = self.items[i]?;
         if s.kind != kind || max == 0 {
@@ -258,9 +397,9 @@ impl Map {
         Some(Stack { kind, count: n })
     }
 
-    /// Put a stack down at `start`, spilling onto the nearest free tiles.
+    /// Put a stack down at `start`, spilling onto the nearest free cells a pawn could walk to.
     pub fn drop_item(&mut self, start: Pos, mut stack: Stack) {
-        let mut seen = vec![false; self.w * self.h];
+        let mut seen = vec![false; self.len()];
         let mut q = VecDeque::new();
         seen[self.idx(start)] = true;
         q.push_back(start);
@@ -275,9 +414,10 @@ impl Map {
                     return;
                 }
             }
-            for nb in self.neighbors(p) {
+            let next: Vec<Pos> = self.walk_neighbors(p).collect();
+            for nb in next {
                 let ni = self.idx(nb);
-                if !seen[ni] && self.passable(nb) {
+                if !seen[ni] {
                     seen[ni] = true;
                     q.push_back(nb);
                 }
@@ -289,21 +429,24 @@ impl Map {
         self.items.iter().flatten().filter(|s| s.kind == kind).map(|s| s.count).sum()
     }
 
-    /// Flood-fill the areas bounded by walls, doors and rock. Small enclosed
-    /// areas that don't touch the map edge become roofed rooms.
+    /// Flood-fill each level's open cells, bounded by walls, doors and solid
+    /// ground. An enclosed region that doesn't touch the map edge is a room
+    /// if it is walled by the colony or fully covered from above (a cave).
     pub fn recompute_rooms(&mut self) {
-        let n = self.w * self.h;
+        let n = self.len();
         self.room = vec![0; n];
         self.room_sizes = vec![0];
+        let room_open = |m: &Map, i: usize| m.block[i] == Block::Air && !m.feature[i].blocks_room();
         let mut seen = vec![false; n];
         for start in 0..n {
-            if seen[start] || self.feature[start].blocks_room() {
+            if seen[start] || !room_open(self, start) {
                 continue;
             }
             seen[start] = true;
             let mut region = vec![start];
             let mut stack = vec![start];
             let mut touches_edge = false;
+            let mut walled = false;
             while let Some(i) = stack.pop() {
                 let p = self.pos(i);
                 if p.0 == 0 || p.1 == 0 || p.0 == self.w - 1 || p.1 == self.h - 1 {
@@ -311,14 +454,28 @@ impl Map {
                 }
                 for nb in self.neighbors(p) {
                     let ni = self.idx(nb);
-                    if !seen[ni] && !self.feature[ni].blocks_room() {
-                        seen[ni] = true;
-                        stack.push(ni);
-                        region.push(ni);
+                    if room_open(self, ni) {
+                        if !seen[ni] {
+                            seen[ni] = true;
+                            stack.push(ni);
+                            region.push(ni);
+                        }
+                    } else if self.feature[ni].blocks_room() {
+                        walled = true;
                     }
                 }
             }
-            if !touches_edge && region.len() <= MAX_ROOM {
+            if touches_edge || region.len() > MAX_ROOM {
+                continue;
+            }
+            let covered = region.iter().all(|&i| {
+                let (x, y, z) = self.pos(i);
+                (z + 1..self.d).any(|zz| {
+                    let j = self.idx((x, y, zz));
+                    self.block[j].solid() || self.feature[j].blocks_room()
+                })
+            });
+            if walled || covered {
                 let id = self.room_sizes.len() as u32;
                 self.room_sizes.push(region.len());
                 for &i in &region {
@@ -329,26 +486,44 @@ impl Map {
         self.rooms_dirty = false;
     }
 
-    pub fn generate(w: usize, h: usize, rng: &mut Rng) -> Map {
-        let mut m = Map::new(w, h);
-        for _ in 0..12 {
-            let r = 3 + rng.below(6);
-            let (cx, cy) = (rng.below(w), rng.below(h));
-            for i in blob(&m, rng, cx, cy, r) {
-                m.feature[i] = Feature::Rock;
+    /// Hills from layered noise, rocky mountains, lakes in the low ground,
+    /// trees and bushes, and a flat clearing in the middle.
+    pub fn generate(w: usize, h: usize, d: usize, rng: &mut Rng) -> Map {
+        let mut m = Map::empty(w, h, d);
+        let salts: [u32; 4] = [rng.next_u64() as u32, rng.next_u64() as u32, rng.next_u64() as u32, rng.next_u64() as u32];
+        let (cx, cy) = (w / 2, h / 2);
+        for y in 0..h {
+            for x in 0..w {
+                let (fx, fy) = (x as f32, y as f32);
+                let hills = 0.65 * noise(fx / 16.0, fy / 16.0, salts[0]) + 0.35 * noise(fx / 7.0, fy / 7.0, salts[1]);
+                let mountain = noise(fx / 13.0, fy / 13.0, salts[2]);
+                let mut height = PLAINS as f32 + 0.3 + (hills - 0.5) * 6.0;
+                let rocky = mountain > 0.66;
+                if rocky {
+                    height += (mountain - 0.66) / 0.34 * 9.0;
+                }
+                let landing = x.abs_diff(cx) <= 8 && y.abs_diff(cy) <= 6;
+                let stand = if landing { PLAINS } else { (height.round() as usize).clamp(2, d - 3) };
+                for z in 0..stand {
+                    let i = m.idx((x, y, z));
+                    m.block[i] = if !rocky && z + 3 >= stand { Block::Soil } else { Block::Rock };
+                }
+                for z in stand..=WATER_LEVEL {
+                    let i = m.idx((x, y, z));
+                    m.block[i] = Block::Water;
+                }
             }
         }
-        for _ in 0..4 {
-            let r = 2 + rng.below(4);
-            let (cx, cy) = (rng.below(w), rng.below(h));
-            for i in blob(&m, rng, cx, cy, r) {
-                m.terrain[i] = Terrain::Water;
-                m.feature[i] = Feature::None;
-            }
-        }
-        for i in 0..w * h {
-            if m.feature[i] == Feature::None && m.terrain[i] == Terrain::Grass {
+        // Trees and bushes on open soil.
+        for y in 0..h {
+            for x in 0..w {
+                let landing = x.abs_diff(cx) <= 8 && y.abs_diff(cy) <= 6;
+                let Some(z) = m.surface(x, y) else { continue };
+                if landing || m.block[m.idx((x, y, z - 1))] != Block::Soil {
+                    continue;
+                }
                 let r = rng.f32();
+                let i = m.idx((x, y, z));
                 if r < 0.11 {
                     m.feature[i] = Feature::Tree;
                 } else if r < 0.135 {
@@ -356,46 +531,47 @@ impl Map {
                 }
             }
         }
-        // Landing zone in the middle.
-        let (cx, cy) = (w / 2, h / 2);
-        for y in cy - 6..=cy + 6 {
-            for x in cx - 8..=cx + 8 {
-                let i = m.idx((x, y));
-                m.terrain[i] = Terrain::Grass;
-                m.feature[i] = Feature::None;
-            }
-        }
         m.recompute_rooms();
         m
     }
 }
 
-fn blob(m: &Map, rng: &mut Rng, cx: usize, cy: usize, r: usize) -> Vec<usize> {
-    let (cx, cy, r) = (cx as i32, cy as i32, r as i32);
-    let mut out = Vec::new();
-    for y in cy - r..=cy + r {
-        for x in cx - r..=cx + r {
-            if x < 0 || y < 0 || x >= m.w as i32 || y >= m.h as i32 {
-                continue;
-            }
-            let d = (((x - cx).pow(2) + (y - cy).pow(2)) as f32).sqrt();
-            if d <= r as f32 - rng.f32() * 1.5 {
-                out.push(m.idx((x as usize, y as usize)));
-            }
-        }
-    }
-    out
+fn hash(x: i32, y: i32, salt: u32) -> f32 {
+    let mut h = (x as u32).wrapping_mul(0x27d4_eb2d) ^ (y as u32).wrapping_mul(0x1656_67b1) ^ salt.wrapping_mul(0x9e37_79b9);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x85eb_ca6b);
+    h ^= h >> 13;
+    h = h.wrapping_mul(0xc2b2_ae35);
+    h ^= h >> 16;
+    (h >> 8) as f32 / (1u32 << 24) as f32
+}
+
+/// Smooth value noise in [0, 1).
+fn noise(x: f32, y: f32, salt: u32) -> f32 {
+    let (x0, y0) = (x.floor(), y.floor());
+    let (fx, fy) = (x - x0, y - y0);
+    let (sx, sy) = (fx * fx * (3.0 - 2.0 * fx), fy * fy * (3.0 - 2.0 * fy));
+    let (xi, yi) = (x0 as i32, y0 as i32);
+    let a = hash(xi, yi, salt);
+    let b = hash(xi + 1, yi, salt);
+    let c = hash(xi, yi + 1, salt);
+    let d = hash(xi + 1, yi + 1, salt);
+    let top = a + (b - a) * sx;
+    let bottom = c + (d - c) * sx;
+    top + (bottom - top) * sy
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const Z: usize = FLAT_Z;
+
     fn wall_box(m: &mut Map, x0: usize, y0: usize, x1: usize, y1: usize) {
         for y in y0..=y1 {
             for x in x0..=x1 {
                 if x == x0 || x == x1 || y == y0 || y == y1 {
-                    let i = m.idx((x, y));
+                    let i = m.idx((x, y, Z));
                     m.set_feature(i, Feature::Wall);
                 }
             }
@@ -405,45 +581,115 @@ mod tests {
 
     #[test]
     fn enclosed_area_becomes_a_roofed_room() {
-        let mut m = Map::new(20, 20);
+        let mut m = Map::flat(20, 20);
         wall_box(&mut m, 5, 5, 9, 9);
-        assert!(m.roofed((7, 7)));
-        assert!(!m.roofed((2, 2)));
-        assert_eq!(m.room_sizes[m.room[m.idx((7, 7))] as usize], 9);
+        assert!(m.roofed((7, 7, Z)));
+        assert!(!m.roofed((2, 2, Z)));
+        assert_eq!(m.room_sizes[m.room[m.idx((7, 7, Z))] as usize], 9);
 
-        let gap = m.idx((5, 7));
+        let gap = m.idx((5, 7, Z));
         m.set_feature(gap, Feature::None);
         assert!(m.rooms_dirty);
         m.recompute_rooms();
-        assert!(!m.roofed((7, 7)));
+        assert!(!m.roofed((7, 7, Z)));
     }
 
     #[test]
     fn doors_close_rooms() {
-        let mut m = Map::new(20, 20);
+        let mut m = Map::flat(20, 20);
         wall_box(&mut m, 5, 5, 9, 9);
-        let i = m.idx((5, 7));
+        let i = m.idx((5, 7, Z));
         m.set_feature(i, Feature::Door);
         m.recompute_rooms();
-        assert!(m.roofed((7, 7)));
+        assert!(m.roofed((7, 7, Z)));
     }
 
     #[test]
-    fn drop_item_spills_over_full_tiles() {
-        let mut m = Map::new(10, 10);
-        m.drop_item((5, 5), Stack { kind: ItemKind::Wood, count: 120 });
+    fn a_tunnel_under_rock_is_a_room() {
+        let mut m = Map::flat(20, 20);
+        // A rock hill two levels high, with a tunnel dug into it.
+        for y in 3..10 {
+            for x in 3..10 {
+                for z in Z..Z + 2 {
+                    let i = m.idx((x, y, z));
+                    m.block[i] = Block::Rock;
+                }
+            }
+        }
+        for x in 5..8 {
+            let i = m.idx((x, 6, Z));
+            m.set_block(i, Block::Air);
+        }
+        m.recompute_rooms();
+        assert!(m.roofed((6, 6, Z)), "the tunnel has rock above it");
+        assert!(m.standable((6, 6, Z)));
+    }
+
+    #[test]
+    fn pawns_step_up_one_level_but_not_two() {
+        let mut m = Map::flat(10, 3);
+        // x=4 is one level higher, x=6.. is three levels higher (a cliff).
+        for y in 0..3 {
+            for z in Z..Z + 1 {
+                let i = m.idx((4, y, z));
+                m.block[i] = Block::Soil;
+                let i = m.idx((5, y, z));
+                m.block[i] = Block::Soil;
+            }
+            for x in 6..10 {
+                for z in Z..Z + 3 {
+                    let i = m.idx((x, y, z));
+                    m.block[i] = Block::Rock;
+                }
+            }
+        }
+        let up: Vec<Pos> = m.walk_neighbors((3, 1, Z)).collect();
+        assert!(up.contains(&(4, 1, Z + 1)), "{:?}", up);
+        let cliff: Vec<Pos> = m.walk_neighbors((5, 1, Z + 1)).collect();
+        assert!(!cliff.iter().any(|p| p.0 == 6), "{:?}", cliff);
+        let down: Vec<Pos> = m.walk_neighbors((4, 1, Z + 1)).collect();
+        assert!(down.contains(&(3, 1, Z)), "{:?}", down);
+    }
+
+    #[test]
+    fn walls_are_not_climbable() {
+        let mut m = Map::flat(5, 3);
+        let i = m.idx((2, 1, Z));
+        m.set_feature(i, Feature::Wall);
+        let next: Vec<Pos> = m.walk_neighbors((1, 1, Z)).collect();
+        assert!(!next.iter().any(|p| p.0 == 2), "{:?}", next);
+    }
+
+    #[test]
+    fn drop_item_spills_over_full_cells() {
+        let mut m = Map::flat(10, 10);
+        m.drop_item((5, 5, Z), Stack { kind: ItemKind::Wood, count: 120 });
         assert_eq!(m.count_items(ItemKind::Wood), 120);
-        assert_eq!(m.items[m.idx((5, 5))].unwrap().count, STACK_MAX);
+        assert_eq!(m.items[m.idx((5, 5, Z))].unwrap().count, STACK_MAX);
     }
 
     #[test]
     fn take_item_respects_kind_and_amount() {
-        let mut m = Map::new(5, 5);
-        let i = m.idx((1, 1));
+        let mut m = Map::flat(5, 5);
+        let i = m.idx((1, 1, Z));
         m.items[i] = Some(Stack { kind: ItemKind::Food, count: 3 });
         assert!(m.take_item(i, ItemKind::Wood, 1).is_none());
         assert_eq!(m.take_item(i, ItemKind::Food, 2).unwrap().count, 2);
         assert_eq!(m.take_item(i, ItemKind::Food, 5).unwrap().count, 1);
         assert!(m.items[i].is_none());
+    }
+
+    #[test]
+    fn generated_maps_have_a_flat_landing_zone() {
+        let mut rng = Rng::new(3);
+        let m = Map::generate(100, 70, 16, &mut rng);
+        for y in 30..40 {
+            for x in 44..56 {
+                assert_eq!(m.surface(x, y), Some(PLAINS), "at {},{}", x, y);
+            }
+        }
+        let water = m.block.iter().filter(|b| **b == Block::Water).count();
+        let rock = m.block.iter().filter(|b| **b == Block::Rock).count();
+        assert!(water > 0 && rock > 0);
     }
 }

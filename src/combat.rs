@@ -7,7 +7,7 @@ use crate::pawn::{Job, Memory, Pawn, Skill};
 use crate::world::{Effect, Step, World};
 
 fn dist(a: &Pawn, b: &Pawn) -> f32 {
-    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt()
+    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
 }
 
 impl World {
@@ -47,8 +47,8 @@ impl World {
     fn attack(&mut self, p: &mut Pawn, ti: usize) {
         let w = p.weapon;
         let skill = if w.ranged() { Skill::Shooting } else { Skill::Melee };
-        let (tx, ty) = (self.pawns[ti].x, self.pawns[ti].y);
-        let d = ((tx - p.x).powi(2) + (ty - p.y).powi(2)).sqrt();
+        let (tx, ty, tz) = (self.pawns[ti].x, self.pawns[ti].y, self.pawns[ti].z);
+        let d = dist(p, &self.pawns[ti]);
         let level = p.skill(skill) as f32;
         let base = if w.ranged() { 0.55 + level * 0.025 - d * 0.025 } else { 0.6 + level * 0.02 };
         // Bad eyes or hands make for bad aim.
@@ -59,11 +59,11 @@ impl World {
         p.learn(skill, 2.0);
         if w.ranged() {
             let to = if hit {
-                (tx, ty)
+                (tx, ty, tz)
             } else {
-                (tx + self.rng.range_f32(-1.0, 1.0), ty + self.rng.range_f32(-1.0, 1.0))
+                (tx + self.rng.range_f32(-1.0, 1.0), ty + self.rng.range_f32(-1.0, 1.0), tz)
             };
-            self.effects.push(Effect { from: (p.x, p.y), to, ttl: 0.15, hit });
+            self.effects.push(Effect { from: (p.x, p.y, p.z), to, ttl: 0.15, hit });
         }
         if hit {
             let (lo, hi) = w.damage();
@@ -182,20 +182,13 @@ impl World {
     }
 
     fn nearest_edge(&self, from: Pos) -> Pos {
+        // Reachable cells come nearest first.
         let df = bfs(&self.map, from);
         let (w, h) = (self.map.w, self.map.h);
-        let mut best: Option<(i32, Pos)> = None;
-        for i in 0..w * h {
-            let p = self.map.pos(i);
-            if p.0 != 0 && p.1 != 0 && p.0 != w - 1 && p.1 != h - 1 {
-                continue;
-            }
-            if let Some(d) = df.dist(p) {
-                if best.map_or(true, |(bd, _)| d < bd) {
-                    best = Some((d, p));
-                }
-            }
-        }
-        best.map_or(from, |(_, p)| p)
+        df.order
+            .iter()
+            .map(|&i| self.map.pos(i))
+            .find(|p| p.0 == 0 || p.1 == 0 || p.0 == w - 1 || p.1 == h - 1)
+            .unwrap_or(from)
     }
 }

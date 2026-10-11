@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, ProgressBar, RichText};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::health::HediffKind;
-use my_world::map::{Feature, ItemKind, Pos, Terrain, Zone};
+use my_world::map::{Block, Feature, ItemKind, Pos, Zone};
 use my_world::pawn::{Pawn, Skill, WorkType};
 use my_world::DAY_LEN;
 
@@ -364,7 +364,7 @@ fn health_tab(ui: &mut egui::Ui, p: &Pawn) {
 fn tile_inspector(ctx: &egui::Context, sim: &Sim, t: Pos) {
     let m = &sim.world.map;
     let i = m.idx(t);
-    egui::Window::new(RichText::new(format!("Tile {}, {}", t.0, t.1)).strong())
+    egui::Window::new(RichText::new(format!("Cell {}, {}  level {}", t.0, t.1, t.2)).strong())
         .id(egui::Id::new("inspector"))
         .anchor(Align2::LEFT_TOP, [8.0, 92.0])
         .collapsible(false)
@@ -376,9 +376,16 @@ fn tile_inspector(ctx: &egui::Context, sim: &Sim, t: Pos) {
                     let c = kind.cost();
                     format!("{} blueprint ({}/{} {})", kind.name(), delivered, c.count, c.kind.name().to_lowercase())
                 }
-                f => format!("{}{}", f.name(), if m.terrain[i] == Terrain::Water { " (water)" } else { "" }),
+                Feature::None if m.block[i] != Block::Air => m.block[i].name().to_string(),
+                f => {
+                    let ground = m.below(t).map_or(Block::Air, |b| m.block[m.idx(b)]);
+                    format!("{} on {}", f.name(), ground.name().to_lowercase())
+                }
             };
             ui.label(what);
+            if m.covered(t) && !m.roofed(t) {
+                ui.label("Covered overhead");
+            }
             if let Some(s) = m.items[i] {
                 ui.label(format!("{} x{}", s.kind.name(), s.count));
             }

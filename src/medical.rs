@@ -33,21 +33,12 @@ impl World {
     }
 
     pub(crate) fn nearest_free_item(&self, from: Pos, kind: ItemKind) -> Option<Pos> {
+        // Reachable cells come nearest first.
         let df = bfs(&self.map, from);
-        let mut best: Option<(i32, Pos)> = None;
-        for i in 0..self.map.items.len() {
-            let Some(s) = self.map.items[i] else { continue };
-            if s.kind != kind || self.res_item[i] != 0 {
-                continue;
-            }
-            let pos = self.map.pos(i);
-            if let Some(d) = df.dist(pos) {
-                if best.map_or(true, |(bd, _)| d < bd) {
-                    best = Some((d, pos));
-                }
-            }
-        }
-        best.map(|(_, p)| p)
+        df.order
+            .iter()
+            .find(|&&i| self.res_item[i] == 0 && self.map.items[i].is_some_and(|s| s.kind == kind))
+            .map(|&i| self.map.pos(i))
     }
 
     pub(crate) fn self_tend_job(&self, p: &Pawn) -> Job {

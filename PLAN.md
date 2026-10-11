@@ -36,13 +36,18 @@
 | # | Phase | Status |
 |---|---|---|
 | 0 | Current 2D version builds, tests pass, committed | done |
-| 1 | Bevy front end on the existing flat simulation: 3D view, camera, clicking, egui UI, macroquad removed | done (needs a visual check) |
-| 2 | 3D simulation: positions with a level, terrain from a height map, 3D A*, item and job lists, systems and tests moved over | |
+| 1 | Bevy front end on the existing flat simulation: 3D view, camera, clicking, egui UI, macroquad removed | done |
+| 2 | 3D simulation: positions with a level, terrain from a height map, walking graph with slopes, job search over reachable cells, systems and tests moved over | done (needs a visual check) |
 | 3 | Multi-level gameplay: digging, stairs, floors, support rule, 3D rooms and roofs, layer view, building on any level | |
 | 4 | Visual polish: models, shadows and day/night, interior and cave lighting, animations, blood marks, gunfire effects, water | |
-| 5 | Performance and saves: profiling, faster pathfinding, a save format version number | |
+| 5 | Performance and saves: profiling, A* / cached regions if pathfinding gets slow, a save format version number | |
 
 ## Notes
 
 - Pinned to Bevy 0.20 and bevy_egui 0.43.
-- Old save games won't carry over once the simulation goes 3D (Phase 2).
+- Old save games don't load since Phase 2 (the format changed).
+- Phase 2 kept breadth-first search instead of A*: it only visits walkable cells, which number about the
+  same as the old 2D map, so it is still fast. Job search, beds and item lookups now walk those reached
+  cells nearest-first instead of scanning the whole volume.
+- Phase 2 has no falling: mining out the ground under a pawn or item leaves it floating until Phase 3.
+- "Covered" (anything solid overhead, e.g. a tunnel) is separate from "roofed" (inside an enclosed room).

@@ -68,8 +68,8 @@ fn spawn_camera(mut commands: Commands, mut rig: ResMut<CameraRig>, sim: Res<Sim
 
 /// Average position of living colonists (or the map centre).
 pub fn colony_center(sim: &Sim) -> Vec3 {
-    let living: Vec<(f32, f32)> =
-        sim.world.pawns.iter().filter(|p| p.is_colonist() && !p.dead).map(|p| (p.x, p.y)).collect();
+    let living: Vec<(f32, f32, f32)> =
+        sim.world.pawns.iter().filter(|p| p.is_colonist() && !p.dead).map(|p| (p.x, p.y, p.z)).collect();
     if living.is_empty() {
         let m = &sim.world.map;
         return Vec3::new(m.w as f32 / 2.0, 0.0, m.h as f32 / 2.0);
@@ -77,7 +77,8 @@ pub fn colony_center(sim: &Sim) -> Vec3 {
     let n = living.len() as f32;
     let x = living.iter().map(|p| p.0).sum::<f32>() / n;
     let y = living.iter().map(|p| p.1).sum::<f32>() / n;
-    super::tile_point(x, y)
+    let z = living.iter().map(|p| p.2).sum::<f32>() / n;
+    super::tile_point(x, y, z)
 }
 
 fn keyboard_controls(keys: Res<ButtonInput<KeyCode>>, time: Res<Time>, mut rig: ResMut<CameraRig>) {
@@ -142,10 +143,18 @@ fn mouse_controls(
     }
 }
 
-fn apply_rig(sim: Res<Sim>, mut rig: ResMut<CameraRig>, mut camera: Single<&mut Transform, With<MainCamera>>) {
+fn apply_rig(
+    sim: Res<Sim>,
+    time: Res<Time>,
+    mut rig: ResMut<CameraRig>,
+    mut camera: Single<&mut Transform, With<MainCamera>>,
+) {
     let m = &sim.world.map;
-    rig.focus.x = rig.focus.x.clamp(0.0, m.w as f32);
-    rig.focus.z = rig.focus.z.clamp(0.0, m.h as f32);
-    rig.focus.y = 0.0;
+    rig.focus.x = rig.focus.x.clamp(0.0, m.w as f32 - 0.01);
+    rig.focus.z = rig.focus.z.clamp(0.0, m.h as f32 - 0.01);
+    // Glide up and down with the ground under the focus point.
+    let ground = m.surface(rig.focus.x as usize, rig.focus.z as usize).map_or(0.0, |z| z as f32 * super::terrain::LEVEL_H);
+    let k = (time.delta_secs() * 4.0).min(1.0);
+    rig.focus.y += (ground - rig.focus.y) * k;
     **camera = rig.transform();
 }

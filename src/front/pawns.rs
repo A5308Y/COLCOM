@@ -65,7 +65,7 @@ fn mesh(m: &Handle<Mesh>, mat: Handle<StandardMaterial>, tf: Transform, parent: 
 
 fn spawn_pawn(commands: &mut Commands, a: &PawnAssets, materials: &mut Assets<StandardMaterial>, p: &Pawn) -> PawnVis {
     let look = pawn_look(p);
-    let root = commands.spawn((Transform::from_translation(tile_point(p.x, p.y)), Visibility::default())).id();
+    let root = commands.spawn((Transform::from_translation(tile_point(p.x, p.y, p.z)), Visibility::default())).id();
     let body = commands
         .spawn(mesh(&a.capsule, lit(materials, look.clothes), Transform::from_xyz(0.0, 0.34, 0.0), root))
         .id();
@@ -107,7 +107,7 @@ fn weapon_pose(w: Weapon, a: &PawnAssets) -> (Transform, Handle<StandardMaterial
 
 /// Direction the pawn should face: where it's walking, or what it's working on.
 fn facing(p: &Pawn, w: &SimWorld) -> Option<f32> {
-    let target = if let Some(&(nx, ny)) = p.path.last() {
+    let target = if let Some(&(nx, ny, _)) = p.path.last() {
         Some((nx as f32, ny as f32))
     } else {
         match p.job {
@@ -179,7 +179,7 @@ fn sync_pawns(
         }
         let lying = p.dead || p.lying();
         let in_bed = lying && !p.dead && m.feature[m.idx(p.pos)] == Feature::Bed;
-        let base = tile_point(p.x, p.y);
+        let base = tile_point(p.x, p.y, p.z);
         let root_tf = if lying {
             // Model is upright along +Y; tip it over so the head points along -Z (towards a bed's pillow).
             let yaw = if in_bed { 0.0 } else { v.yaw };

@@ -1,7 +1,6 @@
 //! Labels drawn over the 3D view: names, health and work bars, sleep and
 //! bleeding markers, item counts and blueprint progress.
 
-use super::terrain::surface_height;
 use super::{tile_center, tile_point};
 use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, FontId, Pos2};
@@ -32,7 +31,7 @@ pub fn draw(ctx: &egui::Context, w: &SimWorld, cam: &Camera, gt: &GlobalTransfor
     let m = &w.map;
 
     for p in w.pawns.iter().filter(|p| !p.left) {
-        let base = tile_point(p.x, p.y);
+        let base = tile_point(p.x, p.y, p.z);
         let lying = p.dead || p.lying();
         let Some(top) = to_screen(base + Vec3::Y * if lying { 0.7 } else { 1.15 }) else { continue };
         if !p.dead {
@@ -70,9 +69,9 @@ pub fn draw(ctx: &egui::Context, w: &SimWorld, cam: &Camera, gt: &GlobalTransfor
     }
 
     if distance < 24.0 {
-        for i in 0..m.w * m.h {
+        for i in 0..m.len() {
             let pos = m.pos(i);
-            let c = tile_center(pos) + Vec3::Y * (surface_height(m, pos.0, pos.1) + 0.45);
+            let c = tile_center(pos) + Vec3::Y * 0.45;
             if let Some(s) = m.items[i] {
                 if let Some(sp) = to_screen(c) {
                     shadow_text(&painter, sp, Align2::CENTER_BOTTOM, &s.count.to_string(), 12.0, Color32::WHITE);

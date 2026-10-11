@@ -35,12 +35,13 @@ impl Plugin for FrontPlugin {
     }
 }
 
-/// World-space centre of a tile on the ground. Tiles are 1×1, x → X, y → Z.
+/// World-space centre of a cell's floor. Cells are 1×1×LEVEL_H: x → X,
+/// level → Y, y → Z.
 pub fn tile_center(p: Pos) -> Vec3 {
-    Vec3::new(p.0 as f32 + 0.5, 0.0, p.1 as f32 + 0.5)
+    tile_point(p.0 as f32, p.1 as f32, p.2 as f32)
 }
 
-/// World-space position for a fractional tile coordinate (pawn positions).
-pub fn tile_point(x: f32, y: f32) -> Vec3 {
-    Vec3::new(x + 0.5, 0.0, y + 0.5)
+/// World-space position for fractional cell coordinates (pawn positions).
+pub fn tile_point(x: f32, y: f32, z: f32) -> Vec3 {
+    Vec3::new(x + 0.5, z * terrain::LEVEL_H, y + 0.5)
 }

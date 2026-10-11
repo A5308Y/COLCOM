@@ -55,6 +55,9 @@ according to their **work priorities** (press `P`).
   wounds and diseases (quality depends on Medicine skill, medicine and bed rest), and feed bedridden
   patients. Wounded or sick colonists go to bed on their own. A lone doctor tends their own wounds. Click a
   colonist and open the **Health** tab for the full picture.
+- **Terrain:** the world is a 3D grid of soil, rock and water, 16 levels deep, with rolling hills, lakes and
+  rocky mountains. Pawns walk up and down one-level slopes but can't climb cliffs or walls. Mining rock
+  digs tunnels into mountains.
 - **Rooms:** areas fully enclosed by walls, doors or rock get a roof (shown as a wooden floor). Sleeping
   in a bed indoors gives a mood bonus.
 - **Mood:** built from needs and memories (see the inspector). Low mood can cause mental breaks.
@@ -68,8 +71,8 @@ according to their **work priorities** (press `P`).
 The simulation is a library with no rendering code, so it can be tested headlessly:
 
 - `src/lib.rs`: module list and constants (day length, tick length)
-- `src/map.rs`: tiles, items, zones, room detection, map generation
-- `src/pathing.rs`: BFS distance fields, line of sight
+- `src/map.rs`: 3D cells (blocks, features, items, zones), walking rules, rooms, terrain generation
+- `src/pathing.rs`: BFS distance fields over the walking graph, 3D line of sight
 - `src/pawn.rs`: pawns, skills, mood, jobs
 - `src/health.rs`: body parts, injuries, diseases, capacities, bleeding, healing
 - `src/medical.rs`: doctors (rescue, tend, feed) and patients

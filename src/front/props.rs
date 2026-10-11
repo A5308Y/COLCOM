@@ -5,7 +5,7 @@
 
 use super::look::*;
 use super::sim::Sim;
-use super::terrain::WALL_H;
+use super::terrain::LEVEL_H as WALL_H;
 use super::tile_center;
 use bevy::prelude::*;
 use my_world::map::{BuildKind, Feature, ItemKind, Map, Pos};
@@ -31,8 +31,9 @@ struct ItemKey {
 #[derive(Resource, Default)]
 struct Props {
     generation: Option<u64>,
-    features: HashMap<usize, (PropKey, Entity)>,
-    items: HashMap<usize, (ItemKey, Entity)>,
+    /// Spawned objects per cell (flat arrays: cheaper than maps when scanning every cell each frame).
+    features: Vec<Option<(PropKey, Entity)>>,
+    items: Vec<Option<(ItemKey, Entity)>>,
 }
 
 /// Shared unit meshes and materials for props (and carried items on pawns).
@@ -130,12 +131,12 @@ fn crop_stage(growth: f32) -> u8 {
     }
 }
 
-fn is_wallish(m: &Map, x: i32, y: i32) -> bool {
-    x >= 0
-        && y >= 0
-        && (x as usize) < m.w
-        && (y as usize) < m.h
-        && matches!(m.feature[m.idx((x as usize, y as usize))], Feature::Wall | Feature::Door)
+/// A wall or door (or solid ground) beside a door decides which way it faces.
+fn is_wallish(m: &Map, x: i32, y: i32, z: usize) -> bool {
+    m.at(x, y, z as i32).is_some_and(|p| {
+        let i = m.idx(p);
+        m.block[i].solid() || matches!(m.feature[i], Feature::Wall | Feature::Door)
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -149,13 +150,15 @@ fn sync_props(
     let props = props.into_inner();
     let w = &sim.world;
     let m = &w.map;
-    if props.generation != Some(sim.generation) {
-        for (_, (_, e)) in props.features.drain() {
+    if props.generation != Some(sim.generation) || props.features.len() != m.len() {
+        for (_, e) in props.features.drain(..).flatten() {
             commands.entity(e).despawn();
         }
-        for (_, (_, e)) in props.items.drain() {
+        for (_, e) in props.items.drain(..).flatten() {
             commands.entity(e).despawn();
         }
+        props.features = vec![None; m.len()];
+        props.items = vec![None; m.len()];
         props.generation = Some(sim.generation);
     }
 
@@ -166,7 +169,7 @@ fn sync_props(
         }
     }
 
-    for i in 0..m.w * m.h {
+    for i in 0..m.len() {
         let pos = m.pos(i);
         let (xi, yi) = (pos.0 as i32, pos.1 as i32);
         let want = match m.feature[i] {
@@ -178,16 +181,21 @@ fn sync_props(
                 let open = w
                     .pawns
                     .iter()
-                    .any(|p| !p.dead && (p.x - pos.0 as f32).abs() < 0.9 && (p.y - pos.1 as f32).abs() < 0.9);
-                let horizontal = is_wallish(m, xi - 1, yi) || is_wallish(m, xi + 1, yi);
+                    .any(|p| {
+                        !p.dead
+                            && (p.x - pos.0 as f32).abs() < 0.9
+                            && (p.y - pos.1 as f32).abs() < 0.9
+                            && (p.z - pos.2 as f32).abs() < 0.9
+                    });
+                let horizontal = is_wallish(m, xi - 1, yi, pos.2) || is_wallish(m, xi + 1, yi, pos.2);
                 Some(PropKey::Door { horizontal, open })
             }
             Feature::Blueprint { kind, .. } => Some(PropKey::Blueprint { kind }),
-            Feature::None | Feature::Rock | Feature::Wall => None,
+            Feature::None | Feature::Wall => None,
         };
-        let have = props.features.get(&i).map(|(k, _)| *k);
+        let have = props.features[i].map(|(k, _)| k);
         if want != have {
-            if let Some((_, e)) = props.features.remove(&i) {
+            if let Some((_, e)) = props.features[i].take() {
                 commands.entity(e).despawn();
             }
             if let Some(key) = want {
@@ -199,19 +207,19 @@ fn sync_props(
                     _ => assets.blanket_free.clone(),
                 };
                 let e = spawn_feature(&mut commands, &assets, key, pos, blanket);
-                props.features.insert(i, (key, e));
+                props.features[i] = Some((key, e));
             }
         }
 
         let want_item = m.items[i].map(|s| ItemKey { kind: s.kind, big: s.count >= 25 });
-        let have_item = props.items.get(&i).map(|(k, _)| *k);
+        let have_item = props.items[i].map(|(k, _)| k);
         if want_item != have_item {
-            if let Some((_, e)) = props.items.remove(&i) {
+            if let Some((_, e)) = props.items[i].take() {
                 commands.entity(e).despawn();
             }
             if let Some(key) = want_item {
                 let e = spawn_item(&mut commands, &assets, key, pos);
-                props.items.insert(i, (key, e));
+                props.items[i] = Some((key, e));
             }
         }
     }

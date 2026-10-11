@@ -1,7 +1,7 @@
 //! The whole simulation state and its fixed-step update.
 
 use crate::health::TickCtx;
-use crate::map::{BuildKind, Desig, Feature, ItemKind, Map, Pos, Stack, Terrain, Zone};
+use crate::map::{Block, BuildKind, Desig, Feature, ItemKind, Map, Pos, Stack, Zone};
 use crate::pawn::{Faction, Job, Memory, Pawn, WorkType};
 use crate::pathing::bfs;
 use crate::rng::Rng;
@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 pub const MAP_W: usize = 100;
 pub const MAP_H: usize = 70;
+pub const MAP_D: usize = 16;
 /// Daylight seconds for a crop to ripen.
 const CROP_GROW_TIME: f32 = 180.0;
 
@@ -19,11 +20,11 @@ const COLONIST_NAMES: [&str; 16] = [
     "Otto", "Pia",
 ];
 
-/// A short-lived visual (gunshot tracer), in tile coordinates.
+/// A short-lived visual (gunshot tracer), in cell coordinates (x, y, level).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Effect {
-    pub from: (f32, f32),
-    pub to: (f32, f32),
+    pub from: (f32, f32, f32),
+    pub to: (f32, f32, f32),
     pub ttl: f32,
     pub hit: bool,
 }
@@ -68,28 +69,30 @@ pub struct World {
 impl World {
     pub fn new(seed: u64) -> World {
         let mut rng = Rng::new(seed);
-        let map = Map::generate(MAP_W, MAP_H, &mut rng);
+        let map = Map::generate(MAP_W, MAP_H, MAP_D, &mut rng);
         let mut w = World::with_map(map, rng);
         let (cx, cy) = (MAP_W / 2, MAP_H / 2);
+        // The landing zone is flat, so one level works for all of it.
+        let z = w.map.surface(cx, cy).unwrap_or(1);
         for k in 0..3 {
-            w.spawn_colonist((cx - 1 + k, cy));
+            w.spawn_colonist((cx - 1 + k, cy, z));
         }
         for y in cy + 2..cy + 5 {
             for x in cx - 4..cx + 2 {
-                let i = w.map.idx((x, y));
+                let i = w.map.idx((x, y, z));
                 w.map.zone[i] = Zone::Stockpile;
             }
         }
-        w.map.drop_item((cx - 4, cy + 2), Stack { kind: ItemKind::Wood, count: 80 });
-        w.map.drop_item((cx + 1, cy + 4), Stack { kind: ItemKind::Food, count: 40 });
-        w.map.drop_item((cx - 1, cy + 4), Stack { kind: ItemKind::Medicine, count: 8 });
+        w.map.drop_item((cx - 4, cy + 2, z), Stack { kind: ItemKind::Wood, count: 80 });
+        w.map.drop_item((cx + 1, cy + 4, z), Stack { kind: ItemKind::Food, count: 40 });
+        w.map.drop_item((cx - 1, cy + 4, z), Stack { kind: ItemKind::Medicine, count: 8 });
         w.push_log("Three colonists crash-landed. Press H for help.".into());
         w
     }
 
     /// An empty world around an existing map (also used by tests).
     pub fn with_map(map: Map, rng: Rng) -> World {
-        let n = map.w * map.h;
+        let n = map.len();
         World {
             map,
             pawns: Vec::new(),
@@ -275,13 +278,15 @@ impl World {
         self.regrow_timer -= dt;
         if self.regrow_timer <= 0.0 {
             self.regrow_timer = 4.0;
-            let i = self.rng.below(self.map.w * self.map.h);
+            let (x, y) = (self.rng.below(self.map.w), self.rng.below(self.map.h));
             let m = &self.map;
+            let Some(z) = m.surface(x, y) else { return };
+            let i = m.idx((x, y, z));
             let free = m.feature[i] == Feature::None
-                && m.terrain[i] == Terrain::Grass
+                && m.block[m.idx((x, y, z - 1))] == Block::Soil
                 && m.zone[i] == Zone::None
                 && m.items[i].is_none()
-                && m.room[i] == 0
+                && !m.covered((x, y, z))
                 && !self.pawns.iter().any(|p| m.idx(p.pos) == i);
             if free {
                 let f = if self.rng.chance(0.6) { Feature::Tree } else { Feature::Bush };
@@ -530,7 +535,7 @@ impl World {
         if p.path_goal != Some(goal) {
             p.path.clear();
             p.path_goal = Some(goal);
-            let at_goal = p.pos == goal || (adjacent && crate::map::manhattan(p.pos, goal) == 1);
+            let at_goal = p.pos == goal || (adjacent && crate::map::adjacent(p.pos, goal));
             if !at_goal {
                 let df = bfs(&self.map, p.pos);
                 match df.approach(&self.map, goal, adjacent) {
@@ -566,35 +571,35 @@ impl World {
 
     // ---------- player orders ----------
 
-    pub fn apply_order(&mut self, p: Pos, order: Order) {
-        let i = self.map.idx(p);
-        let f = self.map.feature[i];
+    /// Whether `order` makes sense for cell `p`.
+    pub fn order_applies(&self, p: Pos, order: Order) -> bool {
+        let m = &self.map;
+        let i = m.idx(p);
+        let f = m.feature[i];
         match order {
-            Order::Desig(d) => {
-                let ok = match d {
-                    Desig::Chop => f == Feature::Tree,
-                    Desig::Mine => f == Feature::Rock || f.built_from().is_some(),
-                    Desig::Forage => f == Feature::Bush,
-                };
-                if ok {
-                    self.map.desig[i] = Some(d);
-                }
-            }
-            Order::Zone(z) => {
-                let ok = z == Zone::None
-                    || (self.map.terrain[i] == Terrain::Grass && matches!(f, Feature::None | Feature::Crop { .. }));
-                if ok {
-                    self.map.zone[i] = z;
-                }
-            }
-            Order::Build(kind) => {
-                if self.map.terrain[i] == Terrain::Grass && f == Feature::None {
-                    self.map.feature[i] = Feature::Blueprint { kind, delivered: 0 };
-                }
-            }
+            Order::Desig(Desig::Chop) => f == Feature::Tree,
+            Order::Desig(Desig::Mine) => m.block[i] == Block::Rock || f.built_from().is_some(),
+            Order::Desig(Desig::Forage) => f == Feature::Bush,
+            Order::Zone(Zone::None) => m.zone[i] != Zone::None,
+            Order::Zone(_) => m.standable(p) && matches!(f, Feature::None | Feature::Crop { .. }),
+            Order::Build(_) => m.standable(p) && f == Feature::None,
+            Order::Cancel => m.desig[i].is_some() || matches!(f, Feature::Blueprint { .. }),
+        }
+    }
+
+    /// Apply a player order to one cell. Returns false if it doesn't apply there.
+    pub fn apply_order(&mut self, p: Pos, order: Order) -> bool {
+        if !self.order_applies(p, order) {
+            return false;
+        }
+        let i = self.map.idx(p);
+        match order {
+            Order::Desig(d) => self.map.desig[i] = Some(d),
+            Order::Zone(z) => self.map.zone[i] = z,
+            Order::Build(kind) => self.map.feature[i] = Feature::Blueprint { kind, delivered: 0 },
             Order::Cancel => {
                 self.map.desig[i] = None;
-                if let Feature::Blueprint { kind, delivered } = f {
+                if let Feature::Blueprint { kind, delivered } = self.map.feature[i] {
                     self.map.feature[i] = Feature::None;
                     if delivered > 0 {
                         self.map.drop_item(p, Stack { kind: kind.cost().kind, count: delivered });
@@ -602,6 +607,7 @@ impl World {
                 }
             }
         }
+        true
     }
 
     /// Run `f` on a copy of pawn `id` with full access to the world.
@@ -656,7 +662,7 @@ impl World {
     pub fn load_json(s: &str) -> Result<World, serde_json::Error> {
         let mut w: World = serde_json::from_str(s)?;
         w.map.recompute_rooms();
-        let n = w.map.w * w.map.h;
+        let n = w.map.len();
         if w.map.blood.len() != n {
             w.map.blood = vec![0.0; n];
         }
@@ -670,16 +676,18 @@ impl World {
 /// Step `p` towards tile `t`; returns true once it is exactly there.
 fn move_towards(p: &mut Pawn, t: Pos, dt: f32) -> bool {
     let step = p.move_speed() * dt;
-    let (tx, ty) = (t.0 as f32, t.1 as f32);
-    let (dx, dy) = (tx - p.x, ty - p.y);
-    let d = (dx * dx + dy * dy).sqrt();
+    let (tx, ty, tz) = (t.0 as f32, t.1 as f32, t.2 as f32);
+    let (dx, dy, dz) = (tx - p.x, ty - p.y, tz - p.z);
+    let d = (dx * dx + dy * dy + dz * dz).sqrt();
     if d <= step {
         p.x = tx;
         p.y = ty;
+        p.z = tz;
         true
     } else {
         p.x += dx / d * step;
         p.y += dy / d * step;
+        p.z += dz / d * step;
         false
     }
 }
@@ -691,8 +699,10 @@ mod tests {
     use crate::pawn::Weapon;
     use crate::TICK;
 
+    const Z: usize = crate::map::FLAT_Z;
+
     fn test_world(w: usize, h: usize) -> World {
-        let mut world = World::with_map(Map::new(w, h), Rng::new(7));
+        let mut world = World::with_map(Map::flat(w, h), Rng::new(7));
         world.story.next_raid = f32::MAX;
         world.story.next_event = f32::MAX;
         world.regrow_timer = f32::MAX;
@@ -716,38 +726,38 @@ mod tests {
     #[test]
     fn hauling_moves_items_into_the_stockpile() {
         let mut w = test_world(20, 20);
-        colonist(&mut w, (2, 2));
+        colonist(&mut w, (2, 2, Z));
         for x in 2..5 {
-            let i = w.map.idx((x, 10));
+            let i = w.map.idx((x, 10, Z));
             w.map.zone[i] = Zone::Stockpile;
         }
-        let src = w.map.idx((12, 12));
+        let src = w.map.idx((12, 12, Z));
         w.map.items[src] = Some(Stack { kind: ItemKind::Wood, count: 20 });
         run(&mut w, 30.0);
         assert!(w.map.items[src].is_none(), "wood should have been picked up");
-        let stored: u32 = (2..5).filter_map(|x| w.map.items[w.map.idx((x, 10))]).map(|s| s.count).sum();
+        let stored: u32 = (2..5).filter_map(|x| w.map.items[w.map.idx((x, 10, Z))]).map(|s| s.count).sum();
         assert_eq!(stored, 20);
     }
 
     #[test]
     fn construction_delivers_materials_and_builds() {
         let mut w = test_world(20, 20);
-        colonist(&mut w, (2, 2));
-        let stone = w.map.idx((3, 8));
+        colonist(&mut w, (2, 2, Z));
+        let stone = w.map.idx((3, 8, Z));
         w.map.items[stone] = Some(Stack { kind: ItemKind::Stone, count: 4 });
-        w.apply_order((10, 10), Order::Build(BuildKind::Wall));
+        w.apply_order((10, 10, Z), Order::Build(BuildKind::Wall));
         run(&mut w, 40.0);
-        assert_eq!(w.map.feature[w.map.idx((10, 10))], Feature::Wall);
+        assert_eq!(w.map.feature[w.map.idx((10, 10, Z))], Feature::Wall);
         assert_eq!(w.map.count_items(ItemKind::Stone), 0);
     }
 
     #[test]
     fn chopping_drops_wood() {
         let mut w = test_world(20, 20);
-        colonist(&mut w, (2, 2));
-        let t = w.map.idx((8, 8));
+        colonist(&mut w, (2, 2, Z));
+        let t = w.map.idx((8, 8, Z));
         w.map.feature[t] = Feature::Tree;
-        w.apply_order((8, 8), Order::Desig(Desig::Chop));
+        w.apply_order((8, 8, Z), Order::Desig(Desig::Chop));
         run(&mut w, 20.0);
         assert_eq!(w.map.feature[t], Feature::None);
         assert!(w.map.count_items(ItemKind::Wood) > 0);
@@ -756,10 +766,10 @@ mod tests {
     #[test]
     fn hungry_colonists_eat_from_the_ground() {
         let mut w = test_world(20, 20);
-        let id = colonist(&mut w, (2, 2));
+        let id = colonist(&mut w, (2, 2, Z));
         let i = w.pawn_index(id).unwrap();
         w.pawns[i].hunger = 15.0;
-        let f = w.map.idx((6, 6));
+        let f = w.map.idx((6, 6, Z));
         w.map.items[f] = Some(Stack { kind: ItemKind::Food, count: 3 });
         run(&mut w, 10.0);
         assert!(w.pawn(id).unwrap().hunger > 40.0);
@@ -769,9 +779,9 @@ mod tests {
     #[test]
     fn grow_zone_gets_planted() {
         let mut w = test_world(20, 20);
-        colonist(&mut w, (2, 2));
-        let i = w.map.idx((6, 6));
-        w.apply_order((6, 6), Order::Zone(Zone::Grow));
+        colonist(&mut w, (2, 2, Z));
+        let i = w.map.idx((6, 6, Z));
+        w.apply_order((6, 6, Z), Order::Zone(Zone::Grow));
         run(&mut w, 10.0);
         assert!(matches!(w.map.feature[i], Feature::Crop { .. }));
     }
@@ -779,16 +789,16 @@ mod tests {
     #[test]
     fn work_priorities_decide_what_comes_first() {
         let mut w = test_world(20, 20);
-        let id = colonist(&mut w, (2, 2));
+        let id = colonist(&mut w, (2, 2, Z));
         w.set_priority(id, WorkType::PlantCutting, 4);
         w.set_priority(id, WorkType::Mining, 1);
         // The tree is closer, but mining has the higher priority.
-        let tree = w.map.idx((3, 2));
+        let tree = w.map.idx((3, 2, Z));
         w.map.feature[tree] = Feature::Tree;
-        w.apply_order((3, 2), Order::Desig(Desig::Chop));
-        let rock = w.map.idx((15, 15));
-        w.map.feature[rock] = Feature::Rock;
-        w.apply_order((15, 15), Order::Desig(Desig::Mine));
+        w.apply_order((3, 2, Z), Order::Desig(Desig::Chop));
+        let rock = w.map.idx((15, 15, Z));
+        w.map.block[rock] = Block::Rock;
+        w.apply_order((15, 15, Z), Order::Desig(Desig::Mine));
         run(&mut w, 1.5);
         let job = w.pawn(id).unwrap().job;
         assert!(matches!(job, Some(Job::Work { task: crate::pawn::Task::Mine, .. })), "{:?}", job);
@@ -797,11 +807,11 @@ mod tests {
     #[test]
     fn drafted_colonist_shoots_an_approaching_raider() {
         let mut w = test_world(30, 30);
-        let id = colonist(&mut w, (5, 15));
+        let id = colonist(&mut w, (5, 15, Z));
         let i = w.pawn_index(id).unwrap();
         w.pawns[i].skills[crate::pawn::Skill::Shooting as usize] = 20;
         w.set_drafted(id, true);
-        let rid = w.spawn_raider("Grim".into(), (14, 15));
+        let rid = w.spawn_raider("Grim".into(), (14, 15, Z));
         let ri = w.pawn_index(rid).unwrap();
         w.pawns[ri].weapon = Weapon::Club;
         run(&mut w, 10.0);
@@ -820,10 +830,10 @@ mod tests {
     fn doctor_tends_a_wounded_colonist_with_medicine() {
         use crate::health::{DamageKind, Part};
         let mut w = test_world(20, 20);
-        let doctor = colonist(&mut w, (2, 2));
-        let patient = colonist(&mut w, (10, 10));
+        let doctor = colonist(&mut w, (2, 2, Z));
+        let patient = colonist(&mut w, (10, 10, Z));
         w.set_priority(patient, WorkType::Doctor, 0);
-        let med = w.map.idx((5, 5));
+        let med = w.map.idx((5, 5, Z));
         w.map.items[med] = Some(Stack { kind: ItemKind::Medicine, count: 2 });
         wound(&mut w, patient, Part::LeftLeg, 10.0, DamageKind::Gunshot);
         run(&mut w, 25.0);
@@ -838,10 +848,10 @@ mod tests {
     fn downed_colonists_are_carried_to_bed() {
         use crate::health::{DamageKind, Part};
         let mut w = test_world(20, 20);
-        colonist(&mut w, (2, 2));
-        let patient = colonist(&mut w, (12, 12));
+        colonist(&mut w, (2, 2, Z));
+        let patient = colonist(&mut w, (12, 12, Z));
         w.set_priority(patient, WorkType::Doctor, 0);
-        let bed = w.map.idx((4, 15));
+        let bed = w.map.idx((4, 15, Z));
         w.map.feature[bed] = Feature::Bed;
         // Both legs gone: conscious, but unable to walk.
         wound(&mut w, patient, Part::LeftLeg, 100.0, DamageKind::Bruise);
@@ -849,17 +859,100 @@ mod tests {
         run(&mut w, 30.0);
         let p = w.pawn(patient).unwrap();
         assert!(p.downed);
-        assert_eq!(p.pos, (4, 15), "patient should be in the bed");
+        assert_eq!(p.pos, (4, 15, Z), "patient should be in the bed");
     }
 
     #[test]
     fn a_lone_doctor_treats_themselves() {
         use crate::health::{DamageKind, Part};
         let mut w = test_world(20, 20);
-        let id = colonist(&mut w, (5, 5));
+        let id = colonist(&mut w, (5, 5, Z));
         wound(&mut w, id, Part::LeftArm, 6.0, DamageKind::Cut);
         run(&mut w, 15.0);
         assert!(!w.pawn(id).unwrap().health.needs_tending());
+    }
+
+    /// Raise a rectangle of ground by `levels` (natural soil).
+    fn raise(w: &mut World, x0: usize, y0: usize, x1: usize, y1: usize, levels: usize) {
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                for z in Z..Z + levels {
+                    let i = w.map.idx((x, y, z));
+                    w.map.block[i] = Block::Soil;
+                }
+            }
+        }
+        w.map.recompute_rooms();
+    }
+
+    #[test]
+    fn colonists_climb_a_hill_to_haul() {
+        let mut w = test_world(20, 20);
+        raise(&mut w, 10, 0, 19, 19, 1);
+        colonist(&mut w, (2, 2, Z));
+        for x in 2..5 {
+            let i = w.map.idx((x, 10, Z));
+            w.map.zone[i] = Zone::Stockpile;
+        }
+        let src = w.map.idx((15, 15, Z + 1));
+        w.map.items[src] = Some(Stack { kind: ItemKind::Wood, count: 20 });
+        run(&mut w, 40.0);
+        assert!(w.map.items[src].is_none(), "wood on the hill should have been fetched");
+        assert_eq!(w.map.count_items(ItemKind::Wood), 20);
+    }
+
+    #[test]
+    fn cliffs_keep_colonists_out() {
+        let mut w = test_world(20, 20);
+        raise(&mut w, 10, 0, 19, 19, 2);
+        colonist(&mut w, (2, 2, Z));
+        for x in 2..5 {
+            let i = w.map.idx((x, 10, Z));
+            w.map.zone[i] = Zone::Stockpile;
+        }
+        let src = w.map.idx((15, 15, Z + 2));
+        w.map.items[src] = Some(Stack { kind: ItemKind::Wood, count: 20 });
+        run(&mut w, 30.0);
+        assert!(w.map.items[src].is_some(), "nobody can climb a two-level cliff");
+    }
+
+    #[test]
+    fn mining_digs_a_tunnel_into_rock() {
+        let mut w = test_world(20, 20);
+        colonist(&mut w, (2, 5, Z));
+        for x in 8..14 {
+            for y in 2..9 {
+                for z in Z..Z + 3 {
+                    let i = w.map.idx((x, y, z));
+                    w.map.block[i] = Block::Rock;
+                }
+            }
+        }
+        w.map.recompute_rooms();
+        for x in 8..11 {
+            assert!(w.apply_order((x, 5, Z), Order::Desig(Desig::Mine)));
+        }
+        run(&mut w, 60.0);
+        for x in 8..11 {
+            assert_eq!(w.map.block[w.map.idx((x, 5, Z))], Block::Air, "({}, 5) should be dug out", x);
+        }
+        assert!(w.map.standable((10, 5, Z)), "the tunnel floor can be walked on");
+        assert!(w.map.covered((10, 5, Z)), "rock overhead");
+        assert!(!w.map.roofed((10, 5, Z)), "but open at one end, so not an enclosed room");
+        assert!(w.map.count_items(ItemKind::Stone) >= 18);
+    }
+
+    #[test]
+    fn a_generated_colony_runs_for_half_a_day() {
+        let mut w = World::new(5);
+        for p in &w.pawns {
+            assert!(w.map.standable(p.pos), "{} starts on solid ground", p.name);
+        }
+        run(&mut w, DAY_LEN / 2.0);
+        assert_eq!(w.colonists_alive(), 3);
+        for p in w.pawns.iter().filter(|p| !p.dead) {
+            assert!(w.map.standable(p.pos) || p.path.is_empty(), "{} is somewhere sensible", p.name);
+        }
     }
 
     #[test]
@@ -870,6 +963,6 @@ mod tests {
         assert_eq!(loaded.pawns.len(), w.pawns.len());
         assert_eq!(loaded.time, w.time);
         assert_eq!(loaded.map.items, w.map.items);
-        assert_eq!(loaded.map.room.len(), w.map.w * w.map.h);
+        assert_eq!(loaded.map.room.len(), w.map.len());
     }
 }

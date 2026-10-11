@@ -1,56 +1,68 @@
-//! Breadth-first distance fields and line of sight.
+//! Breadth-first distance fields over the walking graph, and line of sight.
 
 use crate::map::{Map, Pos};
 use std::collections::VecDeque;
 
-/// Distances from one start tile to every reachable tile.
+/// Distances from one start cell to every cell a pawn can walk to.
 pub struct DistField {
     /// Steps from the start, or -1 if unreachable.
     pub cost: Vec<i32>,
     parent: Vec<usize>,
+    /// Reached cells, nearest first.
+    pub order: Vec<usize>,
     w: usize,
+    h: usize,
 }
 
-/// BFS over passable tiles. The start tile is always included, even if it is
-/// itself impassable (e.g. a pawn standing where a wall was just built).
+/// BFS over walkable cells. The start cell is always included, even if it
+/// can't be stood on (e.g. a pawn where a wall was just built).
 pub fn bfs(map: &Map, start: Pos) -> DistField {
-    let n = map.w * map.h;
+    let n = map.len();
     let mut cost = vec![-1; n];
     let mut parent = vec![usize::MAX; n];
-    cost[map.idx(start)] = 0;
+    let mut order = Vec::new();
+    let si = map.idx(start);
+    cost[si] = 0;
+    order.push(si);
     let mut q = VecDeque::new();
     q.push_back(start);
     while let Some(p) = q.pop_front() {
         let pi = map.idx(p);
         let d = cost[pi];
-        for nb in map.neighbors(p) {
+        for nb in map.walk_neighbors(p) {
             let ni = map.idx(nb);
-            if cost[ni] < 0 && map.passable(nb) {
+            if cost[ni] < 0 {
                 cost[ni] = d + 1;
                 parent[ni] = pi;
+                order.push(ni);
                 q.push_back(nb);
             }
         }
     }
-    DistField { cost, parent, w: map.w }
+    DistField { cost, parent, order, w: map.w, h: map.h }
 }
 
 impl DistField {
-    pub fn dist(&self, p: Pos) -> Option<i32> {
-        let d = self.cost[p.1 * self.w + p.0];
-        if d >= 0 {
-            Some(d)
-        } else {
-            None
-        }
+    fn idx(&self, p: Pos) -> usize {
+        (p.2 * self.h + p.1) * self.w + p.0
     }
 
-    /// Closest tile from which `target` can be reached: the target itself, or
-    /// (if `adjacent`) any of its 4 neighbours.
+    fn pos(&self, i: usize) -> Pos {
+        let layer = self.w * self.h;
+        (i % self.w, (i % layer) / self.w, i / layer)
+    }
+
+    pub fn dist(&self, p: Pos) -> Option<i32> {
+        let d = self.cost[self.idx(p)];
+        (d >= 0).then_some(d)
+    }
+
+    /// Closest cell from which `target` can be reached: the target itself, or
+    /// (if `adjacent`) a neighbouring cell up to one level above or below.
     pub fn approach(&self, map: &Map, target: Pos, adjacent: bool) -> Option<(Pos, i32)> {
         let mut best = self.dist(target).map(|d| (target, d));
         if adjacent {
-            for nb in map.neighbors(target) {
+            for nb in map.around(target) {
                 if let Some(d) = self.dist(nb) {
                     if best.map_or(true, |(_, bd)| d < bd) {
                         best = Some((nb, d));
@@ -62,86 +74,102 @@ impl DistField {
     }
 
     /// Path to a reachable `goal`, reversed so that `pop()` yields the next step.
-    /// The start tile is not included.
+    /// The start cell is not included.
     pub fn path_to(&self, goal: Pos) -> Vec<Pos> {
         let mut path = Vec::new();
-        let mut cur = goal.1 * self.w + goal.0;
+        let mut cur = self.idx(goal);
         while self.cost[cur] > 0 {
-            path.push((cur % self.w, cur / self.w));
+            path.push(self.pos(cur));
             cur = self.parent[cur];
         }
         path
     }
 }
 
-/// Bresenham line between tile centres; blocked by walls, doors and rock
-/// (the endpoints themselves don't count).
+/// Straight line between cell centres (at chest height), blocked by solid
+/// ground, walls and doors. The endpoints themselves don't count.
 pub fn line_of_sight(map: &Map, a: Pos, b: Pos) -> bool {
-    let (mut x, mut y) = (a.0 as i32, a.1 as i32);
-    let (x1, y1) = (b.0 as i32, b.1 as i32);
-    let dx = (x1 - x).abs();
-    let dy = -(y1 - y).abs();
-    let sx = if x < x1 { 1 } else { -1 };
-    let sy = if y < y1 { 1 } else { -1 };
-    let mut err = dx + dy;
-    loop {
-        if (x, y) == (x1, y1) {
-            return true;
+    let from = [a.0 as f32 + 0.5, a.1 as f32 + 0.5, a.2 as f32 + 0.6];
+    let to = [b.0 as f32 + 0.5, b.1 as f32 + 0.5, b.2 as f32 + 0.6];
+    let span = (0..3).map(|k| (to[k] - from[k]).abs()).fold(0.0, f32::max);
+    let steps = (span * 3.0).ceil() as usize;
+    for s in 1..steps {
+        let t = s as f32 / steps as f32;
+        let c: Vec<f32> = (0..3).map(|k| from[k] + (to[k] - from[k]) * t).collect();
+        let p = (c[0].floor() as usize, c[1].floor() as usize, c[2].floor() as usize);
+        if p == a || p == b {
+            continue;
         }
-        if (x, y) != (a.0 as i32, a.1 as i32) && map.feature[map.idx((x as usize, y as usize))].blocks_sight() {
+        let i = map.idx(p);
+        if map.block[i].solid() || map.feature[i].blocks_sight() {
             return false;
         }
-        let e2 = 2 * err;
-        if e2 >= dy {
-            err += dy;
-            x += sx;
-        }
-        if e2 <= dx {
-            err += dx;
-            y += sy;
-        }
     }
+    true
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::Feature;
+    use crate::map::{Block, Feature, FLAT_Z};
+
+    const Z: usize = FLAT_Z;
 
     #[test]
     fn path_goes_around_walls() {
-        let mut m = Map::new(10, 5);
+        let mut m = Map::flat(10, 5);
         for y in 0..4 {
-            let i = m.idx((5, y));
+            let i = m.idx((5, y, Z));
             m.feature[i] = Feature::Wall;
         }
-        let df = bfs(&m, (0, 0));
-        let d = df.dist((9, 0)).expect("reachable through the gap at y=4");
+        let df = bfs(&m, (0, 0, Z));
+        let d = df.dist((9, 0, Z)).expect("reachable through the gap at y=4");
         assert_eq!(d, 9 + 8);
-        let path = df.path_to((9, 0));
+        let path = df.path_to((9, 0, Z));
         assert_eq!(path.len() as i32, d);
-        assert_eq!(path[0], (9, 0));
+        assert_eq!(path[0], (9, 0, Z));
         assert!(path.iter().all(|&p| m.passable(p)));
+        assert_eq!(df.order[0], m.idx((0, 0, Z)), "order starts at the start");
     }
 
     #[test]
-    fn walled_off_tiles_are_unreachable() {
-        let mut m = Map::new(10, 5);
+    fn walled_off_cells_are_unreachable() {
+        let mut m = Map::flat(10, 5);
         for y in 0..5 {
-            let i = m.idx((5, y));
+            let i = m.idx((5, y, Z));
             m.feature[i] = Feature::Wall;
         }
-        let df = bfs(&m, (0, 0));
-        assert!(df.dist((9, 0)).is_none());
-        assert_eq!(df.approach(&m, (5, 2), true).map(|(p, _)| p), Some((4, 2)));
+        let df = bfs(&m, (0, 0, Z));
+        assert!(df.dist((9, 0, Z)).is_none());
+        assert_eq!(df.approach(&m, (5, 2, Z), true).map(|(p, _)| p), Some((4, 2, Z)));
     }
 
     #[test]
-    fn walls_block_line_of_sight() {
-        let mut m = Map::new(10, 10);
-        assert!(line_of_sight(&m, (0, 0), (9, 9)));
-        let i = m.idx((5, 5));
+    fn paths_climb_gentle_slopes() {
+        // A staircase of natural ground: each column one level higher.
+        let mut m = Map::empty(6, 1, 8);
+        for x in 0..6 {
+            for z in 0..=x {
+                let i = m.idx((x, 0, z));
+                m.block[i] = Block::Soil;
+            }
+        }
+        let df = bfs(&m, (0, 0, 1));
+        assert_eq!(df.dist((5, 0, 6)), Some(5));
+    }
+
+    #[test]
+    fn hills_and_walls_block_line_of_sight() {
+        let mut m = Map::flat(10, 10);
+        assert!(line_of_sight(&m, (0, 0, Z), (9, 9, Z)));
+        let i = m.idx((5, 5, Z));
         m.feature[i] = Feature::Wall;
-        assert!(!line_of_sight(&m, (0, 0), (9, 9)));
+        assert!(!line_of_sight(&m, (0, 0, Z), (9, 9, Z)));
+
+        let mut m = Map::flat(10, 3);
+        let i = m.idx((5, 1, Z));
+        m.block[i] = Block::Rock;
+        assert!(!line_of_sight(&m, (0, 1, Z), (9, 1, Z)), "a mound blocks the view");
+        assert!(line_of_sight(&m, (0, 1, Z + 1), (9, 1, Z + 1)), "but not from above");
     }
 }

@@ -70,14 +70,14 @@ impl World {
     fn random_edge_tile(&mut self) -> Option<Pos> {
         let (w, h) = (self.map.w, self.map.h);
         for _ in 0..200 {
-            let p = match self.rng.below(4) {
+            let (x, y) = match self.rng.below(4) {
                 0 => (self.rng.below(w), 0),
                 1 => (self.rng.below(w), h - 1),
                 2 => (0, self.rng.below(h)),
                 _ => (w - 1, self.rng.below(h)),
             };
-            if self.map.passable(p) {
-                return Some(p);
+            if let Some(z) = self.map.surface(x, y) {
+                return Some((x, y, z));
             }
         }
         None
@@ -140,9 +140,10 @@ impl World {
         let cy = colonists.iter().map(|p| p.1).sum::<usize>() / colonists.len();
         let x = (cx as i32 + self.rng.below(13) as i32 - 6).clamp(0, self.map.w as i32 - 1) as usize;
         let y = (cy as i32 + self.rng.below(13) as i32 - 6).clamp(0, self.map.h as i32 - 1) as usize;
+        let Some(z) = self.map.surface(x, y) else { return };
         let kind = ItemKind::ALL[self.rng.below(ItemKind::ALL.len())];
         let count = (if kind == ItemKind::Medicine { 3 + self.rng.below(6) } else { 15 + self.rng.below(26) }) as u32;
-        self.map.drop_item((x, y), Stack { kind, count });
+        self.map.drop_item((x, y, z), Stack { kind, count });
         self.push_log(format!("Cargo pods crashed nearby: {} {}.", count, kind.name().to_lowercase()));
     }
 }

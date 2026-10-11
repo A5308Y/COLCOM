@@ -1,24 +1,53 @@
 //! Finding work for colonists and carrying jobs out step by step.
 
-use crate::map::{Desig, Feature, ItemKind, Pos, Stack, Terrain, Zone, STACK_MAX};
+use crate::map::{Block, Desig, Feature, ItemKind, Map, Pos, Stack, Zone, STACK_MAX};
 use crate::pathing::{bfs, DistField};
 use crate::pawn::{Job, Memory, Pawn, Task, WorkType};
 use crate::world::{Step, World};
 
 type Nearest = [Option<(i32, Pos)>; ItemKind::ALL.len()];
 
+/// Cells worth checking for work: everywhere the pawn can walk, plus the
+/// cells next to those (trees, rock faces and walls are worked from beside).
+fn reachable_and_around(m: &Map, df: &DistField) -> Vec<usize> {
+    let mut seen = vec![false; m.len()];
+    let mut out = Vec::with_capacity(df.order.len() * 2);
+    for &i in &df.order {
+        if !std::mem::replace(&mut seen[i], true) {
+            out.push(i);
+        }
+        for nb in m.around(m.pos(i)) {
+            let ni = m.idx(nb);
+            if !std::mem::replace(&mut seen[ni], true) {
+                out.push(ni);
+            }
+        }
+    }
+    out
+}
+
+/// An empty grow-zone cell on soil, ready for planting.
+fn plantable(m: &Map, i: usize) -> bool {
+    let p = m.pos(i);
+    m.zone[i] == Zone::Grow
+        && m.feature[i] == Feature::None
+        && m.items[i].is_none()
+        && m.standable(p)
+        && m.below(p).is_some_and(|b| m.block[m.idx(b)] == Block::Soil)
+}
+
 impl World {
     /// Highest-priority, then nearest, available job for `p`.
     pub(crate) fn find_work(&self, p: &Pawn) -> Option<Job> {
         let df = bfs(&self.map, p.pos);
         let m = &self.map;
-        let n = m.w * m.h;
+        let candidates = reachable_and_around(m, &df);
 
         // Nearest free stack of each item kind (for deliveries) and nearest
         // stockpile cell that can take each kind (for hauling).
         let mut nearest_item: Nearest = [None; ItemKind::ALL.len()];
         let mut nearest_cell: Nearest = [None; ItemKind::ALL.len()];
-        for i in 0..n {
+        for &i in &df.order {
             let pos = m.pos(i);
             let Some(d) = df.dist(pos) else { continue };
             if let Some(s) = m.items[i] {
@@ -53,7 +82,7 @@ impl World {
                     }
                     continue;
                 }
-                for i in 0..n {
+                for &i in &candidates {
                     if let Some((d, job)) = self.work_candidate(wt, i, &df, &nearest_item, &nearest_cell) {
                         if best.map_or(true, |(bd, _)| d < bd) {
                             best = Some((d, job));
@@ -90,7 +119,7 @@ impl World {
                 }
             }
             WorkType::Mining => {
-                if free && m.desig[i] == Some(Desig::Mine) && (f == Feature::Rock || f.built_from().is_some()) {
+                if free && m.desig[i] == Some(Desig::Mine) && (m.block[i] == Block::Rock || f.built_from().is_some()) {
                     return work(Task::Mine, true);
                 }
             }
@@ -106,8 +135,7 @@ impl World {
                         return work(Task::HarvestCrop, false);
                     }
                 }
-                if m.zone[i] == Zone::Grow && f == Feature::None && m.terrain[i] == Terrain::Grass && m.items[i].is_none()
-                {
+                if plantable(m, i) {
                     return work(Task::Plant, false);
                 }
             }
@@ -195,11 +223,9 @@ impl World {
         let d = m.desig[i];
         match task {
             Task::Chop => d == Some(Desig::Chop) && f == Feature::Tree,
-            Task::Mine => d == Some(Desig::Mine) && (f == Feature::Rock || f.built_from().is_some()),
+            Task::Mine => d == Some(Desig::Mine) && (m.block[i] == Block::Rock || f.built_from().is_some()),
             Task::Forage => d == Some(Desig::Forage) && f == Feature::Bush,
-            Task::Plant => {
-                m.zone[i] == Zone::Grow && f == Feature::None && m.terrain[i] == Terrain::Grass && m.items[i].is_none()
-            }
+            Task::Plant => plantable(m, i),
             Task::HarvestCrop => matches!(f, Feature::Crop { growth } if growth >= 1.0),
             Task::Construct => {
                 matches!(f, Feature::Blueprint { kind, delivered } if delivered >= kind.cost().count)
@@ -232,7 +258,12 @@ impl World {
                     }
                     None => drop(ItemKind::Stone, 6),
                 };
-                self.map.set_feature(i, Feature::None);
+                if self.map.block[i] == Block::Rock {
+                    // Dug out: the rock becomes open space (a tunnel if there's rock above).
+                    self.map.set_block(i, Block::Air);
+                } else {
+                    self.map.set_feature(i, Feature::None);
+                }
                 if refund.count > 0 {
                     self.map.drop_item(target, refund);
                 }
@@ -416,23 +447,12 @@ impl World {
                 return Some(b);
             }
         }
+        // Reachable cells come nearest first, so the first free bed wins.
         let df = bfs(&self.map, p.pos);
-        let mut best: Option<(i32, Pos)> = None;
-        for i in 0..self.map.feature.len() {
-            if self.map.feature[i] != Feature::Bed {
-                continue;
-            }
-            let pos = self.map.pos(i);
-            if self.pawns.iter().any(|o| o.id != p.id && !o.dead && o.bed == Some(pos)) {
-                continue;
-            }
-            if let Some(d) = df.dist(pos) {
-                if best.map_or(true, |(bd, _)| d < bd) {
-                    best = Some((d, pos));
-                }
-            }
-        }
-        best.map(|(_, b)| b)
+        df.order.iter().map(|&i| self.map.pos(i)).find(|&pos| {
+            self.map.feature[self.map.idx(pos)] == Feature::Bed
+                && !self.pawns.iter().any(|o| o.id != p.id && !o.dead && o.bed == Some(pos))
+        })
     }
 
     pub(crate) fn start_wander(&mut self, p: &mut Pawn, radius: i32) {

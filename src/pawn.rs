@@ -286,9 +286,10 @@ pub struct Pawn {
     pub faction: Faction,
     /// Last tile fully reached.
     pub pos: Pos,
-    /// Smooth position in tile units, for drawing and ranges.
+    /// Smooth position in cell units (z = level), for drawing and ranges.
     pub x: f32,
     pub y: f32,
+    pub z: f32,
     /// Remaining path, reversed (next step is last).
     pub path: Vec<Pos>,
     pub path_goal: Option<Pos>,
@@ -331,6 +332,7 @@ impl Pawn {
             pos,
             x: pos.0 as f32,
             y: pos.1 as f32,
+            z: pos.2 as f32,
             path: Vec::new(),
             path_goal: None,
             job: None,
@@ -516,7 +518,7 @@ mod tests {
     #[test]
     fn memories_refresh_instead_of_stacking() {
         let mut rng = Rng::new(1);
-        let mut p = Pawn::new_colonist(1, "Test".into(), (0, 0), &mut rng);
+        let mut p = Pawn::new_colonist(1, "Test".into(), (0, 0, 1), &mut rng);
         p.add_memory(Memory::SleptOutside);
         p.memories[0].left = 1.0;
         p.add_memory(Memory::SleptOutside);
@@ -527,7 +529,7 @@ mod tests {
     #[test]
     fn starving_tanks_mood() {
         let mut rng = Rng::new(1);
-        let mut p = Pawn::new_colonist(1, "Test".into(), (0, 0), &mut rng);
+        let mut p = Pawn::new_colonist(1, "Test".into(), (0, 0, 1), &mut rng);
         p.hunger = 100.0;
         p.rest = 100.0;
         let happy = p.mood_target();
@@ -538,7 +540,7 @@ mod tests {
     #[test]
     fn injuries_slow_work_and_walking() {
         let mut rng = Rng::new(1);
-        let mut p = Pawn::new_colonist(1, "Test".into(), (0, 0), &mut rng);
+        let mut p = Pawn::new_colonist(1, "Test".into(), (0, 0, 1), &mut rng);
         let (work, walk) = (p.work_speed(Skill::Mining), p.move_speed());
         p.health.injure(crate::health::Part::RightHand, 15.0, DamageKind::Cut, &mut rng);
         p.health.injure(crate::health::Part::LeftLeg, 20.0, DamageKind::Bruise, &mut rng);
