@@ -42,7 +42,7 @@
 | 4 | Visual polish: walking/hop/fall animation, lamps, translucent water, fog, ambient occlusion, bloom, gunfire flashes | done (needs a visual check) |
 | 5 | Performance and saves: profiling, faster searches, versioned and compact save files | done |
 | 6 | Data-driven definitions: items, buildables, plants and recipes described in a data file, not code | done (recipes come with phase 7) |
-| 7 | Production chains: workbenches, job queues, Cooking/Crafting, new resources, stockpile filters | |
+| 7 | Production chains: workbenches, job queues, Cooking/Crafting, new resources, stockpile filters | done (needs a visual check) |
 | 8 | More buildables: furniture, shelves, windows, torches, fences, room quality | |
 | 9 | Sound: actions, ambience, interface | |
 | 10 | Graphics: real models, ramps, water shader, weather, seasons | |
@@ -127,6 +127,35 @@ the list of things has settled.
 - Still in code: blocks (soil, rock, water; rock yields `rock_drops`), work types, skills, designations
   and zones. Floors are still one kind (`Map::floor` is a bool), so only one buildable may be the floor.
   Grow zones plant the first plant with `sow`; choosing per zone comes with phase 7's crops.
+- Phase 7 (`src/production.rs`): a workbench is any buildable a recipe names (`BuildDef::recipes` is
+  filled in at load). `World::benches` holds each bench's bills (`Count(n)`, `Until(n)`, `Forever`,
+  suspendable, ordered), its current recipe and delivered ingredients. Once a second
+  (`update_production`) benches are synced with the map and each picks the first wanted bill whose
+  ingredients exist (`choose_recipes`); stock the new recipe doesn't need is dropped beside the bench.
+  Haulers deliver ingredients (`Job::Haul { deliver: true }`, shared with blueprints); a colonist with
+  the recipe's work type does `Task::Craft`; products drop beside the bench and get hauled normally.
+- Work types Cooking and Crafting, skills Cooking and Crafting (arrays sized from `ALL`).
+- New content: planks, stone blocks, iron ore (`Block::Ore` veins, ~5% of rock, richer deeper;
+  `ore_drops`), steel, cotton, cloth, raw food / simple meal, healroot / herbal medicine, rifle, pistol,
+  club, knife, simple clothes, steel armour; crops corn, healroot, cotton; six workbenches. Beds now
+  cost planks; colonists land with planks, meals and raw food.
+- Weapons are items (`weapon` stats + `held` look); `Pawn::weapon: Option<ItemId>` (none = fists),
+  `Pawn::apparel` one item per slot (`Body`, `Outer`). Raider weapons and the colonists' starting weapon
+  come from the definitions. Dead pawns drop their gear. Idle colonists fetch better gear first
+  (`Job::Equip`; weapons must be 10% better). Armour scales damage in `Health::apply_damage`; blows
+  below 1 point glance off.
+- Food: `raw` food gives "Ate raw food" (-5) and a `poison` chance of `HediffKind::FoodPoisoning`
+  (pain, slower, gone in under a day, never dangerous); other food gives "Ate a cooked meal" (+2).
+  Eating and doctors' feeding prefer cooked food.
+- Stockpiles: `Zone::Stockpile(id)` with `World::stockpiles[id]` (name, priority 1-4, forbidden items).
+  Painting next to a stockpile extends it, elsewhere starts a new one. Items are hauled to the
+  highest-priority stockpile that takes them, and out of a stockpile only into a higher-priority one.
+  `Zone::Grow(crop)`; the inspector changes a whole connected grow zone's crop.
+- Saves: `SAVE_VERSION` 3.
+- Left for later: per-cook meal quality, fuel, smithing/tailoring as separate skills, apparel visuals on
+  the pawn figures, stockpile renaming, bill ingredient filters, ingredients from a radius only.
+- Phase 7 performance (`--example profile`, now with three busy workbenches): 0.067 ms per tick on
+  average (0.6% of a 60 fps frame at 3x speed); two days made 15 meals, ~100 planks and 31 clubs.
 - Phase 6 performance: unchanged (0.051 ms per tick in `--example profile`, headless frame 1.4 ms).
 
 - Phase 5 measurements (`cargo run --release --example profile`: 10 colonists, 240 work orders, two

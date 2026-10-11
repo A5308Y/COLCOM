@@ -22,6 +22,7 @@ according to their **work priorities** (press `P`).
 |---|---|
 | `1` / `2` / `3` | Designate trees to chop / rock or structures to mine / berry bushes to forage |
 | `4` / `5` | Stockpile zone (loose items get hauled there) / grow zone (crops get planted) |
+| `V` `J` `T` `M` `I` `U` | Workbenches: stove, sawing bench, stonecutter, smelter, smithy, crafting bench |
 | `6` / `7` / `8` | Blueprint a wall (4 stone) / door (4 wood) / bed (8 wood) |
 | `-` / `=` | Blueprint a floor (2 wood) / stairs (6 wood) |
 | `B` | Blueprint a lamp (3 wood) |
@@ -42,6 +43,17 @@ according to their **work priorities** (press `P`).
 | `Shift+N` | New colony |
 
 ### Systems
+
+- **Production:** click a workbench to give it bills ("make 5", "make until you have 20", "forever").
+  Haulers bring the ingredients, colonists with Cook or Craft work make it, and products get hauled to
+  stockpiles. Chains: crops → meals (stove); wood → planks; stone → blocks; healroot → herbal medicine;
+  cotton → cloth → clothes; iron ore (veins in the rock, more of it deeper down) → steel (smelter) →
+  knives, pistols, rifles and steel armour (smithy). Colonists pick up better weapons and apparel by
+  themselves; armour stops part of every blow, and clothes cheer colonists up.
+- **Stockpiles:** each has a priority (low to critical) and a list of item kinds it takes; things move
+  to better stockpiles. Grow zones plant the crop chosen for them (corn, healroot, cotton).
+- **Food:** raw food can cause food poisoning and upsets colonists; cooked meals are better and fill
+  more. Colonists pick meals first.
 
 - **Items and hauling:** chopping, mining, foraging and harvesting drop items on the map. Haulers carry
   them to stockpiles, and builders carry materials to blueprints. Reservations stop two colonists from
@@ -85,7 +97,8 @@ The simulation is a library with no rendering code, so it can be tested headless
 
 - `assets/defs.ron`: items, buildables and plants (costs, work, behaviour flags, looks)
 - `src/lib.rs`: module list and constants (day length, tick length)
-- `src/defs.rs`: loads and checks the definitions; `ItemId`, `BuildId`, `PlantId`
+- `src/defs.rs`: loads and checks the definitions; `ItemId`, `BuildId`, `PlantId`, `RecipeId`
+- `src/production.rs`: workbenches and bills, stockpile settings, picking up better gear
 - `src/map.rs`: 3D cells (blocks, features, items, zones), walking rules, rooms, terrain generation
 - `src/pathing.rs`: BFS distance fields over the walking graph, 3D line of sight
 - `src/pawn.rs`: pawns, skills, mood, jobs
@@ -104,12 +117,13 @@ meshes), `props.rs` (trees, plants, furniture, doors, items), `pawns.rs` (3D fig
 
 ### Adding content
 
-Items, buildables and plants are described in `assets/defs.ron` (built into the game, so rebuild after
+Items, buildables, plants and recipes are described in `assets/defs.ron` (built into the game, so rebuild after
 editing). A new definition there gets a toolbar button, a shortcut (if it has a `key`), a look made of
 simple shapes, and works in hauling, building, mining, harvesting and saves without code changes.
 Behaviour the code has to know about is a field: `nutrition` (food), `medicine`, `special` (`Floor`,
-`Stairs`, `Bed`, `Door`), `blocks_room`, `holds_floors`, `light`, `sow`, `wild`, `harvest`.
-`cargo test` checks that the file loads and that every buildable can be built and removed and every plant
-harvested.
+`Stairs`, `Bed`, `Door`), `blocks_room`, `holds_floors`, `light`, `sow`, `wild`, `harvest`, `raw`,
+`poison`, `weapon`, `apparel`. A buildable that a recipe names becomes a workbench.
+`cargo test` checks that the file loads and that every buildable can be built and removed, every plant
+harvested and every recipe made.
 
 See `PLAN.md` for the roadmap.

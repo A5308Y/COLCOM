@@ -16,7 +16,7 @@ use bevy::prelude::*;
 use my_world::map::Pos;
 
 #[cfg(test)]
-pub use input::UiState;
+pub use input::{Selection, UiState};
 #[cfg(test)]
 pub use sim::Sim;
 

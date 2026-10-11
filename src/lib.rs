@@ -9,6 +9,7 @@ pub mod map;
 pub mod medical;
 pub mod pathing;
 pub mod pawn;
+pub mod production;
 pub mod rng;
 pub mod save;
 pub mod story;

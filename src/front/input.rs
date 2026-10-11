@@ -8,7 +8,7 @@ use super::{tile_center, tile_point};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::{egui_wants_any_keyboard_input, EguiWantsInput};
-use my_world::defs::BuildId;
+use my_world::defs::{defs, BuildId};
 use my_world::map::{Block, Desig, Map, Pos, Zone};
 use my_world::pawn::Faction;
 use my_world::world::{Order, World as SimWorld};
@@ -32,9 +32,11 @@ pub static TOOLS: LazyLock<Vec<(Tool, String, Option<KeyCode>)>> = LazyLock::new
         fixed(Tool::Paint(Order::Desig(Desig::Chop)), "1 Chop", KeyCode::Digit1),
         fixed(Tool::Paint(Order::Desig(Desig::Mine)), "2 Mine", KeyCode::Digit2),
         fixed(Tool::Paint(Order::Desig(Desig::Forage)), "3 Forage", KeyCode::Digit3),
-        fixed(Tool::Paint(Order::Zone(Zone::Stockpile)), "4 Stockpile", KeyCode::Digit4),
-        fixed(Tool::Paint(Order::Zone(Zone::Grow)), "5 Grow zone", KeyCode::Digit5),
+        fixed(Tool::Paint(Order::Stockpile), "4 Stockpile", KeyCode::Digit4),
     ];
+    if let Some(crop) = defs().sown() {
+        tools.push(fixed(Tool::Paint(Order::Zone(Zone::Grow(crop))), "5 Grow zone", KeyCode::Digit5));
+    }
     for kind in BuildId::all() {
         let def = kind.def();
         let key = def.key.as_deref().and_then(|k| match parse_key(k) {

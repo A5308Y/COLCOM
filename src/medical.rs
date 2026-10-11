@@ -4,7 +4,7 @@
 use crate::defs::{defs, Defs, ItemId};
 use crate::map::{Pos, Stack};
 use crate::pathing::{bfs, DistField};
-use crate::pawn::{Job, Pawn, Skill, WorkType};
+use crate::pawn::{Job, Memory, Pawn, Skill, WorkType};
 use crate::world::{Step, World};
 
 /// Seconds of work for one treatment at speed 1.0.
@@ -41,6 +41,32 @@ impl World {
             .iter()
             .find(|&&i| self.res_item[i] == 0 && self.map.items[i].is_some_and(|s| is(defs(), s.kind)))
             .map(|&i| self.map.pos(i))
+    }
+
+    /// Nearest reachable free food, cooked food first.
+    pub(crate) fn nearest_food(&self, from: Pos) -> Option<Pos> {
+        let df = bfs(&self.map, from);
+        let mut raw = None;
+        for &i in &df.order {
+            let Some(s) = self.map.items[i].filter(|s| self.res_item[i] == 0 && defs().is_food(s.kind)) else { continue };
+            if !s.kind.def().raw {
+                return Some(self.map.pos(i));
+            }
+            raw = raw.or(Some(self.map.pos(i)));
+        }
+        raw
+    }
+
+    /// `p` eats one `kind`: nutrition, how it felt, and maybe food poisoning.
+    pub(crate) fn eat(&mut self, p: &mut Pawn, kind: ItemId) {
+        let d = kind.def();
+        p.hunger = (p.hunger + d.nutrition).min(100.0);
+        p.add_memory(if d.raw { Memory::AteRawFood } else { Memory::AteMeal });
+        if self.rng.chance(d.poison) {
+            p.health.add_food_poisoning();
+            p.health.recompute();
+            self.push_log(format!("{} got food poisoning.", p.name));
+        }
     }
 
     /// Take one unit of whatever item in cell `i` passes `is`.
@@ -290,9 +316,11 @@ impl World {
             Step::Arrived => {
                 p.job_progress += dt / 2.0;
                 if p.job_progress >= 1.0 {
-                    let nutrition = p.carrying.take().map_or(0.0, |s| s.kind.def().nutrition);
-                    let o = &mut self.pawns[pi];
-                    o.hunger = (o.hunger + nutrition).min(100.0);
+                    if let Some(s) = p.carrying.take() {
+                        let mut o = self.pawns[pi].clone();
+                        self.eat(&mut o, s.kind);
+                        self.pawns[pi] = o;
+                    }
                     self.end_job(p);
                 }
             }

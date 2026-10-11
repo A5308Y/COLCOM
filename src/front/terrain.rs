@@ -27,6 +27,7 @@ enum Look3 {
     Open,
     Soil,
     Rock,
+    Ore,
     Wall,
     Water,
 }
@@ -40,6 +41,7 @@ fn look_at(m: &Map, p: Pos, cut: usize) -> Look3 {
     match (m.block[i], m.feature[i]) {
         (Block::Soil, _) => Look3::Soil,
         (Block::Rock, _) => Look3::Rock,
+        (Block::Ore, _) => Look3::Ore,
         (Block::Water, _) => Look3::Water,
         (Block::Air, f) if f.is_block() => Look3::Wall,
         (Block::Air, _) => Look3::Open,
@@ -49,7 +51,7 @@ fn look_at(m: &Map, p: Pos, cut: usize) -> Look3 {
 impl Look3 {
     /// Hides faces behind it.
     fn opaque(self) -> bool {
-        matches!(self, Look3::Soil | Look3::Rock | Look3::Wall)
+        matches!(self, Look3::Soil | Look3::Rock | Look3::Ore | Look3::Wall)
     }
 }
 
@@ -156,6 +158,15 @@ fn update_chunks(
     }
 }
 
+/// Zones as small numbers for chunk signatures (they decide ground colour).
+fn zone_code(z: Zone) -> u8 {
+    match z {
+        Zone::None => 0,
+        Zone::Stockpile(_) => 1,
+        Zone::Grow(_) => 2,
+    }
+}
+
 fn blood_level(m: &Map, i: usize) -> u8 {
     (m.blood.get(i).copied().unwrap_or(0.0) * 3.0).ceil() as u8
 }
@@ -181,7 +192,7 @@ fn signature(m: &Map, cx: usize, cy: usize, cut: usize) -> u64 {
                     // Open cells colour the ground below them, or carry a floor.
                     let i = m.idx(p);
                     mix(m.floor[i] as u8);
-                    mix(m.zone[i] as u8);
+                    mix(zone_code(m.zone[i]));
                     mix(m.room.get(i).is_some_and(|&r| r != 0) as u8);
                     mix(blood_level(m, i));
                 }
@@ -261,18 +272,18 @@ fn ground_color(m: &Map, solid: Pos, look: Look3) -> Rgb {
     let underwater = above.is_some_and(|a| m.block[a] == Block::Water);
     let mut c = if underwater {
         Rgb(0.62, 0.56, 0.4).shade(0.9 + jitter * 0.12)
-    } else if zone == Zone::Grow {
+    } else if zone.crop().is_some() {
         SOIL.shade(0.92 + jitter * 0.12)
     } else if indoors {
         FLOOR.shade(0.94 + jitter * 0.1)
-    } else if look == Look3::Rock {
+    } else if matches!(look, Look3::Rock | Look3::Ore) {
         ROCK_TOP.shade(0.94 + jitter * 0.1)
     } else {
         let n = noise(x as f32 / 6.0, y as f32 / 6.0, 1) * 0.75 + hash(xi, yi, 2) * 0.25;
         GRASS_A.mix(GRASS_B, n)
     };
     if let Some(a) = above {
-        if zone == Zone::Stockpile {
+        if zone.stockpile().is_some() {
             c = c.mix(STOCKPILE, 0.22);
         }
         let blood = blood_level(m, a);
@@ -288,8 +299,8 @@ fn floor_color(m: &Map, p: Pos) -> Rgb {
     let i = m.idx(p);
     let mut c = FLOOR.shade(0.9 + hash(p.0 as i32, p.1 as i32 + 57 * p.2 as i32, 9) * 0.1);
     match m.zone[i] {
-        Zone::Stockpile => c = c.mix(STOCKPILE, 0.22),
-        Zone::Grow => c = c.mix(SOIL, 0.5),
+        Zone::Stockpile(_) => c = c.mix(STOCKPILE, 0.22),
+        Zone::Grow(_) => c = c.mix(SOIL, 0.5),
         Zone::None => {}
     }
     let blood = blood_level(m, i);
@@ -342,6 +353,11 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: usize) -> (Mesh, Option<Mesh>
                 let tone = 0.95 + hash(xi, yi + 31 * zi, 31) * 0.08;
                 let (top, face) = match look {
                     Look3::Rock => (ground_color(m, p, look), ROCK_FACE.shade(tone)),
+                    // Rust-coloured streaks in the rock.
+                    Look3::Ore => {
+                        let fleck = hash(xi * 3 + 1, yi * 5 + zi, 41);
+                        (ground_color(m, p, look).mix(ORE, 0.35), ROCK_FACE.mix(ORE, 0.45 + 0.3 * fleck).shade(tone))
+                    }
                     Look3::Wall => (WALL_TOP, WALL_FACE),
                     _ => (ground_color(m, p, look), SOIL.shade(0.78 * tone)),
                 };

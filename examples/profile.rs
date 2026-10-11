@@ -2,7 +2,9 @@
 //!
 //! `cargo run --release --example profile`
 
-use my_world::map::{Block, Desig, Zone};
+use my_world::defs::{ItemId, RecipeId};
+use my_world::map::{Block, Desig, Feature, Stack};
+use my_world::production::BillMode;
 use my_world::world::{Order, World};
 use my_world::{DAY_LEN, TICK};
 use std::time::Instant;
@@ -33,10 +35,18 @@ fn main() {
     }
     for y in cy + 2..cy + 6 {
         for x in cx - 6..cx + 6 {
-            w.apply_order((x, y, z), Order::Zone(Zone::Stockpile));
+            w.apply_order((x, y, z), Order::Stockpile);
         }
     }
-    println!("colonists {}, chop orders {}, mine orders {}", w.pawns.len(), chops, mines);
+    // Workbenches kept busy for the whole run.
+    for (k, (bench, recipe)) in [("stove", "cook_meal"), ("sawbench", "saw_planks"), ("crafting_bench", "make_club")].into_iter().enumerate() {
+        let at = (cx + 6, cy - 4 + 2 * k, z);
+        let i = w.map.idx(at);
+        w.map.feature[i] = Feature::built(bench);
+        w.add_bill(at, RecipeId::named(recipe), BillMode::Forever);
+    }
+    w.map.drop_item((cx + 4, cy - 4, z), Stack { kind: ItemId::named("raw_food"), count: 50 });
+    println!("colonists {}, chop orders {}, mine orders {}, 3 workbenches", w.pawns.len(), chops, mines);
 
     let ticks = (2.0 * DAY_LEN / TICK) as usize;
     let (mut worst, mut changed_time, mut changed_ticks) = (0.0f64, 0.0f64, 0usize);
@@ -84,6 +94,10 @@ fn main() {
             rooms_time * 1e3 / changed_ticks as f64
         );
     }
+    let totals = w.item_totals();
+    let made: Vec<String> =
+        ["meal", "planks", "club"].iter().map(|k| format!("{} {}", totals[ItemId::named(k).index()], k)).collect();
+    println!("on hand after two days: {}", made.join(", "));
     println!("colonists alive {}, log tail: {:?}", w.colonists_alive(), w.log.last());
 
     let t = Instant::now();

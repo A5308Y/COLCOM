@@ -8,7 +8,7 @@ use super::sim::Sim;
 use super::tile_point;
 use bevy::prelude::*;
 use my_world::defs::ItemId;
-use my_world::pawn::{Faction, Job, Pawn, Weapon};
+use my_world::pawn::{Faction, Job, Pawn};
 use my_world::world::World as SimWorld;
 use std::collections::HashMap;
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
@@ -25,7 +25,8 @@ struct PawnVis {
     arms: [Entity; 2],
     weapon: Entity,
     carry: Entity,
-    weapon_kind: Option<Weapon>,
+    /// Weapon the hand part was last set up for (`Some(None)`: unarmed).
+    weapon_kind: Option<Option<ItemId>>,
     carry_kind: Option<ItemId>,
     dead: bool,
     yaw: f32,
@@ -51,7 +52,6 @@ struct PawnAssets {
     cube: Handle<Mesh>,
     metal: Handle<StandardMaterial>,
     wood: Handle<StandardMaterial>,
-    blade: Handle<StandardMaterial>,
 }
 
 pub struct PawnsPlugin;
@@ -71,7 +71,6 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
         cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
         metal: lit(&mut materials, METAL),
         wood: lit(&mut materials, WOOD),
-        blade: lit(&mut materials, Rgb(0.82, 0.84, 0.88)),
     });
 }
 
@@ -132,18 +131,14 @@ fn spawn_pawn(commands: &mut Commands, a: &PawnAssets, materials: &mut Assets<St
 }
 
 /// Where the weapon sits in the hands, and its material.
-fn weapon_pose(w: Weapon, a: &PawnAssets) -> (Transform, Handle<StandardMaterial>) {
-    match w {
-        Weapon::Rifle => (Transform::from_xyz(0.15, 0.62, 0.22).with_scale(Vec3::new(0.05, 0.06, 0.52)), a.metal.clone()),
-        Weapon::Pistol => (Transform::from_xyz(0.17, 0.62, 0.2).with_scale(Vec3::new(0.05, 0.08, 0.22)), a.metal.clone()),
-        Weapon::Club => (
-            Transform::from_xyz(0.22, 0.72, 0.14)
-                .with_rotation(Quat::from_rotation_x(0.5))
-                .with_scale(Vec3::new(0.08, 0.48, 0.08)),
-            a.wood.clone(),
-        ),
-        Weapon::Knife => (Transform::from_xyz(0.2, 0.62, 0.22).with_scale(Vec3::new(0.03, 0.03, 0.26)), a.blade.clone()),
-    }
+/// How a weapon sits in the hand, from its definition.
+fn weapon_pose(w: ItemId, props: &PropAssets) -> Option<(Transform, Handle<Mesh>, Handle<StandardMaterial>)> {
+    let h = &w.def().weapon.as_ref()?.held;
+    let (tx, ty, tz) = h.turn;
+    let tf = Transform::from_xyz(h.at.0, h.at.1, h.at.2)
+        .with_rotation(Quat::from_euler(EulerRot::XYZ, tx.to_radians(), ty.to_radians(), tz.to_radians()))
+        .with_scale(Vec3::new(h.size.0, h.size.1, h.size.2));
+    Some((tf, props.mesh(h.shape).clone(), props.paint(&h.color)))
 }
 
 /// Direction the pawn should face: where it's walking, or what it's working on.
@@ -276,15 +271,19 @@ fn sync_pawns(
             }
         }
         if v.weapon_kind != Some(p.weapon) {
-            let (tf, mat) = weapon_pose(p.weapon, &assets);
-            if let (Ok(mut t), Ok(mut mm)) = (transforms.get_mut(v.weapon), mats.get_mut(v.weapon)) {
-                *t = tf;
-                mm.0 = mat;
-                v.weapon_kind = Some(p.weapon);
+            if let Some((tf, mesh, mat)) = p.weapon.and_then(|w| weapon_pose(w, &props)) {
+                if let Ok(mut t) = transforms.get_mut(v.weapon) {
+                    *t = tf;
+                }
+                if let Ok(mut mm) = mats.get_mut(v.weapon) {
+                    mm.0 = mat;
+                }
+                commands.entity(v.weapon).insert(Mesh3d(mesh));
             }
+            v.weapon_kind = Some(p.weapon);
         }
         if let Ok(mut vis) = visibility.get_mut(v.weapon) {
-            *vis = if armed { Visibility::Inherited } else { Visibility::Hidden };
+            *vis = if armed && p.weapon.is_some() { Visibility::Inherited } else { Visibility::Hidden };
         }
 
         // Whatever they're carrying, held in front.

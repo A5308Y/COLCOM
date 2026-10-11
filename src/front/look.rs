@@ -39,6 +39,7 @@ pub const WATER: Rgb = Rgb(0.2, 0.42, 0.62);
 pub const FLOOR: Rgb = Rgb(0.62, 0.47, 0.31);
 pub const ROCK_TOP: Rgb = Rgb(0.5, 0.48, 0.46);
 pub const ROCK_FACE: Rgb = Rgb(0.36, 0.34, 0.33);
+pub const ORE: Rgb = Rgb(0.62, 0.36, 0.22);
 pub const WALL_TOP: Rgb = Rgb(0.76, 0.73, 0.68);
 pub const WALL_FACE: Rgb = Rgb(0.6, 0.57, 0.53);
 pub const STOCKPILE: Rgb = Rgb(0.75, 0.75, 0.95);

@@ -5,7 +5,7 @@ use crate::world::World;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Bump whenever the save format changes incompatibly.
-pub const SAVE_VERSION: u32 = 2;
+pub const SAVE_VERSION: u32 = 3;
 
 #[derive(Serialize)]
 struct SaveOut<'a> {

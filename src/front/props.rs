@@ -59,12 +59,12 @@ impl PropAssets {
         self.paint(&kind.def().color)
     }
 
-    fn paint(&self, color: &str) -> Handle<StandardMaterial> {
+    pub fn paint(&self, color: &str) -> Handle<StandardMaterial> {
         // Unknown colours are caught when the definitions load.
         self.paints.get(color).unwrap_or(&self.blanket_free).clone()
     }
 
-    fn mesh(&self, shape: Shape) -> &Handle<Mesh> {
+    pub fn mesh(&self, shape: Shape) -> &Handle<Mesh> {
         match shape {
             Shape::Cube => &self.cube,
             Shape::Sphere => &self.sphere,

@@ -5,6 +5,7 @@ use crate::defs::{defs, BuildId, PlantId, Special};
 use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone};
 use crate::pawn::{Faction, Job, Memory, Pawn, WorkType};
 use crate::pathing::bfs;
+use crate::production::{Bench, Stockpile};
 use crate::rng::Rng;
 use crate::story::Storyteller;
 use crate::DAY_LEN;
@@ -32,7 +33,10 @@ pub struct Effect {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Order {
     Desig(Desig),
+    /// Grow zones (with their crop) and clearing zones.
     Zone(Zone),
+    /// Stockpile cells: join a stockpile beside them or start a new one.
+    Stockpile,
     Build(BuildId),
     Cancel,
 }
@@ -66,6 +70,11 @@ pub struct World {
     pub effects: Vec<Effect>,
     pub colonist_names_used: usize,
     pub regrow_timer: f32,
+    /// Workbenches with their bills and delivered ingredients.
+    pub benches: Vec<Bench>,
+    /// Stockpile settings, indexed by the id in `Zone::Stockpile`.
+    pub stockpiles: Vec<Stockpile>,
+    pub production_timer: f32,
 }
 
 impl World {
@@ -80,10 +89,11 @@ impl World {
             w.spawn_colonist((cx - 1 + k, cy, z));
         }
         let mut stockpile = Vec::new();
+        w.stockpiles.push(Stockpile::new(1));
         for y in cy + 2..cy + 5 {
             for x in cx - 4..cx + 2 {
                 let i = w.map.idx((x, y, z));
-                w.map.zone[i] = Zone::Stockpile;
+                w.map.zone[i] = Zone::Stockpile(0);
                 stockpile.push((x, y, z));
             }
         }
@@ -114,6 +124,9 @@ impl World {
             effects: Vec::new(),
             colonist_names_used: 0,
             regrow_timer: 4.0,
+            benches: Vec::new(),
+            stockpiles: Vec::new(),
+            production_timer: 0.0,
         }
     }
 
@@ -200,7 +213,7 @@ impl World {
         if beds < colonists.len() {
             out.push((format!("Need beds ({}/{})", beds, colonists.len()), false));
         }
-        if !self.map.zone.iter().any(|z| *z == Zone::Stockpile) {
+        if !self.map.zone.iter().any(|z| z.stockpile().is_some()) {
             out.push(("No stockpile zone".into(), false));
         }
         let idle = colonists
@@ -254,6 +267,7 @@ impl World {
             self.settle_unsupported();
         }
         self.grow_plants(dt);
+        self.update_production(dt);
         self.storyteller_tick();
         let fade = dt / (1.5 * DAY_LEN);
         for b in self.map.blood.iter_mut() {
@@ -357,7 +371,7 @@ impl World {
         p.path_goal = None;
         if levels >= 2 {
             for _ in 0..levels - 1 {
-                p.health.apply_damage(7.0, crate::health::DamageKind::Bruise, &mut self.rng);
+                p.health.apply_damage(7.0, crate::health::DamageKind::Bruise, 0.0, &mut self.rng);
             }
             p.health.recompute();
             self.push_log(format!("{} fell {} levels.", p.name, levels));
@@ -544,16 +558,16 @@ impl World {
                 let i = self.map.idx(target);
                 self.res_target[i] = id;
             }
-            Job::Haul { from, to, to_blueprint, .. } => {
+            Job::Haul { from, to, deliver, .. } => {
                 let (fi, ti) = (self.map.idx(from), self.map.idx(to));
                 self.res_item[fi] = id;
-                if to_blueprint {
+                if deliver {
                     self.res_target[ti] = id;
                 } else {
                     self.res_cell[ti] = id;
                 }
             }
-            Job::Eat { from, .. } => {
+            Job::Eat { from, .. } | Job::Equip { from } => {
                 let i = self.map.idx(from);
                 self.res_item[i] = id;
             }
@@ -650,7 +664,11 @@ impl World {
             Order::Desig(Desig::Mine) => m.mineable(p),
             Order::Desig(d) => f.harvest_desig() == Some(d),
             Order::Zone(Zone::None) => m.zone[i] != Zone::None,
-            Order::Zone(_) => m.standable(p) && (f == Feature::None || f.is_crop()),
+            Order::Zone(Zone::Stockpile(_)) => false,
+            Order::Zone(z) => m.standable(p) && (f == Feature::None || f.is_crop()) && m.zone[i] != z,
+            Order::Stockpile => {
+                m.standable(p) && (f == Feature::None || f.is_crop()) && m.zone[i].stockpile().is_none()
+            }
             Order::Build(kind) => match kind.def().special {
                 Special::Floor => m.floor_buildable(p),
                 Special::Stairs => {
@@ -671,6 +689,10 @@ impl World {
         match order {
             Order::Desig(d) => self.map.desig[i] = Some(d),
             Order::Zone(z) => self.map.zone[i] = z,
+            Order::Stockpile => {
+                let id = self.stockpile_for(p);
+                self.map.zone[i] = Zone::Stockpile(id);
+            }
             Order::Build(kind) => self.map.feature[i] = Feature::Blueprint { kind, delivered: 0 },
             Order::Cancel => {
                 self.map.desig[i] = None;
@@ -773,7 +795,6 @@ fn move_towards(p: &mut Pawn, t: Pos, dt: f32) -> bool {
 mod tests {
     use super::*;
     use crate::defs::ItemId;
-    use crate::pawn::Weapon;
     use crate::TICK;
 
     const Z: usize = crate::map::FLAT_Z;
@@ -784,6 +805,7 @@ mod tests {
 
     fn test_world(w: usize, h: usize) -> World {
         let mut world = World::with_map(Map::flat(w, h), Rng::new(7));
+        world.stockpiles.push(Stockpile::new(1));
         world.story.next_raid = f32::MAX;
         world.story.next_event = f32::MAX;
         world.regrow_timer = f32::MAX;
@@ -810,7 +832,7 @@ mod tests {
         colonist(&mut w, (2, 2, Z));
         for x in 2..5 {
             let i = w.map.idx((x, 10, Z));
-            w.map.zone[i] = Zone::Stockpile;
+            w.map.zone[i] = Zone::Stockpile(0);
         }
         let src = w.map.idx((12, 12, Z));
         w.map.items[src] = Some(Stack { kind: item("wood"), count: 20 });
@@ -851,10 +873,10 @@ mod tests {
         let i = w.pawn_index(id).unwrap();
         w.pawns[i].hunger = 15.0;
         let f = w.map.idx((6, 6, Z));
-        w.map.items[f] = Some(Stack { kind: item("food"), count: 3 });
+        w.map.items[f] = Some(Stack { kind: item("raw_food"), count: 3 });
         run(&mut w, 10.0);
         assert!(w.pawn(id).unwrap().hunger > 40.0);
-        assert_eq!(w.map.count_items(item("food")), 2);
+        assert_eq!(w.map.count_items(item("raw_food")), 2);
     }
 
     #[test]
@@ -862,7 +884,7 @@ mod tests {
         let mut w = test_world(20, 20);
         colonist(&mut w, (2, 2, Z));
         let i = w.map.idx((6, 6, Z));
-        w.apply_order((6, 6, Z), Order::Zone(Zone::Grow));
+        w.apply_order((6, 6, Z), Order::Zone(Zone::Grow(defs().sown().unwrap())));
         run(&mut w, 10.0);
         assert!(w.map.feature[i].is_crop());
     }
@@ -894,7 +916,7 @@ mod tests {
         w.set_drafted(id, true);
         let rid = w.spawn_raider("Grim".into(), (14, 15, Z));
         let ri = w.pawn_index(rid).unwrap();
-        w.pawns[ri].weapon = Weapon::Club;
+        w.pawns[ri].weapon = Some(item("club"));
         run(&mut w, 10.0);
         let hurt_or_gone = w.pawn(rid).map_or(true, |r| !r.health.hediffs.is_empty() || r.dead);
         assert!(hurt_or_gone);
@@ -973,7 +995,7 @@ mod tests {
         colonist(&mut w, (2, 2, Z));
         for x in 2..5 {
             let i = w.map.idx((x, 10, Z));
-            w.map.zone[i] = Zone::Stockpile;
+            w.map.zone[i] = Zone::Stockpile(0);
         }
         let src = w.map.idx((15, 15, Z + 1));
         w.map.items[src] = Some(Stack { kind: item("wood"), count: 20 });
@@ -989,7 +1011,7 @@ mod tests {
         colonist(&mut w, (2, 2, Z));
         for x in 2..5 {
             let i = w.map.idx((x, 10, Z));
-            w.map.zone[i] = Zone::Stockpile;
+            w.map.zone[i] = Zone::Stockpile(0);
         }
         let src = w.map.idx((15, 15, Z + 2));
         w.map.items[src] = Some(Stack { kind: item("wood"), count: 20 });
@@ -1125,7 +1147,7 @@ mod tests {
         }
         for x in 1..4 {
             let i = w.map.idx((x, 2, Z));
-            w.map.zone[i] = Zone::Stockpile;
+            w.map.zone[i] = Zone::Stockpile(0);
         }
         let src = w.map.idx((11, 1, Z + 1));
         w.map.items[src] = Some(Stack { kind: item("stone"), count: 10 });
@@ -1191,7 +1213,7 @@ mod tests {
     fn crops_ripen_and_get_harvested() {
         let mut w = test_world(12, 12);
         colonist(&mut w, (2, 2, Z));
-        w.apply_order((6, 6, Z), Order::Zone(Zone::Grow));
+        w.apply_order((6, 6, Z), Order::Zone(Zone::Grow(defs().sown().unwrap())));
         let yields = &defs().sown().unwrap().def().harvest.yields;
         // Crops only grow in daylight, so this can take more than a day.
         let harvested = (0..(3.0 * DAY_LEN) as usize).any(|_| {

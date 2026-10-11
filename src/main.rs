@@ -100,5 +100,28 @@ mod tests {
         for _ in 0..10 {
             app.update();
         }
+
+        // The inspector's bills, stockpile and grow zone panels.
+        let (bench, stock, grow) = {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            let w = &mut sim.world;
+            let (cx, cy) = (w.map.w / 2, w.map.h / 2);
+            let z = w.map.surface(cx, cy).unwrap();
+            let bench = (cx + 5, cy - 3, z);
+            let i = w.map.idx(bench);
+            w.map.feature[i] = my_world::map::Feature::built("stove");
+            let cook = my_world::defs::RecipeId::named("cook_meal");
+            w.add_bill(bench, cook, my_world::production::BillMode::Until(5));
+            let grow = (cx - 6, cy - 3, z);
+            let crop = my_world::defs::defs().sown().unwrap();
+            w.apply_order(grow, my_world::world::Order::Zone(my_world::map::Zone::Grow(crop)));
+            (bench, (cx - 4, cy + 2, z), grow)
+        };
+        for t in [bench, stock, grow] {
+            app.world_mut().resource_mut::<front::UiState>().selected = Some(front::Selection::Tile(t));
+            for _ in 0..5 {
+                app.update();
+            }
+        }
     }
 }

@@ -1,5 +1,5 @@
-// Definitions of everything in the world that isn't terrain: items, buildables
-// and plants. The game builds this file in (`src/defs.rs`); `cargo test`
+// Definitions of everything in the world that isn't terrain: items, buildables,
+// plants and recipes. The game builds this file in (`src/defs.rs`); `cargo test`
 // checks that it loads and that every definition can actually be used.
 //
 // Things refer to each other by `id`. Saves store ids too, so renaming an id
@@ -29,16 +29,34 @@
         "stone": (0.575, 0.552, 0.529),
         "white": (0.95, 0.95, 0.95),
         "wall": (0.6, 0.57, 0.53),
+        "stone_block": (0.68, 0.66, 0.62),
+        "ore": (0.62, 0.36, 0.22),
+        "steel": (0.62, 0.65, 0.7),
+        "iron": (0.22, 0.23, 0.25),
+        "cotton": (0.96, 0.95, 0.92),
+        "cloth": (0.82, 0.78, 0.66),
+        "dye": (0.3, 0.42, 0.62),
+        "healroot": (0.45, 0.72, 0.6),
+        "meal": (0.62, 0.42, 0.22),
+        "plate": (0.9, 0.9, 0.86),
     },
     // Glowing colours (linear, above 1 blooms). Lamps use these.
     glow: {
         "lamp_glow": (9.0, 6.5, 3.2),
+        "ember": (6.0, 2.2, 0.4),
     },
 
+    // `category` groups items in stockpile settings. Food has `nutrition`
+    // (hunger restored per unit); `raw` food upsets colonists and may give
+    // food poisoning (`poison`: chance per unit eaten). `medicine`: how much
+    // it improves tending (1 = full medicine). `pods`: amounts arriving in
+    // cargo pods. `weapon` and `apparel` items are picked up and used by
+    // colonists; `held` is how a weapon looks in hand.
     items: [
         (
             id: "wood",
             name: "Wood",
+            category: "Materials",
             color: "wood",
             pods: Some((15, 40)),
             look: [
@@ -48,8 +66,21 @@
             ],
         ),
         (
+            id: "planks",
+            name: "Planks",
+            category: "Materials",
+            color: "wood_light",
+            pods: Some((10, 30)),
+            look: [
+                (shape: Cube, color: "wood_light", at: (0.0, 0.03, -0.09), size: (0.62, 0.05, 0.16)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.03, 0.09), size: (0.62, 0.05, 0.16)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.08, 0.0), size: (0.62, 0.05, 0.16), turn: (0.0, 10.0, 0.0)),
+            ],
+        ),
+        (
             id: "stone",
             name: "Stone",
+            category: "Materials",
             color: "stone",
             pods: Some((15, 40)),
             look: [
@@ -59,11 +90,71 @@
             ],
         ),
         (
-            id: "food",
-            name: "Food",
+            id: "stone_blocks",
+            name: "Stone blocks",
+            category: "Materials",
+            color: "stone_block",
+            look: [
+                (shape: Cube, color: "stone_block", at: (-0.1, 0.08, -0.1), size: (0.19, 0.16, 0.19)),
+                (shape: Cube, color: "stone_block", at: (0.1, 0.08, -0.1), size: (0.19, 0.16, 0.19)),
+                (shape: Cube, color: "stone_block", at: (-0.1, 0.08, 0.1), size: (0.19, 0.16, 0.19)),
+                (shape: Cube, color: "stone_block", at: (0.1, 0.08, 0.1), size: (0.19, 0.16, 0.19)),
+                (shape: Cube, color: "stone_block", at: (0.0, 0.24, 0.0), size: (0.19, 0.16, 0.19)),
+            ],
+        ),
+        (
+            id: "iron_ore",
+            name: "Iron ore",
+            category: "Materials",
+            color: "ore",
+            look: [
+                (shape: Cube, color: "ore", at: (-0.1, 0.09, 0.02), size: (0.2, 0.18, 0.2), turn: (0.0, 20.0, 0.0)),
+                (shape: Cube, color: "ore", at: (0.12, 0.08, -0.04), size: (0.17, 0.16, 0.17), turn: (0.0, 50.0, 0.0)),
+                (shape: Cube, color: "iron", at: (0.02, 0.21, 0.0), size: (0.14, 0.12, 0.14), turn: (0.0, 35.0, 0.0)),
+            ],
+        ),
+        (
+            id: "steel",
+            name: "Steel",
+            category: "Materials",
+            color: "steel",
+            pods: Some((8, 20)),
+            look: [
+                (shape: Cube, color: "steel", at: (0.0, 0.04, -0.08), size: (0.4, 0.08, 0.13)),
+                (shape: Cube, color: "steel", at: (0.0, 0.04, 0.08), size: (0.4, 0.08, 0.13)),
+                (shape: Cube, color: "steel", at: (0.0, 0.12, 0.0), size: (0.4, 0.08, 0.13)),
+            ],
+        ),
+        (
+            id: "cotton",
+            name: "Cotton",
+            category: "Materials",
+            color: "cotton",
+            look: [
+                (shape: Sphere, color: "cotton", at: (-0.1, 0.1, 0.0), size: (0.22, 0.2, 0.22)),
+                (shape: Sphere, color: "cotton", at: (0.1, 0.1, 0.05), size: (0.22, 0.2, 0.22)),
+                (shape: Sphere, color: "cotton", at: (0.0, 0.2, -0.04), size: (0.2, 0.18, 0.2)),
+            ],
+        ),
+        (
+            id: "cloth",
+            name: "Cloth",
+            category: "Materials",
+            color: "cloth",
+            pods: Some((10, 25)),
+            look: [
+                (shape: Cube, color: "cloth", at: (0.0, 0.04, 0.0), size: (0.42, 0.08, 0.32)),
+                (shape: Cube, color: "cloth", at: (0.0, 0.12, 0.0), size: (0.4, 0.08, 0.3), turn: (0.0, 8.0, 0.0)),
+            ],
+        ),
+        (
+            id: "raw_food",
+            name: "Raw food",
+            category: "Food",
             color: "berry",
-            // Hunger restored per unit eaten (out of 100).
-            nutrition: 45.0,
+            nutrition: 40.0,
+            raw: true,
+            poison: 0.06,
             pods: Some((15, 40)),
             look: [
                 (shape: Sphere, color: "berry", at: (-0.12, 0.08, 0.0), size: (0.16, 0.16, 0.16)),
@@ -74,10 +165,45 @@
             ],
         ),
         (
+            id: "meal",
+            name: "Simple meal",
+            category: "Food",
+            color: "meal",
+            nutrition: 80.0,
+            pods: Some((8, 20)),
+            look: [
+                (shape: Cylinder, color: "plate", at: (0.0, 0.02, 0.0), size: (0.4, 0.04, 0.4)),
+                (shape: Sphere, color: "meal", at: (0.0, 0.08, 0.0), size: (0.28, 0.12, 0.28)),
+                (shape: Sphere, color: "veg", at: (0.07, 0.11, 0.05), size: (0.08, 0.08, 0.08)),
+            ],
+        ),
+        (
+            id: "healroot",
+            name: "Healroot",
+            category: "Medicine",
+            color: "healroot",
+            look: [
+                (shape: Cylinder, color: "healroot", at: (-0.08, 0.04, 0.0), size: (0.06, 0.4, 0.06), turn: (0.0, 0.0, 90.0)),
+                (shape: Cylinder, color: "healroot", at: (0.06, 0.04, 0.06), size: (0.06, 0.4, 0.06), turn: (0.0, 30.0, 90.0)),
+                (shape: Sphere, color: "sprout", at: (0.0, 0.1, -0.05), size: (0.18, 0.12, 0.18)),
+            ],
+        ),
+        (
+            id: "herbal_medicine",
+            name: "Herbal medicine",
+            category: "Medicine",
+            color: "healroot",
+            medicine: 0.6,
+            look: [
+                (shape: Cube, color: "healroot", at: (0.0, 0.08, 0.0), size: (0.3, 0.16, 0.24)),
+                (shape: Cube, color: "white", at: (0.0, 0.08, 0.0), size: (0.31, 0.05, 0.25)),
+            ],
+        ),
+        (
             id: "medicine",
             name: "Medicine",
+            category: "Medicine",
             color: "white",
-            // How much it improves tending (1 = full medicine).
             medicine: 1.0,
             pods: Some((3, 8)),
             look: [
@@ -86,12 +212,95 @@
                 (shape: Cube, color: "berry", at: (0.0, 0.205, 0.0), size: (0.24, 0.02, 0.08)),
             ],
         ),
+        (
+            id: "rifle",
+            name: "Rifle",
+            category: "Weapons",
+            color: "iron",
+            weapon: Some((
+                range: 11.0, damage: (9.0, 14.0), kind: Gunshot, cooldown: 1.8,
+                held: (shape: Cube, color: "iron", at: (0.15, 0.62, 0.22), size: (0.05, 0.06, 0.52)),
+            )),
+            look: [
+                (shape: Cube, color: "iron", at: (0.05, 0.04, 0.0), size: (0.6, 0.06, 0.06)),
+                (shape: Cube, color: "wood", at: (-0.3, 0.05, 0.0), size: (0.22, 0.08, 0.07)),
+            ],
+        ),
+        (
+            id: "pistol",
+            name: "Pistol",
+            category: "Weapons",
+            color: "iron",
+            weapon: Some((
+                range: 7.0, damage: (7.0, 11.0), kind: Gunshot, cooldown: 1.3,
+                held: (shape: Cube, color: "iron", at: (0.17, 0.62, 0.2), size: (0.05, 0.08, 0.22)),
+            )),
+            look: [
+                (shape: Cube, color: "iron", at: (0.03, 0.03, 0.0), size: (0.22, 0.05, 0.05)),
+                (shape: Cube, color: "wood", at: (-0.07, 0.03, 0.05), size: (0.06, 0.05, 0.1)),
+            ],
+        ),
+        (
+            id: "club",
+            name: "Club",
+            category: "Weapons",
+            color: "wood",
+            weapon: Some((
+                range: 1.5, damage: (8.0, 13.0), kind: Bruise, cooldown: 1.2,
+                held: (shape: Cube, color: "wood", at: (0.22, 0.72, 0.14), size: (0.08, 0.48, 0.08), turn: (28.6, 0.0, 0.0)),
+            )),
+            look: [
+                (shape: Cylinder, color: "wood", at: (0.0, 0.05, 0.0), size: (0.09, 0.5, 0.09), turn: (0.0, 0.0, 90.0)),
+            ],
+        ),
+        (
+            id: "knife",
+            name: "Knife",
+            category: "Weapons",
+            color: "steel",
+            weapon: Some((
+                range: 1.5, damage: (6.0, 11.0), kind: Cut, cooldown: 1.0,
+                held: (shape: Cube, color: "steel", at: (0.2, 0.62, 0.22), size: (0.03, 0.03, 0.26)),
+            )),
+            look: [
+                (shape: Cube, color: "steel", at: (0.04, 0.02, 0.0), size: (0.22, 0.02, 0.05)),
+                (shape: Cube, color: "wood", at: (-0.1, 0.02, 0.0), size: (0.1, 0.04, 0.04)),
+            ],
+        ),
+        (
+            id: "clothes",
+            name: "Simple clothes",
+            category: "Apparel",
+            color: "dye",
+            // `armor`: share of each blow's damage it stops; `mood` while worn.
+            apparel: Some((slot: Body, armor: 0.06, mood: 3.0)),
+            look: [
+                (shape: Cube, color: "dye", at: (0.0, 0.04, 0.0), size: (0.4, 0.08, 0.34)),
+                (shape: Cube, color: "dye", at: (0.0, 0.1, 0.0), size: (0.36, 0.06, 0.3), turn: (0.0, 12.0, 0.0)),
+            ],
+        ),
+        (
+            id: "steel_armor",
+            name: "Steel armour",
+            category: "Apparel",
+            color: "steel",
+            apparel: Some((slot: Outer, armor: 0.35, mood: 0.0)),
+            look: [
+                (shape: Cube, color: "steel", at: (0.0, 0.12, 0.0), size: (0.42, 0.24, 0.26)),
+                (shape: Cube, color: "iron", at: (0.0, 0.25, 0.0), size: (0.2, 0.04, 0.2)),
+            ],
+        ),
     ],
 
     // What the colonists land with, dropped in their stockpile.
-    start_items: [("wood", 80), ("food", 40), ("medicine", 8)],
-    // What mining one cell of rock yields (soil yields nothing).
+    start_items: [("wood", 80), ("planks", 30), ("meal", 20), ("raw_food", 20), ("medicine", 8)],
+    // Colonists land armed with this.
+    start_weapon: Some("rifle"),
+    // Raiders carry one of these (relative chances).
+    raider_weapons: [("pistol", 2.0), ("club", 1.0), ("knife", 1.0)],
+    // What mining one cell of rock or ore yields (soil yields nothing).
     rock_drops: ("stone", 6),
+    ore_drops: ("iron_ore", 4),
 
     // Player-built structures. `special` marks behaviour the game handles in
     // code: `Floor` (a slab others stand on, built in the air), `Stairs`
@@ -134,7 +343,7 @@
             id: "bed",
             name: "Bed",
             key: Some("8"),
-            cost: ("wood", 8),
+            cost: ("planks", 6),
             work_time: 5.0,
             passable: true,
             special: Bed,
@@ -189,11 +398,103 @@
                 (shape: Sphere, color: "lamp_glow", at: (0.0, 0.86, 0.0), size: (0.22, 0.22, 0.22)),
             ]),
         ),
+        // Workbenches: recipes below name them. Colonists work them from beside.
+        (
+            id: "stove",
+            name: "Stove",
+            key: Some("V"),
+            cost: ("wood", 10),
+            work_time: 4.0,
+            passable: false,
+            look: Parts([
+                (shape: Cube, color: "stone", at: (0.0, 0.35, 0.0), size: (0.9, 0.7, 0.75)),
+                (shape: Cube, color: "iron", at: (0.0, 0.72, 0.0), size: (0.92, 0.05, 0.77)),
+                (shape: Cylinder, color: "ember", at: (-0.2, 0.75, 0.0), size: (0.22, 0.02, 0.22)),
+                (shape: Cylinder, color: "ember", at: (0.2, 0.75, 0.0), size: (0.22, 0.02, 0.22)),
+                (shape: Cylinder, color: "iron", at: (0.32, 1.0, -0.26), size: (0.1, 0.55, 0.1)),
+            ]),
+        ),
+        (
+            id: "sawbench",
+            name: "Sawing bench",
+            key: Some("J"),
+            cost: ("wood", 10),
+            work_time: 4.0,
+            passable: false,
+            look: Parts([
+                (shape: Cube, color: "wood_light", at: (0.0, 0.5, 0.0), size: (0.95, 0.07, 0.6)),
+                (shape: Cube, color: "wood", at: (-0.4, 0.24, -0.22), size: (0.07, 0.48, 0.07)),
+                (shape: Cube, color: "wood", at: (0.4, 0.24, -0.22), size: (0.07, 0.48, 0.07)),
+                (shape: Cube, color: "wood", at: (-0.4, 0.24, 0.22), size: (0.07, 0.48, 0.07)),
+                (shape: Cube, color: "wood", at: (0.4, 0.24, 0.22), size: (0.07, 0.48, 0.07)),
+                (shape: Cylinder, color: "wood", at: (0.0, 0.6, -0.08), size: (0.14, 0.7, 0.14), turn: (0.0, 0.0, 90.0)),
+                (shape: Cylinder, color: "steel", at: (0.12, 0.62, 0.12), size: (0.32, 0.02, 0.32), turn: (90.0, 0.0, 0.0)),
+            ]),
+        ),
+        (
+            id: "stonecutter",
+            name: "Stonecutter's table",
+            key: Some("T"),
+            cost: ("wood", 12),
+            work_time: 4.0,
+            passable: false,
+            look: Parts([
+                (shape: Cube, color: "wood", at: (0.0, 0.25, 0.0), size: (0.8, 0.5, 0.55)),
+                (shape: Cube, color: "stone", at: (0.0, 0.54, 0.0), size: (0.95, 0.08, 0.65)),
+                (shape: Cube, color: "stone_block", at: (-0.2, 0.66, 0.0), size: (0.18, 0.16, 0.18)),
+                (shape: Cube, color: "stone_block", at: (0.05, 0.66, 0.08), size: (0.18, 0.16, 0.18)),
+                (shape: Cube, color: "steel", at: (0.28, 0.6, -0.12), size: (0.2, 0.04, 0.05)),
+            ]),
+        ),
+        (
+            id: "smelter",
+            name: "Smelter",
+            key: Some("M"),
+            cost: ("stone_blocks", 20),
+            work_time: 6.0,
+            passable: false,
+            look: Parts([
+                (shape: Cube, color: "stone_block", at: (0.0, 0.45, 0.0), size: (0.85, 0.9, 0.85)),
+                (shape: Cube, color: "ember", at: (0.0, 0.25, 0.43), size: (0.36, 0.24, 0.02)),
+                (shape: Cylinder, color: "stone_block", at: (0.0, 1.0, 0.0), size: (0.4, 0.25, 0.4)),
+            ]),
+        ),
+        (
+            id: "smithy",
+            name: "Smithy",
+            key: Some("I"),
+            cost: ("stone_blocks", 15),
+            work_time: 5.0,
+            passable: false,
+            look: Parts([
+                (shape: Cube, color: "stone_block", at: (-0.25, 0.25, 0.0), size: (0.45, 0.5, 0.7)),
+                (shape: Cube, color: "ember", at: (-0.25, 0.51, 0.0), size: (0.3, 0.02, 0.45)),
+                (shape: Cube, color: "iron", at: (0.25, 0.2, 0.0), size: (0.18, 0.4, 0.18)),
+                (shape: Cube, color: "iron", at: (0.25, 0.45, 0.0), size: (0.4, 0.12, 0.2)),
+            ]),
+        ),
+        (
+            id: "crafting_bench",
+            name: "Crafting bench",
+            key: Some("U"),
+            cost: ("planks", 10),
+            work_time: 4.0,
+            passable: false,
+            look: Parts([
+                (shape: Cube, color: "wood", at: (0.0, 0.55, 0.0), size: (0.95, 0.07, 0.62)),
+                (shape: Cube, color: "wood", at: (-0.4, 0.26, -0.23), size: (0.07, 0.52, 0.07)),
+                (shape: Cube, color: "wood", at: (0.4, 0.26, -0.23), size: (0.07, 0.52, 0.07)),
+                (shape: Cube, color: "wood", at: (-0.4, 0.26, 0.23), size: (0.07, 0.52, 0.07)),
+                (shape: Cube, color: "wood", at: (0.4, 0.26, 0.23), size: (0.07, 0.52, 0.07)),
+                (shape: Cube, color: "cloth", at: (-0.2, 0.61, 0.05), size: (0.3, 0.05, 0.25)),
+                (shape: Cube, color: "steel", at: (0.25, 0.6, -0.1), size: (0.18, 0.03, 0.04)),
+            ]),
+        ),
     ],
 
     // Plants grow in open cells on soil. `growth` runs from 0 to 1 over
     // `grow_time` seconds of daylight; wild plants appear fully grown.
-    // `sow`: planted in grow zones. `wild`: share of open soil covered when the
+    // `sow`: can be planted in grow zones (the first such plant is the default). `wild`: share of open soil covered when the
     // map is made, and relative chance of being the one that regrows.
     // `harvest`: work that removes the plant and drops its yield once grown,
     // on cells designated `desig` (or automatically if there is none).
@@ -251,7 +552,7 @@
             name: "Berry bush",
             passable: false,
             wild: Some((density: 0.025, regrow: 0.4)),
-            harvest: (desig: Some(Forage), work: Growing, skill: Growing, time: 1.5, yields: ("food", 4), verb: "foraging"),
+            harvest: (desig: Some(Forage), work: Growing, skill: Growing, time: 1.5, yields: ("raw_food", 4), verb: "foraging"),
             stages: [
                 (from: 0.0, variants: [[
                     (shape: Sphere, color: "leaf", at: (-0.12, 0.17, 0.05), size: (0.38, 0.304, 0.38)),
@@ -265,12 +566,12 @@
             ],
         ),
         (
-            id: "crop",
-            name: "Crop",
+            id: "corn",
+            name: "Corn",
             passable: true,
             grow_time: 180.0,
             sow: Some((work: Growing, skill: Growing, time: 1.5)),
-            harvest: (work: Growing, skill: Growing, time: 1.5, yields: ("food", 6), verb: "harvesting"),
+            harvest: (work: Growing, skill: Growing, time: 1.5, yields: ("raw_food", 6), verb: "harvesting"),
             stages: [
                 (from: 0.0, variants: [[
                     (shape: Cylinder, color: "sprout", at: (-0.22, 0.07, -0.22), size: (0.04, 0.14, 0.04)),
@@ -302,5 +603,110 @@
                 ]]),
             ],
         ),
+        (
+            id: "healroot",
+            name: "Healroot",
+            passable: true,
+            grow_time: 220.0,
+            sow: Some((work: Growing, skill: Growing, time: 1.5)),
+            harvest: (work: Growing, skill: Growing, time: 1.5, yields: ("healroot", 3), verb: "harvesting"),
+            stages: [
+                (from: 0.0, variants: [[
+                    (shape: Cylinder, color: "sprout", at: (-0.22, 0.07, -0.22), size: (0.04, 0.14, 0.04)),
+                    (shape: Cylinder, color: "sprout", at: (0.22, 0.07, -0.22), size: (0.04, 0.14, 0.04)),
+                    (shape: Cylinder, color: "sprout", at: (-0.22, 0.07, 0.22), size: (0.04, 0.14, 0.04)),
+                    (shape: Cylinder, color: "sprout", at: (0.22, 0.07, 0.22), size: (0.04, 0.14, 0.04)),
+                ]]),
+                (from: 0.25, variants: [[
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.0855, -0.22), size: (0.19, 0.171, 0.19)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.0855, -0.22), size: (0.19, 0.171, 0.19)),
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.0855, 0.22), size: (0.19, 0.171, 0.19)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.0855, 0.22), size: (0.19, 0.171, 0.19)),
+                ]]),
+                (from: 0.6, variants: [[
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.117, -0.22), size: (0.26, 0.234, 0.26)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.117, -0.22), size: (0.26, 0.234, 0.26)),
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.117, 0.22), size: (0.26, 0.234, 0.26)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.117, 0.22), size: (0.26, 0.234, 0.26)),
+                ]]),
+                (from: 1.0, variants: [[
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.1485, -0.22), size: (0.33, 0.297, 0.33)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.1485, -0.22), size: (0.33, 0.297, 0.33)),
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.1485, 0.22), size: (0.33, 0.297, 0.33)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.1485, 0.22), size: (0.33, 0.297, 0.33)),
+                    (shape: Sphere, color: "healroot", at: (-0.22, 0.3135, -0.22), size: (0.1, 0.1, 0.1)),
+                    (shape: Sphere, color: "healroot", at: (0.22, 0.3135, -0.22), size: (0.1, 0.1, 0.1)),
+                    (shape: Sphere, color: "healroot", at: (-0.22, 0.3135, 0.22), size: (0.1, 0.1, 0.1)),
+                    (shape: Sphere, color: "healroot", at: (0.22, 0.3135, 0.22), size: (0.1, 0.1, 0.1)),
+                ]]),
+            ],
+        ),
+        (
+            id: "cotton",
+            name: "Cotton",
+            passable: true,
+            grow_time: 200.0,
+            sow: Some((work: Growing, skill: Growing, time: 1.5)),
+            harvest: (work: Growing, skill: Growing, time: 1.5, yields: ("cotton", 6), verb: "harvesting"),
+            stages: [
+                (from: 0.0, variants: [[
+                    (shape: Cylinder, color: "sprout", at: (-0.22, 0.07, -0.22), size: (0.04, 0.14, 0.04)),
+                    (shape: Cylinder, color: "sprout", at: (0.22, 0.07, -0.22), size: (0.04, 0.14, 0.04)),
+                    (shape: Cylinder, color: "sprout", at: (-0.22, 0.07, 0.22), size: (0.04, 0.14, 0.04)),
+                    (shape: Cylinder, color: "sprout", at: (0.22, 0.07, 0.22), size: (0.04, 0.14, 0.04)),
+                ]]),
+                (from: 0.25, variants: [[
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.0855, -0.22), size: (0.19, 0.171, 0.19)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.0855, -0.22), size: (0.19, 0.171, 0.19)),
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.0855, 0.22), size: (0.19, 0.171, 0.19)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.0855, 0.22), size: (0.19, 0.171, 0.19)),
+                ]]),
+                (from: 0.6, variants: [[
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.117, -0.22), size: (0.26, 0.234, 0.26)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.117, -0.22), size: (0.26, 0.234, 0.26)),
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.117, 0.22), size: (0.26, 0.234, 0.26)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.117, 0.22), size: (0.26, 0.234, 0.26)),
+                ]]),
+                (from: 1.0, variants: [[
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.1485, -0.22), size: (0.33, 0.297, 0.33)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.1485, -0.22), size: (0.33, 0.297, 0.33)),
+                    (shape: Sphere, color: "sprout", at: (-0.22, 0.1485, 0.22), size: (0.33, 0.297, 0.33)),
+                    (shape: Sphere, color: "sprout", at: (0.22, 0.1485, 0.22), size: (0.33, 0.297, 0.33)),
+                    (shape: Sphere, color: "cotton", at: (-0.22, 0.3135, -0.22), size: (0.1, 0.1, 0.1)),
+                    (shape: Sphere, color: "cotton", at: (0.22, 0.3135, -0.22), size: (0.1, 0.1, 0.1)),
+                    (shape: Sphere, color: "cotton", at: (-0.22, 0.3135, 0.22), size: (0.1, 0.1, 0.1)),
+                    (shape: Sphere, color: "cotton", at: (0.22, 0.3135, 0.22), size: (0.1, 0.1, 0.1)),
+                ]]),
+            ],
+        ),
+    ],
+
+    // Made at workbenches from `ingredients` (delivered by haulers) into
+    // `products` (dropped beside the bench), by colonists doing `work`.
+    recipes: [
+        (id: "cook_meal", name: "Cook simple meal", bench: "stove", work: Cooking, skill: Cooking, time: 5.0,
+            ingredients: [("raw_food", 2)], products: [("meal", 1)]),
+        (id: "saw_planks", name: "Saw planks", bench: "sawbench", work: Crafting, skill: Crafting, time: 4.0,
+            ingredients: [("wood", 5)], products: [("planks", 5)]),
+        (id: "cut_blocks", name: "Cut stone blocks", bench: "stonecutter", work: Crafting, skill: Crafting, time: 5.0,
+            ingredients: [("stone", 4)], products: [("stone_blocks", 4)]),
+        (id: "smelt_steel", name: "Smelt steel", bench: "smelter", work: Crafting, skill: Crafting, time: 6.0,
+            ingredients: [("iron_ore", 4)], products: [("steel", 3)]),
+        (id: "make_knife", name: "Make knife", bench: "smithy", work: Crafting, skill: Crafting, time: 6.0,
+            ingredients: [("steel", 3)], products: [("knife", 1)]),
+        (id: "make_pistol", name: "Make pistol", bench: "smithy", work: Crafting, skill: Crafting, time: 10.0,
+            ingredients: [("steel", 6), ("planks", 2)], products: [("pistol", 1)]),
+        (id: "make_rifle", name: "Make rifle", bench: "smithy", work: Crafting, skill: Crafting, time: 14.0,
+            ingredients: [("steel", 10), ("planks", 4)], products: [("rifle", 1)]),
+        (id: "make_armor", name: "Make steel armour", bench: "smithy", work: Crafting, skill: Crafting, time: 14.0,
+            ingredients: [("steel", 12)], products: [("steel_armor", 1)]),
+        (id: "make_club", name: "Make club", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 4.0,
+            ingredients: [("wood", 6)], products: [("club", 1)]),
+        (id: "make_herbal_medicine", name: "Make herbal medicine", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 5.0,
+            ingredients: [("healroot", 3)], products: [("herbal_medicine", 1)]),
+        (id: "weave_cloth", name: "Weave cloth", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 5.0,
+            ingredients: [("cotton", 4)], products: [("cloth", 3)]),
+        (id: "make_clothes", name: "Make simple clothes", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 8.0,
+            ingredients: [("cloth", 5)], products: [("clothes", 1)]),
     ],
 )

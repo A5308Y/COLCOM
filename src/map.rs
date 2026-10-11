@@ -47,12 +47,14 @@ pub enum Block {
     Soil,
     Rock,
     Water,
+    /// Rock with iron in it (mining yields `ore_drops`).
+    Ore,
 }
 
 impl Block {
     /// Solid ground: something to stand on, and impassable.
     pub fn solid(self) -> bool {
-        matches!(self, Block::Soil | Block::Rock)
+        matches!(self, Block::Soil | Block::Rock | Block::Ore)
     }
 
     pub fn name(self) -> &'static str {
@@ -61,6 +63,7 @@ impl Block {
             Block::Soil => "Soil",
             Block::Rock => "Rock",
             Block::Water => "Water",
+            Block::Ore => "Iron ore",
         }
     }
 }
@@ -93,6 +96,14 @@ impl Feature {
     /// A fully grown plant, by definition id.
     pub fn plant(id: &str) -> Feature {
         Feature::Plant { kind: PlantId::named(id), growth: 1.0 }
+    }
+
+    /// Which buildable the finished structure here is, if any.
+    pub fn structure_id(self) -> Option<BuildId> {
+        match self {
+            Feature::Built { kind, .. } => Some(kind),
+            _ => None,
+        }
     }
 
     /// The finished structure here, if any.
@@ -165,8 +176,26 @@ pub enum Desig {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Zone {
     None,
-    Stockpile,
-    Grow,
+    /// Part of a stockpile (an id into `World::stockpiles`, which holds its settings).
+    Stockpile(u16),
+    /// Planted with this crop.
+    Grow(PlantId),
+}
+
+impl Zone {
+    pub fn stockpile(self) -> Option<u16> {
+        match self {
+            Zone::Stockpile(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    pub fn crop(self) -> Option<PlantId> {
+        match self {
+            Zone::Grow(kind) => Some(kind),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -606,6 +635,15 @@ impl Map {
                     let i = m.idx((x, y, z));
                     m.block[i] = Block::Water;
                 }
+                // Iron ore veins in the rock, richer deeper down.
+                for z in 0..stand {
+                    let i = m.idx((x, y, z));
+                    let depth = (stand - z).min(8) as f32;
+                    let vein = noise(fx / 4.0 + z as f32 * 17.3, fy / 4.0 + z as f32 * 5.1, salts[3]);
+                    if m.block[i] == Block::Rock && vein > 0.93 - 0.015 * depth {
+                        m.block[i] = Block::Ore;
+                    }
+                }
             }
         }
         // Wild plants on open soil, each covering its share of it.
@@ -670,7 +708,7 @@ mod tests {
     }
 
     fn food() -> ItemId {
-        ItemId::named("food")
+        ItemId::named("raw_food")
     }
 
     /// Walls around a rectangle, optionally with a floor on top as a roof.
@@ -886,6 +924,8 @@ mod tests {
         }
         let water = m.block.iter().filter(|b| **b == Block::Water).count();
         let rock = m.block.iter().filter(|b| **b == Block::Rock).count();
-        assert!(water > 0 && rock > 0);
+        let ore = m.block.iter().filter(|b| **b == Block::Ore).count();
+        assert!(water > 0 && rock > 0 && ore > 0);
+        assert!(ore < rock / 10, "ore is rarer than rock ({} vs {})", ore, rock);
     }
 }

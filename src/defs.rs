@@ -1,13 +1,14 @@
-//! Definitions of items, buildables and plants, loaded from `assets/defs.ron`
-//! (built into the game).
+//! Definitions of items, buildables, plants and recipes, loaded from
+//! `assets/defs.ron` (built into the game).
 //!
 //! The simulation refers to them by small ids (`ItemId`, `BuildId`,
-//! `PlantId`): indexes into the registry returned by `defs()`. Behaviour the
+//! `PlantId`, `RecipeId`): indexes into the registry returned by `defs()`. Behaviour the
 //! code has to know about (walls block rooms, stairs connect levels, beds,
 //! food, medicine) is described by flags and fields of the definitions, never
 //! by matching on particular ones. Saves store the definitions' text ids, so
 //! adding or reordering definitions keeps old saves loadable.
 
+use crate::health::DamageKind;
 use crate::map::Desig;
 use crate::pawn::{Skill, WorkType};
 use serde::de::Error as _;
@@ -27,9 +28,14 @@ pub fn defs() -> &'static Defs {
 macro_rules! def_id {
     ($Id:ident, $Def:ident, $list:ident, $what:literal) => {
         #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-        pub struct $Id(pub u16);
+        pub struct $Id(u16);
 
         impl $Id {
+            /// Position in the definitions list, for per-kind arrays.
+            pub fn index(self) -> usize {
+                self.0 as usize
+            }
+
             pub fn def(self) -> &'static $Def {
                 &defs().$list[self.0 as usize]
             }
@@ -77,6 +83,27 @@ macro_rules! def_id {
 def_id!(ItemId, ItemDef, items, "item");
 def_id!(BuildId, BuildDef, builds, "buildable");
 def_id!(PlantId, PlantDef, plants, "plant");
+def_id!(RecipeId, RecipeDef, recipes, "recipe");
+
+/// A reference to another definition by its id, resolved once everything is read.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(from = "String", bound = "")]
+pub struct Ref<T> {
+    name: String,
+    id: Option<T>,
+}
+
+impl<T> From<String> for Ref<T> {
+    fn from(name: String) -> Ref<T> {
+        Ref { name, id: None }
+    }
+}
+
+impl<T: Copy> Ref<T> {
+    pub fn id(&self) -> T {
+        self.id.expect("references are resolved when the definitions load")
+    }
+}
 
 /// Some number of an item, written `("wood", 10)`. The item is looked up by
 /// name once all definitions are read.
@@ -119,20 +146,78 @@ pub struct Part {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct WeaponDef {
+    pub range: f32,
+    pub damage: (f32, f32),
+    pub kind: DamageKind,
+    /// Seconds between attacks.
+    pub cooldown: f32,
+    /// How it looks in hand (relative to the pawn's feet, facing +z).
+    pub held: Part,
+}
+
+impl WeaponDef {
+    pub fn ranged(&self) -> bool {
+        self.range > 2.0
+    }
+
+    /// Rough damage per second, to compare weapons.
+    pub fn score(&self) -> f32 {
+        (self.damage.0 + self.damage.1) / 2.0 / self.cooldown * if self.ranged() { 1.5 } else { 1.0 }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum Slot {
+    /// Clothes.
+    Body,
+    /// Armour worn over clothes.
+    Outer,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ApparelDef {
+    pub slot: Slot,
+    /// Share of each blow's damage it stops.
+    pub armor: f32,
+    /// Mood while worn.
+    pub mood: f32,
+}
+
+impl ApparelDef {
+    /// To compare apparel for the same slot.
+    pub fn score(&self) -> f32 {
+        self.armor * 40.0 + self.mood
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct ItemDef {
     pub id: String,
     pub name: String,
+    /// Group in stockpile settings.
+    pub category: String,
     /// Palette colour for small views (an item being carried).
     pub color: String,
     /// Hunger restored per unit eaten; 0 = not food.
     #[serde(default)]
     pub nutrition: f32,
+    /// Raw food: eating it is unpleasant.
+    #[serde(default)]
+    pub raw: bool,
+    /// Chance per unit eaten of food poisoning.
+    #[serde(default)]
+    pub poison: f32,
     /// How much it improves tending; 0 = not medicine.
     #[serde(default)]
     pub medicine: f32,
     /// Range of amounts arriving in cargo pods (never, if not given).
     #[serde(default)]
     pub pods: Option<(u32, u32)>,
+    #[serde(default)]
+    pub weapon: Option<WeaponDef>,
+    #[serde(default)]
+    pub apparel: Option<ApparelDef>,
     pub look: Vec<Part>,
 }
 
@@ -204,6 +289,9 @@ pub struct BuildDef {
     #[serde(default)]
     pub light: Option<Light>,
     pub look: BuildLook,
+    /// Recipes made here (filled in from the recipes); a workbench if any.
+    #[serde(skip)]
+    pub recipes: Vec<RecipeId>,
 }
 
 impl BuildDef {
@@ -287,6 +375,19 @@ impl PlantDef {
     }
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct RecipeDef {
+    pub id: String,
+    pub name: String,
+    pub bench: Ref<BuildId>,
+    pub work: WorkType,
+    pub skill: Skill,
+    /// Seconds of work at speed 1.
+    pub time: f32,
+    pub ingredients: Vec<Amount>,
+    pub products: Vec<Amount>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Defs {
     /// sRGB colours by name.
@@ -296,9 +397,17 @@ pub struct Defs {
     pub glow: BTreeMap<String, (f32, f32, f32)>,
     pub items: Vec<ItemDef>,
     pub start_items: Vec<Amount>,
+    #[serde(default)]
+    pub start_weapon: Option<Ref<ItemId>>,
+    /// Weapons raiders carry, with relative chances.
+    #[serde(default)]
+    pub raider_weapons: Vec<(Ref<ItemId>, f32)>,
     pub rock_drops: Amount,
+    pub ore_drops: Amount,
     pub builds: Vec<BuildDef>,
     pub plants: Vec<PlantDef>,
+    #[serde(default)]
+    pub recipes: Vec<RecipeDef>,
 }
 
 impl Defs {
@@ -312,17 +421,29 @@ impl Defs {
 
     fn resolve(&mut self) -> Result<(), String> {
         let ids: Vec<String> = self.items.iter().map(|i| i.id.clone()).collect();
-        let resolve = |a: &mut Amount, whose: &str| match ids.iter().position(|i| *i == a.name) {
-            Some(k) => {
-                a.item = ItemId(k as u16);
-                Ok(())
-            }
-            None => Err(format!("{}: no item \"{}\"", whose, a.name)),
+        let find = |name: &str, whose: &str| match ids.iter().position(|i| i == name) {
+            Some(k) => Ok(ItemId(k as u16)),
+            None => Err(format!("{}: no item \"{}\"", whose, name)),
+        };
+        let resolve = |a: &mut Amount, whose: &str| {
+            a.item = find(&a.name, whose)?;
+            Ok::<(), String>(())
+        };
+        let resolve_ref = |r: &mut Ref<ItemId>, whose: &str| {
+            r.id = Some(find(&r.name, whose)?);
+            Ok::<(), String>(())
         };
         for a in self.start_items.iter_mut() {
             resolve(a, "start_items")?;
         }
+        if let Some(r) = self.start_weapon.as_mut() {
+            resolve_ref(r, "start_weapon")?;
+        }
+        for (r, _) in self.raider_weapons.iter_mut() {
+            resolve_ref(r, "raider_weapons")?;
+        }
         resolve(&mut self.rock_drops, "rock_drops")?;
+        resolve(&mut self.ore_drops, "ore_drops")?;
         for b in self.builds.iter_mut() {
             resolve(&mut b.cost, &b.id)?;
             if let Some(a) = b.drops.as_mut() {
@@ -331,6 +452,16 @@ impl Defs {
         }
         for p in self.plants.iter_mut() {
             resolve(&mut p.harvest.yields, &p.id)?;
+        }
+        for (k, r) in self.recipes.iter_mut().enumerate() {
+            for a in r.ingredients.iter_mut().chain(r.products.iter_mut()) {
+                resolve(a, &r.id)?;
+            }
+            let Some(b) = self.builds.iter().position(|b| b.id == r.bench.name) else {
+                return Err(format!("{}: no buildable \"{}\"", r.id, r.bench.name));
+            };
+            r.bench.id = Some(BuildId(b as u16));
+            self.builds[b].recipes.push(RecipeId(k as u16));
         }
         Ok(())
     }
@@ -349,6 +480,7 @@ impl Defs {
         unique("items", self.items.iter().map(|d| &d.id))?;
         unique("builds", self.builds.iter().map(|d| &d.id))?;
         unique("plants", self.plants.iter().map(|d| &d.id))?;
+        unique("recipes", self.recipes.iter().map(|d| &d.id))?;
         unique("build keys", self.builds.iter().filter_map(|d| d.key.as_ref()))?;
         if self.items.len() >= u16::MAX as usize || self.builds.len() >= u16::MAX as usize {
             return Err("too many definitions".into());
@@ -371,6 +503,21 @@ impl Defs {
             parts(&d.id, &d.look)?;
             if d.pods.is_some_and(|(lo, hi)| lo == 0 || lo > hi) {
                 return Err(format!("{}: pods need 1 <= min <= max", d.id));
+            }
+            if !(0.0..=1.0).contains(&d.poison) || d.nutrition < 0.0 || d.medicine < 0.0 {
+                return Err(format!("{}: poison must be 0..1, nutrition and medicine not negative", d.id));
+            }
+            if d.category.is_empty() {
+                return Err(format!("{}: needs a category", d.id));
+            }
+            if let Some(w) = &d.weapon {
+                if w.range <= 0.0 || w.cooldown <= 0.0 || w.damage.0 <= 0.0 || w.damage.0 > w.damage.1 {
+                    return Err(format!("{}: weapon needs range, cooldown and 0 < min <= max damage", d.id));
+                }
+                parts(&d.id, std::slice::from_ref(&w.held))?;
+            }
+            if d.apparel.as_ref().is_some_and(|a| !(0.0..0.9).contains(&a.armor)) {
+                return Err(format!("{}: armour must be 0 to 0.9", d.id));
             }
         }
         for d in &self.builds {
@@ -416,6 +563,27 @@ impl Defs {
         }
         if wild >= 1.0 {
             return Err("wild plant densities add up to 1 or more".into());
+        }
+        for r in &self.recipes {
+            if r.ingredients.is_empty() || r.products.is_empty() || r.time <= 0.0 {
+                return Err(format!("{}: needs ingredients, products and a work time", r.id));
+            }
+            if r.ingredients.iter().chain(&r.products).any(|a| a.count == 0) {
+                return Err(format!("{}: amounts must be at least 1", r.id));
+            }
+            if r.ingredients.iter().any(|a| a.count > crate::map::STACK_MAX) {
+                return Err(format!("{}: at most {} of an ingredient", r.id, crate::map::STACK_MAX));
+            }
+            // (`self`, not `defs()`: this runs while the registry is being made.)
+            if self.builds[r.bench.id().index()].is_block() {
+                return Err(format!("{}: a workbench can't be a block", r.id));
+            }
+        }
+        let weapons = self.start_weapon.iter().chain(self.raider_weapons.iter().map(|w| &w.0));
+        for w in weapons {
+            if self.items[w.id().index()].weapon.is_none() {
+                return Err(format!("\"{}\" is not a weapon", w.name));
+            }
         }
         Ok(())
     }

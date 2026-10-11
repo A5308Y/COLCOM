@@ -1,7 +1,7 @@
 //! Shooting, melee, injuries and raider behaviour.
 
 use crate::health::DamageKind;
-use crate::map::Pos;
+use crate::map::{Pos, Stack};
 use crate::pathing::{bfs, line_of_sight};
 use crate::pawn::{Job, Memory, Pawn, Skill};
 use crate::world::{Effect, Step, World};
@@ -31,7 +31,8 @@ impl World {
 
     fn in_attack_position(&self, p: &Pawn, ti: usize) -> bool {
         let t = &self.pawns[ti];
-        dist(p, t) <= p.weapon.range() && (!p.weapon.ranged() || line_of_sight(&self.map, p.pos, t.pos))
+        let a = p.attack();
+        dist(p, t) <= a.range && (!a.ranged || line_of_sight(&self.map, p.pos, t.pos))
     }
 
     /// Fire at whatever enemy is in range, if the weapon is ready.
@@ -39,25 +40,26 @@ impl World {
         if p.cooldown > 0.0 {
             return;
         }
-        if let Some(ti) = self.nearest_hostile(p, p.weapon.range(), p.weapon.ranged()) {
+        let a = p.attack();
+        if let Some(ti) = self.nearest_hostile(p, a.range, a.ranged) {
             self.attack(p, ti);
         }
     }
 
     fn attack(&mut self, p: &mut Pawn, ti: usize) {
-        let w = p.weapon;
-        let skill = if w.ranged() { Skill::Shooting } else { Skill::Melee };
+        let w = p.attack();
+        let skill = if w.ranged { Skill::Shooting } else { Skill::Melee };
         let (tx, ty, tz) = (self.pawns[ti].x, self.pawns[ti].y, self.pawns[ti].z);
         let d = dist(p, &self.pawns[ti]);
         let level = p.skill(skill) as f32;
-        let base = if w.ranged() { 0.55 + level * 0.025 - d * 0.025 } else { 0.6 + level * 0.02 };
+        let base = if w.ranged { 0.55 + level * 0.025 - d * 0.025 } else { 0.6 + level * 0.02 };
         // Bad eyes or hands make for bad aim.
         let caps = &p.health.caps;
         let chance = (base * (0.4 + 0.6 * caps.sight.min(1.0)) * (0.5 + 0.5 * caps.manipulation.min(1.0))).clamp(0.05, 0.95);
         let hit = self.rng.chance(chance);
-        p.cooldown = w.cooldown();
+        p.cooldown = w.cooldown;
         p.learn(skill, 2.0);
-        if w.ranged() {
+        if w.ranged {
             let to = if hit {
                 (tx, ty, tz)
             } else {
@@ -66,9 +68,9 @@ impl World {
             self.effects.push(Effect { from: (p.x, p.y, p.z), to, ttl: 0.15, hit });
         }
         if hit {
-            let (lo, hi) = w.damage();
+            let (lo, hi) = w.damage;
             let dmg = self.rng.range_f32(lo, hi);
-            self.damage(ti, dmg, w.damage_kind(), &p.name);
+            self.damage(ti, dmg, w.kind, &p.name);
         }
     }
 
@@ -77,7 +79,8 @@ impl World {
         if t.dead {
             return;
         }
-        let hit = t.health.apply_damage(amount, kind, &mut self.rng);
+        let armor = t.armor();
+        let hit = t.health.apply_damage(amount, kind, armor, &mut self.rng);
         t.health.recompute();
         let wound = hit.map_or(String::new(), |h| {
             format!(" ({} to the {})", kind.name().to_lowercase(), h.part.name().to_lowercase())
@@ -106,6 +109,10 @@ impl World {
             return;
         }
         self.end_job(p);
+        // Their gear stays behind for others to use.
+        for item in p.weapon.take().into_iter().chain(p.apparel.drain(..)) {
+            self.map.drop_item(p.pos, Stack { kind: item, count: 1 });
+        }
         p.dead = true;
         p.downed = false;
         p.drafted = false;

@@ -1,6 +1,6 @@
 //! Pawns (colonists and raiders): needs, skills, mood, weapons and jobs.
 
-use crate::defs::PlantId;
+use crate::defs::{defs, ItemId, PlantId, Slot};
 use crate::health::{DamageKind, Health};
 use crate::map::{Pos, Stack};
 use crate::rng::Rng;
@@ -22,10 +22,12 @@ pub enum Skill {
     Shooting,
     Melee,
     Medicine,
+    Cooking,
+    Crafting,
 }
 
 impl Skill {
-    pub const ALL: [Skill; 7] = [
+    pub const ALL: [Skill; 9] = [
         Skill::Construction,
         Skill::Growing,
         Skill::Mining,
@@ -33,6 +35,8 @@ impl Skill {
         Skill::Shooting,
         Skill::Melee,
         Skill::Medicine,
+        Skill::Cooking,
+        Skill::Crafting,
     ];
 
     pub fn name(self) -> &'static str {
@@ -44,6 +48,8 @@ impl Skill {
             Skill::Shooting => "Shooting",
             Skill::Melee => "Melee",
             Skill::Medicine => "Medicine",
+            Skill::Cooking => "Cooking",
+            Skill::Crafting => "Crafting",
         }
     }
 }
@@ -51,30 +57,37 @@ impl Skill {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum WorkType {
     Doctor,
+    Cooking,
     Construction,
     Growing,
     Mining,
     PlantCutting,
+    Crafting,
     Hauling,
 }
 
 impl WorkType {
-    pub const ALL: [WorkType; 6] = [
+    /// In the order of the enum (priorities are indexed by it).
+    pub const ALL: [WorkType; 8] = [
         WorkType::Doctor,
+        WorkType::Cooking,
         WorkType::Construction,
         WorkType::Growing,
         WorkType::Mining,
         WorkType::PlantCutting,
+        WorkType::Crafting,
         WorkType::Hauling,
     ];
 
     pub fn name(self) -> &'static str {
         match self {
             WorkType::Doctor => "Doctor",
+            WorkType::Cooking => "Cook",
             WorkType::Construction => "Construct",
             WorkType::Growing => "Grow",
             WorkType::Mining => "Mine",
             WorkType::PlantCutting => "Cut plants",
+            WorkType::Crafting => "Craft",
             WorkType::Hauling => "Haul",
         }
     }
@@ -82,10 +95,12 @@ impl WorkType {
     pub fn skill(self) -> Option<Skill> {
         match self {
             WorkType::Doctor => Some(Skill::Medicine),
+            WorkType::Cooking => Some(Skill::Cooking),
             WorkType::Construction => Some(Skill::Construction),
             WorkType::Growing => Some(Skill::Growing),
             WorkType::Mining => Some(Skill::Mining),
             WorkType::PlantCutting => Some(Skill::Plants),
+            WorkType::Crafting => Some(Skill::Crafting),
             WorkType::Hauling => None,
         }
     }
@@ -101,6 +116,8 @@ pub enum Task {
     Sow(PlantId),
     Mine,
     Construct,
+    /// Make the current bill's recipe at a workbench.
+    Craft,
 }
 
 impl Task {
@@ -110,66 +127,22 @@ impl Task {
             Task::Sow(_) => "planting",
             Task::Mine => "mining",
             Task::Construct => "building",
+            Task::Craft => "crafting",
         }
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub enum Weapon {
-    Rifle,
-    Pistol,
-    Club,
-    Knife,
+/// How a pawn fights: its weapon's numbers, or bare fists.
+#[derive(Clone, Copy, Debug)]
+pub struct Attack {
+    pub range: f32,
+    pub damage: (f32, f32),
+    pub kind: DamageKind,
+    pub cooldown: f32,
+    pub ranged: bool,
 }
 
-impl Weapon {
-    pub fn range(self) -> f32 {
-        match self {
-            Weapon::Rifle => 11.0,
-            Weapon::Pistol => 7.0,
-            Weapon::Club | Weapon::Knife => 1.5,
-        }
-    }
-
-    pub fn damage(self) -> (f32, f32) {
-        match self {
-            Weapon::Rifle => (9.0, 14.0),
-            Weapon::Pistol => (7.0, 11.0),
-            Weapon::Club => (8.0, 13.0),
-            Weapon::Knife => (6.0, 11.0),
-        }
-    }
-
-    pub fn damage_kind(self) -> DamageKind {
-        match self {
-            Weapon::Rifle | Weapon::Pistol => DamageKind::Gunshot,
-            Weapon::Club => DamageKind::Bruise,
-            Weapon::Knife => DamageKind::Cut,
-        }
-    }
-
-    pub fn cooldown(self) -> f32 {
-        match self {
-            Weapon::Rifle => 1.8,
-            Weapon::Pistol => 1.3,
-            Weapon::Club => 1.2,
-            Weapon::Knife => 1.0,
-        }
-    }
-
-    pub fn ranged(self) -> bool {
-        matches!(self, Weapon::Rifle | Weapon::Pistol)
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Weapon::Rifle => "rifle",
-            Weapon::Pistol => "pistol",
-            Weapon::Club => "club",
-            Weapon::Knife => "knife",
-        }
-    }
-}
+const FISTS: Attack = Attack { range: 1.5, damage: (3.0, 6.0), kind: DamageKind::Bruise, cooldown: 1.0, ranged: false };
 
 /// What a pawn is currently doing. Multi-step jobs track their stage in fields.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -177,8 +150,9 @@ pub enum Job {
     Wander { to: Pos },
     Goto { to: Pos },
     Work { target: Pos, task: Task },
-    /// Carry a stack from `from` to a stockpile cell or a blueprint.
-    Haul { from: Pos, to: Pos, to_blueprint: bool, picked: bool },
+    /// Carry a stack from `from` to a stockpile cell, or (`deliver`) to a
+    /// blueprint or workbench that needs it.
+    Haul { from: Pos, to: Pos, deliver: bool, picked: bool },
     Eat { from: Pos, picked: bool },
     Sleep { bed: Option<Pos> },
     Attack { target: u32 },
@@ -191,6 +165,8 @@ pub enum Job {
     Rescue { patient: u32, bed: Pos, carrying: bool },
     /// Bring food to a downed colonist.
     Feed { patient: u32, food: Pos, picked: bool },
+    /// Pick up a better weapon or piece of apparel and use it.
+    Equip { from: Pos },
 }
 
 impl Job {
@@ -199,7 +175,7 @@ impl Job {
             Job::Wander { .. } => "wandering",
             Job::Goto { .. } => "moving",
             Job::Work { task, .. } => task.verb(),
-            Job::Haul { to_blueprint: true, .. } => "delivering materials",
+            Job::Haul { deliver: true, .. } => "delivering materials",
             Job::Haul { .. } => "hauling",
             Job::Eat { .. } => "eating",
             Job::Sleep { .. } => "sleeping",
@@ -209,6 +185,7 @@ impl Job {
             Job::Tend { .. } => "tending",
             Job::Rescue { .. } => "rescuing",
             Job::Feed { .. } => "feeding a patient",
+            Job::Equip { .. } => "equipping",
         }
     }
 }
@@ -220,6 +197,8 @@ pub enum Memory {
     SleptOnGround,
     ColonistDied,
     Catharsis,
+    AteRawFood,
+    AteMeal,
 }
 
 impl Memory {
@@ -230,6 +209,8 @@ impl Memory {
             Memory::SleptOnGround => "Slept on the ground",
             Memory::ColonistDied => "A colonist died",
             Memory::Catharsis => "Catharsis",
+            Memory::AteRawFood => "Ate raw food",
+            Memory::AteMeal => "Ate a cooked meal",
         }
     }
 
@@ -240,6 +221,8 @@ impl Memory {
             Memory::SleptOnGround => -5.0,
             Memory::ColonistDied => -10.0,
             Memory::Catharsis => 10.0,
+            Memory::AteRawFood => -5.0,
+            Memory::AteMeal => 2.0,
         }
     }
 
@@ -247,6 +230,7 @@ impl Memory {
         match self {
             Memory::ColonistDied => 3.0 * DAY_LEN,
             Memory::Catharsis => 1.5 * DAY_LEN,
+            Memory::AteRawFood | Memory::AteMeal => 0.5 * DAY_LEN,
             _ => DAY_LEN,
         }
     }
@@ -279,11 +263,13 @@ pub struct Pawn {
     pub rest: f32,
     pub mood: f32,
     pub health: Health,
-    pub skills: [u8; 7],
-    pub xp: [f32; 7],
+    pub skills: [u8; Skill::ALL.len()],
+    pub xp: [f32; Skill::ALL.len()],
     /// Per work type: 0 = disabled, 1 = highest .. 4 = lowest.
-    pub priorities: [u8; 6],
-    pub weapon: Weapon,
+    pub priorities: [u8; WorkType::ALL.len()],
+    pub weapon: Option<ItemId>,
+    /// Worn items, at most one per slot.
+    pub apparel: Vec<ItemId>,
     pub cooldown: f32,
     pub drafted: bool,
     pub downed: bool,
@@ -321,10 +307,11 @@ impl Pawn {
             rest: rng.range_f32(75.0, 100.0),
             mood: 55.0,
             health: Health::new(),
-            skills: [0; 7],
-            xp: [0.0; 7],
-            priorities: [3; 6],
-            weapon: Weapon::Rifle,
+            skills: [0; Skill::ALL.len()],
+            xp: [0.0; Skill::ALL.len()],
+            priorities: [3; WorkType::ALL.len()],
+            weapon: defs().start_weapon.as_ref().map(|w| w.id()),
+            apparel: Vec::new(),
             cooldown: 0.0,
             drafted: false,
             downed: false,
@@ -355,18 +342,21 @@ impl Pawn {
 
     pub fn new_raider(id: u32, name: String, pos: Pos, rng: &mut Rng) -> Pawn {
         let mut p = Pawn::base(id, name, Faction::Raider, pos, rng);
-        let roll = rng.f32();
-        p.weapon = if roll < 0.5 {
-            Weapon::Pistol
-        } else if roll < 0.75 {
-            Weapon::Club
-        } else {
-            Weapon::Knife
-        };
+        let weapons = &defs().raider_weapons;
+        let total: f32 = weapons.iter().map(|w| w.1).sum();
+        let mut roll = rng.f32() * total;
+        p.weapon = None;
+        for (w, weight) in weapons {
+            p.weapon = Some(w.id());
+            if roll < *weight {
+                break;
+            }
+            roll -= weight;
+        }
         p.skills[Skill::Shooting as usize] = 3 + rng.below(6) as u8;
         p.skills[Skill::Melee as usize] = 3 + rng.below(6) as u8;
         p.color = [0.85, 0.2, 0.2];
-        p.priorities = [0; 6];
+        p.priorities = [0; WorkType::ALL.len()];
         p.leave_timer = 100.0;
         p
     }
@@ -398,6 +388,29 @@ impl Pawn {
             speed *= 0.85;
         }
         speed.max(0.05)
+    }
+
+    /// The weapon's numbers, or fists.
+    pub fn attack(&self) -> Attack {
+        match self.weapon.and_then(|w| w.def().weapon.as_ref()) {
+            Some(w) => Attack { range: w.range, damage: w.damage, kind: w.kind, cooldown: w.cooldown, ranged: w.ranged() },
+            None => FISTS,
+        }
+    }
+
+    pub fn weapon_name(&self) -> &'static str {
+        self.weapon.map_or("fists", |w| w.name())
+    }
+
+    /// Share of damage stopped by what they wear.
+    pub fn armor(&self) -> f32 {
+        let total: f32 = self.apparel.iter().filter_map(|a| a.def().apparel.as_ref()).map(|a| a.armor).sum();
+        total.min(0.8)
+    }
+
+    /// What they wear in a slot.
+    pub fn worn(&self, slot: Slot) -> Option<ItemId> {
+        self.apparel.iter().copied().find(|a| a.def().apparel.as_ref().is_some_and(|d| d.slot == slot))
     }
 
     pub fn move_speed(&self) -> f32 {
@@ -459,6 +472,11 @@ impl Pawn {
         }
         for m in &self.memories {
             t.push((m.kind.label(), m.kind.mood()));
+        }
+        for a in &self.apparel {
+            if let Some(d) = a.def().apparel.as_ref().filter(|d| d.mood != 0.0) {
+                t.push((a.name(), d.mood));
+            }
         }
         t
     }

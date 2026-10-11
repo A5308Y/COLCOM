@@ -204,6 +204,8 @@ pub enum HediffKind {
     Missing,
     Infection { immunity: f32 },
     Flu { immunity: f32 },
+    /// From bad food: miserable for a while, then gone. Severity 1 → 0.
+    FoodPoisoning,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -264,12 +266,13 @@ impl Hediff {
             }
             HediffKind::Infection { .. } => self.severity * 0.3,
             HediffKind::Flu { .. } => 0.05 + self.severity * 0.1,
+            HediffKind::FoodPoisoning => 0.2 * self.severity,
         }
     }
 
     pub fn needs_tending(&self) -> bool {
         match self.kind {
-            HediffKind::Injury { permanent: true, .. } => false,
+            HediffKind::Injury { permanent: true, .. } | HediffKind::FoodPoisoning => false,
             _ => self.tend.is_none(),
         }
     }
@@ -281,6 +284,7 @@ impl Hediff {
             HediffKind::Missing => "Destroyed".into(),
             HediffKind::Infection { .. } => "Infection".into(),
             HediffKind::Flu { .. } => "Flu".into(),
+            HediffKind::FoodPoisoning => "Food poisoning".into(),
         }
     }
 }
@@ -476,6 +480,7 @@ impl Health {
         };
         let flu = worst(|k| matches!(k, HediffKind::Flu { .. }));
         let infection = worst(|k| matches!(k, HediffKind::Infection { .. }));
+        let poisoned = worst(|k| matches!(k, HediffKind::FoodPoisoning));
 
         let e = |p: Part| self.efficiency(p);
         let pumping = e(Part::Heart);
@@ -484,7 +489,7 @@ impl Health {
 
         let mut con = e(Part::Brain) * (1.0 - 0.35 * pain);
         con -= (self.blood_loss - 0.15).max(0.0) * 1.1;
-        con -= 0.3 * self.malnutrition + 0.1 * flu + 0.25 * infection;
+        con -= 0.3 * self.malnutrition + 0.1 * flu + 0.25 * infection + 0.15 * poisoned;
         con *= (0.4 + 0.6 * pumping) * (0.4 + 0.6 * breathing) * (0.7 + 0.3 * filtration);
         let con = con.clamp(0.0, 1.0);
 
@@ -511,9 +516,10 @@ impl Health {
         let spine = e(Part::Spine);
         let spine_factor = if spine <= 0.0 { 0.0 } else { 0.5 + 0.5 * spine };
 
-        let manipulation = (arms * con - 0.05 * flu).max(0.0);
+        let manipulation = (arms * con - 0.05 * flu - 0.1 * poisoned).max(0.0);
         let moving = (legs * spine_factor * con * (0.5 + 0.5 * pumping) * (0.5 + 0.5 * breathing)
             - 0.1 * flu
+            - 0.2 * poisoned
             - 0.3 * self.malnutrition)
             .max(0.0);
         let caps = Capacities {
@@ -578,7 +584,13 @@ impl Health {
     }
 
     /// A blow from outside: picks where it lands and how deep it goes.
-    pub fn apply_damage(&mut self, amount: f32, kind: DamageKind, rng: &mut Rng) -> Option<Hit> {
+    /// `armor` (0..1) is the share of the damage stopped by what the pawn
+    /// wears; blows it takes down to almost nothing glance off.
+    pub fn apply_damage(&mut self, amount: f32, kind: DamageKind, armor: f32, rng: &mut Rng) -> Option<Hit> {
+        let amount = amount * (1.0 - armor.clamp(0.0, 0.9));
+        if amount < 1.0 {
+            return None;
+        }
         let outer = self.pick_outer(rng)?;
         let mut target = outer;
         for _ in 0..2 {
@@ -598,6 +610,14 @@ impl Health {
         let destroyed = self.injure(target, amount * 0.8, kind, rng);
         self.injure(outer, (amount * 0.3).max(1.0), kind, rng);
         Some(Hit { part: target, destroyed })
+    }
+
+    /// Food poisoning, or a fresh bout of it.
+    pub fn add_food_poisoning(&mut self) {
+        match self.hediffs.iter_mut().find(|h| h.kind == HediffKind::FoodPoisoning) {
+            Some(h) => h.severity = 1.0,
+            None => self.hediffs.push(Hediff::new(HediffKind::FoodPoisoning, None, 1.0)),
+        }
     }
 
     pub fn add_flu(&mut self) {
@@ -684,6 +704,8 @@ impl Health {
                     h.severity += (0.3 - 0.25 * quality) * days;
                     *immunity += 0.32 * immunity_gain * days;
                 }
+                // Passes in under a day.
+                HediffKind::FoodPoisoning => h.severity -= 1.3 * days,
                 _ => {}
             }
         }
@@ -712,6 +734,10 @@ impl Health {
                     } else {
                         self.hediffs.remove(i);
                     }
+                }
+                HediffKind::FoodPoisoning if h.severity <= 0.0 => {
+                    events.push("has recovered from food poisoning.".to_string());
+                    self.hediffs.remove(i);
                 }
                 HediffKind::Infection { immunity } | HediffKind::Flu { immunity } if immunity >= 1.0 => {
                     events.push(format!("has fought off the {}.", h.label().to_lowercase()));
@@ -871,12 +897,41 @@ mod tests {
         let mut organ_hits = 0;
         for _ in 0..200 {
             let mut h = Health::new();
-            if let Some(hit) = h.apply_damage(5.0, DamageKind::Gunshot, &mut rng) {
+            if let Some(hit) = h.apply_damage(5.0, DamageKind::Gunshot, 0.0, &mut rng) {
                 if hit.part.def().inside {
                     organ_hits += 1;
                 }
             }
         }
         assert!(organ_hits > 20 && organ_hits < 180, "organ hits: {}", organ_hits);
+    }
+
+    #[test]
+    fn food_poisoning_hurts_then_passes() {
+        let mut rng = Rng::new(4);
+        let mut h = Health::new();
+        h.add_food_poisoning();
+        h.recompute();
+        assert!(h.caps.consciousness < 0.9 && h.caps.moving < 0.85 && h.pain > 0.1);
+        assert!(!h.needs_tending() && h.downed_reason().is_none(), "unpleasant, not dangerous");
+        run(&mut h, DAY_LEN, AWAKE, &mut rng);
+        assert!(h.hediffs.is_empty());
+    }
+
+    #[test]
+    fn armour_stops_damage() {
+        let total = |armor: f32| {
+            let mut rng = Rng::new(8);
+            let mut sum = 0.0;
+            for _ in 0..200 {
+                let mut h = Health::new();
+                h.apply_damage(8.0, DamageKind::Cut, armor, &mut rng);
+                sum += h.hediffs.iter().map(|d| d.severity).sum::<f32>();
+            }
+            sum
+        };
+        let (bare, armoured) = (total(0.0), total(0.5));
+        assert!(armoured < bare * 0.6, "{} vs {}", armoured, bare);
+        assert_eq!(total(0.9), 0.0, "light blows glance off heavy armour");
     }
 }

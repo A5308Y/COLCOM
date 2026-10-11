@@ -10,9 +10,11 @@ use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, ProgressBar, RichText};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::health::HediffKind;
-use my_world::defs::{BuildId, ItemId};
+use my_world::defs::{BuildId, ItemId, PlantId};
 use my_world::map::{Block, Feature, Pos, Zone};
 use my_world::pawn::{Pawn, Skill, WorkType};
+use my_world::production::{BillMode, PRIORITY_NAMES};
+use my_world::world::World as SimWorld;
 use my_world::DAY_LEN;
 
 const HELP_ORDERS: [&str; 7] = [
@@ -25,8 +27,14 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 19] = [
+const HELP_REST: [&str; 25] = [
     "Colonists haul the materials to blueprints, then build them.",
+    "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
+    "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
+    "Click a stockpile to set its priority and which items it takes; click a grow zone to pick its crop.",
+    "Raw food can cause food poisoning - cook meals at a stove. Mine iron ore deep in the rock,",
+    "      smelt it into steel and make weapons and armour at a smithy. Colonists pick up better gear.",
+    "",
     "Floors need a wall, stairs or ground below within 3 cells.",
     "      Use the layer view to place floors in mid-air: PageDown/PageUp (or [ and ]).",
     "Stairs rise away from where you walk onto them; you can't walk across them.",
@@ -83,7 +91,7 @@ fn draw_ui(
     alerts(&ctx, &sim);
     match st.selected {
         Some(Selection::Pawn(id)) => pawn_inspector(&ctx, &sim, &mut st, id),
-        Some(Selection::Tile(t)) => tile_inspector(&ctx, &sim, t),
+        Some(Selection::Tile(t)) => tile_inspector(&ctx, &mut sim, t),
         None => {}
     }
     if st.show_work {
@@ -285,7 +293,11 @@ fn pawn_inspector(ctx: &egui::Context, sim: &Sim, st: &mut UiState, id: u32) {
                 ui.selectable_value(&mut st.inspector_health, false, "Overview");
                 ui.selectable_value(&mut st.inspector_health, true, "Health");
             });
-            ui.label(RichText::new(format!("{} - {}", p.status(), p.weapon.name())).weak());
+            ui.label(RichText::new(format!("{} - {}", p.status(), p.weapon_name())).weak());
+            if !p.apparel.is_empty() {
+                let worn: Vec<&str> = p.apparel.iter().map(|a| a.name()).collect();
+                ui.label(RichText::new(format!("Wearing {}", worn.join(", ").to_lowercase())).weak());
+            }
             ui.separator();
             if st.inspector_health {
                 health_tab(ui, p);
@@ -387,6 +399,7 @@ fn health_tab(ui: &mut egui::Ui, p: &Pawn) {
             HediffKind::Missing => {
                 (String::new(), if d.bleed() > 0.0 { Color32::from_rgb(255, 80, 70) } else { Color32::GRAY })
             }
+            HediffKind::FoodPoisoning => (format!(" {:.0}%", d.severity * 100.0), Color32::from_rgb(240, 220, 90)),
             HediffKind::Infection { immunity } | HediffKind::Flu { immunity } => (
                 format!(" {:.0}% (immunity {:.0}%)", d.severity * 100.0, immunity * 100.0),
                 Color32::from_rgb(240, 220, 90),
@@ -405,8 +418,13 @@ fn health_tab(ui: &mut egui::Ui, p: &Pawn) {
     }
 }
 
-fn tile_inspector(ctx: &egui::Context, sim: &Sim, t: Pos) {
-    let m = &sim.world.map;
+/// A change to the world chosen in the inspector, applied after drawing it.
+type Action = Box<dyn FnOnce(&mut SimWorld)>;
+
+fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos) {
+    let mut actions: Vec<Action> = Vec::new();
+    let w = &sim.world;
+    let m = &w.map;
     let i = m.idx(t);
     egui::Window::new(RichText::new(format!("Cell {}, {}  level {}", t.0, t.1, t.2)).strong())
         .id(egui::Id::new("inspector"))
@@ -436,15 +454,6 @@ fn tile_inspector(ctx: &egui::Context, sim: &Sim, t: Pos) {
             if let Some(s) = m.items[i] {
                 ui.label(format!("{} x{}", s.kind.name(), s.count));
             }
-            match m.zone[i] {
-                Zone::Stockpile => {
-                    ui.label("Stockpile zone");
-                }
-                Zone::Grow => {
-                    ui.label("Grow zone");
-                }
-                Zone::None => {}
-            }
             if let Some(d) = m.desig[i] {
                 ui.label(format!("Designated: {:?}", d));
             }
@@ -454,11 +463,156 @@ fn tile_inspector(ctx: &egui::Context, sim: &Sim, t: Pos) {
             } else {
                 ui.label("Outdoors");
             }
+            match m.zone[i] {
+                Zone::Stockpile(id) => stockpile_settings(ui, w, id, &mut actions),
+                Zone::Grow(crop) => crop_choice(ui, t, crop, &mut actions),
+                Zone::None => {}
+            }
+            if let Some(kind) = m.feature[i].structure_id().filter(|k| !k.def().recipes.is_empty()) {
+                bills(ui, w, t, kind, &mut actions);
+            }
         });
+    for act in actions {
+        act(&mut sim.world);
+    }
+}
+
+fn stockpile_settings(ui: &mut egui::Ui, w: &SimWorld, id: u16, actions: &mut Vec<Action>) {
+    let Some(store) = w.stockpiles.get(id as usize) else { return };
+    ui.separator();
+    ui.label(RichText::new(&store.name).strong());
+    ui.horizontal(|ui| {
+        ui.label("Priority");
+        for prio in 1..=4u8 {
+            if ui.add(egui::Button::new(PRIORITY_NAMES[prio as usize]).selected(store.priority == prio)).clicked() {
+                actions.push(Box::new(move |w| w.set_stockpile_priority(id, prio)));
+            }
+        }
+    });
+    // Categories in the order they first appear in the definitions.
+    let mut categories: Vec<&str> = Vec::new();
+    for k in ItemId::all() {
+        if !categories.contains(&k.def().category.as_str()) {
+            categories.push(&k.def().category);
+        }
+    }
+    for cat in categories {
+        let items: Vec<ItemId> = ItemId::all().filter(|k| k.def().category == cat).collect();
+        let allowed = items.iter().filter(|&&k| store.accepts(k)).count();
+        let header = format!("{} ({}/{})", cat, allowed, items.len());
+        egui::CollapsingHeader::new(header).id_salt(("stockpile", id, cat)).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                for (label, allow) in [("All", true), ("None", false)] {
+                    if ui.small_button(label).clicked() {
+                        let items = items.clone();
+                        actions.push(Box::new(move |w| items.into_iter().for_each(|k| w.set_stockpile_allows(id, k, allow))));
+                    }
+                }
+            });
+            for k in items.iter().copied() {
+                let mut on = store.accepts(k);
+                if ui.checkbox(&mut on, k.name()).changed() {
+                    actions.push(Box::new(move |w| w.set_stockpile_allows(id, k, on)));
+                }
+            }
+        });
+    }
+}
+
+fn crop_choice(ui: &mut egui::Ui, t: Pos, crop: PlantId, actions: &mut Vec<Action>) {
+    ui.separator();
+    ui.horizontal_wrapped(|ui| {
+        ui.label("Grow zone:");
+        for k in PlantId::all().filter(|k| k.def().sow.is_some()) {
+            if ui.add(egui::Button::new(k.name()).selected(k == crop)).clicked() {
+                actions.push(Box::new(move |w| w.set_grow_crop(t, k)));
+            }
+        }
+    });
+}
+
+fn mode_label(mode: BillMode) -> String {
+    match mode {
+        BillMode::Count(n) => format!("Make {}", n),
+        BillMode::Until(n) => format!("Until {}", n),
+        BillMode::Forever => "Forever".into(),
+    }
+}
+
+fn bills(ui: &mut egui::Ui, w: &SimWorld, t: Pos, kind: my_world::defs::BuildId, actions: &mut Vec<Action>) {
+    ui.separator();
+    ui.label(RichText::new("Bills").strong());
+    let bench = w.bench_at(t);
+    let status = match bench.and_then(|b| b.current.map(|r| (b, r))) {
+        Some((b, r)) => match b.need() {
+            Some(n) => format!("Gathering for {}: needs {} {}", r.name().to_lowercase(), n.count, n.kind.name().to_lowercase()),
+            None => format!("Ready: {}", r.name().to_lowercase()),
+        },
+        None => "Idle".into(),
+    };
+    ui.label(RichText::new(status).weak());
+    let list = bench.map_or(&[][..], |b| &b.bills[..]);
+    for (k, bill) in list.iter().enumerate() {
+        let b = *bill;
+        ui.horizontal(|ui| {
+            let name = RichText::new(b.recipe.name());
+            ui.label(if b.suspended { name.strikethrough() } else { name });
+            // Click the mode to cycle it; - and + change the number.
+            if ui.button(mode_label(b.mode)).clicked() {
+                let next = match b.mode {
+                    BillMode::Count(n) => BillMode::Until(n.max(1)),
+                    BillMode::Until(_) => BillMode::Forever,
+                    BillMode::Forever => BillMode::Count(1),
+                };
+                actions.push(Box::new(move |w| w.set_bill(t, k, next, b.suspended)));
+            }
+            let n = match b.mode {
+                BillMode::Count(n) | BillMode::Until(n) => Some(n),
+                BillMode::Forever => None,
+            };
+            if let Some(n) = n {
+                let with = |n: u32| match b.mode {
+                    BillMode::Count(_) => BillMode::Count(n),
+                    _ => BillMode::Until(n),
+                };
+                if ui.small_button("-").clicked() && n > 1 {
+                    let mode = with(n - 1);
+                    actions.push(Box::new(move |w| w.set_bill(t, k, mode, b.suspended)));
+                }
+                if ui.small_button("+").clicked() {
+                    let mode = with(n + 1);
+                    actions.push(Box::new(move |w| w.set_bill(t, k, mode, b.suspended)));
+                }
+            }
+            if ui.small_button(if b.suspended { "Resume" } else { "Pause" }).clicked() {
+                actions.push(Box::new(move |w| w.set_bill(t, k, b.mode, !b.suspended)));
+            }
+            if k > 0 && ui.small_button("Up").clicked() {
+                actions.push(Box::new(move |w| w.raise_bill(t, k)));
+            }
+            if ui.small_button("x").clicked() {
+                actions.push(Box::new(move |w| w.remove_bill(t, k)));
+            }
+        });
+    }
+    ui.label(RichText::new("Add:").weak());
+    ui.horizontal_wrapped(|ui| {
+        for &r in &kind.def().recipes {
+            let d = r.def();
+            let needs: Vec<String> = d.ingredients.iter().map(|a| format!("{} {}", a.count, a.item.name().to_lowercase())).collect();
+            if ui.button(&d.name).on_hover_text(format!("From {}", needs.join(", "))).clicked() {
+                actions.push(Box::new(move |w| w.add_bill(t, r, BillMode::Count(1))));
+            }
+        }
+    });
+    if let Some(b) = bench.filter(|b| !b.stock.is_empty()) {
+        let stock: Vec<String> = b.stock.iter().map(|s| format!("{} {}", s.count, s.kind.name().to_lowercase())).collect();
+        ui.label(RichText::new(format!("Delivered: {}", stock.join(", "))).weak());
+    }
 }
 
 fn work_panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState) {
-    let rows: Vec<(u32, String, [u8; 6], [u8; 7])> = sim
+    let rows: Vec<(u32, String, [u8; WorkType::ALL.len()], [u8; Skill::ALL.len()])> = sim
         .world
         .pawns
         .iter()
