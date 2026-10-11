@@ -1,0 +1,716 @@
+//! The whole simulation state and its fixed-step update.
+
+use crate::map::{BuildKind, Desig, Feature, ItemKind, Map, Pos, Stack, Terrain, Zone};
+use crate::pawn::{Faction, Job, Memory, Pawn, WorkType};
+use crate::pathing::bfs;
+use crate::rng::Rng;
+use crate::story::Storyteller;
+use crate::DAY_LEN;
+use serde::{Deserialize, Serialize};
+
+pub const MAP_W: usize = 100;
+pub const MAP_H: usize = 70;
+/// Daylight seconds for a crop to ripen.
+const CROP_GROW_TIME: f32 = 180.0;
+
+const COLONIST_NAMES: [&str; 16] = [
+    "Ada", "Bram", "Cleo", "Dax", "Eve", "Finn", "Gus", "Hana", "Ivo", "Juno", "Kai", "Lia", "Milo", "Nell",
+    "Otto", "Pia",
+];
+
+/// A short-lived visual (gunshot tracer), in tile coordinates.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct Effect {
+    pub from: (f32, f32),
+    pub to: (f32, f32),
+    pub ttl: f32,
+    pub hit: bool,
+}
+
+/// Something the player paints onto tiles.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Order {
+    Desig(Desig),
+    Zone(Zone),
+    Build(BuildKind),
+    Cancel,
+}
+
+pub(crate) enum Step {
+    Arrived,
+    Moving,
+    Unreachable,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct World {
+    pub map: Map,
+    pub pawns: Vec<Pawn>,
+    /// Per-tile reservations by pawn id (0 = free): work targets, item stacks
+    /// being picked up, and stockpile cells being delivered to.
+    pub res_target: Vec<u32>,
+    pub res_item: Vec<u32>,
+    pub res_cell: Vec<u32>,
+    pub time: f32,
+    pub rng: Rng,
+    pub next_id: u32,
+    pub log: Vec<String>,
+    pub story: Storyteller,
+    pub effects: Vec<Effect>,
+    pub colonist_names_used: usize,
+    pub regrow_timer: f32,
+}
+
+impl World {
+    pub fn new(seed: u64) -> World {
+        let mut rng = Rng::new(seed);
+        let map = Map::generate(MAP_W, MAP_H, &mut rng);
+        let mut w = World::with_map(map, rng);
+        let (cx, cy) = (MAP_W / 2, MAP_H / 2);
+        for k in 0..3 {
+            w.spawn_colonist((cx - 1 + k, cy));
+        }
+        for y in cy + 2..cy + 5 {
+            for x in cx - 4..cx + 2 {
+                let i = w.map.idx((x, y));
+                w.map.zone[i] = Zone::Stockpile;
+            }
+        }
+        w.map.drop_item((cx - 4, cy + 2), Stack { kind: ItemKind::Wood, count: 80 });
+        w.map.drop_item((cx + 1, cy + 4), Stack { kind: ItemKind::Food, count: 40 });
+        w.push_log("Three colonists crash-landed. Press H for help.".into());
+        w
+    }
+
+    /// An empty world around an existing map (also used by tests).
+    pub fn with_map(map: Map, rng: Rng) -> World {
+        let n = map.w * map.h;
+        World {
+            map,
+            pawns: Vec::new(),
+            res_target: vec![0; n],
+            res_item: vec![0; n],
+            res_cell: vec![0; n],
+            time: DAY_LEN * 0.25,
+            rng,
+            next_id: 1,
+            log: Vec::new(),
+            story: Storyteller::new(),
+            effects: Vec::new(),
+            colonist_names_used: 0,
+            regrow_timer: 4.0,
+        }
+    }
+
+    // ---------- queries ----------
+
+    pub fn day(&self) -> u32 {
+        (self.time / DAY_LEN) as u32 + 1
+    }
+
+    pub fn hour(&self) -> f32 {
+        (self.time % DAY_LEN) / DAY_LEN * 24.0
+    }
+
+    pub fn is_night(&self) -> bool {
+        let h = self.hour();
+        !(6.0..21.0).contains(&h)
+    }
+
+    /// 0 at midnight, 1 at noon.
+    pub fn daylight(&self) -> f32 {
+        let t = (self.time % DAY_LEN) / DAY_LEN;
+        0.5 - 0.5 * (t * std::f32::consts::TAU).cos()
+    }
+
+    pub fn pawn_index(&self, id: u32) -> Option<usize> {
+        self.pawns.iter().position(|p| p.id == id)
+    }
+
+    pub fn pawn(&self, id: u32) -> Option<&Pawn> {
+        self.pawns.iter().find(|p| p.id == id)
+    }
+
+    pub fn colonists_alive(&self) -> usize {
+        self.pawns.iter().filter(|p| p.is_colonist() && !p.dead).count()
+    }
+
+    pub fn colony_lost(&self) -> bool {
+        self.colonists_alive() == 0
+    }
+
+    /// Warnings for the player, `true` = urgent.
+    pub fn alerts(&self) -> Vec<(String, bool)> {
+        let mut out = Vec::new();
+        let raiders = self.pawns.iter().filter(|p| p.faction == Faction::Raider && p.active()).count();
+        if raiders > 0 {
+            out.push((format!("Raid: {} raiders", raiders), true));
+        }
+        let colonists: Vec<&Pawn> = self.pawns.iter().filter(|p| p.is_colonist() && !p.dead).collect();
+        for p in &colonists {
+            if p.downed {
+                out.push((format!("{} is downed", p.name), true));
+            } else if p.hunger <= 0.0 {
+                out.push((format!("{} is starving", p.name), true));
+            } else if p.break_timer > 0.0 {
+                out.push((format!("{}: mental break", p.name), false));
+            }
+        }
+        let food = self.map.count_items(ItemKind::Food);
+        if (food as usize) < colonists.len() * 4 {
+            out.push((format!("Low food ({} left)", food), false));
+        }
+        let beds = self.map.feature.iter().filter(|f| **f == Feature::Bed).count();
+        if beds < colonists.len() {
+            out.push((format!("Need beds ({}/{})", beds, colonists.len()), false));
+        }
+        if !self.map.zone.iter().any(|z| *z == Zone::Stockpile) {
+            out.push(("No stockpile zone".into(), false));
+        }
+        let idle = colonists
+            .iter()
+            .filter(|p| p.active() && !p.drafted && matches!(p.job, None | Some(Job::Wander { .. })))
+            .count();
+        if idle > 0 {
+            out.push((format!("{} idle colonist(s)", idle), false));
+        }
+        out
+    }
+
+    pub fn push_log(&mut self, msg: String) {
+        self.log.push(msg);
+        if self.log.len() > 50 {
+            self.log.remove(0);
+        }
+    }
+
+    // ---------- spawning ----------
+
+    pub fn spawn_colonist(&mut self, pos: Pos) -> u32 {
+        let name = COLONIST_NAMES
+            .get(self.colonist_names_used)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("Colonist {}", self.colonist_names_used + 1));
+        self.colonist_names_used += 1;
+        let id = self.next_id;
+        self.next_id += 1;
+        let p = Pawn::new_colonist(id, name, pos, &mut self.rng);
+        self.pawns.push(p);
+        id
+    }
+
+    pub fn spawn_raider(&mut self, name: String, pos: Pos) -> u32 {
+        let id = self.next_id;
+        self.next_id += 1;
+        let p = Pawn::new_raider(id, name, pos, &mut self.rng);
+        self.pawns.push(p);
+        id
+    }
+
+    // ---------- simulation ----------
+
+    pub fn tick(&mut self, dt: f32) {
+        self.time += dt;
+        if self.map.rooms_dirty {
+            self.map.recompute_rooms();
+        }
+        self.grow_plants(dt);
+        self.storyteller_tick();
+
+        // Each pawn is updated on a copy so it can freely read and modify the
+        // rest of the world (including other pawns) while it thinks.
+        for i in 0..self.pawns.len() {
+            let mut p = self.pawns[i].clone();
+            self.update_pawn(&mut p, dt);
+            self.pawns[i] = p;
+        }
+        self.pawns.retain(|p| p.is_colonist() || !(p.dead || p.left));
+
+        for e in self.effects.iter_mut() {
+            e.ttl -= dt;
+        }
+        self.effects.retain(|e| e.ttl > 0.0);
+    }
+
+    fn grow_plants(&mut self, dt: f32) {
+        if !self.is_night() {
+            let g = dt / CROP_GROW_TIME;
+            for f in self.map.feature.iter_mut() {
+                if let Feature::Crop { growth } = f {
+                    *growth = (*growth + g).min(1.0);
+                }
+            }
+        }
+        self.regrow_timer -= dt;
+        if self.regrow_timer <= 0.0 {
+            self.regrow_timer = 4.0;
+            let i = self.rng.below(self.map.w * self.map.h);
+            let m = &self.map;
+            let free = m.feature[i] == Feature::None
+                && m.terrain[i] == Terrain::Grass
+                && m.zone[i] == Zone::None
+                && m.items[i].is_none()
+                && m.room[i] == 0
+                && !self.pawns.iter().any(|p| m.idx(p.pos) == i);
+            if free {
+                let f = if self.rng.chance(0.6) { Feature::Tree } else { Feature::Bush };
+                self.map.set_feature(i, f);
+            }
+        }
+    }
+
+    fn update_pawn(&mut self, p: &mut Pawn, dt: f32) {
+        if p.dead || p.left {
+            return;
+        }
+        p.cooldown = (p.cooldown - dt).max(0.0);
+        if p.is_colonist() {
+            self.update_needs(p, dt);
+            if p.dead {
+                return;
+            }
+        }
+        if p.downed {
+            if p.health >= 35.0 {
+                p.downed = false;
+                self.push_log(format!("{} got back up.", p.name));
+            }
+            return;
+        }
+        match p.faction {
+            Faction::Colony => self.colonist_think(p, dt),
+            Faction::Raider => self.raider_think(p, dt),
+        }
+        self.run_job(p, dt);
+    }
+
+    fn update_needs(&mut self, p: &mut Pawn, dt: f32) {
+        p.hunger = (p.hunger - 0.4 * dt).max(0.0);
+        if !p.sleeping {
+            p.rest = (p.rest - 0.33 * dt).max(0.0);
+        }
+        if p.hunger <= 0.0 {
+            p.health -= 0.25 * dt;
+            if p.health <= 0.0 {
+                self.kill(p, "starved to death");
+                return;
+            }
+        } else if p.health < 100.0 {
+            let rate = if p.sleeping || p.downed { 0.3 } else { 0.08 };
+            p.health = (p.health + rate * dt).min(100.0);
+        }
+
+        for m in p.memories.iter_mut() {
+            m.left -= dt;
+        }
+        p.memories.retain(|m| m.left > 0.0);
+        let target = p.mood_target();
+        p.mood += (target - p.mood) * (dt * 0.05).min(1.0);
+
+        if p.break_timer > 0.0 {
+            p.break_timer -= dt;
+            if p.break_timer <= 0.0 {
+                p.add_memory(Memory::Catharsis);
+                self.push_log(format!("{} has recovered from their mental break.", p.name));
+            }
+        } else if p.mood < 20.0 && !p.drafted && !p.downed && self.rng.chance(dt * 0.01) {
+            self.end_job(p);
+            p.break_timer = 40.0;
+            self.push_log(format!("{} is having a mental break and wanders off in a daze.", p.name));
+        }
+    }
+
+    fn colonist_think(&mut self, p: &mut Pawn, dt: f32) {
+        if p.drafted {
+            if p.job.is_none() {
+                self.auto_fire(p);
+            }
+            return;
+        }
+        if p.break_timer > 0.0 {
+            if p.job.is_none() {
+                self.start_wander(p, 10);
+            }
+            return;
+        }
+        p.think_timer -= dt;
+        if p.think_timer > 0.0 {
+            return;
+        }
+        p.think_timer = 0.5;
+
+        // Urgent needs interrupt whatever they're doing.
+        let on_need = matches!(p.job, Some(Job::Eat { .. }) | Some(Job::Sleep { .. }));
+        if !on_need {
+            if p.hunger < 20.0 && self.try_eat(p) {
+                return;
+            }
+            if p.rest < 8.0 {
+                self.end_job(p);
+                let bed = self.find_bed(p);
+                self.start_job(p, Job::Sleep { bed });
+                return;
+            }
+        }
+        if p.job.is_some() {
+            return;
+        }
+        if p.hunger < 40.0 && self.try_eat(p) {
+            return;
+        }
+        if p.rest < 30.0 || (self.is_night() && p.rest < 75.0) {
+            let bed = self.find_bed(p);
+            self.start_job(p, Job::Sleep { bed });
+            return;
+        }
+        if let Some(job) = self.find_work(p) {
+            self.start_job(p, job);
+            return;
+        }
+        if self.rng.chance(0.25) {
+            self.start_wander(p, 5);
+        }
+    }
+
+    // ---------- jobs, reservations, movement ----------
+
+    pub(crate) fn release(&mut self, id: u32) {
+        for v in [&mut self.res_target, &mut self.res_item, &mut self.res_cell] {
+            for r in v.iter_mut() {
+                if *r == id {
+                    *r = 0;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn start_job(&mut self, p: &mut Pawn, job: Job) {
+        let id = p.id;
+        match job {
+            Job::Work { target, .. } => {
+                let i = self.map.idx(target);
+                self.res_target[i] = id;
+            }
+            Job::Haul { from, to, to_blueprint, .. } => {
+                let (fi, ti) = (self.map.idx(from), self.map.idx(to));
+                self.res_item[fi] = id;
+                if to_blueprint {
+                    self.res_target[ti] = id;
+                } else {
+                    self.res_cell[ti] = id;
+                }
+            }
+            Job::Eat { from, .. } => {
+                let i = self.map.idx(from);
+                self.res_item[i] = id;
+            }
+            Job::Sleep { bed: Some(b) } => p.bed = Some(b),
+            _ => {}
+        }
+        p.job = Some(job);
+        p.job_progress = 0.0;
+        p.path.clear();
+        p.path_goal = None;
+    }
+
+    /// Stop the current job, freeing reservations and dropping anything carried.
+    pub(crate) fn end_job(&mut self, p: &mut Pawn) {
+        self.release(p.id);
+        if let Some(c) = p.carrying.take() {
+            self.map.drop_item(p.pos, c);
+        }
+        p.job = None;
+        p.job_progress = 0.0;
+        p.path.clear();
+        p.path_goal = None;
+        p.sleeping = false;
+    }
+
+    /// Walk towards `goal` (or next to it if `adjacent`), planning a path as needed.
+    pub(crate) fn go_to(&self, p: &mut Pawn, goal: Pos, adjacent: bool, dt: f32) -> Step {
+        if p.path_goal != Some(goal) {
+            p.path.clear();
+            p.path_goal = Some(goal);
+            let at_goal = p.pos == goal || (adjacent && crate::map::manhattan(p.pos, goal) == 1);
+            if !at_goal {
+                let df = bfs(&self.map, p.pos);
+                match df.approach(&self.map, goal, adjacent) {
+                    Some((stand, _)) => p.path = df.path_to(stand),
+                    None => {
+                        p.path_goal = None;
+                        return Step::Unreachable;
+                    }
+                }
+            }
+        }
+        if let Some(&next) = p.path.last() {
+            if !self.map.passable(next) {
+                // Something was built or grew in the way; plan again next tick.
+                p.path.clear();
+                p.path_goal = None;
+                return Step::Moving;
+            }
+            if move_towards(p, next, dt) {
+                p.pos = next;
+                p.path.pop();
+            }
+            return Step::Moving;
+        }
+        // Path done: settle onto the tile centre before acting.
+        let here = p.pos;
+        if move_towards(p, here, dt) {
+            Step::Arrived
+        } else {
+            Step::Moving
+        }
+    }
+
+    // ---------- player orders ----------
+
+    pub fn apply_order(&mut self, p: Pos, order: Order) {
+        let i = self.map.idx(p);
+        let f = self.map.feature[i];
+        match order {
+            Order::Desig(d) => {
+                let ok = match d {
+                    Desig::Chop => f == Feature::Tree,
+                    Desig::Mine => f == Feature::Rock || f.built_from().is_some(),
+                    Desig::Forage => f == Feature::Bush,
+                };
+                if ok {
+                    self.map.desig[i] = Some(d);
+                }
+            }
+            Order::Zone(z) => {
+                let ok = z == Zone::None
+                    || (self.map.terrain[i] == Terrain::Grass && matches!(f, Feature::None | Feature::Crop { .. }));
+                if ok {
+                    self.map.zone[i] = z;
+                }
+            }
+            Order::Build(kind) => {
+                if self.map.terrain[i] == Terrain::Grass && f == Feature::None {
+                    self.map.feature[i] = Feature::Blueprint { kind, delivered: 0 };
+                }
+            }
+            Order::Cancel => {
+                self.map.desig[i] = None;
+                if let Feature::Blueprint { kind, delivered } = f {
+                    self.map.feature[i] = Feature::None;
+                    if delivered > 0 {
+                        self.map.drop_item(p, Stack { kind: kind.cost().kind, count: delivered });
+                    }
+                }
+            }
+        }
+    }
+
+    /// Run `f` on a copy of pawn `id` with full access to the world.
+    fn with_pawn(&mut self, id: u32, f: impl FnOnce(&mut World, &mut Pawn)) {
+        if let Some(i) = self.pawn_index(id) {
+            let mut p = self.pawns[i].clone();
+            f(self, &mut p);
+            self.pawns[i] = p;
+        }
+    }
+
+    pub fn set_drafted(&mut self, id: u32, drafted: bool) {
+        self.with_pawn(id, |w, p| {
+            if p.is_colonist() && p.active() && p.drafted != drafted {
+                w.end_job(p);
+                p.drafted = drafted;
+                p.break_timer = 0.0;
+            }
+        });
+    }
+
+    pub fn order_move(&mut self, id: u32, to: Pos) {
+        self.with_pawn(id, |w, p| {
+            if p.drafted && p.active() && w.map.passable(to) {
+                w.end_job(p);
+                w.start_job(p, Job::Goto { to });
+            }
+        });
+    }
+
+    pub fn order_attack(&mut self, id: u32, target: u32) {
+        self.with_pawn(id, |w, p| {
+            if p.drafted && p.active() {
+                w.end_job(p);
+                w.start_job(p, Job::Attack { target });
+            }
+        });
+    }
+
+    pub fn set_priority(&mut self, id: u32, wt: WorkType, prio: u8) {
+        if let Some(i) = self.pawn_index(id) {
+            self.pawns[i].priorities[wt as usize] = prio.min(4);
+        }
+    }
+
+    // ---------- save / load ----------
+
+    pub fn save_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    pub fn load_json(s: &str) -> Result<World, serde_json::Error> {
+        let mut w: World = serde_json::from_str(s)?;
+        w.map.recompute_rooms();
+        Ok(w)
+    }
+}
+
+/// Step `p` towards tile `t`; returns true once it is exactly there.
+fn move_towards(p: &mut Pawn, t: Pos, dt: f32) -> bool {
+    let step = p.move_speed() * dt;
+    let (tx, ty) = (t.0 as f32, t.1 as f32);
+    let (dx, dy) = (tx - p.x, ty - p.y);
+    let d = (dx * dx + dy * dy).sqrt();
+    if d <= step {
+        p.x = tx;
+        p.y = ty;
+        true
+    } else {
+        p.x += dx / d * step;
+        p.y += dy / d * step;
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::Feature;
+    use crate::pawn::Weapon;
+    use crate::TICK;
+
+    fn test_world(w: usize, h: usize) -> World {
+        let mut world = World::with_map(Map::new(w, h), Rng::new(7));
+        world.story.next_raid = f32::MAX;
+        world.story.next_event = f32::MAX;
+        world.regrow_timer = f32::MAX;
+        world
+    }
+
+    fn colonist(world: &mut World, pos: Pos) -> u32 {
+        let id = world.spawn_colonist(pos);
+        let i = world.pawn_index(id).unwrap();
+        world.pawns[i].hunger = 100.0;
+        world.pawns[i].rest = 100.0;
+        id
+    }
+
+    fn run(world: &mut World, secs: f32) {
+        for _ in 0..(secs / TICK) as usize {
+            world.tick(TICK);
+        }
+    }
+
+    #[test]
+    fn hauling_moves_items_into_the_stockpile() {
+        let mut w = test_world(20, 20);
+        colonist(&mut w, (2, 2));
+        for x in 2..5 {
+            let i = w.map.idx((x, 10));
+            w.map.zone[i] = Zone::Stockpile;
+        }
+        let src = w.map.idx((12, 12));
+        w.map.items[src] = Some(Stack { kind: ItemKind::Wood, count: 20 });
+        run(&mut w, 30.0);
+        assert!(w.map.items[src].is_none(), "wood should have been picked up");
+        let stored: u32 = (2..5).filter_map(|x| w.map.items[w.map.idx((x, 10))]).map(|s| s.count).sum();
+        assert_eq!(stored, 20);
+    }
+
+    #[test]
+    fn construction_delivers_materials_and_builds() {
+        let mut w = test_world(20, 20);
+        colonist(&mut w, (2, 2));
+        let stone = w.map.idx((3, 8));
+        w.map.items[stone] = Some(Stack { kind: ItemKind::Stone, count: 4 });
+        w.apply_order((10, 10), Order::Build(BuildKind::Wall));
+        run(&mut w, 40.0);
+        assert_eq!(w.map.feature[w.map.idx((10, 10))], Feature::Wall);
+        assert_eq!(w.map.count_items(ItemKind::Stone), 0);
+    }
+
+    #[test]
+    fn chopping_drops_wood() {
+        let mut w = test_world(20, 20);
+        colonist(&mut w, (2, 2));
+        let t = w.map.idx((8, 8));
+        w.map.feature[t] = Feature::Tree;
+        w.apply_order((8, 8), Order::Desig(Desig::Chop));
+        run(&mut w, 20.0);
+        assert_eq!(w.map.feature[t], Feature::None);
+        assert!(w.map.count_items(ItemKind::Wood) > 0);
+    }
+
+    #[test]
+    fn hungry_colonists_eat_from_the_ground() {
+        let mut w = test_world(20, 20);
+        let id = colonist(&mut w, (2, 2));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].hunger = 15.0;
+        let f = w.map.idx((6, 6));
+        w.map.items[f] = Some(Stack { kind: ItemKind::Food, count: 3 });
+        run(&mut w, 10.0);
+        assert!(w.pawn(id).unwrap().hunger > 40.0);
+        assert_eq!(w.map.count_items(ItemKind::Food), 2);
+    }
+
+    #[test]
+    fn grow_zone_gets_planted() {
+        let mut w = test_world(20, 20);
+        colonist(&mut w, (2, 2));
+        let i = w.map.idx((6, 6));
+        w.apply_order((6, 6), Order::Zone(Zone::Grow));
+        run(&mut w, 10.0);
+        assert!(matches!(w.map.feature[i], Feature::Crop { .. }));
+    }
+
+    #[test]
+    fn work_priorities_decide_what_comes_first() {
+        let mut w = test_world(20, 20);
+        let id = colonist(&mut w, (2, 2));
+        w.set_priority(id, WorkType::PlantCutting, 4);
+        w.set_priority(id, WorkType::Mining, 1);
+        // The tree is closer, but mining has the higher priority.
+        let tree = w.map.idx((3, 2));
+        w.map.feature[tree] = Feature::Tree;
+        w.apply_order((3, 2), Order::Desig(Desig::Chop));
+        let rock = w.map.idx((15, 15));
+        w.map.feature[rock] = Feature::Rock;
+        w.apply_order((15, 15), Order::Desig(Desig::Mine));
+        run(&mut w, 1.5);
+        let job = w.pawn(id).unwrap().job;
+        assert!(matches!(job, Some(Job::Work { task: crate::pawn::Task::Mine, .. })), "{:?}", job);
+    }
+
+    #[test]
+    fn drafted_colonist_shoots_an_approaching_raider() {
+        let mut w = test_world(30, 30);
+        let id = colonist(&mut w, (5, 15));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].skills[crate::pawn::Skill::Shooting as usize] = 20;
+        w.set_drafted(id, true);
+        let rid = w.spawn_raider("Grim".into(), (14, 15));
+        let ri = w.pawn_index(rid).unwrap();
+        w.pawns[ri].weapon = Weapon::Club;
+        run(&mut w, 10.0);
+        let hurt_or_gone = w.pawn(rid).map_or(true, |r| r.health < 100.0);
+        assert!(hurt_or_gone);
+    }
+
+    #[test]
+    fn save_and_load_round_trip() {
+        let w = World::new(42);
+        let json = w.save_json().unwrap();
+        let loaded = World::load_json(&json).unwrap();
+        assert_eq!(loaded.pawns.len(), w.pawns.len());
+        assert_eq!(loaded.time, w.time);
+        assert_eq!(loaded.map.items, w.map.items);
+        assert_eq!(loaded.map.room.len(), w.map.w * w.map.h);
+    }
+}
