@@ -110,7 +110,7 @@ impl World {
                     if delivered >= cost.count {
                         return work(Task::Construct, true);
                     }
-                    let (d, _) = df.approach(m, pos, true)?;
+                    let (_, d) = df.approach(m, pos, true)?;
                     let (di, from) = nearest_item[cost.kind as usize]?;
                     return Some((d + di, Job::Haul { from, to: pos, to_blueprint: true, picked: false }));
                 }
