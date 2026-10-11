@@ -221,7 +221,7 @@ pub fn toggle_draft(sim: &mut Sim, ui: &UiState) {
 }
 
 pub fn save(sim: &mut Sim) {
-    let msg = match sim.world.save_json().map_err(|e| e.to_string()).and_then(|json| {
+    let msg = match sim.world.save_json().and_then(|json| {
         std::fs::write(SAVE_PATH, json).map_err(|e| e.to_string())
     }) {
         Ok(()) => format!("Game saved to {}.", SAVE_PATH),
@@ -233,7 +233,7 @@ pub fn save(sim: &mut Sim) {
 pub fn load(sim: &mut Sim, ui: &mut UiState) {
     let loaded = std::fs::read_to_string(SAVE_PATH)
         .map_err(|e| e.to_string())
-        .and_then(|s| SimWorld::load_json(&s).map_err(|e| e.to_string()));
+        .and_then(|s| SimWorld::load_json(&s));
     match loaded {
         Ok(w) => {
             sim.replace(w);

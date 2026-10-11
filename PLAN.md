@@ -40,9 +40,19 @@
 | 2 | 3D simulation: positions with a level, terrain from a height map, walking graph with slopes, job search over reachable cells, systems and tests moved over | done |
 | 3 | Multi-level gameplay: digging, stairs, floors, support rule, 3D rooms and roofs, layer view, building on any level | done |
 | 4 | Visual polish: walking/hop/fall animation, lamps, translucent water, fog, ambient occlusion, bloom, gunfire flashes | done (needs a visual check) |
-| 5 | Performance and saves: profiling, A* / cached regions if pathfinding gets slow, a save format version number | |
+| 5 | Performance and saves: profiling, faster searches, versioned and compact save files | done |
 
 ## Notes
+
+- Phase 5 measurements (`cargo run --release --example profile`: 10 colonists, 240 work orders, two
+  in-game days on an M4 Max): about 0.05 ms per simulation tick on average (under 0.5% of a 60 fps frame
+  at 3x speed), 6 ticks over 2 ms in two days. The front end's own systems take about 1.3 ms per frame
+  (headless, without GPU work). A* or cached regions weren't needed. Changes made: job search checks each
+  work type once instead of once per priority level, and pathfinding searches use zero-initialised
+  32-bit arrays.
+- Saves carry a format version (`save.rs`, `SAVE_VERSION`) and refuse older or newer formats with a
+  readable message. Per-cell arrays are stored as runs, which took a fresh colony's save from 5.2 MB to
+  0.1 MB and save/load from 4/8 ms to about 1 ms each.
 
 - Pinned to Bevy 0.20 and bevy_egui 0.43.
 - Old save games don't load since Phase 2 (the format changed).

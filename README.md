@@ -8,6 +8,7 @@ A small RimWorld-style colony sim in Rust, shown in 3D with [Bevy](https://bevy.
 cargo run --release            # first build takes several minutes (Bevy)
 cargo run --features dev       # faster rebuilds while developing (dynamic linking)
 cargo test                     # simulation tests + a headless run of the whole app
+cargo run --release --example profile   # time the simulation and saving on a busy colony
 ```
 
 (No Rust yet? `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
@@ -35,7 +36,7 @@ according to their **work priorities** (press `P`).
 | Mouse wheel | Zoom |
 | `Space` / `Tab` | Pause / cycle speed 1x-2x-3x |
 | `P` / `H` / `C` | Work priorities / help / center camera |
-| `K` / `L` | Save / load (`savegame.json`) |
+| `K` / `L` | Save / load (`savegame.json`; saves from other versions are refused with a message) |
 | `Shift+N` | New colony |
 
 ### Systems
@@ -90,6 +91,7 @@ The simulation is a library with no rendering code, so it can be tested headless
 - `src/jobs.rs`: finding work by priority and carrying out jobs
 - `src/combat.rs`: shooting, injuries, raider AI
 - `src/story.rs`: storyteller events
+- `src/save.rs`: versioned save format, run-length encoding of per-cell arrays
 
 The binary (`src/main.rs` and `src/front/`) is the Bevy app: `terrain.rs` (chunked ground, rock and wall
 meshes), `props.rs` (trees, plants, furniture, doors, items), `pawns.rs` (3D figures), `scene.rs`

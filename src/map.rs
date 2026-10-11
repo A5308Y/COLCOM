@@ -236,16 +236,21 @@ pub struct Map {
     pub h: usize,
     /// Number of levels.
     pub d: usize,
+    #[serde(with = "crate::save::rle")]
     pub block: Vec<Block>,
+    #[serde(with = "crate::save::rle")]
     pub feature: Vec<Feature>,
+    #[serde(with = "crate::save::rle")]
     pub items: Vec<Option<Stack>>,
+    #[serde(with = "crate::save::rle")]
     pub desig: Vec<Option<Desig>>,
+    #[serde(with = "crate::save::rle")]
     pub zone: Vec<Zone>,
     /// Built floor slabs (at the bottom of the cell).
-    #[serde(default)]
+    #[serde(default, with = "crate::save::rle")]
     pub floor: Vec<bool>,
     /// Blood stains, 0..1, fading over time.
-    #[serde(default)]
+    #[serde(default, with = "crate::save::rle")]
     pub blood: Vec<f32>,
     /// Room id per cell; 0 means outdoors. Derived from walls and rock, so not saved.
     #[serde(skip)]

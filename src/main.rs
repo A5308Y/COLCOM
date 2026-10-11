@@ -60,9 +60,15 @@ mod tests {
         // Fixed 60 fps clock, independent of how fast the test machine is.
         .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(16)));
         let start = app.world().resource::<front::Sim>().world.time;
-        for _ in 0..300 {
+        for _ in 0..30 {
             app.update();
         }
+        // Frame cost of our systems (no GPU work here): useful with --release --nocapture.
+        let t = std::time::Instant::now();
+        for _ in 0..270 {
+            app.update();
+        }
+        eprintln!("headless frame: {:.2} ms", t.elapsed().as_secs_f64() * 1e3 / 270.0);
         let sim = app.world().resource::<front::Sim>();
         assert!(sim.world.time > start + 3.0, "simulation should have advanced");
         // Terrain chunks, trees, items and pawns all become meshes.

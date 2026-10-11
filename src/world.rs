@@ -50,8 +50,11 @@ pub struct World {
     pub pawns: Vec<Pawn>,
     /// Per-tile reservations by pawn id (0 = free): work targets, item stacks
     /// being picked up, and stockpile cells being delivered to.
+    #[serde(with = "crate::save::rle")]
     pub res_target: Vec<u32>,
+    #[serde(with = "crate::save::rle")]
     pub res_item: Vec<u32>,
+    #[serde(with = "crate::save::rle")]
     pub res_cell: Vec<u32>,
     /// (patient, doctor) pairs, so two doctors don't treat the same patient.
     #[serde(default)]
@@ -705,12 +708,14 @@ impl World {
 
     // ---------- save / load ----------
 
-    pub fn save_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string(self)
+    /// A versioned save file (see `save`).
+    pub fn save_json(&self) -> Result<String, String> {
+        crate::save::to_json(self)
     }
 
-    pub fn load_json(s: &str) -> Result<World, serde_json::Error> {
-        let mut w: World = serde_json::from_str(s)?;
+    /// Load a save file, refusing other format versions with a readable message.
+    pub fn load_json(s: &str) -> Result<World, String> {
+        let mut w = crate::save::from_json(s)?;
         w.map.recompute_rooms();
         let n = w.map.len();
         if w.map.blood.len() != n {

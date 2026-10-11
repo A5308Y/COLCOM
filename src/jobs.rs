@@ -66,35 +66,29 @@ impl World {
             }
         }
 
-        for prio in 1..=4u8 {
-            let mut best: Option<(i32, Job)> = None;
-            for wt in WorkType::ALL {
-                if p.priorities[wt as usize] != prio {
-                    continue;
-                }
-                if wt == WorkType::Doctor {
-                    let medicine = nearest_item[ItemKind::Medicine as usize].map(|(_, pos)| pos);
-                    let food = nearest_item[ItemKind::Food as usize].map(|(_, pos)| pos);
-                    if let Some((d, job)) = self.doctor_candidate(p, &df, medicine, food) {
-                        if best.map_or(true, |(bd, _)| d < bd) {
-                            best = Some((d, job));
-                        }
-                    }
-                    continue;
-                }
-                for &i in &candidates {
-                    if let Some((d, job)) = self.work_candidate(wt, i, &df, &nearest_item, &nearest_cell) {
-                        if best.map_or(true, |(bd, _)| d < bd) {
-                            best = Some((d, job));
-                        }
-                    }
-                }
+        // Nearest job of each enabled work type (one pass per type), then the
+        // highest priority wins, nearest first among equal priorities.
+        let mut per_type: Vec<(u8, i32, Job)> = Vec::new();
+        for wt in WorkType::ALL {
+            let prio = p.priorities[wt as usize];
+            if prio == 0 {
+                continue;
             }
-            if let Some((_, job)) = best {
-                return Some(job);
+            let found = if wt == WorkType::Doctor {
+                let medicine = nearest_item[ItemKind::Medicine as usize].map(|(_, pos)| pos);
+                let food = nearest_item[ItemKind::Food as usize].map(|(_, pos)| pos);
+                self.doctor_candidate(p, &df, medicine, food)
+            } else {
+                candidates
+                    .iter()
+                    .filter_map(|&i| self.work_candidate(wt, i, &df, &nearest_item, &nearest_cell))
+                    .min_by_key(|(d, _)| *d)
+            };
+            if let Some((d, job)) = found {
+                per_type.push((prio, d, job));
             }
         }
-        None
+        per_type.into_iter().min_by_key(|(prio, d, _)| (*prio, *d)).map(|(_, _, job)| job)
     }
 
     fn work_candidate(
@@ -475,7 +469,8 @@ impl World {
 
     pub(crate) fn start_wander(&mut self, p: &mut Pawn, radius: i32) {
         let df = bfs(&self.map, p.pos);
-        let options: Vec<usize> = (0..df.cost.len()).filter(|&i| df.cost[i] > 0 && df.cost[i] <= radius).collect();
+        let options: Vec<usize> =
+            df.order.iter().copied().filter(|&i| df.dist_i(i).is_some_and(|d| d > 0 && d <= radius)).collect();
         if options.is_empty() {
             return;
         }

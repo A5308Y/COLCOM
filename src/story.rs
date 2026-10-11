@@ -55,8 +55,8 @@ impl World {
         let size = (1 + self.day() as usize / 3 + self.wealth() as usize / 800).min(8);
         let Some(entry) = self.random_edge_tile() else { return };
         let df = bfs(&self.map, entry);
-        let mut spots: Vec<usize> = (0..df.cost.len()).filter(|&i| df.cost[i] >= 0 && df.cost[i] <= 6).collect();
-        spots.sort_by_key(|&i| df.cost[i]);
+        // Reached cells come nearest first.
+        let spots: Vec<usize> = df.order.iter().copied().take_while(|&i| df.dist_i(i).is_some_and(|d| d <= 6)).collect();
         let count = size.min(spots.len());
         for &i in spots.iter().take(count) {
             let name = RAIDER_NAMES[self.rng.below(RAIDER_NAMES.len())].to_string();

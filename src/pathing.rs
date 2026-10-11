@@ -5,9 +5,10 @@ use std::collections::VecDeque;
 
 /// Distances from one start cell to every cell a pawn can walk to.
 pub struct DistField {
-    /// Steps from the start, or -1 if unreachable.
-    pub cost: Vec<i32>,
-    parent: Vec<usize>,
+    /// Steps from the start plus one; 0 = unreachable. (Zero-initialised
+    /// arrays are nearly free to allocate, which matters at 100k+ cells.)
+    steps: Vec<u32>,
+    parent: Vec<u32>,
     /// Reached cells, nearest first.
     pub order: Vec<usize>,
     w: usize,
@@ -18,28 +19,28 @@ pub struct DistField {
 /// can't be stood on (e.g. a pawn where a wall was just built).
 pub fn bfs(map: &Map, start: Pos) -> DistField {
     let n = map.len();
-    let mut cost = vec![-1; n];
-    let mut parent = vec![usize::MAX; n];
+    let mut steps = vec![0u32; n];
+    let mut parent = vec![0u32; n];
     let mut order = Vec::new();
     let si = map.idx(start);
-    cost[si] = 0;
+    steps[si] = 1;
     order.push(si);
     let mut q = VecDeque::new();
     q.push_back(start);
     while let Some(p) = q.pop_front() {
         let pi = map.idx(p);
-        let d = cost[pi];
+        let d = steps[pi];
         for nb in map.walk_neighbors(p) {
             let ni = map.idx(nb);
-            if cost[ni] < 0 {
-                cost[ni] = d + 1;
-                parent[ni] = pi;
+            if steps[ni] == 0 {
+                steps[ni] = d + 1;
+                parent[ni] = pi as u32;
                 order.push(ni);
                 q.push_back(nb);
             }
         }
     }
-    DistField { cost, parent, order, w: map.w, h: map.h }
+    DistField { steps, parent, order, w: map.w, h: map.h }
 }
 
 impl DistField {
@@ -53,8 +54,13 @@ impl DistField {
     }
 
     pub fn dist(&self, p: Pos) -> Option<i32> {
-        let d = self.cost[self.idx(p)];
-        (d >= 0).then_some(d)
+        self.dist_i(self.idx(p))
+    }
+
+    /// Distance to the cell with index `i`.
+    pub fn dist_i(&self, i: usize) -> Option<i32> {
+        let s = self.steps[i];
+        (s > 0).then(|| s as i32 - 1)
     }
 
     /// Closest cell from which `target` can be reached: the target itself, or
@@ -78,9 +84,9 @@ impl DistField {
     pub fn path_to(&self, goal: Pos) -> Vec<Pos> {
         let mut path = Vec::new();
         let mut cur = self.idx(goal);
-        while self.cost[cur] > 0 {
+        while self.steps[cur] > 1 {
             path.push(self.pos(cur));
-            cur = self.parent[cur];
+            cur = self.parent[cur] as usize;
         }
         path
     }
