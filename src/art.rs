@@ -240,5 +240,11 @@ pub fn draw_weapon(cx: f32, cy: f32, s: f32, w: Weapon, facing: f32, o: f32) {
         Weapon::Rifle => line_o(hx, hy, hx + facing * s * 0.42, hy - s * 0.08, s * 0.07, METAL, o),
         Weapon::Pistol => line_o(hx, hy, hx + facing * s * 0.24, hy - s * 0.04, s * 0.08, METAL, o),
         Weapon::Club => line_o(hx, hy, hx + facing * s * 0.2, hy - s * 0.3, s * 0.09, WOOD, o),
+        Weapon::Knife => {
+            // Short wooden grip, then a pale blade.
+            let (gx, gy) = (hx + facing * s * 0.08, hy - s * 0.04);
+            line_o(hx, hy, gx, gy, s * 0.07, WOOD, o);
+            line_o(gx, gy, gx + facing * s * 0.2, gy - s * 0.1, s * 0.05, rgb(0.82, 0.84, 0.88), o);
+        }
     }
 }
