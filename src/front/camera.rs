@@ -4,8 +4,13 @@
 
 use super::input::UiState;
 use super::sim::Sim;
+use bevy::anti_alias::smaa::Smaa;
+use bevy::camera::Hdr;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit};
+use bevy::pbr::{DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion};
+use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
+use bevy::render::view::Msaa;
 use bevy_egui::input::{egui_wants_any_keyboard_input, EguiWantsInput};
 
 #[derive(Component)]
@@ -64,7 +69,25 @@ impl Plugin for CameraPlugin {
 
 fn spawn_camera(mut commands: Commands, mut rig: ResMut<CameraRig>, sim: Res<Sim>) {
     rig.focus = colony_center(&sim);
-    commands.spawn((Camera3d::default(), MainCamera, rig.transform()));
+    commands.spawn((
+        Camera3d::default(),
+        MainCamera,
+        rig.transform(),
+        // HDR so lamps and gunfire can glow (bloom).
+        Hdr,
+        Bloom::NATURAL,
+        // Ambient occlusion darkens corners and creases between blocks. It
+        // needs multisampling off, so SMAA smooths edges instead.
+        Msaa::Off,
+        ScreenSpaceAmbientOcclusion::default(),
+        Smaa::default(),
+        // Distance haze; its colour follows the sky (see scene.rs).
+        DistanceFog {
+            color: Color::srgb(0.55, 0.72, 0.9),
+            falloff: FogFalloff::Linear { start: 90.0, end: 240.0 },
+            ..default()
+        },
+    ));
 }
 
 /// Average position of living colonists (or the map centre).

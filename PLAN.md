@@ -38,8 +38,8 @@
 | 0 | Current 2D version builds, tests pass, committed | done |
 | 1 | Bevy front end on the existing flat simulation: 3D view, camera, clicking, egui UI, macroquad removed | done |
 | 2 | 3D simulation: positions with a level, terrain from a height map, walking graph with slopes, job search over reachable cells, systems and tests moved over | done |
-| 3 | Multi-level gameplay: digging, stairs, floors, support rule, 3D rooms and roofs, layer view, building on any level | done (needs a visual check) |
-| 4 | Visual polish: models, shadows and day/night, interior and cave lighting, animations, blood marks, gunfire effects, water | |
+| 3 | Multi-level gameplay: digging, stairs, floors, support rule, 3D rooms and roofs, layer view, building on any level | done |
+| 4 | Visual polish: walking/hop/fall animation, lamps, translucent water, fog, ambient occlusion, bloom, gunfire flashes | done (needs a visual check) |
 | 5 | Performance and saves: profiling, A* / cached regions if pathfinding gets slow, a save format version number | |
 
 ## Notes
@@ -51,5 +51,8 @@
   cells nearest-first instead of scanning the whole volume.
 - Since Phase 3, things with nothing underneath fall (pawns, items; plants are destroyed). Built
   structures don't collapse yet: removing a floor's support leaves it standing.
-- Stairs are a single-cell stairwell connecting a cell to the one directly above it.
+- Stairs are a single-cell stairwell connecting a cell to the one directly above it. They face a
+  direction (chosen when built): you enter from the low end and can't cross them sideways.
+- Phase 4 left out ramps on slopes: a ramp would fill half the lower cell where pawns stand, so it needs a
+  different terrain model. Pawns hop up and down steps instead.
 - "Covered" (anything solid overhead, e.g. a tunnel) is separate from "roofed" (inside an enclosed room).

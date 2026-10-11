@@ -20,7 +20,8 @@ enum PropKey {
     Crop { stage: u8 },
     Bed { owner: Option<u32> },
     Door { horizontal: bool, open: bool },
-    Stairs,
+    Stairs { dir: u8 },
+    Lamp,
     Blueprint { kind: BuildKind },
 }
 
@@ -64,6 +65,7 @@ pub struct PropAssets {
     wall: Handle<StandardMaterial>,
     blueprint: Handle<StandardMaterial>,
     blanket_free: Handle<StandardMaterial>,
+    lamp_glow: Handle<StandardMaterial>,
 }
 
 impl PropAssets {
@@ -96,6 +98,12 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
         alpha_mode: AlphaMode::Blend,
         ..default()
     });
+    // Bright enough to bloom.
+    let lamp_glow = materials.add(StandardMaterial {
+        base_color: Color::srgb(1.0, 0.9, 0.7),
+        emissive: LinearRgba::rgb(9.0, 6.5, 3.2),
+        ..default()
+    });
     let mut mat = |c: Rgb| lit(&mut materials, c);
     let assets = PropAssets {
         cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
@@ -119,6 +127,7 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
         wall: mat(WALL_FACE),
         blueprint,
         blanket_free: mat(Rgb(0.55, 0.58, 0.62)),
+        lamp_glow,
     };
     commands.insert_resource(assets);
 }
@@ -209,7 +218,8 @@ fn sync_props(
                 let horizontal = is_wallish(m, xi - 1, yi, pos.2) || is_wallish(m, xi + 1, yi, pos.2);
                 Some(PropKey::Door { horizontal, open })
             }
-            Feature::Stairs => Some(PropKey::Stairs),
+            Feature::Stairs { dir } => Some(PropKey::Stairs { dir }),
+            Feature::Lamp => Some(PropKey::Lamp),
             Feature::Blueprint { kind, .. } => Some(PropKey::Blueprint { kind }),
             Feature::None | Feature::Wall => None,
         };
@@ -356,14 +366,33 @@ fn spawn_feature(
                 }
             });
         }
-        PropKey::Stairs => {
-            // Four steps rising to the floor of the level above.
+        PropKey::Stairs { dir } => {
+            // Four steps rising to the floor of the level above, towards `dir`.
+            let (dx, dy) = [(1.0f32, 0.0f32), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)][dir as usize % 4];
+            root.insert(Transform::from_translation(base).with_rotation(Quat::from_rotation_y((-dy).atan2(dx))));
             root.with_children(|c| {
                 for k in 0..4 {
                     let h = (k + 1) as f32 * WALL_H / 4.0;
                     let at = Vec3::new(-0.375 + k as f32 * 0.25, h / 2.0, 0.0);
                     c.spawn(part(&a.cube, &a.wood_light, at, Vec3::new(0.25, h, 0.9)));
                 }
+            });
+        }
+        PropKey::Lamp => {
+            root.with_children(|c| {
+                c.spawn(part(&a.cylinder, &a.wood, Vec3::new(0.0, 0.03, 0.0), Vec3::new(0.3, 0.06, 0.3)));
+                c.spawn(part(&a.cylinder, &a.wood, Vec3::new(0.0, 0.42, 0.0), Vec3::new(0.06, 0.8, 0.06)));
+                c.spawn(part(&a.sphere, &a.lamp_glow, Vec3::new(0.0, 0.86, 0.0), Vec3::splat(0.22)));
+                c.spawn((
+                    PointLight {
+                        color: Color::srgb(1.0, 0.82, 0.6),
+                        intensity: 400_000.0,
+                        range: 10.0,
+                        shadow_maps_enabled: false,
+                        ..default()
+                    },
+                    Transform::from_xyz(0.0, 0.86, 0.0),
+                ));
             });
         }
         PropKey::Blueprint { kind } => {
@@ -373,6 +402,7 @@ fn spawn_feature(
                 BuildKind::Bed => (Vec3::new(0.82, 0.36, 0.92), 0.18),
                 BuildKind::Floor => (Vec3::new(0.98, FLOOR_T, 0.98), FLOOR_T / 2.0),
                 BuildKind::Stairs => (Vec3::new(0.98, WALL_H, 0.9), WALL_H / 2.0),
+                BuildKind::Lamp => (Vec3::new(0.2, 0.9, 0.2), 0.45),
             };
             root.with_children(|c| {
                 c.spawn(part(&a.cube, &a.blueprint, Vec3::new(0.0, y, 0.0), size));

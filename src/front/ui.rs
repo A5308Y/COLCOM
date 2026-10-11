@@ -14,7 +14,7 @@ use my_world::map::{Block, Feature, ItemKind, Pos, Zone};
 use my_world::pawn::{Pawn, Skill, WorkType};
 use my_world::DAY_LEN;
 
-const HELP: [&str; 23] = [
+const HELP: [&str; 25] = [
     "You don't control colonists directly - you give orders and they pick up the work.",
     "",
     "1-3   Designate trees to chop, rock/structures to mine, berry bushes to forage",
@@ -22,6 +22,8 @@ const HELP: [&str; 23] = [
     "6-8   Place walls (4 stone), doors (4 wood), beds (8 wood); colonists haul materials",
     "-/=   Floors (2 wood) and stairs (6 wood). Floors need a wall, stairs or ground below within 3 cells.",
     "      Use the layer view to place floors in mid-air: PageDown/PageUp (or [ and ]).",
+    "      Stairs rise away from where you walk onto them; you can't walk across them.",
+    "B     Lamps (3 wood) light up rooms and caves - nights are dark.",
     "9/0   Clear zones / cancel designations and blueprints",
     "      Left-drag to paint a rectangle. Right-click goes back to Select.",
     "",

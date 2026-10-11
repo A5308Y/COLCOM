@@ -60,7 +60,10 @@ struct Chunks {
     rows: usize,
     sigs: Vec<u64>,
     entities: Vec<Option<Entity>>,
+    /// Water surfaces, separate so they can be see-through and glossy.
+    water: Vec<Option<Entity>>,
     material: Handle<StandardMaterial>,
+    water_material: Handle<StandardMaterial>,
 }
 
 pub struct TerrainPlugin;
@@ -73,7 +76,23 @@ impl Plugin for TerrainPlugin {
 
 fn setup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>) {
     let material = materials.add(StandardMaterial { base_color: Color::WHITE, perceptual_roughness: 0.95, ..default() });
-    commands.insert_resource(Chunks { generation: u64::MAX, cols: 0, rows: 0, sigs: Vec::new(), entities: Vec::new(), material });
+    let water_material = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        alpha_mode: AlphaMode::Blend,
+        perceptual_roughness: 0.08,
+        reflectance: 0.6,
+        ..default()
+    });
+    commands.insert_resource(Chunks {
+        generation: u64::MAX,
+        cols: 0,
+        rows: 0,
+        sigs: Vec::new(),
+        entities: Vec::new(),
+        water: Vec::new(),
+        material,
+        water_material,
+    });
 }
 
 fn update_chunks(
@@ -88,10 +107,11 @@ fn update_chunks(
     let chunks = chunks.into_inner();
     let (cols, rows) = (m.w.div_ceil(CHUNK), m.h.div_ceil(CHUNK));
     if chunks.generation != sim.generation || chunks.cols != cols || chunks.rows != rows {
-        for e in chunks.entities.drain(..).flatten() {
+        for e in chunks.entities.drain(..).chain(chunks.water.drain(..)).flatten() {
             commands.entity(e).despawn();
         }
         chunks.entities = vec![None; cols * rows];
+        chunks.water = vec![None; cols * rows];
         chunks.sigs = vec![u64::MAX; cols * rows];
         chunks.generation = sim.generation;
         chunks.cols = cols;
@@ -105,17 +125,32 @@ fn update_chunks(
                 continue;
             }
             chunks.sigs[ci] = sig;
-            let mesh = meshes.add(build_chunk(m, cx, cy, cut));
+            let (solid, water) = build_chunk(m, cx, cy, cut);
+            let solid = meshes.add(solid);
             match chunks.entities[ci] {
                 Some(e) => {
-                    commands.entity(e).insert(Mesh3d(mesh));
+                    commands.entity(e).insert(Mesh3d(solid));
                 }
                 None => {
                     let e = commands
-                        .spawn((Mesh3d(mesh), MeshMaterial3d(chunks.material.clone()), Transform::default()))
+                        .spawn((Mesh3d(solid), MeshMaterial3d(chunks.material.clone()), Transform::default()))
                         .id();
                     chunks.entities[ci] = Some(e);
                 }
+            }
+            match (water, chunks.water[ci]) {
+                (Some(mesh), Some(e)) => {
+                    commands.entity(e).insert(Mesh3d(meshes.add(mesh)));
+                }
+                (Some(mesh), None) => {
+                    let bundle = (Mesh3d(meshes.add(mesh)), MeshMaterial3d(chunks.water_material.clone()), Transform::default());
+                    chunks.water[ci] = Some(commands.spawn(bundle).id());
+                }
+                (None, Some(e)) => {
+                    commands.entity(e).despawn();
+                    chunks.water[ci] = None;
+                }
+                (None, None) => {}
             }
         }
     }
@@ -156,22 +191,28 @@ fn signature(m: &Map, cx: usize, cy: usize, cut: usize) -> u64 {
     h
 }
 
-#[derive(Default)]
 struct MeshBuf {
     pos: Vec<[f32; 3]>,
     nrm: Vec<[f32; 3]>,
     col: Vec<[f32; 4]>,
     idx: Vec<u32>,
+    /// Opacity given to every vertex.
+    alpha: f32,
 }
 
 impl MeshBuf {
+    fn new(alpha: f32) -> Self {
+        MeshBuf { pos: Vec::new(), nrm: Vec::new(), col: Vec::new(), idx: Vec::new(), alpha }
+    }
+
     /// A flat quad; corner order is fixed up so it faces along `normal`.
     fn quad(&mut self, mut c: [Vec3; 4], normal: Vec3, color: Rgb) {
         if (c[1] - c[0]).cross(c[2] - c[0]).dot(normal) < 0.0 {
             c.reverse();
         }
         let base = self.pos.len() as u32;
-        let color = color.vertex();
+        let mut color = color.vertex();
+        color[3] = self.alpha;
         for p in c {
             self.pos.push(p.to_array());
             self.nrm.push(normal.to_array());
@@ -217,7 +258,10 @@ fn ground_color(m: &Map, solid: Pos, look: Look3) -> Rgb {
     let zone = above.map_or(Zone::None, |a| m.zone[a]);
     let indoors = above.is_some_and(|a| m.room.get(a).is_some_and(|&r| r != 0));
     let jitter = hash(xi, yi + 97 * z as i32, 7);
-    let mut c = if zone == Zone::Grow {
+    let underwater = above.is_some_and(|a| m.block[a] == Block::Water);
+    let mut c = if underwater {
+        Rgb(0.62, 0.56, 0.4).shade(0.9 + jitter * 0.12)
+    } else if zone == Zone::Grow {
         SOIL.shade(0.92 + jitter * 0.12)
     } else if indoors {
         FLOOR.shade(0.94 + jitter * 0.1)
@@ -255,8 +299,10 @@ fn floor_color(m: &Map, p: Pos) -> Rgb {
     c
 }
 
-fn build_chunk(m: &Map, cx: usize, cy: usize, cut: usize) -> Mesh {
-    let mut b = MeshBuf::default();
+/// The chunk's opaque mesh, and its water surface (if there is any water).
+fn build_chunk(m: &Map, cx: usize, cy: usize, cut: usize) -> (Mesh, Option<Mesh>) {
+    let mut b = MeshBuf::new(1.0);
+    let mut water = MeshBuf::new(0.72);
     let look_off = |x: i32, y: i32, z: i32| m.at(x, y, z).map(|p| look_at(m, p, cut));
     for z in 0..=cut.min(m.d - 1) {
         for y in cy * CHUNK..((cy + 1) * CHUNK).min(m.h) {
@@ -288,7 +334,7 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: usize) -> Mesh {
                     // Only the surface, where open air meets it.
                     if matches!(above, None | Some(Look3::Open)) {
                         let shade = WATER.mix(Rgb(0.15, 0.33, 0.53), noise(fx / 4.0, fz / 4.0, 3));
-                        b.flat(fx, fz, hi - WATER_DIP, Vec3::Y, shade);
+                        water.flat(fx, fz, hi - WATER_DIP, Vec3::Y, shade);
                     }
                     continue;
                 }
@@ -315,5 +361,6 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: usize) -> Mesh {
             }
         }
     }
-    b.into_mesh()
+    let water = (!water.idx.is_empty()).then(|| water.into_mesh());
+    (b.into_mesh(), water)
 }

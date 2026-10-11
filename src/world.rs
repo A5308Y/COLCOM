@@ -1087,7 +1087,7 @@ mod tests {
         let mut w = test_world(16, 4);
         colonist(&mut w, (1, 1, Z));
         let stairs = w.map.idx((4, 1, Z));
-        w.map.feature[stairs] = Feature::Stairs;
+        w.map.feature[stairs] = Feature::Stairs { dir: 0 };
         for x in 4..12 {
             let i = w.map.idx((x, 1, Z + 1));
             w.map.floor[i] = true;

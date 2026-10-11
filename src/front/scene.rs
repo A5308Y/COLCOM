@@ -1,7 +1,9 @@
 //! Sun, moon, sky and ambient light following the simulation's day/night cycle.
 
+use super::camera::MainCamera;
 use super::sim::Sim;
 use bevy::light::{CascadeShadowConfigBuilder, DirectionalLightShadowMap, GlobalAmbientLight};
+use bevy::pbr::DistanceFog;
 use bevy::prelude::*;
 use my_world::DAY_LEN;
 use std::f32::consts::TAU;
@@ -35,6 +37,7 @@ fn update_daylight(
     mut sun: Single<(&mut DirectionalLight, &mut Transform), With<Sun>>,
     mut ambient: ResMut<GlobalAmbientLight>,
     mut clear: ResMut<ClearColor>,
+    mut fog: Query<&mut DistanceFog, With<MainCamera>>,
 ) {
     let w = &sim.world;
     let day = w.daylight();
@@ -58,10 +61,14 @@ fn update_daylight(
     light.color = color;
     **transform = Transform::default().looking_to(-dir, Vec3::Y);
 
-    ambient.brightness = 120.0 + 380.0 * day;
+    // Dark nights, so lamps matter.
+    ambient.brightness = 25.0 + 475.0 * day;
     ambient.color = Color::srgb(0.75 + 0.25 * day, 0.8 + 0.2 * day, 1.0);
     let night = Vec3::new(0.02, 0.03, 0.08);
     let noon = Vec3::new(0.55, 0.72, 0.9);
     let sky = night.lerp(noon, day);
     clear.0 = Color::srgb(sky.x, sky.y, sky.z);
+    for mut f in &mut fog {
+        f.color = clear.0;
+    }
 }

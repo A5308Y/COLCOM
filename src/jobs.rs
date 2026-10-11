@@ -288,6 +288,10 @@ impl World {
             Task::Construct => {
                 if let Feature::Blueprint { kind, .. } = f {
                     match kind.built() {
+                        Some(Feature::Stairs { .. }) => {
+                            let dir = self.map.stairs_facing(target);
+                            self.map.set_feature(i, Feature::Stairs { dir });
+                        }
                         Some(built) => self.map.set_feature(i, built),
                         None => {
                             self.map.set_feature(i, Feature::None);

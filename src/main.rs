@@ -76,11 +76,15 @@ mod tests {
             let (cx, cy) = (m.w / 2, m.h / 2);
             let z = m.surface(cx, cy).unwrap();
             let stairs = m.idx((cx + 3, cy, z));
-            m.feature[stairs] = my_world::map::Feature::Stairs;
+            m.feature[stairs] = my_world::map::Feature::Stairs { dir: 0 };
             for x in cx + 3..cx + 7 {
                 let i = m.idx((x, cy, z + 1));
                 m.set_floor(i, true);
             }
+            let lamp = m.idx((cx, cy + 2, z));
+            m.feature[lamp] = my_world::map::Feature::Lamp;
+            let (fx, fy, fz) = (cx as f32, cy as f32, z as f32);
+            sim.world.effects.push(my_world::world::Effect { from: (fx, fy, fz), to: (fx + 5.0, fy, fz), ttl: 0.15, hit: true });
         }
         app.world_mut().resource_mut::<front::UiState>().view_level = Some(5);
         for _ in 0..30 {

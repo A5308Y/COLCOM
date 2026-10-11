@@ -21,7 +21,7 @@ pub enum Tool {
     Paint(Order),
 }
 
-pub const TOOLS: [(Tool, &str, KeyCode); 13] = [
+pub const TOOLS: [(Tool, &str, KeyCode); 14] = [
     (Tool::Select, "Esc Select", KeyCode::Escape),
     (Tool::Paint(Order::Desig(Desig::Chop)), "1 Chop", KeyCode::Digit1),
     (Tool::Paint(Order::Desig(Desig::Mine)), "2 Mine", KeyCode::Digit2),
@@ -33,6 +33,7 @@ pub const TOOLS: [(Tool, &str, KeyCode); 13] = [
     (Tool::Paint(Order::Build(BuildKind::Bed)), "8 Bed", KeyCode::Digit8),
     (Tool::Paint(Order::Build(BuildKind::Floor)), "- Floor", KeyCode::Minus),
     (Tool::Paint(Order::Build(BuildKind::Stairs)), "= Stairs", KeyCode::Equal),
+    (Tool::Paint(Order::Build(BuildKind::Lamp)), "B Lamp", KeyCode::KeyB),
     (Tool::Paint(Order::Zone(Zone::None)), "9 Clear zone", KeyCode::Digit9),
     (Tool::Paint(Order::Cancel), "0 Cancel", KeyCode::Digit0),
 ];
@@ -131,18 +132,26 @@ fn pick(m: &Map, ray: Ray3d, cut: usize) -> Option<Hover> {
         0.0
     };
     let t1 = if d.y < 0.0 { (-0.1 - o.y) / d.y } else { t0 + 300.0 };
+    // In the layer view, the floor of the viewed level is a pickable plane
+    // (exactly where outlines are drawn), so empty air there can be targeted.
+    let plane = (layered && d.y < 0.0).then(|| (cut as f32 * LEVEL_H - o.y) / d.y);
     let step = 0.04;
     let steps = (((t1 - t0) / step).ceil().max(0.0) as usize).min(20_000);
     for k in 0..=steps {
-        let p = o + d * (t0 + k as f32 * step);
+        let t = t0 + k as f32 * step;
+        if let Some(tp) = plane.filter(|&tp| t >= tp) {
+            let p = o + d * tp;
+            let cell = m.at(p.x.floor() as i32, p.z.floor() as i32, cut as i32)?;
+            return Some(Hover { solid: m.below(cell).unwrap_or(cell), stand: cell });
+        }
+        let p = o + d * t;
         let Some(cell) = m.at(p.x.floor() as i32, p.z.floor() as i32, (p.y / LEVEL_H).floor() as i32) else { continue };
         if cell.2 > cut {
             continue;
         }
         let i = m.idx(cell);
         let in_slab = p.y - cell.2 as f32 * LEVEL_H < FLOOR_T * 2.0;
-        if (m.floor[i] && in_slab) || (layered && cell.2 == cut && !stops_ray(m, cell)) {
-            // On a floor, or on the open plane of the viewed level.
+        if m.floor[i] && in_slab {
             return Some(Hover { solid: m.below(cell).unwrap_or(cell), stand: cell });
         }
         if stops_ray(m, cell) {
@@ -430,6 +439,13 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
         }
     }
 
+    // A faint grid around the cursor on the viewed level, to aim at cells in the air.
+    if let (Some(level), Some(h)) = (ui.view_level, ui.hover) {
+        let c = Vec3::new(h.stand.0 as f32 + 0.5, level as f32 * LEVEL_H + 0.02, h.stand.1 as f32 + 0.5);
+        let iso = Isometry3d::new(c, Quat::from_rotation_x(FRAC_PI_2));
+        gizmos.grid(iso, UVec2::splat(9), Vec2::ONE, Color::srgba(1.0, 1.0, 1.0, 0.18));
+    }
+
     if let Some(h) = ui.hover {
         match ui.tool {
             Tool::Paint(order @ Order::Desig(Desig::Mine)) if order_target(w, h, order) == h.solid => {
@@ -467,9 +483,15 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
     }
 
     for e in &w.effects {
-        let from = tile_point(e.from.0, e.from.1, e.from.2) + Vec3::Y * 0.45;
+        let from = tile_point(e.from.0, e.from.1, e.from.2) + Vec3::Y * 0.55;
         let to = tile_point(e.to.0, e.to.1, e.to.2) + Vec3::Y * 0.5;
-        let color = if e.hit { Color::srgb(1.0, 0.92, 0.5) } else { Color::srgba(0.9, 0.9, 0.9, 0.6) };
-        gizmos.line(from, to, color);
+        // Fades over the effect's short life; colours above 1.0 glow (bloom).
+        let fade = (e.ttl / 0.15).clamp(0.0, 1.0);
+        let tracer = if e.hit { LinearRgba::rgb(3.0, 2.4, 0.9) } else { LinearRgba::rgb(1.2, 1.2, 1.2) };
+        gizmos.line(from, to, Color::LinearRgba(tracer * fade));
+        let flash = Color::LinearRgba(LinearRgba::rgb(8.0, 5.0, 1.5) * fade);
+        gizmos.sphere(Isometry3d::from_translation(from), 0.05 + 0.1 * fade, flash);
+        let puff = if e.hit { LinearRgba::rgb(1.6, 0.15, 0.1) } else { LinearRgba::rgb(0.7, 0.62, 0.5) };
+        gizmos.sphere(Isometry3d::from_translation(to), 0.25 * (1.0 - fade) + 0.05, Color::LinearRgba(puff * fade));
     }
 }
