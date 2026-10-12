@@ -114,6 +114,7 @@ impl World {
         }
         self.end_job(p);
         // Their gear stays behind for others to use.
+        p.chosen.clear();
         for item in p.weapon.take().into_iter().chain(p.apparel.drain(..)) {
             self.map.drop_item(p.pos, Stack { kind: item, count: 1 });
         }

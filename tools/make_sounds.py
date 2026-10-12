@@ -337,37 +337,33 @@ def ui_open(k):
 
 
 # ---------- ambience (seamless loops) ----------
-
-def wind(secs, cutoff=380):
-    x = lowpass(noise(secs), cutoff)
-    gust = lowpass([rng.uniform(0.2, 1.0) for _ in x], 0.4)
-    return mul(x, gust)
-
+# Sparse sounds over silence: no continuous noise bed, which came across as
+# an annoying wind or waterfall.
 
 def amb_day(secs):
-    x = mix((wind(secs), 1.0, 0))
+    x = silence(secs)
     n = len(x)
-    t = 0.3
+    t = 0.8
     while t < secs - 0.5:
         f = rng.uniform(2600, 4400)
-        for c in range(rng.randint(2, 5)):
+        for c in range(rng.randint(2, 4)):
             chirp = mul(tone(0.07, f, f * rng.uniform(0.8, 1.3)), env(int(0.07 * RATE), 0.01, 0.025))
             o = int((t + c * 0.11) * RATE)
             for i, v in enumerate(chirp):
                 if o + i < n:
-                    x[o + i] += v * 0.12
-        t += rng.uniform(0.6, 2.2)
+                    x[o + i] += v * rng.uniform(0.5, 1.0)
+        t += rng.uniform(1.8, 4.5)
     return x
 
 
 def amb_night(secs):
-    x = [v * 0.5 for v in wind(secs, 250)]
+    x = silence(secs)
     n = len(x)
-    for cricket in range(4):
+    for cricket in range(3):
         f = rng.uniform(4000, 4800)
-        period = rng.uniform(0.45, 0.8)
+        period = rng.uniform(0.6, 1.0)
         t = rng.uniform(0, period)
-        g = rng.uniform(0.03, 0.07)
+        g = rng.uniform(0.5, 1.0)
         while t < secs - 0.2:
             for p in range(3):
                 chirp = mul(tone(0.025, f), env(int(0.025 * RATE), 0.004, 0.01))
@@ -380,19 +376,18 @@ def amb_night(secs):
 
 
 def amb_cave(secs):
-    x = lowpass(noise(secs), 110)
-    x = [v * 3.0 for v in x]
+    x = silence(secs)
     n = len(x)
     t = 0.5
     while t < secs - 0.6:
         f = rng.uniform(800, 1300)
         drip = mul(tone(0.08, f, f * 1.6), env(int(0.08 * RATE), 0.002, 0.02))
-        for echo, g in [(0.0, 0.25), (0.23, 0.08), (0.47, 0.03)]:
+        for echo, g in [(0.0, 1.0), (0.23, 0.3), (0.47, 0.1)]:
             o = int((t + echo) * RATE)
             for i, v in enumerate(drip):
                 if o + i < n:
                     x[o + i] += v * g
-        t += rng.uniform(1.0, 3.0)
+        t += rng.uniform(1.5, 3.5)
     return x
 
 
@@ -429,9 +424,9 @@ def main():
     variants("ui_click", 1, ui_click)
     variants("ui_place", 1, ui_place)
     variants("ui_open", 1, ui_open)
-    write("amb_day", loop(amb_day, 12.0), peak=0.5)
-    write("amb_night", loop(amb_night, 12.0), peak=0.5)
-    write("amb_cave", loop(amb_cave, 12.0), peak=0.5)
+    write("amb_day", loop(amb_day, 12.0), peak=0.2)
+    write("amb_night", loop(amb_night, 12.0), peak=0.12)
+    write("amb_cave", loop(amb_cave, 12.0), peak=0.25)
     print("wrote", len([f for f in os.listdir(OUT) if f.endswith(".wav")]), "files to", os.path.normpath(OUT))
 
 

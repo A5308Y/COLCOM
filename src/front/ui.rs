@@ -23,14 +23,14 @@ use my_world::DAY_LEN;
 const HELP_ORDERS: [&str; 7] = [
     "You don't control colonists directly - you give orders and they pick up the work.",
     "",
-    "1-3   Designate trees to chop, rock/structures to mine, berry bushes to forage",
+    "1-3   Designate trees to chop, rock and soil to mine, berry bushes to forage; Backspace: deconstruct",
     "4/5   Paint stockpile zones (items get hauled there) and grow zones (crops)",
     "9/0   Clear zones / cancel designations and blueprints",
     "      Left-drag to paint a rectangle. Right-click goes back to Select.",
     "",
 ];
 
-const HELP_REST: [&str; 29] = [
+const HELP_REST: [&str; 30] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -40,7 +40,8 @@ const HELP_REST: [&str; 29] = [
     "Room quality (size, beauty of furniture, windows and doors, cleanliness, light) affects mood when",
     "      colonists sleep or eat there. Click a cell inside a room to see why it's good or bad.",
     "Raw food can cause food poisoning - cook meals at a stove. Mine iron ore deep in the rock,",
-    "      smelt it into steel and make weapons and armour at a smithy. Colonists pick up better gear.",
+    "      smelt it into steel and make weapons and armour at a smithy. Colonists pick up better gear;",
+    "      select one and right-click a weapon or clothes to have them use it (and keep it).",
     "",
     "Floors need a wall, stairs or ground below within 3 cells.",
     "      Use the layer view to place floors in mid-air: PageDown/PageUp (or [ and ]).",
@@ -48,7 +49,7 @@ const HELP_REST: [&str; 29] = [
     "Lamps light up rooms and caves - nights are dark.",
     "",
     "A room needs walls and a roof: build floors on top. Sleeping in a roofed bedroom makes colonists happier.",
-    "Mining also digs soil and removes floors. Dig straight down to sink a shaft; put stairs in it.",
+    "Mining also digs soil. Dig straight down to sink a shaft; put stairs in it.",
     "Anything left with nothing underneath falls - more than one level hurts.",
     "Wounds bleed and can get infected. Doctors (see P) rescue downed colonists to a bed",
     "and tend them - better with medicine and skill. Click a colonist, then Health for details.",
@@ -391,7 +392,11 @@ fn overview_tab(ui: &mut egui::Ui, p: &Pawn) {
         ui.label(RichText::new(format!("{:+}  {}", value as i32, label)).color(color));
     }
     if p.is_colonist() && !p.dead {
-        let hint = if p.drafted { "F: undraft   right-click: move / attack" } else { "F: draft" };
+        let hint = if p.drafted {
+            "F: undraft   right-click: move / attack / equip"
+        } else {
+            "F: draft   right-click a weapon or clothes: equip"
+        };
         ui.label(RichText::new(hint).small().weak());
     }
 }

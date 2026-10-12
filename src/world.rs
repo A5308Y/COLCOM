@@ -616,7 +616,7 @@ impl World {
                     self.res_cell[ti] = id;
                 }
             }
-            Job::Eat { from, .. } | Job::Equip { from } => {
+            Job::Eat { from, .. } | Job::Equip { from, .. } => {
                 let i = self.map.idx(from);
                 self.res_item[i] = id;
             }
@@ -711,6 +711,7 @@ impl World {
         let f = m.feature[i];
         match order {
             Order::Desig(Desig::Mine) => m.mineable(p),
+            Order::Desig(Desig::Deconstruct) => m.deconstructable(p),
             Order::Desig(d) => f.harvest_desig() == Some(d),
             Order::Zone(Zone::None) => m.zone[i] != Zone::None,
             Order::Zone(Zone::Stockpile(_)) => false,
@@ -789,6 +790,26 @@ impl World {
                 w.start_job(p, Job::Goto { to });
             }
         });
+    }
+
+    /// Have colonist `id` pick up the weapon or apparel lying at `at` and use
+    /// it, keeping it even when something better turns up. Drafted or not.
+    pub fn order_equip(&mut self, id: u32, at: Pos) -> bool {
+        let i = self.map.idx(at);
+        let Some(s) = self.map.items[i] else { return false };
+        let d = s.kind.def();
+        if d.weapon.is_none() && d.apparel.is_none() || self.res_item[i] != 0 && self.res_item[i] != id {
+            return false;
+        }
+        let mut ordered = false;
+        self.with_pawn(id, |w, p| {
+            if p.is_colonist() && p.active() && p.break_timer <= 0.0 {
+                w.end_job(p);
+                w.start_job(p, Job::Equip { from: at, chosen: true });
+                ordered = true;
+            }
+        });
+        ordered
     }
 
     pub fn order_attack(&mut self, id: u32, target: u32) {
@@ -1193,6 +1214,28 @@ mod tests {
     }
 
     #[test]
+    fn deconstruction_is_builders_work() {
+        let mut w = test_world(16, 16);
+        let id = colonist(&mut w, (2, 2, Z));
+        let i = w.map.idx((8, 8, Z));
+        w.map.set_feature(i, Feature::built("wall"));
+        assert!(!w.apply_order((9, 9, Z), Order::Desig(Desig::Deconstruct)), "nothing to take down");
+        assert!(w.apply_order((8, 8, Z), Order::Desig(Desig::Deconstruct)));
+        // Not a miner's job.
+        let p = w.pawn_index(id).unwrap();
+        w.pawns[p].priorities = [0; WorkType::ALL.len()];
+        w.pawns[p].priorities[WorkType::Mining as usize] = 1;
+        run(&mut w, 20.0);
+        assert_eq!(w.map.feature[i], Feature::built("wall"), "miners leave it");
+        w.pawns[p].priorities[WorkType::Construction as usize] = 1;
+        run(&mut w, 20.0);
+        assert_eq!(w.map.feature[i], Feature::None, "builders take it down");
+        assert_eq!(w.map.desig[i], None);
+        let (item, count) = BuildId::named("wall").def().drops();
+        assert_eq!(w.map.count_items(item), count);
+    }
+
+    #[test]
     fn walls_stack_onto_walls() {
         let mut w = test_world(20, 20);
         colonist(&mut w, (2, 2, Z));
@@ -1232,7 +1275,7 @@ mod tests {
     }
 
     /// Every buildable in the definitions can be placed, built from its
-    /// materials, and mined away again for what it drops.
+    /// materials, and deconstructed again for what it drops.
     #[test]
     fn every_buildable_can_be_built_and_removed() {
         for kind in BuildId::all() {
@@ -1257,7 +1300,8 @@ mod tests {
             }
             assert_eq!(w.map.count_items(def.cost.item), 0, "{} used its materials", def.id);
 
-            assert!(w.apply_order(at, Order::Desig(Desig::Mine)), "{} can be removed", def.id);
+            assert!(!w.apply_order(at, Order::Desig(Desig::Mine)), "{} isn't mined", def.id);
+            assert!(w.apply_order(at, Order::Desig(Desig::Deconstruct)), "{} can be removed", def.id);
             run(&mut w, 30.0);
             assert_eq!(w.map.feature[i], Feature::None, "{} removed", def.id);
             assert!(!w.map.floor[i], "{} removed", def.id);

@@ -116,6 +116,8 @@ pub enum Task {
     Sow(PlantId),
     Mine,
     Construct,
+    /// Take down a structure or floor.
+    Deconstruct,
     /// Make the current bill's recipe at a workbench.
     Craft,
 }
@@ -127,6 +129,7 @@ impl Task {
             Task::Sow(_) => "planting",
             Task::Mine => "mining",
             Task::Construct => "building",
+            Task::Deconstruct => "deconstructing",
             Task::Craft => "crafting",
         }
     }
@@ -169,8 +172,13 @@ pub enum Job {
     Rescue { patient: u32, bed: Pos, carrying: bool },
     /// Bring food to a downed colonist.
     Feed { patient: u32, food: Pos, picked: bool },
-    /// Pick up a better weapon or piece of apparel and use it.
-    Equip { from: Pos },
+    /// Pick up a better weapon or piece of apparel and use it; `chosen` by
+    /// the player rather than by the pawn.
+    Equip {
+        from: Pos,
+        #[serde(default)]
+        chosen: bool,
+    },
 }
 
 impl Job {
@@ -299,6 +307,10 @@ pub struct Pawn {
     pub weapon: Option<ItemId>,
     /// Worn items, at most one per slot.
     pub apparel: Vec<ItemId>,
+    /// Weapon and apparel the player told them to use: kept even when
+    /// something better turns up.
+    #[serde(default)]
+    pub chosen: Vec<ItemId>,
     pub cooldown: f32,
     pub drafted: bool,
     pub downed: bool,
@@ -341,6 +353,7 @@ impl Pawn {
             priorities: [3; WorkType::ALL.len()],
             weapon: defs().start_weapon.as_ref().map(|w| w.id()),
             apparel: Vec::new(),
+            chosen: Vec::new(),
             cooldown: 0.0,
             drafted: false,
             downed: false,

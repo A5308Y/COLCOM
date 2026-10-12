@@ -239,8 +239,8 @@ fn work_sound(w: &my_world::world::World, target: my_world::map::Pos, task: Task
             Block::Rock | Block::Ore => "mine",
             _ => "hammer",
         },
-        Task::Construct => match m.feature[i] {
-            Feature::Blueprint { kind, .. } => kind.def().sound.as_deref().unwrap_or("hammer"),
+        Task::Construct | Task::Deconstruct => match m.feature[i] {
+            Feature::Blueprint { kind, .. } | Feature::Built { kind, .. } => kind.def().sound.as_deref().unwrap_or("hammer"),
             _ => "hammer",
         },
         Task::Craft => w

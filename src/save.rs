@@ -1,6 +1,7 @@
 //! Save files: a format version around the world, and compact storage of the
 //! big per-cell arrays (mostly long runs of identical values).
 
+use crate::map::Desig;
 use crate::world::World;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -37,7 +38,15 @@ pub fn from_json(s: &str) -> Result<World, String> {
         Some(v) => return Err(format!("this save is from an older version of My World (format {})", v)),
         None => return Err("this save is from an older version of My World".into()),
     }
-    let save: SaveIn = serde_json::from_str(s).map_err(|e| format!("the save file is damaged ({})", e))?;
+    let mut save: SaveIn = serde_json::from_str(s).map_err(|e| format!("the save file is damaged ({})", e))?;
+    // Mine used to take down structures and floors too; that's Deconstruct now.
+    let m = &mut save.world.map;
+    for i in 0..m.len() {
+        let p = m.pos(i);
+        if m.desig[i] == Some(Desig::Mine) && !m.mineable(p) && m.deconstructable(p) {
+            m.desig[i] = Some(Desig::Deconstruct);
+        }
+    }
     Ok(save.world)
 }
 
@@ -94,5 +103,20 @@ mod tests {
         );
         assert!(from_json(&newer).err().unwrap().contains("newer version"));
         assert!(from_json("hello").err().unwrap().contains("not a save file"));
+    }
+
+    #[test]
+    fn mine_orders_on_structures_load_as_deconstruct() {
+        let mut w = World::new(3);
+        let (x, y) = (w.map.w / 2, w.map.h / 2);
+        let z = w.map.surface(x, y).unwrap();
+        let wall = w.map.idx((x, y, z));
+        w.map.set_feature(wall, crate::map::Feature::built("wall"));
+        w.map.desig[wall] = Some(Desig::Mine);
+        let rock = w.map.idx((x, y, z - 1));
+        w.map.desig[rock] = Some(Desig::Mine);
+        let loaded = from_json(&to_json(&w).unwrap()).unwrap();
+        assert_eq!(loaded.map.desig[wall], Some(Desig::Deconstruct));
+        assert_eq!(loaded.map.desig[rock], Some(Desig::Mine));
     }
 }

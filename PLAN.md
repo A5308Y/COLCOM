@@ -160,6 +160,17 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
 
 ## Notes
 
+- Equip order: select a colonist (drafted or not) and right-click a weapon or piece of apparel lying on
+  the map (`World::order_equip`, `Job::Equip { chosen: true }`). What they're told to use goes into
+  `Pawn::chosen` and isn't swapped for better gear automatically; switching or dying clears it. Both new
+  fields default when missing, so older saves still load. Not done yet: dropping or unequipping gear from
+  the inspector.
+
+- Deconstruct (Orders menu, Backspace): marks structures and floors to be taken down by builders
+  (Construction work and skill) in half their work time (at least 1 s), dropping `drops` (half the cost
+  by default). Mine is for rock, ore and soil only now; old saves' Mine marks on structures and floors
+  load as Deconstruct. Marked cells are outlined in red.
+
 - Walls, doors and windows (`blocks_room`) can be placed straight on top of a wall or window (anything
   `holds_floors`) without a floor first: click the wall's top, or the cell above it in the layer view.
   Builders work up to one level above where they stand, so the second level is built from the ground;
@@ -230,6 +241,8 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
   - Volume comes from distance to the camera's focus and zoom, set by us; Bevy's spatial audio is used
     only for left/right panning (the emitter goes one unit from the listener in the sound's direction),
     because its own falloff is steep inverse-square. At most 32 effects at once and `max` per sound.
+  - Ambience loops are sparse sounds over silence (birds by day, crickets at night, drips in caves); the
+    first version's wind / rumble noise bed sounded like a waterfall and was removed.
   - Ambience: day / night by daylight, cave when the focus is under cover or the layer view is below
     the surface. Sound window: master, effects, alerts, interface and ambience sliders, mute (not saved).
   - Tests check every sound name the game and the definitions use exists, every file is there, WAVs

@@ -54,7 +54,15 @@ pub static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(|| {
             "2",
             KeyCode::Digit2,
             "Orders",
-            "Dig out rock, ore and soil, or take down structures and floors.",
+            "Dig out rock, ore and soil.",
+        ),
+        fixed(
+            Tool::Paint(Order::Desig(Desig::Deconstruct)),
+            "Deconstruct",
+            "Bksp",
+            KeyCode::Backspace,
+            "Orders",
+            "Take down walls, furniture and floors. Builders do it and get back half the cost.",
         ),
         fixed(Tool::Paint(Order::Desig(Desig::Forage)), "Forage", "3", KeyCode::Digit3, "Orders", "Mark berry bushes to be picked."),
         fixed(
@@ -540,6 +548,15 @@ fn mouse(
             return;
         }
         let (Some(Selection::Pawn(id)), Some(Hover { stand: t, .. })) = (ui.selected, hover) else { return };
+        // A weapon or piece of clothing: equip it (drafted or not).
+        let m = &sim.world.map;
+        let gear = m.items[m.idx(t)].is_some_and(|s| s.kind.def().weapon.is_some() || s.kind.def().apparel.is_some());
+        if gear && sim.world.pawn(id).is_some_and(|p| p.is_colonist()) {
+            if sim.world.order_equip(id, t) {
+                sounds.play("ui_place", None);
+            }
+            return;
+        }
         if !sim.world.pawn(id).is_some_and(|p| p.drafted) {
             return;
         }
@@ -609,6 +626,8 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
             Desig::Mine => floor_outline(&mut gizmos, p, 0.12, Color::srgb(0.45, 0.8, 1.0)),
             Desig::Chop => floor_outline(&mut gizmos, p, 0.12, Color::srgb(1.0, 0.6, 0.1)),
             Desig::Forage => floor_outline(&mut gizmos, p, 0.12, Color::srgb(1.0, 0.5, 0.75)),
+            Desig::Deconstruct if m.feature[i].is_block() => cell_outline(&mut gizmos, p, Color::srgb(1.0, 0.3, 0.25)),
+            Desig::Deconstruct => floor_outline(&mut gizmos, p, 0.12, Color::srgb(1.0, 0.3, 0.25)),
         }
     }
 
@@ -621,7 +640,7 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
 
     if let Some(h) = ui.hover {
         match ui.tool {
-            Tool::Paint(order @ Order::Desig(Desig::Mine)) if order_target(w, h, order) == h.solid => {
+            Tool::Paint(order @ Order::Desig(Desig::Mine | Desig::Deconstruct)) if order_target(w, h, order) == h.solid => {
                 cell_outline(&mut gizmos, h.solid, Color::srgba(1.0, 1.0, 1.0, 0.6))
             }
             _ => floor_outline(&mut gizmos, h.stand, 0.02, Color::srgba(1.0, 1.0, 1.0, 0.6)),

@@ -8,6 +8,8 @@ use crate::world::{Step, World};
 
 /// Base seconds to mine out one cell.
 const MINE_TIME: f32 = 5.0;
+/// Deconstructing takes this share of the building's work time.
+const DECONSTRUCT_SHARE: f32 = 0.5;
 
 /// Nearest (distance, cell) per item kind.
 type Nearest = Vec<Option<(i32, Pos)>>;
@@ -60,7 +62,7 @@ fn from_beside(task: Task) -> bool {
     match task {
         Task::Harvest(kind) => !kind.def().passable,
         Task::Sow(_) => false,
-        Task::Mine | Task::Construct | Task::Craft => true,
+        Task::Mine | Task::Construct | Task::Deconstruct | Task::Craft => true,
     }
 }
 
@@ -183,6 +185,9 @@ impl World {
         if wt == WorkType::Mining && m.desig[i] == Some(Desig::Mine) && m.mineable(pos) {
             return work(Task::Mine);
         }
+        if wt == WorkType::Construction && m.desig[i] == Some(Desig::Deconstruct) && m.deconstructable(pos) {
+            return work(Task::Deconstruct);
+        }
         match m.feature[i] {
             Feature::Plant { kind, .. } => {
                 if kind.def().harvest.work == wt && harvestable(m, i).is_some() {
@@ -242,7 +247,7 @@ impl World {
             Job::Tend { patient, medicine, picked } => self.run_tend(p, patient, medicine, picked, dt),
             Job::Rescue { patient, bed, carrying } => self.run_rescue(p, patient, bed, carrying, dt),
             Job::Feed { patient, food, picked } => self.run_feed(p, patient, food, picked, dt),
-            Job::Equip { from } => self.run_equip(p, from, dt),
+            Job::Equip { from, chosen } => self.run_equip(p, from, chosen, dt),
         }
     }
 
@@ -281,6 +286,7 @@ impl World {
         match task {
             Task::Harvest(kind) => harvestable(m, i) == Some(kind),
             Task::Mine => d == Some(Desig::Mine) && m.mineable(target),
+            Task::Deconstruct => d == Some(Desig::Deconstruct) && m.deconstructable(target),
             Task::Sow(_) => plantable(m, i),
             Task::Construct => {
                 matches!(f, Feature::Blueprint { kind, delivered } if delivered >= kind.def().cost.count)
@@ -298,6 +304,13 @@ impl World {
             }
             Task::Sow(kind) => kind.def().sow.as_ref().map(|s| (s.skill, s.time)),
             Task::Mine => Some((Skill::Mining, MINE_TIME)),
+            // Taking down is quicker than putting up.
+            Task::Deconstruct => {
+                let m = &self.map;
+                let i = m.idx(target);
+                let def = m.feature[i].structure().or_else(|| m.floor[i].then(|| defs().floor()).flatten().map(|f| f.def()))?;
+                Some((Skill::Construction, (def.work_time * DECONSTRUCT_SHARE).max(1.0)))
+            }
             Task::Craft => self.bench_at(target)?.current.map(|r| (r.def().skill, r.def().time)),
             Task::Construct => match self.map.feature[self.map.idx(target)] {
                 Feature::Blueprint { kind, .. } => Some((kind.def().skill, kind.def().work_time)),
@@ -347,12 +360,16 @@ impl World {
                     if let Some(r) = yields {
                         drop(&mut self.map, target, (r.item, r.count));
                     }
-                } else if let Some(def) = f.structure() {
+                }
+            }
+            Task::Deconstruct => {
+                if let Some(def) = f.structure() {
                     self.map.set_feature(i, Feature::None);
-                    self.sound("rock_break", Some(target));
+                    self.sound("built", Some(target));
                     drop(&mut self.map, target, def.drops());
                 } else if self.map.floor[i] {
                     self.map.set_floor(i, false);
+                    self.sound("built", Some(target));
                     let at = self.map.landing(target);
                     if let Some(floor) = defs().floor() {
                         drop(&mut self.map, at, floor.def().drops());

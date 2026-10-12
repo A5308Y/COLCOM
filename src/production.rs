@@ -335,14 +335,16 @@ impl World {
     /// The nearest free weapon or apparel better than what `p` has.
     pub(crate) fn equip_candidate(&self, p: &Pawn, nearest: &[Option<(i32, Pos)>]) -> Option<Job> {
         let current_weapon = p.weapon.and_then(|w| w.def().weapon.as_ref()).map_or(0.0, |w| w.score());
+        // Gear the player chose stays.
+        let kept = |item: Option<ItemId>| item.is_some_and(|k| p.chosen.contains(&k));
         let better = |kind: ItemId| {
             let d = kind.def();
             if let Some(w) = &d.weapon {
-                return w.score() > current_weapon * 1.1;
+                return !kept(p.weapon) && w.score() > current_weapon * 1.1;
             }
             if let Some(a) = &d.apparel {
                 let worn = p.worn(a.slot).and_then(|k| k.def().apparel.as_ref()).map_or(f32::MIN, |w| w.score());
-                return a.score() > worn;
+                return !kept(p.worn(a.slot)) && a.score() > worn;
             }
             false
         };
@@ -350,13 +352,18 @@ impl World {
             .filter(|&k| better(k))
             .filter_map(|k| nearest[k.index()])
             .min_by_key(|(d, _)| *d)
-            .map(|(_, from)| Job::Equip { from })
+            .map(|(_, from)| Job::Equip { from, chosen: false })
     }
 
-    pub(crate) fn run_equip(&mut self, p: &mut Pawn, from: Pos, dt: f32) {
+    pub(crate) fn run_equip(&mut self, p: &mut Pawn, from: Pos, chosen: bool, dt: f32) {
         match self.go_to(p, from, false, dt) {
             Step::Moving => {}
-            Step::Unreachable => self.end_job(p),
+            Step::Unreachable => {
+                if chosen {
+                    self.push_log(format!("{} can't reach that.", p.name));
+                }
+                self.end_job(p);
+            }
             Step::Arrived => {
                 let i = self.map.idx(from);
                 let kind = self.map.items[i].map(|s| s.kind);
@@ -374,6 +381,12 @@ impl World {
                     };
                     if let Some(old) = old {
                         self.map.drop_item(p.pos, Stack { kind: old, count: 1 });
+                        if let Some(k) = p.chosen.iter().position(|&c| c == old) {
+                            p.chosen.remove(k);
+                        }
+                    }
+                    if chosen {
+                        p.chosen.push(s.kind);
                     }
                     self.push_log(format!("{} picked up {}.", p.name, d.name.to_lowercase()));
                 }
@@ -519,6 +532,35 @@ mod tests {
         run(&mut w, 20.0);
         assert_eq!(w.pawn(id).unwrap().weapon, Some(item("rifle")));
         assert_eq!(w.map.count_items(item("knife")), 1);
+    }
+
+    #[test]
+    fn colonists_equip_what_they_are_told_and_keep_it() {
+        let mut w = test_world(16, 16);
+        let id = colonist(&mut w, (2, 2, Z));
+        assert_eq!(w.pawn(id).unwrap().weapon, Some(item("rifle")));
+        w.map.drop_item((8, 8, Z), Stack { kind: item("club"), count: 1 });
+        w.map.drop_item((6, 2, Z), Stack { kind: item("wood"), count: 5 });
+        assert!(!w.order_equip(id, (6, 2, Z)), "wood isn't gear");
+        assert!(!w.order_equip(id, (9, 9, Z)), "nothing there");
+        assert!(w.order_equip(id, (8, 8, Z)));
+        run(&mut w, 10.0);
+        // A worse weapon, because the player said so; the rifle is left behind
+        // and not picked up again.
+        assert_eq!(w.pawn(id).unwrap().weapon, Some(item("club")));
+        run(&mut w, 20.0);
+        assert_eq!(w.pawn(id).unwrap().weapon, Some(item("club")));
+        assert_eq!(w.map.count_items(item("rifle")), 1);
+
+        // Drafted colonists can be told too, and switching drops the old choice.
+        w.set_drafted(id, true);
+        let rifle = (0..w.map.len()).find(|&i| w.map.items[i].is_some_and(|s| s.kind == item("rifle"))).unwrap();
+        assert!(w.order_equip(id, w.map.pos(rifle)));
+        run(&mut w, 10.0);
+        let p = w.pawn(id).unwrap();
+        assert_eq!(p.weapon, Some(item("rifle")));
+        assert_eq!(p.chosen, vec![item("rifle")]);
+        assert!(p.drafted);
     }
 
     #[test]

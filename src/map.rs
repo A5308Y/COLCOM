@@ -172,6 +172,8 @@ pub enum Desig {
     Chop,
     Mine,
     Forage,
+    /// Take down a structure or floor, getting part of its cost back.
+    Deconstruct,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -420,10 +422,15 @@ impl Map {
             .chain(self.below(p))
     }
 
-    /// Something a Mine order can remove: rock or soil, a structure, or a floor.
+    /// Something a Mine order can dig out: rock, ore or soil.
     pub fn mineable(&self, p: Pos) -> bool {
+        self.block[self.idx(p)].solid()
+    }
+
+    /// Something a Deconstruct order can take down: a structure or a floor.
+    pub fn deconstructable(&self, p: Pos) -> bool {
         let i = self.idx(p);
-        self.block[i].solid() || self.feature[i].structure().is_some() || self.floor[i]
+        self.feature[i].structure().is_some() || self.floor[i]
     }
 
     /// Where a floor could be built: open air with nothing in it, not already
