@@ -9,6 +9,7 @@ cargo run --release            # first build takes several minutes (Bevy)
 cargo run --features dev       # faster rebuilds while developing (dynamic linking)
 cargo test                     # simulation tests + a headless run of the whole app
 cargo run --release --example profile   # time the simulation and saving on a busy colony
+cargo run --release --example look      # the downloaded models in the game's lighting (art direction test)
 ```
 
 (No Rust yet? `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
@@ -148,6 +149,8 @@ harvested and every recipe made.
 - `assets/defs.ron`, `assets/sounds.ron`: definitions and the sound table (built into the game)
 - `assets/sounds/`: placeholder sounds
 - `assets/models/characters/`: Quaternius characters, hair, outfits and animation library (glTF, CC0)
+- `assets/models/nature/`, `trees/`, `crops/`, `village/`: Quaternius packs converted from OBJ by
+  `python3 tools/obj_to_gltf.py` (from `asset-sources/`)
 - `asset-sources/`: the original downloads (FBX, OBJ, Blender files). Not used by the game and not in
   git (see `.gitignore`); `assets/CREDITS.md` says where everything comes from.
 

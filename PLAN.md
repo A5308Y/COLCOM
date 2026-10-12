@@ -99,7 +99,18 @@ of the mood from light and atmosphere. The simulation stays on its grid; all of 
   .blend, kept in `asset-sources/quaternius/`: they need converting to glTF first, e.g. with a Blender
   batch export or an OBJ to glTF converter). Bevy can't load glTF without a GPU, so model checks run with
   `cargo test --release -- --ignored`.
-  Still to do: choose asset packs (Quaternius is closest among CC0 packs; Kenney is too clean;
+  Done (2026-10-12): the four OBJ packs converted to glTF (`tools/obj_to_gltf.py`, 341 models, 23 MB,
+  in `assets/models/nature|trees|crops|village`); a look test, `cargo run --release --example look`:
+  characters (bare and dressed) playing any of the library's 43 animations, rows of trees, rocks,
+  plants, crops by growth stage and village pieces, all at one scale (a character is one cell tall),
+  game blocks for comparison, the game's lighting with time-of-day presets, and textures switchable
+  between smooth, sharp (nearest) and pixel (quarter resolution, nearest).
+  Findings for later: the character files carry no animation data, so their bones are given animation
+  target ids by name path at spawn (they share the library's skeleton exactly); the free packs have no
+  separate head, so dressed characters are outfit + full body (may clip); the library has no chop,
+  mine or carry animations (use Sword_Attack, Fixing_Kneeling, PickUp_Table or find more); the packs
+  differ in scale (pine 2.7, stylised tree 5.5, house 3.4 units), so definitions need a scale per model.
+  Still to do: judge the look in the test and decide: choose asset packs (Quaternius is closest among CC0 packs; Kenney is too clean;
   mixing in paid packs or Blender-made models is possible) and a texture approach (low-resolution
   textures with nearest-neighbour filtering and an atlas, instead of vertex colours). Build a small test
   scene to judge the look before converting everything. The user downloads assets (the sandbox can't).

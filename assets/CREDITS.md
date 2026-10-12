@@ -15,10 +15,16 @@ Fix applied: the base character glTF files referred to `T_Eye_Normal_png.png` an
 `T_Hair_1_Normal_png.png`, which the pack doesn't contain; they now use `T_Eye_Normal.png` and
 `T_Hair_1_Normal.png`.
 
+| `models/nature/` | Ultimate Nature Pack |
+| `models/trees/` | Textured Stylized Trees (with its textures; `Tree_Bark.jpg` turned into PNG) |
+| `models/crops/` | Nature Crops Pack |
+| `models/village/buildings/`, `village/props/` | Medieval Village Pack |
+
+These four packs only come as OBJ / FBX / .blend; `tools/obj_to_gltf.py` converts the OBJ files to
+glTF (material colours from the MTL files, the trees' textures matched by material name).
+
 The original downloads (FBX, OBJ, Blender files, previews, licences) are kept outside the game's
-assets in `asset-sources/quaternius/`, including four packs not used yet because they have no glTF
-version: Ultimate Nature Pack, Textured Stylized Trees, Nature Crops Pack and Medieval Village Pack
-(all CC0).
+assets in `asset-sources/quaternius/`.
 
 ## Sounds
 
