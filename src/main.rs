@@ -115,6 +115,13 @@ mod tests {
             let grow = (cx - 6, cy - 3, z);
             let crop = my_world::defs::defs().sown().unwrap();
             w.apply_order(grow, my_world::world::Order::Zone(my_world::map::Zone::Grow(crop)));
+            // Phase 8 pieces: fence rails join up, glass, a flickering torch, items on a shelf.
+            for (k, id) in ["fence", "fence", "fence", "window", "torch", "shelf", "table", "chair"].into_iter().enumerate() {
+                let i = w.map.idx((cx - 6 + k, cy + 6, z));
+                w.map.feature[i] = my_world::map::Feature::built(id);
+            }
+            let shelf = w.map.idx((cx - 1, cy + 6, z));
+            w.map.items[shelf] = Some(my_world::map::Stack { kind: my_world::defs::ItemId::named("wood"), count: 120 });
             (bench, (cx - 4, cy + 2, z), grow)
         };
         for t in [bench, stock, grow] {

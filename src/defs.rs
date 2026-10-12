@@ -143,6 +143,10 @@ pub struct Part {
     /// A door leaf: swings a quarter turn around its left edge when open.
     #[serde(default)]
     pub hinge: bool,
+    /// Only shown when the neighbour towards `DIRS[link]` (before turning)
+    /// is the same structure or a wall: fence rails joining up.
+    #[serde(default)]
+    pub link: Option<u8>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -234,6 +238,9 @@ pub enum Special {
     Bed,
     /// Swings open when someone passes; faces along its walls.
     Door,
+    /// Colonists eat at tables, sitting on a seat beside one.
+    Table,
+    Seat,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -242,6 +249,18 @@ pub struct Light {
     pub intensity: f32,
     pub range: f32,
     pub at: (f32, f32, f32),
+    /// Flickers like a flame.
+    #[serde(default)]
+    pub flicker: bool,
+}
+
+/// Storage furniture: holds more of an item in its cell.
+#[derive(Clone, Debug, Deserialize)]
+pub struct Storage {
+    /// How many of one item the cell holds.
+    pub stack_limit: u32,
+    /// Height items are shown at.
+    pub height: f32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -263,6 +282,8 @@ fn construction_skill() -> Skill {
 pub struct BuildDef {
     pub id: String,
     pub name: String,
+    /// Toolbar menu it's listed under.
+    pub category: String,
     /// Toolbar shortcut.
     #[serde(default)]
     pub key: Option<String>,
@@ -288,6 +309,17 @@ pub struct BuildDef {
     drops: Option<Amount>,
     #[serde(default)]
     pub light: Option<Light>,
+    /// Modelled spanning x; turned to run along the walls beside it.
+    #[serde(default)]
+    pub along_walls: bool,
+    /// Lets daylight into rooms it borders (windows).
+    #[serde(default)]
+    pub daylight: bool,
+    /// Adds to the beauty of the room it's in (or borders, for walls and windows).
+    #[serde(default)]
+    pub beauty: f32,
+    #[serde(default)]
+    pub storage: Option<Storage>,
     pub look: BuildLook,
     /// Recipes made here (filled in from the recipes); a workbench if any.
     #[serde(skip)]
@@ -395,6 +427,9 @@ pub struct Defs {
     /// Glowing colours (linear, may exceed 1) by name.
     #[serde(default)]
     pub glow: BTreeMap<String, (f32, f32, f32)>,
+    /// See-through colours (sRGB and opacity) by name: glass.
+    #[serde(default)]
+    pub clear: BTreeMap<String, (f32, f32, f32, f32)>,
     pub items: Vec<ItemDef>,
     pub start_items: Vec<Amount>,
     #[serde(default)]
@@ -486,7 +521,9 @@ impl Defs {
             return Err("too many definitions".into());
         }
 
-        let known = |c: &str| c == "owner" || self.palette.contains_key(c) || self.glow.contains_key(c);
+        let known = |c: &str| {
+            c == "owner" || self.palette.contains_key(c) || self.glow.contains_key(c) || self.clear.contains_key(c)
+        };
         let parts = |whose: &str, parts: &[Part]| -> Result<(), String> {
             match parts.iter().find(|p| !known(&p.color)) {
                 Some(p) => Err(format!("{}: no colour \"{}\" in the palette", whose, p.color)),
@@ -529,6 +566,20 @@ impl Defs {
             }
             if d.is_block() && d.passable {
                 return Err(format!("{}: a block can't be passable", d.id));
+            }
+            if d.category.is_empty() {
+                return Err(format!("{}: needs a category", d.id));
+            }
+            if d.storage.as_ref().is_some_and(|s| s.stack_limit < crate::map::STACK_MAX) {
+                return Err(format!("{}: storage must hold at least {}", d.id, crate::map::STACK_MAX));
+            }
+            if (d.storage.is_some() || d.special == Special::Seat) && !d.passable {
+                return Err(format!("{}: storage and seats must be passable", d.id));
+            }
+            if let BuildLook::Parts(p) = &d.look {
+                if p.iter().any(|p| p.link.is_some_and(|l| l > 3)) {
+                    return Err(format!("{}: link must be 0 to 3", d.id));
+                }
             }
             if matches!(d.special, Special::Floor | Special::Stairs | Special::Bed | Special::Door) && !d.passable {
                 return Err(format!("{}: {:?} must be passable", d.id, d.special));

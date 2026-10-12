@@ -44,6 +44,11 @@
     glow: {
         "lamp_glow": (9.0, 6.5, 3.2),
         "ember": (6.0, 2.2, 0.4),
+        "flame": (12.0, 5.0, 1.0),
+    },
+    // See-through colours (sRGB and opacity).
+    clear: {
+        "glass": (0.72, 0.86, 0.95, 0.3),
     },
 
     // `category` groups items in stockpile settings. Food has `nutrition`
@@ -302,15 +307,23 @@
     rock_drops: ("stone", 6),
     ore_drops: ("iron_ore", 4),
 
-    // Player-built structures. `special` marks behaviour the game handles in
-    // code: `Floor` (a slab others stand on, built in the air), `Stairs`
-    // (connect a cell to the one above), `Bed` (sleep and recover), `Door`
-    // (swings open, faces along its walls). Removing a structure drops `drops`,
-    // or half its cost if not given. `look: Block` means it is drawn as a
-    // solid block with the terrain (walls); its parts only matter otherwise.
+    // Player-built structures, listed in the toolbar menu named by
+    // `category`. `special` marks behaviour the game handles in code: `Floor`
+    // (a slab others stand on, built in the air), `Stairs` (connect a cell to
+    // the one above), `Bed` (sleep and recover), `Door` (swings open),
+    // `Table` and `Seat` (colonists eat sitting at a table).
+    // `beauty` counts towards the quality of the room it's in (or borders);
+    // `daylight` lights the rooms it borders; `storage` holds more items per
+    // cell. `along_walls`: modelled spanning x, turned to run along the walls
+    // beside it (doors, windows). Parts with `link` only show when the
+    // neighbour that way is the same structure or a wall. Removing a
+    // structure drops `drops`, or half its cost if not given. `look: Block`
+    // means it is drawn as a solid block with the terrain (walls); its parts
+    // only matter otherwise.
     builds: [
         (
             id: "wall",
+            category: "Structure",
             name: "Wall",
             key: Some("6"),
             cost: ("stone", 4),
@@ -323,6 +336,7 @@
         ),
         (
             id: "door",
+            category: "Structure",
             name: "Door",
             key: Some("7"),
             cost: ("wood", 4),
@@ -331,6 +345,7 @@
             blocks_room: true,
             blocks_sight: true,
             special: Door,
+            along_walls: true,
             look: Parts([
                 (shape: Cube, color: "wall", at: (-0.45, 0.5, 0.0), size: (0.1, 1.0, 0.34)),
                 (shape: Cube, color: "wall", at: (0.45, 0.5, 0.0), size: (0.1, 1.0, 0.34)),
@@ -341,6 +356,8 @@
         ),
         (
             id: "bed",
+            category: "Furniture",
+            beauty: 1.0,
             name: "Bed",
             key: Some("8"),
             cost: ("planks", 6),
@@ -357,6 +374,7 @@
         ),
         (
             id: "floor",
+            category: "Structure",
             name: "Floor",
             key: Some("-"),
             cost: ("wood", 2),
@@ -369,6 +387,7 @@
         ),
         (
             id: "stairs",
+            category: "Structure",
             name: "Stairs",
             key: Some("="),
             cost: ("wood", 6),
@@ -386,6 +405,8 @@
         ),
         (
             id: "lamp",
+            category: "Light",
+            beauty: 1.0,
             name: "Lamp",
             key: Some("B"),
             cost: ("wood", 3),
@@ -398,9 +419,144 @@
                 (shape: Sphere, color: "lamp_glow", at: (0.0, 0.86, 0.0), size: (0.22, 0.22, 0.22)),
             ]),
         ),
+        (
+            id: "stone_door",
+            name: "Stone door",
+            category: "Structure",
+            cost: ("stone_blocks", 4),
+            work_time: 4.0,
+            passable: true,
+            blocks_room: true,
+            blocks_sight: true,
+            special: Door,
+            along_walls: true,
+            beauty: 1.0,
+            look: Parts([
+                (shape: Cube, color: "stone_block", at: (-0.45, 0.5, 0.0), size: (0.1, 1.0, 0.34)),
+                (shape: Cube, color: "stone_block", at: (0.45, 0.5, 0.0), size: (0.1, 1.0, 0.34)),
+                (shape: Cube, color: "stone_block", at: (0.0, 0.92, 0.0), size: (1.0, 0.16, 0.34)),
+                (shape: Cube, color: "stone", at: (0.0, 0.55, 0.0), size: (0.8, 1.1, 0.09), hinge: true),
+            ]),
+        ),
+        (
+            id: "window",
+            name: "Window",
+            category: "Structure",
+            key: Some("O"),
+            cost: ("planks", 4),
+            work_time: 4.0,
+            passable: false,
+            blocks_room: true,
+            holds_floors: true,
+            daylight: true,
+            beauty: 2.0,
+            // Spans x like a door, turned to run along its walls.
+            along_walls: true,
+            look: Parts([
+                (shape: Cube, color: "wall", at: (0.0, 0.18, 0.0), size: (1.0, 0.36, 0.98)),
+                (shape: Cube, color: "wall", at: (0.0, 0.92, 0.0), size: (1.0, 0.16, 0.98)),
+                (shape: Cube, color: "wall", at: (-0.44, 0.6, 0.0), size: (0.12, 0.48, 0.98)),
+                (shape: Cube, color: "wall", at: (0.44, 0.6, 0.0), size: (0.12, 0.48, 0.98)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.6, 0.0), size: (0.78, 0.04, 0.12)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.6, 0.0), size: (0.04, 0.48, 0.12)),
+                (shape: Cube, color: "glass", at: (0.0, 0.6, 0.0), size: (0.78, 0.48, 0.04)),
+            ]),
+        ),
+        (
+            id: "fence",
+            name: "Fence",
+            category: "Structure",
+            key: Some("G"),
+            cost: ("wood", 2),
+            work_time: 1.5,
+            passable: false,
+            look: Parts([
+                (shape: Cube, color: "wood", at: (0.0, 0.35, 0.0), size: (0.12, 0.7, 0.12)),
+                (shape: Cube, color: "wood_light", at: (0.25, 0.5, 0.0), size: (0.5, 0.07, 0.05), link: Some(0)),
+                (shape: Cube, color: "wood_light", at: (0.25, 0.25, 0.0), size: (0.5, 0.07, 0.05), link: Some(0)),
+                (shape: Cube, color: "wood_light", at: (-0.25, 0.5, 0.0), size: (0.5, 0.07, 0.05), link: Some(1)),
+                (shape: Cube, color: "wood_light", at: (-0.25, 0.25, 0.0), size: (0.5, 0.07, 0.05), link: Some(1)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.5, 0.25), size: (0.05, 0.07, 0.5), link: Some(2)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.25, 0.25), size: (0.05, 0.07, 0.5), link: Some(2)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.5, -0.25), size: (0.05, 0.07, 0.5), link: Some(3)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.25, -0.25), size: (0.05, 0.07, 0.5), link: Some(3)),
+            ]),
+        ),
+        (
+            id: "table",
+            name: "Table",
+            category: "Furniture",
+            key: Some("Y"),
+            cost: ("planks", 6),
+            work_time: 4.0,
+            passable: false,
+            special: Table,
+            beauty: 2.0,
+            look: Parts([
+                (shape: Cube, color: "wood_light", at: (0.0, 0.5, 0.0), size: (0.9, 0.06, 0.9)),
+                (shape: Cube, color: "wood", at: (-0.36, 0.24, -0.36), size: (0.07, 0.48, 0.07)),
+                (shape: Cube, color: "wood", at: (0.36, 0.24, -0.36), size: (0.07, 0.48, 0.07)),
+                (shape: Cube, color: "wood", at: (-0.36, 0.24, 0.36), size: (0.07, 0.48, 0.07)),
+                (shape: Cube, color: "wood", at: (0.36, 0.24, 0.36), size: (0.07, 0.48, 0.07)),
+            ]),
+        ),
+        (
+            id: "chair",
+            name: "Chair",
+            category: "Furniture",
+            key: Some("R"),
+            cost: ("planks", 3),
+            work_time: 2.0,
+            passable: true,
+            special: Seat,
+            beauty: 1.0,
+            look: Parts([
+                (shape: Cube, color: "wood_light", at: (0.0, 0.3, 0.0), size: (0.42, 0.05, 0.42)),
+                (shape: Cube, color: "wood", at: (-0.17, 0.15, -0.17), size: (0.05, 0.3, 0.05)),
+                (shape: Cube, color: "wood", at: (0.17, 0.15, -0.17), size: (0.05, 0.3, 0.05)),
+                (shape: Cube, color: "wood", at: (-0.17, 0.15, 0.17), size: (0.05, 0.3, 0.05)),
+                (shape: Cube, color: "wood", at: (0.17, 0.15, 0.17), size: (0.05, 0.3, 0.05)),
+                (shape: Cube, color: "wood", at: (0.0, 0.52, -0.19), size: (0.42, 0.42, 0.05)),
+            ]),
+        ),
+        (
+            id: "shelf",
+            name: "Shelf",
+            category: "Furniture",
+            key: Some("X"),
+            cost: ("planks", 6),
+            work_time: 3.0,
+            passable: true,
+            storage: Some((stack_limit: 150, height: 0.62)),
+            look: Parts([
+                (shape: Cube, color: "wood", at: (-0.44, 0.35, -0.3), size: (0.06, 0.7, 0.06)),
+                (shape: Cube, color: "wood", at: (0.44, 0.35, -0.3), size: (0.06, 0.7, 0.06)),
+                (shape: Cube, color: "wood", at: (-0.44, 0.35, 0.3), size: (0.06, 0.7, 0.06)),
+                (shape: Cube, color: "wood", at: (0.44, 0.35, 0.3), size: (0.06, 0.7, 0.06)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.3, 0.0), size: (0.94, 0.04, 0.66)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.6, 0.0), size: (0.94, 0.04, 0.66)),
+            ]),
+        ),
+        (
+            id: "torch",
+            name: "Torch",
+            category: "Light",
+            key: Some("Z"),
+            cost: ("wood", 2),
+            work_time: 1.0,
+            passable: false,
+            beauty: 0.5,
+            light: Some((color: (1.0, 0.62, 0.3), intensity: 160000.0, range: 7.0, at: (0.0, 0.9, 0.0), flicker: true)),
+            look: Parts([
+                (shape: Cylinder, color: "wood", at: (0.0, 0.4, 0.0), size: (0.06, 0.8, 0.06)),
+                (shape: Cylinder, color: "iron", at: (0.0, 0.8, 0.0), size: (0.12, 0.08, 0.12)),
+                (shape: Cone, color: "flame", at: (0.0, 0.92, 0.0), size: (0.12, 0.2, 0.12)),
+            ]),
+        ),
         // Workbenches: recipes below name them. Colonists work them from beside.
         (
             id: "stove",
+            category: "Production",
             name: "Stove",
             key: Some("V"),
             cost: ("wood", 10),
@@ -416,6 +572,7 @@
         ),
         (
             id: "sawbench",
+            category: "Production",
             name: "Sawing bench",
             key: Some("J"),
             cost: ("wood", 10),
@@ -433,6 +590,7 @@
         ),
         (
             id: "stonecutter",
+            category: "Production",
             name: "Stonecutter's table",
             key: Some("T"),
             cost: ("wood", 12),
@@ -448,6 +606,7 @@
         ),
         (
             id: "smelter",
+            category: "Production",
             name: "Smelter",
             key: Some("M"),
             cost: ("stone_blocks", 20),
@@ -461,6 +620,7 @@
         ),
         (
             id: "smithy",
+            category: "Production",
             name: "Smithy",
             key: Some("I"),
             cost: ("stone_blocks", 15),
@@ -475,6 +635,7 @@
         ),
         (
             id: "crafting_bench",
+            category: "Production",
             name: "Crafting bench",
             key: Some("U"),
             cost: ("planks", 10),

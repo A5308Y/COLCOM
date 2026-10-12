@@ -236,7 +236,7 @@ impl World {
             Job::Attack { target } => self.run_attack(p, target, dt),
             Job::Work { target, task } => self.run_work(p, target, task, dt),
             Job::Haul { from, to, deliver, picked } => self.run_haul(p, from, to, deliver, picked, dt),
-            Job::Eat { from, picked } => self.run_eat(p, from, picked, dt),
+            Job::Eat { from, picked, seat } => self.run_eat(p, from, picked, seat, dt),
             Job::Sleep { bed } => self.run_sleep(p, bed, dt),
             Job::Patient { bed } => self.run_patient(p, bed, dt),
             Job::Tend { patient, medicine, picked } => self.run_tend(p, patient, medicine, picked, dt),
@@ -452,7 +452,7 @@ impl World {
                     }
                 } else {
                     let have = self.map.items[ti].map_or(0, |s| s.count);
-                    let put = (STACK_MAX - have).min(carry.count);
+                    let put = (self.map.capacity(ti) - have).min(carry.count);
                     self.map.items[ti] = Some(Stack { kind: carry.kind, count: have + put });
                     put
                 };
@@ -463,12 +463,31 @@ impl World {
         }
     }
 
-    fn run_eat(&mut self, p: &mut Pawn, from: Pos, picked: bool, dt: f32) {
+    fn run_eat(&mut self, p: &mut Pawn, from: Pos, picked: bool, seat: Option<Pos>, dt: f32) {
         if picked {
+            // Carry the food to the table first.
+            if let Some(s) = seat {
+                let step = if self.is_seat(s) { self.go_to(p, s, false, dt) } else { Step::Unreachable };
+                match step {
+                    Step::Moving => return,
+                    Step::Unreachable => {
+                        p.job = Some(Job::Eat { from, picked, seat: None });
+                        return;
+                    }
+                    Step::Arrived => {}
+                }
+            }
             p.job_progress += dt / 2.0;
             if p.job_progress >= 1.0 {
                 if let Some(s) = p.carrying.take() {
                     self.eat(p, s.kind);
+                    let memory = match seat {
+                        Some(s) => self.room_at(s).map(|r| Memory::DiningRoom(r.tier())),
+                        None => Some(Memory::AteWithoutTable),
+                    };
+                    if let Some(m) = memory.filter(|_| p.is_colonist()) {
+                        p.add_memory(m);
+                    }
                 }
                 self.end_job(p);
             }
@@ -484,7 +503,7 @@ impl World {
                         // Held while eating; dropped again if interrupted.
                         p.carrying = Some(s);
                         self.res_item[i] = 0;
-                        p.job = Some(Job::Eat { from, picked: true });
+                        p.job = Some(Job::Eat { from, picked: true, seat });
                         p.job_progress = 0.0;
                     }
                     None => self.end_job(p),
@@ -513,7 +532,7 @@ impl World {
         p.rest = (p.rest + rate * dt).min(100.0);
         if p.rest >= 100.0 {
             let memory = match bed {
-                Some(b) if self.map.roofed(b) => Memory::SleptInBedroom,
+                Some(b) if self.map.roofed(b) => Memory::Bedroom(self.room_at(b).map_or(1, |r| r.tier())),
                 Some(_) => Memory::SleptOutside,
                 None => Memory::SleptOnGround,
             };
@@ -527,11 +546,33 @@ impl World {
         match self.nearest_food(p.pos) {
             Some(from) => {
                 self.end_job(p);
-                self.start_job(p, Job::Eat { from, picked: false });
+                let seat = self.find_seat(from, p.id);
+                self.start_job(p, Job::Eat { from, picked: false, seat });
                 true
             }
             None => false,
         }
+    }
+
+    /// A seat beside a table.
+    fn is_seat(&self, p: Pos) -> bool {
+        let m = &self.map;
+        m.feature[m.idx(p)].is_special(Special::Seat)
+            && m.neighbors(p).any(|nb| m.feature[m.idx(nb)].is_special(Special::Table))
+    }
+
+    /// The nearest free seat at a table, not too far from the food at `near`.
+    fn find_seat(&self, near: Pos, me: u32) -> Option<Pos> {
+        const MAX_WALK: i32 = 40;
+        let taken = |s: Pos| {
+            self.pawns.iter().any(|o| o.id != me && matches!(o.job, Some(Job::Eat { seat: Some(t), .. }) if t == s))
+        };
+        let df = bfs(&self.map, near);
+        df.order
+            .iter()
+            .map(|&i| self.map.pos(i))
+            .take_while(|&s| df.dist(s).is_some_and(|d| d <= MAX_WALK))
+            .find(|&s| self.is_seat(s) && !taken(s))
     }
 
     /// The pawn's own bed, or the nearest unclaimed one.

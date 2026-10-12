@@ -153,7 +153,8 @@ pub enum Job {
     /// Carry a stack from `from` to a stockpile cell, or (`deliver`) to a
     /// blueprint or workbench that needs it.
     Haul { from: Pos, to: Pos, deliver: bool, picked: bool },
-    Eat { from: Pos, picked: bool },
+    /// Fetch food, then eat it, sitting at a table if there's a `seat`.
+    Eat { from: Pos, picked: bool, seat: Option<Pos> },
     Sleep { bed: Option<Pos> },
     Attack { target: u32 },
     Leave { to: Pos },
@@ -192,37 +193,57 @@ impl Job {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Memory {
-    SleptInBedroom,
+    /// Slept in a bedroom of this quality tier (see `rooms::TIERS`).
+    Bedroom(u8),
     SleptOutside,
     SleptOnGround,
     ColonistDied,
     Catharsis,
     AteRawFood,
     AteMeal,
+    /// Ate at a table in a room of this quality tier.
+    DiningRoom(u8),
+    AteWithoutTable,
 }
 
 impl Memory {
     pub fn label(self) -> &'static str {
         match self {
-            Memory::SleptInBedroom => "Slept in a bedroom",
+            Memory::Bedroom(tier) => [
+                "Slept in an awful bedroom",
+                "Slept in a dull bedroom",
+                "Slept in a decent bedroom",
+                "Slept in a nice bedroom",
+                "Slept in an impressive bedroom",
+            ][tier.min(4) as usize],
             Memory::SleptOutside => "Slept outside",
             Memory::SleptOnGround => "Slept on the ground",
             Memory::ColonistDied => "A colonist died",
             Memory::Catharsis => "Catharsis",
             Memory::AteRawFood => "Ate raw food",
             Memory::AteMeal => "Ate a cooked meal",
+            Memory::DiningRoom(tier) => [
+                "Ate in an awful room",
+                "Ate in a dull room",
+                "Ate in a decent dining room",
+                "Ate in a nice dining room",
+                "Ate in an impressive dining room",
+            ][tier.min(4) as usize],
+            Memory::AteWithoutTable => "Ate without a table",
         }
     }
 
     pub fn mood(self) -> f32 {
         match self {
-            Memory::SleptInBedroom => 6.0,
+            Memory::Bedroom(tier) => [-2.0, 2.0, 4.0, 6.0, 9.0][tier.min(4) as usize],
             Memory::SleptOutside => -4.0,
             Memory::SleptOnGround => -5.0,
             Memory::ColonistDied => -10.0,
             Memory::Catharsis => 10.0,
             Memory::AteRawFood => -5.0,
             Memory::AteMeal => 2.0,
+            Memory::DiningRoom(tier) => [-2.0, 0.0, 2.0, 4.0, 6.0][tier.min(4) as usize],
+            Memory::AteWithoutTable => -3.0,
         }
     }
 
@@ -230,9 +251,14 @@ impl Memory {
         match self {
             Memory::ColonistDied => 3.0 * DAY_LEN,
             Memory::Catharsis => 1.5 * DAY_LEN,
-            Memory::AteRawFood | Memory::AteMeal => 0.5 * DAY_LEN,
+            Memory::AteRawFood | Memory::AteMeal | Memory::DiningRoom(_) | Memory::AteWithoutTable => 0.5 * DAY_LEN,
             _ => DAY_LEN,
         }
+    }
+
+    /// Memories that replace each other: a new bedroom replaces the last one.
+    fn same_kind(self, other: Memory) -> bool {
+        std::mem::discriminant(&self) == std::mem::discriminant(&other)
     }
 }
 
@@ -435,8 +461,11 @@ impl Pawn {
     }
 
     pub fn add_memory(&mut self, kind: Memory) {
-        match self.memories.iter_mut().find(|m| m.kind == kind) {
-            Some(m) => m.left = kind.duration(),
+        match self.memories.iter_mut().find(|m| m.kind.same_kind(kind)) {
+            Some(m) => {
+                m.kind = kind;
+                m.left = kind.duration();
+            }
             None => self.memories.push(MemoryEntry { kind, left: kind.duration() }),
         }
     }
@@ -470,7 +499,7 @@ impl Pawn {
         if self.health.has_disease() {
             t.push(("Sick", -5.0));
         }
-        for m in &self.memories {
+        for m in self.memories.iter().filter(|m| m.kind.mood() != 0.0) {
             t.push((m.kind.label(), m.kind.mood()));
         }
         for a in &self.apparel {

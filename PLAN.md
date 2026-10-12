@@ -43,9 +43,10 @@
 | 5 | Performance and saves: profiling, faster searches, versioned and compact save files | done |
 | 6 | Data-driven definitions: items, buildables, plants and recipes described in a data file, not code | done (recipes come with phase 7) |
 | 7 | Production chains: workbenches, job queues, Cooking/Crafting, new resources, stockpile filters | done (needs a visual check) |
-| 8 | More buildables: furniture, shelves, windows, torches, fences, room quality | |
+| 8 | More buildables: furniture, shelves, windows, torches, fences, room quality | done (needs a visual check) |
 | 9 | Sound: actions, ambience, interface | |
-| 10 | Graphics: real models, ramps, water shader, weather, seasons | |
+| 10 | Graphics, Valheim-like (low poly, realistic movement): 10a art direction, 10b animated characters, 10c smoothed natural terrain, 10d glTF models, 10e atmosphere | |
+| 11 | Follow camera: optional close third-person view of one colonist | later |
 
 ## Next phases (agreed 2026-10-11)
 
@@ -87,13 +88,37 @@ the list of things has settled.
   `assets/` (the sandbox can't). Footsteps, chopping, mining, building, gunshots, impacts, interface
   clicks, and background ambience for day, night and caves. Positional sound relative to the camera.
 
-### 10. Graphics
-- Replace code-built shapes with CC0 glTF models (Kenney, Quaternius) category by category, through the
-  definitions from phase 6.
-- Ramps on natural slopes (needs a terrain-model change: a ramp half-fills the lower cell), a water
-  shader with gentle waves, weather (rain, snow, fog) and seasons (colours, crop growth).
-- Phase 4 visuals still need a tuning pass from real play: lamp brightness, bloom/ambient occlusion
-  strength, water opacity, fog distance, hop height.
+### 10. Graphics (style agreed 2026-10-12)
+Target look: like Valheim. Low-poly models with low-resolution textures, realistic movement, and most
+of the mood from light and atmosphere. The simulation stays on its grid; all of this is drawing.
+
+- **10a. Art direction.** Choose asset packs (Quaternius is closest among CC0 packs; Kenney is too clean;
+  mixing in paid packs or Blender-made models is possible) and a texture approach (low-resolution
+  textures with nearest-neighbour filtering and an atlas, instead of vertex colours). Build a small test
+  scene to judge the look before converting everything. The user downloads assets into `assets/` (the
+  sandbox can't). Could come before phase 8 or 9 if the look should settle early.
+- **10b. Animated characters.** Rigged glTF pawns with an animation library: walk, idle, chop, mine,
+  hammer, carry, eat, lie down, downed, aim and shoot, melee, fall. Pick the animation from what the
+  pawn is doing (`Job` / `Task`) and blend between them. Smooth movement for display: curved paths,
+  easing into and out of walking, turning on the spot, walk animation speed matched to the simulation's
+  speed so feet don't slide. Foot placement on slopes (IK) is optional and later: Bevy has no built-in
+  IK.
+- **10c. Smoothed natural terrain.** Naturally generated ground (soil, rock, ore) is drawn as a smooth,
+  rolling surface over the grid instead of cubes. Cells that have been mined, and anything built, stay
+  blocky, so dug tunnels and shafts keep crisp edges. Needs: a flag per cell for "dug" (or natural vs.
+  changed), a new mesher (e.g. smoothed heights or surface nets over natural cells only, blending into
+  the blocky ones), and picking that still lands on exact cells. Replaces the old "ramps on slopes" idea;
+  pawns stepping a level follow the smooth surface instead of hopping.
+- **10d. Models.** Replace code-built shapes with glTF models category by category, through a `model`
+  field in the definitions (shapes stay as a fallback).
+- **10e. Atmosphere.** Wind on grass and trees (custom shader), a water shader with gentle waves,
+  volumetric fog and light shafts, weather (rain, snow, fog) and seasons (colours, crop growth), plus the
+  phase 4 tuning pass from real play: lamp brightness, bloom/ambient occlusion strength, water opacity,
+  fog distance, hop height.
+
+### 11. Follow camera (later, optional)
+- A close third-person camera that follows one colonist, to show off the animations; toggled from the
+  normal top-down camera.
 
 ## Working in this repo (handoff notes)
 
@@ -127,6 +152,20 @@ the list of things has settled.
 - Still in code: blocks (soil, rock, water; rock yields `rock_drops`), work types, skills, designations
   and zones. Floors are still one kind (`Map::floor` is a bool), so only one buildable may be the floor.
   Grow zones plant the first plant with `sow`; choosing per zone comes with phase 7's crops.
+- Phase 8: table, chair, shelf, window, fence, torch, stone door, all as definitions. New definition
+  fields: buildable `category` (toolbar menus), `beauty`, `daylight` (windows), `storage` (cell holds
+  `stack_limit`, items drawn at `height`; `Map::capacity`), `along_walls` (doors and windows turn to their
+  walls), `Special::Table` / `Seat`, part `link` (fence rails shown only towards matching neighbours),
+  light `flicker`, and a `clear` palette for glass.
+- Room quality (`src/rooms.rs`): per room size, beauty (contents plus bordering walls/windows/doors),
+  dirt (blood, loose items outside stockpiles and shelves) and light (lamp, torch or window), scored
+  into five tiers (Awful to Impressive). Recounted once a second and whenever rooms change. Memories
+  `Bedroom(tier)` (replaces "slept in bedroom") and `DiningRoom(tier)`; memories of the same kind
+  replace each other.
+- Eating: `Job::Eat` has an optional seat. Colonists take their food to the nearest free chair beside a
+  table within 40 steps of the food, else eat on the spot and get "Ate without a table" (-3).
+- `SAVE_VERSION` 4. Sitting isn't animated yet (phase 10b).
+- Phase 8 performance: 0.074 ms per tick in `--example profile` (0.7% of a frame at 3x speed).
 - Phase 7 (`src/production.rs`): a workbench is any buildable a recipe names (`BuildDef::recipes` is
   filled in at load). `World::benches` holds each bench's bills (`Count(n)`, `Until(n)`, `Forever`,
   suspendable, ordered), its current recipe and delivered ingredients. Once a second

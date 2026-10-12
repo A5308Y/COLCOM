@@ -15,6 +15,7 @@ use std::collections::VecDeque;
 /// (x, y, level). Level 0 is the bottom of the world.
 pub type Pos = (usize, usize, usize);
 
+/// Most of one item a pawn carries, or a cell holds without storage furniture.
 pub const STACK_MAX: u32 = 50;
 /// Enclosed regions larger than this count as outdoors.
 const MAX_ROOM: usize = 400;
@@ -509,11 +510,16 @@ impl Map {
         })
     }
 
+    /// How many of one item cell `i` holds: more on shelves.
+    pub fn capacity(&self, i: usize) -> u32 {
+        self.feature[i].structure().and_then(|d| d.storage.as_ref()).map_or(STACK_MAX, |s| s.stack_limit)
+    }
+
     /// Whether `kind` can be put down in cell `i`.
     pub fn can_accept(&self, i: usize, kind: ItemId) -> bool {
         self.standable(self.pos(i))
             && !matches!(self.feature[i], Feature::Blueprint { .. })
-            && self.items[i].map_or(true, |s| s.kind == kind && s.count < STACK_MAX)
+            && self.items[i].map_or(true, |s| s.kind == kind && s.count < self.capacity(i))
     }
 
     /// Take up to `max` of `kind` from cell `i`.
@@ -537,7 +543,7 @@ impl Map {
             let i = self.idx(p);
             if self.can_accept(i, stack.kind) {
                 let have = self.items[i].map_or(0, |s| s.count);
-                let put = (STACK_MAX - have).min(stack.count);
+                let put = (self.capacity(i) - have).min(stack.count);
                 self.items[i] = Some(Stack { kind: stack.kind, count: have + put });
                 stack.count -= put;
                 if stack.count == 0 {

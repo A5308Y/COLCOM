@@ -19,8 +19,9 @@ use std::f32::consts::{FRAC_PI_2, TAU};
 enum PropKey {
     Plant { kind: PlantId, stage: u8 },
     /// Turned so the model's +x faces `DIRS[dir]`. `owner`: who sleeps in
-    /// a bed. `open`: a door someone is passing through.
-    Built { kind: BuildId, dir: u8, owner: Option<u32>, open: bool },
+    /// a bed. `open`: a door someone is passing through. `links`: bit per
+    /// direction (`DIRS`) with a neighbour that linked parts join up with.
+    Built { kind: BuildId, dir: u8, owner: Option<u32>, open: bool, links: u8 },
     Blueprint { kind: BuildId },
 }
 
@@ -78,7 +79,9 @@ pub struct PropsPlugin;
 
 impl Plugin for PropsPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Props>().add_systems(Startup, setup_assets).add_systems(Update, sync_props);
+        app.init_resource::<Props>()
+            .add_systems(Startup, setup_assets)
+            .add_systems(Update, (sync_props, flicker_lights));
     }
 }
 
@@ -100,6 +103,16 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
             ..default()
         };
         paints.insert(name.clone(), materials.add(glow));
+    }
+    for (name, &(r, g, b, a)) in &d.clear {
+        let glass = StandardMaterial {
+            base_color: Color::srgba(r, g, b, a),
+            alpha_mode: AlphaMode::Blend,
+            perceptual_roughness: 0.1,
+            reflectance: 0.5,
+            ..default()
+        };
+        paints.insert(name.clone(), materials.add(glass));
     }
     let blueprint = materials.add(StandardMaterial {
         base_color: Color::srgba(0.38, 0.68, 1.0, 0.35),
@@ -124,6 +137,43 @@ fn is_wallish(m: &Map, x: i32, y: i32, z: usize) -> bool {
         let i = m.idx(p);
         m.block[i].solid() || m.feature[i].blocks_room()
     })
+}
+
+/// Neighbours a structure's linked parts (fence rails) join up with: the
+/// same structure, walls or solid ground. Bit `d` is set for `DIRS[d]`.
+fn links(m: &Map, pos: Pos, kind: BuildId) -> u8 {
+    let mut mask = 0;
+    for (d, (dx, dy)) in DIRS.iter().enumerate() {
+        let joins = m.at(pos.0 as i32 + dx, pos.1 as i32 + dy, pos.2 as i32).is_some_and(|q| {
+            let f = m.feature[m.idx(q)];
+            f.structure_id() == Some(kind) || f.is_block() || m.block[m.idx(q)].solid()
+        });
+        mask |= (joins as u8) << d;
+    }
+    mask
+}
+
+/// The world direction (index into `DIRS`) a model's direction `l` faces once turned by `dir`.
+fn turned(l: u8, dir: u8) -> u8 {
+    let (lx, ly) = DIRS[l as usize % 4];
+    let v = facing(dir) * Vec3::new(lx as f32, 0.0, ly as f32);
+    let found = DIRS.iter().position(|&(x, y)| (x as f32 - v.x).abs() < 0.5 && (y as f32 - v.z).abs() < 0.5);
+    found.unwrap_or(l as usize) as u8
+}
+
+/// Torches and other flames: light that wavers around `base` intensity.
+#[derive(Component)]
+struct Flicker {
+    base: f32,
+    seed: f32,
+}
+
+fn flicker_lights(time: Res<Time>, mut lights: Query<(&Flicker, &mut PointLight)>) {
+    let t = time.elapsed_secs();
+    for (f, mut light) in &mut lights {
+        let wave = (t * 9.0 + f.seed).sin() * 0.5 + (t * 23.0 + f.seed * 1.7).sin() * 0.3 + (t * 3.1 + f.seed).sin() * 0.2;
+        light.intensity = f.base * (0.85 + 0.12 * wave);
+    }
 }
 
 /// Rotation that turns +x towards `DIRS[dir]`.
@@ -185,23 +235,27 @@ fn sync_props(
             Feature::Plant { kind, growth } => Some(PropKey::Plant { kind, stage: kind.def().stage(growth) as u8 }),
             // Drawn with the terrain.
             f if f.is_block() => None,
-            Feature::Built { kind, dir } => Some(match kind.def().special {
-                Special::Bed => PropKey::Built { kind, dir, owner: owners.get(&pos).map(|o| o.0), open: false },
-                Special::Door => {
-                    let open = w
-                        .pawns
-                        .iter()
-                        .any(|p| {
-                            !p.dead
-                                && (p.x - pos.0 as f32).abs() < 0.9
-                                && (p.y - pos.1 as f32).abs() < 0.9
-                                && (p.z - pos.2 as f32).abs() < 0.9
-                        });
-                    // Modelled spanning x; a quarter turn when the walls run along y.
+            Feature::Built { kind, dir } => Some({
+                let def = kind.def();
+                let owner = (def.special == Special::Bed).then(|| owners.get(&pos).map(|o| o.0)).flatten();
+                let open = def.special == Special::Door && {
+                    w.pawns.iter().any(|p| {
+                        !p.dead
+                            && (p.x - pos.0 as f32).abs() < 0.9
+                            && (p.y - pos.1 as f32).abs() < 0.9
+                            && (p.z - pos.2 as f32).abs() < 0.9
+                    })
+                };
+                // Modelled spanning x; a quarter turn when the walls run along y.
+                let dir = if def.along_walls {
                     let horizontal = is_wallish(m, xi - 1, yi, pos.2) || is_wallish(m, xi + 1, yi, pos.2);
-                    PropKey::Built { kind, dir: if horizontal { 0 } else { 3 }, owner: None, open }
-                }
-                _ => PropKey::Built { kind, dir, owner: None, open: false },
+                    if horizontal { 0 } else { 3 }
+                } else {
+                    dir
+                };
+                let linked = matches!(&def.look, BuildLook::Parts(p) if p.iter().any(|p| p.link.is_some()));
+                let links = if linked { links(m, pos, kind) } else { 0 };
+                PropKey::Built { kind, dir, owner, open, links }
             }),
             Feature::Blueprint { kind, .. } => Some(PropKey::Blueprint { kind }),
         };
@@ -234,7 +288,8 @@ fn sync_props(
                 commands.entity(e).despawn();
             }
             if let Some(key) = want_item {
-                let lift = if m.floor[i] { FLOOR_T } else { 0.0 };
+                let shelf = m.feature[i].structure().and_then(|d| d.storage.as_ref()).map_or(0.0, |s| s.height);
+                let lift = if m.floor[i] { FLOOR_T } else { 0.0 } + shelf;
                 let e = spawn_item(&mut commands, &assets, key, pos, lift);
                 if hidden(pos) {
                     commands.entity(e).insert(Visibility::Hidden);
@@ -245,21 +300,35 @@ fn sync_props(
     }
 }
 
-/// Parts as children of a root at `root`. `ghost` draws them all in the
-/// blueprint material; `owner` replaces the "owner" colour; `open` swings
-/// hinged parts open.
+/// How to show a set of parts.
+#[derive(Clone, Copy, Default)]
+struct Pose {
+    /// All in the blueprint material.
+    ghost: bool,
+    /// Hinged parts swung open.
+    open: bool,
+    /// Turn of the model (index into `DIRS`), to match linked parts to neighbours.
+    dir: u8,
+    /// Directions with a neighbour that linked parts join (see `links`).
+    links: u8,
+}
+
+/// Parts as children of a root at `root`. `owner` replaces the "owner" colour.
 fn spawn_parts(
     commands: &mut Commands,
     a: &PropAssets,
     root: Transform,
     parts: &[Part],
-    ghost: bool,
+    pose: Pose,
     owner: &Handle<StandardMaterial>,
-    open: bool,
 ) -> Entity {
+    let Pose { ghost, open, dir, links } = pose;
     let mut e = commands.spawn((root, Visibility::default()));
     e.with_children(|c| {
         for p in parts {
+            if p.link.is_some_and(|l| links & (1 << turned(l, dir)) == 0) {
+                continue;
+            }
             let mat = match p.color.as_str() {
                 _ if ghost => a.blueprint.clone(),
                 "owner" => owner.clone(),
@@ -299,14 +368,15 @@ fn spawn_feature(
             let root = base
                 .with_rotation(Quat::from_rotation_y(hash(xi, yi, 22) * TAU))
                 .with_scale(Vec3::splat(lo + hash(xi, yi, 20) * (hi - lo)));
-            spawn_parts(commands, a, root, parts, false, &blanket, false)
+            spawn_parts(commands, a, root, parts, Pose::default(), &blanket)
         }
-        PropKey::Built { kind, dir, open, .. } => {
+        PropKey::Built { kind, dir, open, links, .. } => {
             let def = kind.def();
             let BuildLook::Parts(parts) = &def.look else { return commands.spawn(base).id() };
-            let e = spawn_parts(commands, a, base.with_rotation(facing(dir)), parts, false, &blanket, open);
+            let pose = Pose { ghost: false, open, dir, links };
+            let e = spawn_parts(commands, a, base.with_rotation(facing(dir)), parts, pose, &blanket);
             if let Some(l) = &def.light {
-                commands.entity(e).with_child((
+                let light = (
                     PointLight {
                         color: Color::srgb(l.color.0, l.color.1, l.color.2),
                         intensity: l.intensity,
@@ -315,12 +385,20 @@ fn spawn_feature(
                         ..default()
                     },
                     Transform::from_xyz(l.at.0, l.at.1, l.at.2),
-                ));
+                );
+                if l.flicker {
+                    let seed = hash(xi, yi, 25) * 100.0;
+                    commands.entity(e).with_child((light, Flicker { base: l.intensity, seed }));
+                } else {
+                    commands.entity(e).with_child(light);
+                }
             }
             e
         }
         PropKey::Blueprint { kind } => match &kind.def().look {
-            BuildLook::Parts(parts) => spawn_parts(commands, a, base, parts, true, &blanket, false),
+            BuildLook::Parts(parts) => {
+                spawn_parts(commands, a, base, parts, Pose { ghost: true, ..default() }, &blanket)
+            }
             BuildLook::Block => {
                 let block = Part {
                     shape: Shape::Cube,
@@ -329,8 +407,9 @@ fn spawn_feature(
                     size: (0.98, LEVEL_H, 0.98),
                     turn: (0.0, 0.0, 0.0),
                     hinge: false,
+                    link: None,
                 };
-                spawn_parts(commands, a, base, &[block], true, &blanket, false)
+                spawn_parts(commands, a, base, &[block], Pose { ghost: true, ..default() }, &blanket)
             }
         },
     }
@@ -342,5 +421,5 @@ fn spawn_item(commands: &mut Commands, a: &PropAssets, key: ItemKey, pos: Pos, l
     let root = Transform::from_translation(tile_center(pos) + Vec3::Y * lift)
         .with_rotation(Quat::from_rotation_y(hash(xi, yi, 24) * TAU))
         .with_scale(Vec3::splat(s));
-    spawn_parts(commands, a, root, &key.kind.def().look, false, &a.blanket_free, false)
+    spawn_parts(commands, a, root, &key.kind.def().look, Pose::default(), &a.blanket_free)
 }

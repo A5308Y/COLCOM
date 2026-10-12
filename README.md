@@ -23,6 +23,7 @@ according to their **work priorities** (press `P`).
 | `1` / `2` / `3` | Designate trees to chop / rock or structures to mine / berry bushes to forage |
 | `4` / `5` | Stockpile zone (loose items get hauled there) / grow zone (crops get planted) |
 | `V` `J` `T` `M` `I` `U` | Workbenches: stove, sawing bench, stonecutter, smelter, smithy, crafting bench |
+| `O` `G` / `Y` `R` `X` / `Z` | Window, fence / table, chair, shelf / torch (all buildables are also in the toolbar's category menus) |
 | `6` / `7` / `8` | Blueprint a wall (4 stone) / door (4 wood) / bed (8 wood) |
 | `-` / `=` | Blueprint a floor (2 wood) / stairs (6 wood) |
 | `B` | Blueprint a lamp (3 wood) |
@@ -52,6 +53,11 @@ according to their **work priorities** (press `P`).
   themselves; armour stops part of every blow, and clothes cheer colonists up.
 - **Stockpiles:** each has a priority (low to critical) and a list of item kinds it takes; things move
   to better stockpiles. Grow zones plant the crop chosen for them (corn, healroot, cotton).
+- **Furniture and rooms:** tables and chairs (colonists eat sitting at a table, and dislike eating
+  without one), shelves (three stacks per cell), windows, fences that join up, flickering torches, stone
+  doors. Each room has a quality from its size, the beauty of its furniture, doors and windows, its
+  cleanliness (blood, clutter) and light; sleeping and eating in better rooms lifts mood more. Click a
+  cell in a room to see the breakdown.
 - **Food:** raw food can cause food poisoning and upsets colonists; cooked meals are better and fill
   more. Colonists pick meals first.
 
@@ -99,6 +105,7 @@ The simulation is a library with no rendering code, so it can be tested headless
 - `src/lib.rs`: module list and constants (day length, tick length)
 - `src/defs.rs`: loads and checks the definitions; `ItemId`, `BuildId`, `PlantId`, `RecipeId`
 - `src/production.rs`: workbenches and bills, stockpile settings, picking up better gear
+- `src/rooms.rs`: room quality (space, beauty, cleanliness, light)
 - `src/map.rs`: 3D cells (blocks, features, items, zones), walking rules, rooms, terrain generation
 - `src/pathing.rs`: BFS distance fields over the walking graph, 3D line of sight
 - `src/pawn.rs`: pawns, skills, mood, jobs
@@ -122,7 +129,7 @@ editing). A new definition there gets a toolbar button, a shortcut (if it has a 
 simple shapes, and works in hauling, building, mining, harvesting and saves without code changes.
 Behaviour the code has to know about is a field: `nutrition` (food), `medicine`, `special` (`Floor`,
 `Stairs`, `Bed`, `Door`), `blocks_room`, `holds_floors`, `light`, `sow`, `wild`, `harvest`, `raw`,
-`poison`, `weapon`, `apparel`. A buildable that a recipe names becomes a workbench.
+`poison`, `weapon`, `apparel`, `beauty`, `daylight`, `storage`, `along_walls`, and `link` on parts. A buildable that a recipe names becomes a workbench.
 `cargo test` checks that the file loads and that every buildable can be built and removed, every plant
 harvested and every recipe made.
 

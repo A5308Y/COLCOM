@@ -14,9 +14,6 @@ use crate::pawn::{Job, Pawn};
 use crate::world::{Step, World};
 use serde::{Deserialize, Serialize};
 
-/// Seconds between re-checking every bench's bills.
-const PRODUCTION_INTERVAL: f32 = 1.0;
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum BillMode {
     /// Make this many more.
@@ -175,13 +172,8 @@ impl World {
             }
     }
 
-    pub(crate) fn update_production(&mut self, dt: f32) {
-        self.production_timer -= dt;
-        if self.production_timer > 0.0 {
-            return;
-        }
-        self.production_timer = PRODUCTION_INTERVAL;
-
+    /// Once a second: sync benches with the map and re-pick their recipes.
+    pub(crate) fn update_production(&mut self) {
         // Benches that were removed give back their stock; new ones get a record.
         let gone: Vec<usize> = (0..self.benches.len()).filter(|&k| !self.is_workbench(self.benches[k].pos)).collect();
         for k in gone.into_iter().rev() {
@@ -573,6 +565,49 @@ mod tests {
             let f = w.map.feature[w.map.idx((x, 6, Z))];
             assert!(matches!(f, Feature::Plant { kind, .. } if kind == healroot), "{:?}", f);
         }
+    }
+
+    #[test]
+    fn colonists_eat_at_a_table_if_there_is_one() {
+        let mut w = test_world(16, 16);
+        let id = colonist(&mut w, (2, 2, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].hunger = 15.0;
+        w.map.drop_item((4, 4, Z), Stack { kind: item("meal"), count: 1 });
+        place_bench(&mut w, "table", (10, 10, Z));
+        place_bench(&mut w, "chair", (10, 11, Z));
+        let mut sat = false;
+        for _ in 0..(15.0 / TICK) as usize {
+            w.tick(TICK);
+            let p = w.pawn(id).unwrap();
+            sat |= matches!(p.job, Some(Job::Eat { picked: true, .. })) && p.pos == (10, 11, Z);
+        }
+        assert!(sat, "ate sitting on the chair");
+        let p = w.pawn(id).unwrap();
+        assert!(p.hunger > 50.0);
+        assert!(!p.memories.iter().any(|m| m.kind == Memory::AteWithoutTable));
+
+        // Without a table it's a sad meal on the spot.
+        let t = w.map.idx((10, 10, Z));
+        w.map.set_feature(t, Feature::None);
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].hunger = 15.0;
+        w.map.drop_item((4, 4, Z), Stack { kind: item("meal"), count: 1 });
+        run(&mut w, 15.0);
+        assert!(w.pawn(id).unwrap().memories.iter().any(|m| m.kind == Memory::AteWithoutTable));
+    }
+
+    #[test]
+    fn shelves_hold_more() {
+        let mut w = test_world(16, 16);
+        colonist(&mut w, (2, 2, Z));
+        assert!(w.apply_order((5, 5, Z), Order::Stockpile));
+        place_bench(&mut w, "shelf", (5, 5, Z));
+        let shelf = w.map.idx((5, 5, Z));
+        assert_eq!(w.map.capacity(shelf), 150);
+        w.map.drop_item((12, 12, Z), Stack { kind: item("wood"), count: 120 });
+        run(&mut w, 60.0);
+        assert_eq!(w.map.items[shelf].map(|s| s.count), Some(120), "all on the one shelf");
     }
 
     #[test]

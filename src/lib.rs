@@ -11,6 +11,7 @@ pub mod pathing;
 pub mod pawn;
 pub mod production;
 pub mod rng;
+pub mod rooms;
 pub mod save;
 pub mod story;
 pub mod world;

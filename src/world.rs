@@ -6,6 +6,7 @@ use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone};
 use crate::pawn::{Faction, Job, Memory, Pawn, WorkType};
 use crate::pathing::bfs;
 use crate::production::{Bench, Stockpile};
+use crate::rooms::RoomStats;
 use crate::rng::Rng;
 use crate::story::Storyteller;
 use crate::DAY_LEN;
@@ -74,7 +75,11 @@ pub struct World {
     pub benches: Vec<Bench>,
     /// Stockpile settings, indexed by the id in `Zone::Stockpile`.
     pub stockpiles: Vec<Stockpile>,
-    pub production_timer: f32,
+    /// Counts down to the next once-a-second pass over benches and rooms.
+    pub colony_timer: f32,
+    /// Quality per room id (index 0 unused). Derived, so not saved.
+    #[serde(skip)]
+    pub room_stats: Vec<RoomStats>,
 }
 
 impl World {
@@ -126,7 +131,8 @@ impl World {
             regrow_timer: 4.0,
             benches: Vec::new(),
             stockpiles: Vec::new(),
-            production_timer: 0.0,
+            colony_timer: 0.0,
+            room_stats: Vec::new(),
         }
     }
 
@@ -262,12 +268,18 @@ impl World {
         self.time += dt;
         if self.map.rooms_dirty {
             self.map.recompute_rooms();
+            self.update_room_stats();
         }
         if self.map.support_dirty {
             self.settle_unsupported();
         }
         self.grow_plants(dt);
-        self.update_production(dt);
+        self.colony_timer -= dt;
+        if self.colony_timer <= 0.0 {
+            self.colony_timer = 1.0;
+            self.update_production();
+            self.update_room_stats();
+        }
         self.storyteller_tick();
         let fade = dt / (1.5 * DAY_LEN);
         for b in self.map.blood.iter_mut() {
@@ -761,6 +773,7 @@ impl World {
     pub fn load_json(s: &str) -> Result<World, String> {
         let mut w = crate::save::from_json(s)?;
         w.map.recompute_rooms();
+        w.update_room_stats();
         let n = w.map.len();
         if w.map.blood.len() != n {
             w.map.blood = vec![0.0; n];

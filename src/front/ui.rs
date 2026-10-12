@@ -2,7 +2,7 @@
 //! Health tab), work priorities, help and game over.
 
 use super::camera::{CameraRig, MainCamera};
-use super::input::{self, Selection, UiState, TOOLS};
+use super::input::{self, Selection, Tool, UiState, TOOLS};
 use super::look::{pawn_look, Look};
 use super::overlay;
 use super::sim::Sim;
@@ -14,6 +14,8 @@ use my_world::defs::{BuildId, ItemId, PlantId};
 use my_world::map::{Block, Feature, Pos, Zone};
 use my_world::pawn::{Pawn, Skill, WorkType};
 use my_world::production::{BillMode, PRIORITY_NAMES};
+use my_world::rooms::TIERS;
+use my_world::world::Order;
 use my_world::world::World as SimWorld;
 use my_world::DAY_LEN;
 
@@ -27,11 +29,14 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 25] = [
+const HELP_REST: [&str; 28] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
     "Click a stockpile to set its priority and which items it takes; click a grow zone to pick its crop.",
+    "Shelves hold three stacks. Colonists eat at a table if there's a chair beside it, and hate eating without.",
+    "Room quality (size, beauty of furniture, windows and doors, cleanliness, light) affects mood when",
+    "      colonists sleep or eat there. Click a cell inside a room to see why it's good or bad.",
     "Raw food can cause food poisoning - cook meals at a stove. Mine iron ore deep in the rock,",
     "      smelt it into steel and make weapons and armour at a smithy. Colonists pick up better gear.",
     "",
@@ -175,14 +180,7 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                     sim.cycle_speed();
                 }
             });
-            ui.horizontal(|ui| {
-                for (tool, label, _) in TOOLS.iter() {
-                    if ui.add(egui::Button::new(label.as_str()).selected(st.tool == *tool)).clicked() {
-                        st.tool = *tool;
-                        st.drag_start = None;
-                    }
-                }
-            });
+            ui.horizontal(|ui| toolbar(ui, st));
             ui.horizontal(|ui| {
                 let view = match st.view_level {
                     Some(l) => format!("Viewing level {} of {}", l, sim.world.map.d - 1),
@@ -225,6 +223,47 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
             }
         });
     });
+}
+
+/// The building tools, one menu per category of buildable.
+fn category_of(tool: Tool) -> Option<&'static str> {
+    match tool {
+        Tool::Paint(Order::Build(kind)) => Some(&kind.def().category),
+        _ => None,
+    }
+}
+
+/// Tool buttons; buildables are grouped into a menu per category, shown
+/// where the first of them would be.
+fn toolbar(ui: &mut egui::Ui, st: &mut UiState) {
+    let mut shown: Vec<&str> = Vec::new();
+    for (tool, label, _) in TOOLS.iter() {
+        let Some(cat) = category_of(*tool) else {
+            if ui.add(egui::Button::new(label.as_str()).selected(st.tool == *tool)).clicked() {
+                st.tool = *tool;
+                st.drag_start = None;
+            }
+            continue;
+        };
+        if shown.contains(&cat) {
+            continue;
+        }
+        shown.push(cat);
+        let active = category_of(st.tool) == Some(cat);
+        let title = match st.tool {
+            Tool::Paint(Order::Build(k)) if active => RichText::new(format!("{}: {}", cat, k.name())).strong(),
+            _ => RichText::new(format!("{} ...", cat)),
+        };
+        ui.menu_button(title, |ui| {
+            for (t, l, _) in TOOLS.iter().filter(|t| category_of(t.0) == Some(cat)) {
+                if ui.add(egui::Button::new(l.as_str()).selected(st.tool == *t)).clicked() {
+                    st.tool = *t;
+                    st.drag_start = None;
+                    ui.close();
+                }
+            }
+        });
+    }
 }
 
 fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
@@ -457,11 +496,25 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos) {
             if let Some(d) = m.desig[i] {
                 ui.label(format!("Designated: {:?}", d));
             }
-            let room = m.room.get(i).copied().unwrap_or(0);
-            if room != 0 {
-                ui.label(format!("Indoors, roofed room of {} tiles", m.room_sizes[room as usize]));
-            } else {
-                ui.label("Outdoors");
+            match w.room_at(t) {
+                Some(r) => {
+                    let tier = TIERS[r.tier() as usize];
+                    ui.label(format!("Indoors: {} room, {} tiles (quality {:+.1})", tier.to_lowercase(), r.size, r.score()));
+                    let parts = format!(
+                        "space {:+.1}, beauty {:+.1}, cleanliness {:+.1}, light {:+.1}",
+                        r.space_points(),
+                        r.beauty_points(),
+                        r.dirt_points(),
+                        r.light_points()
+                    );
+                    ui.label(RichText::new(parts).weak());
+                }
+                None if m.roofed(t) => {
+                    ui.label("Indoors");
+                }
+                None => {
+                    ui.label("Outdoors");
+                }
             }
             match m.zone[i] {
                 Zone::Stockpile(id) => stockpile_settings(ui, w, id, &mut actions),
