@@ -1,6 +1,7 @@
 //! Labels drawn over the 3D view: names, health and work bars, sleep and
 //! bleeding markers, item counts and blueprint progress.
 
+use super::input::UiState;
 use super::{tile_center, tile_point};
 use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, FontId, Pos2};
@@ -22,7 +23,7 @@ fn bar(painter: &egui::Painter, center: Pos2, width: f32, frac: f32, fill: Color
     painter.rect_filled(inner, 1.0, fill);
 }
 
-/// `cut` is the highest level shown (layer view); anything above is skipped.
+/// Anything hidden by the layer view or hidden roofs is skipped (`ui`).
 /// `view` is the part of the screen showing the world (not covered by docked panels).
 pub fn draw(
     ctx: &egui::Context,
@@ -30,7 +31,7 @@ pub fn draw(
     cam: &Camera,
     gt: &GlobalTransform,
     distance: f32,
-    cut: usize,
+    ui: &UiState,
     view: egui::Rect,
 ) {
     let painter = ctx
@@ -42,7 +43,7 @@ pub fn draw(
     };
     let m = &w.map;
 
-    for p in w.pawns.iter().filter(|p| !p.left && p.z < cut as f32 + 0.5) {
+    for p in w.pawns.iter().filter(|p| !p.left && ui.shows_at(m, p.x, p.y, p.z)) {
         let base = tile_point(p.x, p.y, p.z);
         let lying = p.dead || p.lying();
         let Some(top) = to_screen(base + Vec3::Y * if lying { 0.7 } else { 1.15 }) else { continue };
@@ -83,7 +84,7 @@ pub fn draw(
     if distance < 24.0 {
         for i in 0..m.len() {
             let pos = m.pos(i);
-            if pos.2 > cut {
+            if pos.2 > ui.top_at(m, pos.0, pos.1) {
                 continue;
             }
             let c = tile_center(pos) + Vec3::Y * 0.45;

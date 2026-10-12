@@ -35,8 +35,8 @@ struct ItemKey {
 #[derive(Resource, Default)]
 struct Props {
     generation: Option<u64>,
-    /// Layer view level the visibilities were last set for.
-    view: Option<usize>,
+    /// Layer view level and roof cut version the visibilities were last set for.
+    view: Option<(usize, u64)>,
     /// Spawned objects per cell (flat arrays: cheaper than maps when scanning every cell each frame).
     features: Vec<Option<(PropKey, Entity)>>,
     items: Vec<Option<(ItemKey, Entity)>>,
@@ -188,8 +188,8 @@ fn sync_props(
     let props = props.into_inner();
     let w = &sim.world;
     let m = &w.map;
-    let cut = ui.top_level(m);
-    let hidden = |pos: Pos| pos.2 > cut;
+    let hidden = |pos: Pos| pos.2 > ui.top_at(m, pos.0, pos.1);
+    let view = (ui.top_level(m), ui.roof_version);
     if props.generation != Some(sim.generation) || props.features.len() != m.len() {
         for (_, e) in props.features.drain(..).flatten() {
             commands.entity(e).despawn();
@@ -204,14 +204,14 @@ fn sync_props(
     }
 
     // Layer view changed: show or hide everything by level.
-    if props.view != Some(cut) {
+    if props.view != Some(view) {
         for i in 0..m.len() {
             let vis = if hidden(m.pos(i)) { Visibility::Hidden } else { Visibility::Inherited };
             for e in [props.features[i].map(|f| f.1), props.items[i].map(|f| f.1)].into_iter().flatten() {
                 commands.entity(e).insert(vis);
             }
         }
-        props.view = Some(cut);
+        props.view = Some(view);
     }
 
     let mut owners: HashMap<Pos, (u32, [f32; 3])> = HashMap::new();

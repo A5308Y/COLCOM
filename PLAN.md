@@ -160,6 +160,13 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
 
 ## Notes
 
+- Hide roofs (Shift+R or the HUD button; like Going Medieval's roof toggle): every column over a roofed
+  room whose ceiling is a built floor is cut off just above the topmost such room
+  (`UiState::roof_cut`, recomputed each frame in `update_roof_cut`), so the top room of every building
+  is visible at once. Rock over caves and tunnels stays. Terrain (`terrain::Cut`), props, items,
+  pawns, labels, markers and picking all use `UiState::top_at` / `shows_at`; combined with the layer
+  view it takes the lower of the two. Tool shortcuts ignore keys pressed with Shift.
+
 - Buildables must fit their cell (1.0 high): parts on a built floor are lifted by the slab (0.08), so
   furniture stays below 0.92; doors and windows aren't lifted (they fill the cell like walls) and may
   reach 1.0; stairs reach the level above. `defs::tests::buildables_fit_under_the_ceiling` checks it.

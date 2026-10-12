@@ -209,6 +209,13 @@ pub struct UiState {
     pub inspector_health: bool,
     /// Layer view: hide everything above this level (None = show all).
     pub view_level: Option<usize>,
+    /// Hide built roofs: each column over a roofed room is cut off above
+    /// the topmost such room (`roof_cut`, one level per column, `u8::MAX` = no
+    /// cut), so you can look into buildings without the layer view.
+    pub hide_roofs: bool,
+    pub roof_cut: Vec<u8>,
+    /// Bumped whenever `roof_cut` changes, for things that cache visibility.
+    pub roof_version: u64,
     /// The build menu docked on the left.
     pub show_build: bool,
     /// Search text in the build menu.
@@ -235,9 +242,20 @@ impl UiState {
         self.view_level.unwrap_or(m.d - 1).min(m.d - 1)
     }
 
-    /// Whether something at (fractional) level `z` is visible in the layer view.
-    pub fn shows(&self, m: &Map, z: f32) -> bool {
-        z < self.top_level(m) as f32 + 0.5
+    /// Highest level shown in column (x, y): the layer view, lowered over
+    /// roofed rooms while roofs are hidden.
+    pub fn top_at(&self, m: &Map, x: usize, y: usize) -> usize {
+        let top = self.top_level(m);
+        match self.roof_cut.get(y * m.w + x) {
+            Some(&c) if c != u8::MAX => top.min(c as usize),
+            _ => top,
+        }
+    }
+
+    /// Whether something at (fractional) cell coordinates is visible.
+    pub fn shows_at(&self, m: &Map, x: f32, y: f32, z: f32) -> bool {
+        let (cx, cy) = ((x.round().max(0.0) as usize).min(m.w - 1), (y.round().max(0.0) as usize).min(m.h - 1));
+        z < self.top_at(m, cx, cy) as f32 + 0.5
     }
 }
 
@@ -254,12 +272,16 @@ impl Plugin for InputPlugin {
             show_help: false,
             inspector_health: false,
             view_level: None,
+            hide_roofs: false,
+            roof_cut: Vec::new(),
+            roof_version: 0,
             show_build: true,
             build_filter: String::new(),
             dock_width: 0.0,
             show_resources: false,
             show_sound: false,
         })
+        .add_systems(PreUpdate, update_roof_cut)
         .add_systems(
             Update,
             (
@@ -283,9 +305,10 @@ fn stops_ray(m: &Map, p: Pos) -> bool {
 }
 
 /// Step along the camera ray until it enters something solid, ignoring
-/// levels above `cut` (layer view). With a layer view, empty air on the
-/// viewed level can be picked too, so floors can be placed there.
-fn pick(m: &Map, ray: Ray3d, cut: usize) -> Option<Hover> {
+/// whatever is hidden (layer view, hidden roofs). With a layer view, empty
+/// air on the viewed level can be picked too, so floors can be placed there.
+fn pick(m: &Map, ray: Ray3d, ui: &UiState) -> Option<Hover> {
+    let cut = ui.top_level(m);
     let layered = cut + 1 < m.d;
     let (o, d) = (ray.origin, *ray.direction);
     let top = m.d as f32 * LEVEL_H;
@@ -313,7 +336,7 @@ fn pick(m: &Map, ray: Ray3d, cut: usize) -> Option<Hover> {
         }
         let p = o + d * t;
         let Some(cell) = m.at(p.x.floor() as i32, p.z.floor() as i32, (p.y / LEVEL_H).floor() as i32) else { continue };
-        if cell.2 > cut {
+        if cell.2 > ui.top_at(m, cell.0, cell.1) {
             continue;
         }
         let i = m.idx(cell);
@@ -348,8 +371,7 @@ fn update_hover(
     let (cam, gt) = *camera;
     let Some(cursor) = window.cursor_position() else { return };
     let Ok(ray) = cam.viewport_to_world(gt, cursor) else { return };
-    let cut = ui.top_level(&sim.world.map);
-    if let Some(h) = pick(&sim.world.map, ray, cut) {
+    if let Some(h) = pick(&sim.world.map, ray, &ui) {
         ui.hover = Some(h);
     }
 }
@@ -448,6 +470,27 @@ pub fn center_on_selection(sim: &Sim, ui: &UiState, rig: &mut CameraRig) {
 
 // ---------- systems ----------
 
+/// Where each column is cut off while roofs are hidden: just above the
+/// topmost room whose ceiling is a built floor. Rock over caves and tunnels
+/// stays.
+fn update_roof_cut(sim: Res<Sim>, mut ui: ResMut<UiState>) {
+    let m = &sim.world.map;
+    let mut cut = vec![u8::MAX; m.w * m.h];
+    if ui.hide_roofs {
+        for y in 0..m.h {
+            for x in 0..m.w {
+                if let Some(z) = (0..m.d - 1).rev().find(|&z| m.roofed((x, y, z)) && m.floor[m.idx((x, y, z + 1))]) {
+                    cut[y * m.w + x] = z as u8;
+                }
+            }
+        }
+    }
+    if cut != ui.roof_cut {
+        ui.roof_cut = cut;
+        ui.roof_version += 1;
+    }
+}
+
 fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMut<UiState>, mut rig: ResMut<CameraRig>) {
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     if keys.just_pressed(KeyCode::Space) {
@@ -460,7 +503,11 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
         ui.show_help = false;
         ui.show_work = false;
     }
-    for e in TOOLS.iter() {
+    if shift && keys.just_pressed(KeyCode::KeyR) {
+        ui.hide_roofs = !ui.hide_roofs;
+    }
+    // Shift+key is for other things (Shift+N, Shift+R).
+    for e in TOOLS.iter().filter(|_| !shift) {
         if e.key.as_ref().is_some_and(|(_, k)| keys.just_pressed(*k)) {
             ui.tool = e.tool;
             ui.drag_start = None;
@@ -614,11 +661,10 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
     let w = &sim.world;
     let m = &w.map;
 
-    let cut = ui.top_level(m);
     for i in 0..m.len() {
         let Some(d) = m.desig[i] else { continue };
         let p = m.pos(i);
-        if p.2 > cut {
+        if p.2 > ui.top_at(m, p.0, p.1) {
             continue;
         }
         match d {
@@ -662,7 +708,7 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
         gizmos.rect(Isometry3d::new(c, Quat::from_rotation_x(FRAC_PI_2)), size, Color::WHITE);
     }
 
-    for p in w.pawns.iter().filter(|p| !p.left && !p.dead && ui.shows(m, p.z)) {
+    for p in w.pawns.iter().filter(|p| !p.left && !p.dead && ui.shows_at(m, p.x, p.y, p.z)) {
         let feet = Isometry3d::new(tile_point(p.x, p.y, p.z) + Vec3::Y * 0.03, Quat::from_rotation_x(FRAC_PI_2));
         if ui.selected == Some(Selection::Pawn(p.id)) {
             gizmos.circle(feet, 0.48, Color::WHITE);

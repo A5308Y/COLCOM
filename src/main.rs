@@ -101,6 +101,51 @@ mod tests {
             app.update();
         }
 
+        // Hidden roofs: a walled room with a built roof, seen into from above.
+        let (room, z) = {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            let m = &mut sim.world.map;
+            let (cx, cy) = (m.w / 2 - 8, m.h / 2 - 8);
+            let z = m.surface(cx, cy).unwrap();
+            for y in cy..cy + 5 {
+                for x in cx..cx + 5 {
+                    let i = m.idx((x, y, z));
+                    if x == cx || y == cy || x == cx + 4 || y == cy + 4 {
+                        m.set_feature(i, my_world::map::Feature::built("wall"));
+                    }
+                    let above = m.idx((x, y, z + 1));
+                    m.set_floor(above, true);
+                }
+            }
+            m.recompute_rooms();
+            ((cx + 2, cy + 2), z)
+        };
+        app.world_mut().resource_mut::<front::UiState>().hide_roofs = true;
+        for _ in 0..5 {
+            app.update();
+        }
+        {
+            let ui = app.world().resource::<front::UiState>();
+            let m = &app.world().resource::<front::Sim>().world.map;
+            assert!(m.roofed((room.0, room.1, z)), "the test room is a room");
+            assert_eq!(ui.top_at(m, room.0, room.1), z, "the roof over the room is hidden");
+            // Only columns under a built roof are cut (not caves or tunnels under rock).
+            for (k, &c) in ui.roof_cut.iter().enumerate() {
+                if c != u8::MAX {
+                    assert!(m.floor[m.idx((k % m.w, k / m.w, c as usize + 1))], "cut under a built floor");
+                }
+            }
+        }
+        app.world_mut().resource_mut::<front::UiState>().hide_roofs = false;
+        for _ in 0..5 {
+            app.update();
+        }
+        {
+            let ui = app.world().resource::<front::UiState>();
+            let m = &app.world().resource::<front::Sim>().world.map;
+            assert!(ui.top_at(m, room.0, room.1) > z, "roofs back");
+        }
+
         // The inspector's bills, stockpile and grow zone panels.
         let (bench, stock, grow) = {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();

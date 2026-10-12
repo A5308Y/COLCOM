@@ -35,9 +35,33 @@ enum Look3 {
     Water,
 }
 
-/// How a cell looks with everything above level `cut` hidden (layer view).
-fn look_at(m: &Map, p: Pos, cut: usize) -> Look3 {
-    if p.2 > cut {
+/// What's hidden: everything above `level` (layer view), and in columns
+/// over roofed rooms everything above `columns` (hidden roofs, `u8::MAX` = none).
+#[derive(Clone, Copy)]
+struct Cut<'a> {
+    level: usize,
+    columns: &'a [u8],
+}
+
+impl Cut<'_> {
+    const NONE: Cut<'static> = Cut { level: usize::MAX, columns: &[] };
+
+    /// Highest level shown in column (x, y).
+    fn top(&self, m: &Map, x: usize, y: usize) -> usize {
+        match self.columns.get(y * m.w + x) {
+            Some(&c) if c != u8::MAX => self.level.min(c as usize),
+            _ => self.level,
+        }
+    }
+
+    fn hides(&self, m: &Map, p: Pos) -> bool {
+        p.2 > self.top(m, p.0, p.1)
+    }
+}
+
+/// How a cell looks with everything `cut` hides left out.
+fn look_at(m: &Map, p: Pos, cut: Cut) -> Look3 {
+    if cut.hides(m, p) {
         return Look3::Open;
     }
     let i = m.idx(p);
@@ -133,7 +157,7 @@ fn update_chunks(
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let m = &sim.world.map;
-    let cut = ui.top_level(m);
+    let cut = Cut { level: ui.top_level(m), columns: &ui.roof_cut };
     let chunks = chunks.into_inner();
     let (cols, rows) = (m.w.div_ceil(CHUNK), m.h.div_ceil(CHUNK));
     if chunks.generation != sim.generation || chunks.cols != cols || chunks.rows != rows {
@@ -201,22 +225,27 @@ fn blood_level(m: &Map, i: usize) -> u8 {
 
 /// Everything that affects a chunk's mesh, including a one-column border
 /// (neighbouring cells decide which faces are visible).
-fn signature(m: &Map, cx: usize, cy: usize, cut: usize) -> u64 {
+fn signature(m: &Map, cx: usize, cy: usize, cut: Cut) -> u64 {
     // FNV-1a over small codes: cheap enough to run on every chunk every frame.
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     let mut mix = |v: u8| h = (h ^ v as u64).wrapping_mul(0x0000_0100_0000_01b3);
-    mix(cut as u8);
+    mix(cut.level as u8);
     let x0 = (cx * CHUNK).saturating_sub(1);
     let y0 = (cy * CHUNK).saturating_sub(1);
     let x1 = ((cx + 1) * CHUNK + 1).min(m.w);
     let y1 = ((cy + 1) * CHUNK + 1).min(m.h);
+    for y in y0..y1 {
+        for x in x0..x1 {
+            mix(cut.top(m, x, y) as u8);
+        }
+    }
     for z in 0..m.d {
         for y in y0..y1 {
             for x in x0..x1 {
                 let p = (x, y, z);
                 let look = look_at(m, p, cut);
                 mix(look.code());
-                if look == Look3::Open && z <= cut {
+                if look == Look3::Open && !cut.hides(m, p) {
                     // Open cells colour the ground below them, or carry a floor.
                     let i = m.idx(p);
                     mix(m.floor[i] as u8);
@@ -339,11 +368,13 @@ fn floor_color(m: &Map, p: Pos) -> Rgb {
 }
 
 /// The chunk's opaque mesh, and its water surface (if there is any water).
-fn build_chunk(m: &Map, cx: usize, cy: usize, cut: usize) -> (Mesh, Option<Mesh>) {
+fn build_chunk(m: &Map, cx: usize, cy: usize, cut: Cut) -> (Mesh, Option<Mesh>) {
     let mut b = MeshBuf::new(1.0);
     let mut water = MeshBuf::new(0.72);
     let look_off = |x: i32, y: i32, z: i32| m.at(x, y, z).map(|p| look_at(m, p, cut));
-    for z in 0..=cut.min(m.d - 1) {
+    // A built floor that isn't hidden.
+    let floor_shown = |q: Pos| m.floor[m.idx(q)] && !cut.hides(m, q);
+    for z in 0..=cut.level.min(m.d - 1) {
         for y in cy * CHUNK..((cy + 1) * CHUNK).min(m.h) {
             for x in cx * CHUNK..((cx + 1) * CHUNK).min(m.w) {
                 let p = (x, y, z);
@@ -352,12 +383,12 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: usize) -> (Mesh, Option<Mesh>
                 let (xi, yi, zi) = (x as i32, y as i32, z as i32);
                 let (lo, hi) = (z as f32 * LEVEL_H, (z + 1) as f32 * LEVEL_H);
                 if look == Look3::Open {
-                    if m.floor[m.idx(p)] {
+                    if floor_shown(p) {
                         let top = lo + FLOOR_T;
                         b.flat(fx, fz, top, Vec3::Y, floor_color(m, p));
                         b.flat(fx, fz, lo, Vec3::NEG_Y, FLOOR.shade(0.6));
                         for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                            let edge = m.at(xi + dx, yi + dz, zi).is_none_or(|q| !m.floor[m.idx(q)]);
+                            let edge = m.at(xi + dx, yi + dz, zi).is_none_or(|q| !floor_shown(q));
                             if edge && !look_off(xi + dx, yi + dz, zi).is_some_and(|l| l.covers(-dx, -dz)) {
                                 b.side(fx, fz, dx, dz, lo, top, FLOOR.shade(0.7));
                             }
@@ -367,7 +398,7 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: usize) -> (Mesh, Option<Mesh>
                 }
                 let above = look_off(xi, yi, zi + 1);
                 // Cut open by the layer view: show the cross-section darker.
-                let sliced = z == cut && m.above(p).is_some_and(|a| look_at(m, a, usize::MAX).opaque());
+                let sliced = z == cut.top(m, x, y) && m.above(p).is_some_and(|a| look_at(m, a, Cut::NONE).opaque());
 
                 if look == Look3::Water {
                     // Only the surface, where open air meets it.

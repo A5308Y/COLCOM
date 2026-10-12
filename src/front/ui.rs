@@ -30,7 +30,7 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 30] = [
+const HELP_REST: [&str; 31] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -45,6 +45,7 @@ const HELP_REST: [&str; 30] = [
     "",
     "Floors need a wall, stairs or ground below within 3 cells.",
     "      Use the layer view to place floors in mid-air: PageDown/PageUp (or [ and ]).",
+    "      Shift+R hides built roofs, to look into the top room of every building at once.",
     "Stairs rise away from where you walk onto them; you can't walk across them.",
     "Lamps light up rooms and caves - nights are dark.",
     "",
@@ -93,13 +94,12 @@ fn draw_ui(
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
     let (cam, gt) = *camera;
-    let cut = st.top_level(&sim.world.map);
     // The build menu first: everything else keeps to the right of it.
     let left = build_menu::draw(&ctx, &sim, &mut st);
     st.dock_width = left;
     let mut view = ctx.viewport_rect();
     view.min.x += left;
-    overlay::draw(&ctx, &sim.world, cam, gt, rig.distance, cut, view);
+    overlay::draw(&ctx, &sim.world, cam, gt, rig.distance, &st, view);
 
     hud(&ctx, &mut sim, &mut st, &mut rig, left);
     colonist_bar(&ctx, &sim, &mut st, left);
@@ -213,6 +213,10 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 }
                 if st.view_level.is_some() && ui.button("Show all").clicked() {
                     st.view_level = None;
+                }
+                let roofs = egui::Button::new("Hide roofs (Shift+R)").selected(st.hide_roofs);
+                if ui.add(roofs).on_hover_text("Look into buildings: hides built roofs over rooms").clicked() {
+                    st.hide_roofs = !st.hide_roofs;
                 }
                 ui.separator();
                 if ui.add(egui::Button::new("Sound").selected(st.show_sound)).clicked() {

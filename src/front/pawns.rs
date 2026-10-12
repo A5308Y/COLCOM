@@ -371,7 +371,7 @@ fn sync_pawns(
             }
         }
         if let Ok(mut vis) = visibility.get_mut(v.root) {
-            *vis = if ui.shows(m, p.z) { Visibility::Inherited } else { Visibility::Hidden };
+            *vis = if ui.shows_at(m, p.x, p.y, p.z) { Visibility::Inherited } else { Visibility::Hidden };
         }
 
         // Weapon in hand when fighting or drafted.
