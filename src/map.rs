@@ -497,6 +497,17 @@ impl Map {
         q
     }
 
+    /// Whether something built into a wall line at `p` (a door, a window)
+    /// runs along x: there's a wall, door or solid ground beside it in x.
+    pub fn runs_along_x(&self, p: Pos) -> bool {
+        [-1, 1].into_iter().any(|dx| {
+            self.at(p.0 as i32 + dx, p.1 as i32, p.2 as i32).is_some_and(|q| {
+                let i = self.idx(q);
+                self.block[i].solid() || self.feature[i].blocks_room()
+            })
+        })
+    }
+
     /// Inside an enclosed room with a roof.
     pub fn roofed(&self, p: Pos) -> bool {
         self.room.get(self.idx(p)).is_some_and(|&r| r != 0)

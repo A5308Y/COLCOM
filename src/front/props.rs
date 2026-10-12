@@ -131,14 +131,6 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
     commands.insert_resource(assets);
 }
 
-/// A wall or door (or solid ground) beside a door decides which way it faces.
-fn is_wallish(m: &Map, x: i32, y: i32, z: usize) -> bool {
-    m.at(x, y, z as i32).is_some_and(|p| {
-        let i = m.idx(p);
-        m.block[i].solid() || m.feature[i].blocks_room()
-    })
-}
-
 /// Neighbours a structure's linked parts (fence rails) join up with: the
 /// same structure, walls or solid ground. Bit `d` is set for `DIRS[d]`.
 fn links(m: &Map, pos: Pos, kind: BuildId) -> u8 {
@@ -229,7 +221,6 @@ fn sync_props(
 
     for i in 0..m.len() {
         let pos = m.pos(i);
-        let (xi, yi) = (pos.0 as i32, pos.1 as i32);
         let want = match m.feature[i] {
             Feature::None => None,
             Feature::Plant { kind, growth } => Some(PropKey::Plant { kind, stage: kind.def().stage(growth) as u8 }),
@@ -248,12 +239,15 @@ fn sync_props(
                 };
                 // Modelled spanning x; a quarter turn when the walls run along y.
                 let dir = if def.along_walls {
-                    let horizontal = is_wallish(m, xi - 1, yi, pos.2) || is_wallish(m, xi + 1, yi, pos.2);
-                    if horizontal { 0 } else { 3 }
+                    if m.runs_along_x(pos) {
+                        0
+                    } else {
+                        3
+                    }
                 } else {
                     dir
                 };
-                let linked = matches!(&def.look, BuildLook::Parts(p) if p.iter().any(|p| p.link.is_some()));
+                let linked = def.parts().iter().any(|p| p.link.is_some());
                 let links = if linked { links(m, pos, kind) } else { 0 };
                 PropKey::Built { kind, dir, owner, open, links }
             }),
@@ -372,7 +366,7 @@ fn spawn_feature(
         }
         PropKey::Built { kind, dir, open, links, .. } => {
             let def = kind.def();
-            let BuildLook::Parts(parts) = &def.look else { return commands.spawn(base).id() };
+            let parts = def.parts();
             let pose = Pose { ghost: false, open, dir, links };
             let e = spawn_parts(commands, a, base.with_rotation(facing(dir)), parts, pose, &blanket);
             if let Some(l) = &def.light {
@@ -399,7 +393,7 @@ fn spawn_feature(
             BuildLook::Parts(parts) => {
                 spawn_parts(commands, a, base, parts, Pose { ghost: true, ..default() }, &blanket)
             }
-            BuildLook::Block => {
+            BuildLook::Block | BuildLook::Opening { .. } => {
                 let block = Part {
                     shape: Shape::Cube,
                     color: String::new(),

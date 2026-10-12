@@ -1,6 +1,7 @@
 //! Bevy front end: 3D scene, camera, input and egui interface around the
 //! simulation library.
 
+mod build_menu;
 mod camera;
 mod input;
 mod look;

@@ -23,42 +23,77 @@ pub enum Tool {
     Paint(Order),
 }
 
-/// Toolbar entries (tool, label, shortcut): fixed tools around one per
-/// buildable in the definitions.
-pub static TOOLS: LazyLock<Vec<(Tool, String, Option<KeyCode>)>> = LazyLock::new(|| {
-    let fixed = |tool, label: &str, key| (tool, label.to_string(), Some(key));
+/// One tool in the build menu.
+pub struct ToolEntry {
+    pub tool: Tool,
+    pub name: String,
+    /// Shortcut as shown, and as pressed.
+    pub key: Option<(String, KeyCode)>,
+    /// Menu group: "Orders", "Zones", or a buildable's category.
+    pub group: String,
+    /// What it does, for tooltips (buildables describe themselves from their definition).
+    pub hint: &'static str,
+}
+
+/// Every tool: orders and zones, then one per buildable in the definitions.
+pub static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(|| {
+    let fixed = |tool, name: &str, key: &str, code, group: &str, hint| ToolEntry {
+        tool,
+        name: name.to_string(),
+        key: Some((key.to_string(), code)),
+        group: group.to_string(),
+        hint,
+    };
     let mut tools = vec![
-        fixed(Tool::Select, "Esc Select", KeyCode::Escape),
-        fixed(Tool::Paint(Order::Desig(Desig::Chop)), "1 Chop", KeyCode::Digit1),
-        fixed(Tool::Paint(Order::Desig(Desig::Mine)), "2 Mine", KeyCode::Digit2),
-        fixed(Tool::Paint(Order::Desig(Desig::Forage)), "3 Forage", KeyCode::Digit3),
-        fixed(Tool::Paint(Order::Stockpile), "4 Stockpile", KeyCode::Digit4),
+        fixed(Tool::Select, "Select", "Esc", KeyCode::Escape, "Orders", "Click colonists and cells to inspect them."),
+        fixed(Tool::Paint(Order::Desig(Desig::Chop)), "Chop trees", "1", KeyCode::Digit1, "Orders", "Mark trees to be cut down for wood."),
+        fixed(
+            Tool::Paint(Order::Desig(Desig::Mine)),
+            "Mine",
+            "2",
+            KeyCode::Digit2,
+            "Orders",
+            "Dig out rock, ore and soil, or take down structures and floors.",
+        ),
+        fixed(Tool::Paint(Order::Desig(Desig::Forage)), "Forage", "3", KeyCode::Digit3, "Orders", "Mark berry bushes to be picked."),
+        fixed(
+            Tool::Paint(Order::Cancel),
+            "Cancel",
+            "0",
+            KeyCode::Digit0,
+            "Orders",
+            "Remove designations and blueprints (delivered materials are dropped).",
+        ),
+        fixed(
+            Tool::Paint(Order::Stockpile),
+            "Stockpile",
+            "4",
+            KeyCode::Digit4,
+            "Zones",
+            "Loose items get hauled here. Click a stockpile to set its priority and what it takes.",
+        ),
     ];
     if let Some(crop) = defs().sown() {
-        tools.push(fixed(Tool::Paint(Order::Zone(Zone::Grow(crop))), "5 Grow zone", KeyCode::Digit5));
+        let hint = "Colonists plant and harvest crops here. Click it to choose the crop.";
+        tools.push(fixed(Tool::Paint(Order::Zone(Zone::Grow(crop))), "Grow zone", "5", KeyCode::Digit5, "Zones", hint));
     }
+    tools.push(fixed(Tool::Paint(Order::Zone(Zone::None)), "Clear zone", "9", KeyCode::Digit9, "Zones", "Remove stockpile and grow zones."));
     for kind in BuildId::all() {
         let def = kind.def();
         let key = def.key.as_deref().and_then(|k| match parse_key(k) {
-            Some(code) if !RESERVED.contains(&code) => Some((k, code)),
+            Some(code) if !RESERVED.contains(&code) => Some((k.to_uppercase(), code)),
             _ => {
                 warn!("{}: key \"{}\" can't be used as a shortcut", def.id, k);
                 None
             }
         });
-        let label = match key {
-            Some((k, _)) => format!("{} {}", k.to_uppercase(), def.name),
-            None => def.name.clone(),
-        };
-        tools.push((Tool::Paint(Order::Build(kind)), label, key.map(|k| k.1)));
+        tools.push(ToolEntry { tool: Tool::Paint(Order::Build(kind)), name: def.name.clone(), key, group: def.category.clone(), hint: "" });
     }
-    tools.push(fixed(Tool::Paint(Order::Zone(Zone::None)), "9 Clear zone", KeyCode::Digit9));
-    tools.push(fixed(Tool::Paint(Order::Cancel), "0 Cancel", KeyCode::Digit0));
     tools
 });
 
 /// Keys with fixed meanings, which buildables can't use as shortcuts.
-const RESERVED: [KeyCode; 21] = [
+const RESERVED: [KeyCode; 22] = [
     KeyCode::Escape,
     KeyCode::Digit1,
     KeyCode::Digit2,
@@ -74,6 +109,7 @@ const RESERVED: [KeyCode; 21] = [
     KeyCode::KeyQ,
     KeyCode::KeyE,
     KeyCode::KeyP,
+    KeyCode::KeyI,
     KeyCode::KeyH,
     KeyCode::KeyF,
     KeyCode::KeyC,
@@ -164,6 +200,22 @@ pub struct UiState {
     pub inspector_health: bool,
     /// Layer view: hide everything above this level (None = show all).
     pub view_level: Option<usize>,
+    /// The build menu docked on the left.
+    pub show_build: bool,
+    /// Search text in the build menu.
+    pub build_filter: String,
+    /// The window listing what the colony has.
+    pub show_resources: bool,
+    /// Width of the docked build menu last frame (in logical pixels).
+    pub dock_width: f32,
+}
+
+impl UiState {
+    /// Whether the cursor is over the docked build menu (egui doesn't count
+    /// docked panels as "over the UI" by itself).
+    pub fn over_dock(&self, window: &Window) -> bool {
+        window.cursor_position().is_some_and(|c| c.x < self.dock_width)
+    }
 }
 
 impl UiState {
@@ -191,6 +243,10 @@ impl Plugin for InputPlugin {
             show_help: false,
             inspector_health: false,
             view_level: None,
+            show_build: true,
+            build_filter: String::new(),
+            dock_width: 0.0,
+            show_resources: false,
         })
         .add_systems(
             Update,
@@ -392,14 +448,20 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
         ui.show_help = false;
         ui.show_work = false;
     }
-    for (tool, _, key) in TOOLS.iter() {
-        if key.is_some_and(|k| keys.just_pressed(k)) {
-            ui.tool = *tool;
+    for e in TOOLS.iter() {
+        if e.key.as_ref().is_some_and(|(_, k)| keys.just_pressed(*k)) {
+            ui.tool = e.tool;
             ui.drag_start = None;
         }
     }
+    if keys.just_pressed(KeyCode::Backquote) {
+        ui.show_build = !ui.show_build;
+    }
     if keys.just_pressed(KeyCode::KeyP) {
         ui.show_work = !ui.show_work;
+    }
+    if keys.just_pressed(KeyCode::KeyI) {
+        ui.show_resources = !ui.show_resources;
     }
     if keys.any_just_pressed([KeyCode::PageDown, KeyCode::BracketLeft]) {
         level_down(&sim, &mut ui, &rig);
@@ -431,10 +493,11 @@ fn mouse(
     buttons: Res<ButtonInput<MouseButton>>,
     egui_input: Res<EguiWantsInput>,
     drag: Res<DragTracker>,
+    window: Single<&Window, With<PrimaryWindow>>,
     mut sim: ResMut<Sim>,
     mut ui: ResMut<UiState>,
 ) {
-    let over_ui = egui_input.wants_any_pointer_input();
+    let over_ui = egui_input.wants_any_pointer_input() || ui.over_dock(&window);
     let hover = ui.hover;
     match ui.tool {
         Tool::Select => {
@@ -601,13 +664,13 @@ mod tests {
 
     #[test]
     fn every_buildable_has_a_usable_distinct_shortcut() {
-        let keys: Vec<KeyCode> = TOOLS.iter().filter_map(|t| t.2).collect();
+        let keys: Vec<KeyCode> = TOOLS.iter().filter_map(|t| t.key.as_ref().map(|k| k.1)).collect();
         for (k, key) in keys.iter().enumerate() {
             assert!(!keys[k + 1..].contains(key), "{:?} used twice", key);
         }
         for kind in BuildId::all() {
-            let tool = TOOLS.iter().find(|t| t.0 == Tool::Paint(Order::Build(kind))).expect("on the toolbar");
-            assert_eq!(tool.2.is_some(), kind.def().key.is_some(), "{} shortcut", kind.def().id);
+            let tool = TOOLS.iter().find(|t| t.tool == Tool::Paint(Order::Build(kind))).expect("in the build menu");
+            assert_eq!(tool.key.is_some(), kind.def().key.is_some(), "{} shortcut", kind.def().id);
         }
     }
 }

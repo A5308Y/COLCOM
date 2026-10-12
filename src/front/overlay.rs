@@ -23,9 +23,20 @@ fn bar(painter: &egui::Painter, center: Pos2, width: f32, frac: f32, fill: Color
 }
 
 /// `cut` is the highest level shown (layer view); anything above is skipped.
-pub fn draw(ctx: &egui::Context, w: &SimWorld, cam: &Camera, gt: &GlobalTransform, distance: f32, cut: usize) {
-    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("world_overlay")));
-    let screen = ctx.viewport_rect();
+/// `view` is the part of the screen showing the world (not covered by docked panels).
+pub fn draw(
+    ctx: &egui::Context,
+    w: &SimWorld,
+    cam: &Camera,
+    gt: &GlobalTransform,
+    distance: f32,
+    cut: usize,
+    view: egui::Rect,
+) {
+    let painter = ctx
+        .layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("world_overlay")))
+        .with_clip_rect(view);
+    let screen = view;
     let to_screen = |p: Vec3| {
         cam.world_to_viewport(gt, p).ok().map(|v| Pos2::new(v.x, v.y)).filter(|p| screen.contains(*p))
     };

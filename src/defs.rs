@@ -268,6 +268,11 @@ pub enum BuildLook {
     /// A full solid block, drawn with the terrain.
     Block,
     Parts(Vec<Part>),
+    /// A wall block with a hole through it (windows), drawn with the terrain
+    /// so it joins the walls beside it; `parts` fill the hole (frame, glass).
+    /// The hole is `width` wide (of the cell) and runs from `bottom` to `top`
+    /// (of the level height), centred along the wall.
+    Opening { width: f32, bottom: f32, top: f32, parts: Vec<Part> },
 }
 
 fn construction() -> WorkType {
@@ -338,6 +343,14 @@ impl BuildDef {
     /// Drawn as a solid block with the terrain (walls).
     pub fn is_block(&self) -> bool {
         matches!(self.look, BuildLook::Block)
+    }
+
+    /// The parts drawn as a model (none for blocks).
+    pub fn parts(&self) -> &[Part] {
+        match &self.look {
+            BuildLook::Block => &[],
+            BuildLook::Parts(p) | BuildLook::Opening { parts: p, .. } => p,
+        }
     }
 }
 
@@ -561,8 +574,11 @@ impl Defs {
             if d.cost.count == 0 || d.work_time <= 0.0 {
                 return Err(format!("{}: needs a cost and work time", d.id));
             }
-            if let BuildLook::Parts(p) = &d.look {
-                parts(&d.id, p)?;
+            parts(&d.id, d.parts())?;
+            if let BuildLook::Opening { width, bottom, top, .. } = d.look {
+                if !(0.0 < width && width < 1.0 && 0.0 <= bottom && bottom < top && top <= 1.0) || d.passable {
+                    return Err(format!("{}: an opening needs 0 < width < 1, 0 <= bottom < top <= 1, not passable", d.id));
+                }
             }
             if d.is_block() && d.passable {
                 return Err(format!("{}: a block can't be passable", d.id));
@@ -576,10 +592,8 @@ impl Defs {
             if (d.storage.is_some() || d.special == Special::Seat) && !d.passable {
                 return Err(format!("{}: storage and seats must be passable", d.id));
             }
-            if let BuildLook::Parts(p) = &d.look {
-                if p.iter().any(|p| p.link.is_some_and(|l| l > 3)) {
-                    return Err(format!("{}: link must be 0 to 3", d.id));
-                }
+            if d.parts().iter().any(|p| p.link.is_some_and(|l| l > 3)) {
+                return Err(format!("{}: link must be 0 to 3", d.id));
             }
             if matches!(d.special, Special::Floor | Special::Stairs | Special::Bed | Special::Door) && !d.passable {
                 return Err(format!("{}: {:?} must be passable", d.id, d.special));

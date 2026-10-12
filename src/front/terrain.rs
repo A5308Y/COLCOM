@@ -11,6 +11,7 @@ use super::sim::Sim;
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
+use my_world::defs::BuildLook;
 use my_world::map::{Block, Map, Pos, Zone};
 
 const CHUNK: usize = 16;
@@ -29,6 +30,8 @@ enum Look3 {
     Rock,
     Ore,
     Wall,
+    /// A wall with a hole through it (a window), running along x or y.
+    Opening { along_x: bool },
     Water,
 }
 
@@ -44,14 +47,39 @@ fn look_at(m: &Map, p: Pos, cut: usize) -> Look3 {
         (Block::Ore, _) => Look3::Ore,
         (Block::Water, _) => Look3::Water,
         (Block::Air, f) if f.is_block() => Look3::Wall,
+        (Block::Air, f) if f.structure().is_some_and(|d| matches!(d.look, BuildLook::Opening { .. })) => {
+            Look3::Opening { along_x: m.runs_along_x(p) }
+        }
         (Block::Air, _) => Look3::Open,
     }
 }
 
 impl Look3 {
-    /// Hides faces behind it.
+    /// Hides faces above and below it.
     fn opaque(self) -> bool {
-        matches!(self, Look3::Soil | Look3::Rock | Look3::Ore | Look3::Wall)
+        matches!(self, Look3::Soil | Look3::Rock | Look3::Ore | Look3::Wall | Look3::Opening { .. })
+    }
+
+    /// Hides the face of a neighbour that meets it going (dx, dz): an
+    /// opening's ends are solid, its front and back have the hole.
+    fn covers(self, dx: i32, dz: i32) -> bool {
+        match self {
+            Look3::Opening { along_x } => (dx != 0) == along_x && (dz != 0) != along_x,
+            l => l.opaque(),
+        }
+    }
+
+    /// Small number for chunk signatures.
+    fn code(self) -> u8 {
+        match self {
+            Look3::Open => 0,
+            Look3::Soil => 1,
+            Look3::Rock => 2,
+            Look3::Ore => 3,
+            Look3::Wall => 4,
+            Look3::Opening { along_x } => 5 + along_x as u8,
+            Look3::Water => 7,
+        }
     }
 }
 
@@ -187,7 +215,7 @@ fn signature(m: &Map, cx: usize, cy: usize, cut: usize) -> u64 {
             for x in x0..x1 {
                 let p = (x, y, z);
                 let look = look_at(m, p, cut);
-                mix(look as u8);
+                mix(look.code());
                 if look == Look3::Open && z <= cut {
                     // Open cells colour the ground below them, or carry a floor.
                     let i = m.idx(p);
@@ -330,7 +358,7 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: usize) -> (Mesh, Option<Mesh>
                         b.flat(fx, fz, lo, Vec3::NEG_Y, FLOOR.shade(0.6));
                         for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
                             let edge = m.at(xi + dx, yi + dz, zi).is_none_or(|q| !m.floor[m.idx(q)]);
-                            if edge && !look_off(xi + dx, yi + dz, zi).is_some_and(|l| l.opaque()) {
+                            if edge && !look_off(xi + dx, yi + dz, zi).is_some_and(|l| l.covers(-dx, -dz)) {
                                 b.side(fx, fz, dx, dz, lo, top, FLOOR.shade(0.7));
                             }
                         }
@@ -350,6 +378,18 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: usize) -> (Mesh, Option<Mesh>
                     continue;
                 }
 
+                if let Look3::Opening { along_x } = look {
+                    let BuildLook::Opening { width, bottom, top, .. } = m.feature[m.idx(p)].structure().unwrap().look else {
+                        continue;
+                    };
+                    let hole = (width, lo + bottom * LEVEL_H, lo + top * LEVEL_H);
+                    let face_open = |dx: i32, dz: i32| !look_off(xi + dx, yi + dz, zi).is_some_and(|l| l.covers(-dx, -dz));
+                    let top_open = !above.is_some_and(|a| a.opaque());
+                    let below_open = z > 0 && !look_off(xi, yi, zi - 1).is_some_and(|l| l.opaque());
+                    let top_color = if sliced { WALL_TOP.shade(0.55) } else { WALL_TOP };
+                    opening(&mut b, (fx, fz, lo, hi), along_x, hole, top_color, &face_open, top_open, below_open);
+                    continue;
+                }
                 let tone = 0.95 + hash(xi, yi + 31 * zi, 31) * 0.08;
                 let (top, face) = match look {
                     Look3::Rock => (ground_color(m, p, look), ROCK_FACE.shade(tone)),
@@ -370,7 +410,7 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: usize) -> (Mesh, Option<Mesh>
                 }
                 for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
                     let beside = look_off(xi + dx, yi + dz, zi);
-                    if !beside.is_some_and(|l| l.opaque()) {
+                    if !beside.is_some_and(|l| l.covers(-dx, -dz)) {
                         b.side(fx, fz, dx, dz, lo, hi, face);
                     }
                 }
@@ -379,4 +419,64 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: usize) -> (Mesh, Option<Mesh>
     }
     let water = (!water.idx.is_empty()).then(|| water.into_mesh());
     (b.into_mesh(), water)
+}
+
+/// A wall cell with a hole through it, like the wall blocks beside it.
+/// `cell` is (x, y, bottom, top) in world units; `hole` is (width as a share
+/// of the cell, bottom, top). Coordinates below are local: `u` runs along the
+/// wall, `v` through it.
+#[allow(clippy::too_many_arguments)]
+fn opening(
+    b: &mut MeshBuf,
+    (x, z, lo, hi): (f32, f32, f32, f32),
+    along_x: bool,
+    (width, yb, yt): (f32, f32, f32),
+    top_color: Rgb,
+    face_open: &dyn Fn(i32, i32) -> bool,
+    top_open: bool,
+    below_open: bool,
+) {
+    let world = |u: f32, y: f32, v: f32| if along_x { Vec3::new(x + u, y, z + v) } else { Vec3::new(x + v, y, z + u) };
+    let dir = |du: i32, dv: i32| if along_x { (du, dv) } else { (dv, du) };
+    let normal = |du: i32, dy: i32, dv: i32| {
+        let (dx, dz) = dir(du, dv);
+        Vec3::new(dx as f32, dy as f32, dz as f32)
+    };
+    let (h0, h1) = (0.5 - width / 2.0, 0.5 + width / 2.0);
+    let reveal = WALL_FACE.shade(0.85);
+    // Faces across `v` (front and back), with the hole cut out.
+    let across = |b: &mut MeshBuf, v: f32, dv: i32, u0: f32, u1: f32, y0: f32, y1: f32| {
+        let c = [world(u0, y0, v), world(u1, y0, v), world(u1, y1, v), world(u0, y1, v)];
+        b.quad(c, normal(0, 0, dv), WALL_FACE);
+    };
+    for (v, dv) in [(0.0, -1), (1.0, 1)] {
+        let (dx, dz) = dir(0, dv);
+        if face_open(dx, dz) {
+            across(b, v, dv, 0.0, 1.0, lo, yb);
+            across(b, v, dv, 0.0, 1.0, yt, hi);
+            across(b, v, dv, 0.0, h0, yb, yt);
+            across(b, v, dv, h1, 1.0, yb, yt);
+        }
+    }
+    // The ends, where it meets the walls beside it.
+    for (u, du) in [(0.0, -1), (1.0, 1)] {
+        let (dx, dz) = dir(du, 0);
+        if face_open(dx, dz) {
+            let c = [world(u, lo, 0.0), world(u, lo, 1.0), world(u, hi, 1.0), world(u, hi, 0.0)];
+            b.quad(c, normal(du, 0, 0), WALL_FACE);
+        }
+    }
+    // Inside the hole: sill, lintel and the two sides.
+    b.quad([world(h0, yb, 0.0), world(h1, yb, 0.0), world(h1, yb, 1.0), world(h0, yb, 1.0)], Vec3::Y, reveal);
+    b.quad([world(h0, yt, 0.0), world(h1, yt, 0.0), world(h1, yt, 1.0), world(h0, yt, 1.0)], Vec3::NEG_Y, reveal.shade(0.8));
+    for (u, du) in [(h0, 1), (h1, -1)] {
+        let c = [world(u, yb, 0.0), world(u, yb, 1.0), world(u, yt, 1.0), world(u, yt, 0.0)];
+        b.quad(c, normal(du, 0, 0), reveal);
+    }
+    if top_open {
+        b.flat(x, z, hi, Vec3::Y, top_color);
+    }
+    if below_open {
+        b.flat(x, z, lo, Vec3::NEG_Y, WALL_FACE.shade(0.7));
+    }
 }

@@ -316,7 +316,8 @@
     // `daylight` lights the rooms it borders; `storage` holds more items per
     // cell. `along_walls`: modelled spanning x, turned to run along the walls
     // beside it (doors, windows). Parts with `link` only show when the
-    // neighbour that way is the same structure or a wall. Removing a
+    // neighbour that way is the same structure or a wall. `look: Opening`
+    // is a wall block with a hole (windows), drawn with the walls. Removing a
     // structure drops `drops`, or half its cost if not given. `look: Block`
     // means it is drawn as a solid block with the terrain (walls); its parts
     // only matter otherwise.
@@ -452,14 +453,11 @@
             beauty: 2.0,
             // Spans x like a door, turned to run along its walls.
             along_walls: true,
-            look: Parts([
-                (shape: Cube, color: "wall", at: (0.0, 0.18, 0.0), size: (1.0, 0.36, 0.98)),
-                (shape: Cube, color: "wall", at: (0.0, 0.92, 0.0), size: (1.0, 0.16, 0.98)),
-                (shape: Cube, color: "wall", at: (-0.44, 0.6, 0.0), size: (0.12, 0.48, 0.98)),
-                (shape: Cube, color: "wall", at: (0.44, 0.6, 0.0), size: (0.12, 0.48, 0.98)),
-                (shape: Cube, color: "wood_light", at: (0.0, 0.6, 0.0), size: (0.78, 0.04, 0.12)),
-                (shape: Cube, color: "wood_light", at: (0.0, 0.6, 0.0), size: (0.04, 0.48, 0.12)),
-                (shape: Cube, color: "glass", at: (0.0, 0.6, 0.0), size: (0.78, 0.48, 0.04)),
+            // Drawn with the walls; the parts sit in the hole.
+            look: Opening(width: 0.76, bottom: 0.36, top: 0.84, parts: [
+                (shape: Cube, color: "wood_light", at: (0.0, 0.6, 0.0), size: (0.76, 0.04, 0.1)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.6, 0.0), size: (0.04, 0.48, 0.1)),
+                (shape: Cube, color: "glass", at: (0.0, 0.6, 0.0), size: (0.76, 0.48, 0.03)),
             ]),
         ),
         (
@@ -622,7 +620,6 @@
             id: "smithy",
             category: "Production",
             name: "Smithy",
-            key: Some("I"),
             cost: ("stone_blocks", 15),
             work_time: 5.0,
             passable: false,

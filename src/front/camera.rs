@@ -11,6 +11,7 @@ use bevy::pbr::{DistanceFog, FogFalloff, ScreenSpaceAmbientOcclusion};
 use bevy::post_process::bloom::Bloom;
 use bevy::prelude::*;
 use bevy::render::view::Msaa;
+use bevy::window::PrimaryWindow;
 use bevy_egui::input::{egui_wants_any_keyboard_input, EguiWantsInput};
 
 #[derive(Component)]
@@ -124,22 +125,26 @@ fn keyboard_controls(keys: Res<ButtonInput<KeyCode>>, time: Res<Time>, mut rig: 
     let speed = 0.9 * rig.distance + 6.0;
     rig.focus += pan.normalize_or_zero() * speed * dt;
     if keys.pressed(KeyCode::KeyQ) {
-        rig.yaw += 1.6 * dt;
+        rig.yaw -= 1.6 * dt;
     }
     if keys.pressed(KeyCode::KeyE) {
-        rig.yaw -= 1.6 * dt;
+        rig.yaw += 1.6 * dt;
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn mouse_controls(
     buttons: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
     scroll: Res<AccumulatedMouseScroll>,
     egui_wants_pointer: Option<Res<EguiWantsInput>>,
+    ui: Res<UiState>,
+    window: Option<Single<&Window, With<PrimaryWindow>>>,
     mut drag: ResMut<DragTracker>,
     mut rig: ResMut<CameraRig>,
 ) {
-    let over_ui = egui_wants_pointer.is_some_and(|w| w.wants_any_pointer_input());
+    let over_dock = window.is_some_and(|w| ui.over_dock(&w));
+    let over_ui = egui_wants_pointer.is_some_and(|w| w.wants_any_pointer_input()) || over_dock;
     let delta = motion.delta;
 
     if buttons.just_pressed(MouseButton::Right) {

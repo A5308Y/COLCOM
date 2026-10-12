@@ -124,6 +124,18 @@ mod tests {
             w.map.items[shelf] = Some(my_world::map::Stack { kind: my_world::defs::ItemId::named("wood"), count: 120 });
             (bench, (cx - 4, cy + 2, z), grow)
         };
+        // The build menu docks on the left, collapses, and filters.
+        let dock = app.world().resource::<front::UiState>().dock_width;
+        assert!(dock > 150.0, "build menu is docked ({} wide)", dock);
+        app.world_mut().resource_mut::<front::UiState>().build_filter = "chair".into();
+        app.update();
+        app.world_mut().resource_mut::<front::UiState>().show_build = false;
+        app.update();
+        app.update();
+        let closed = app.world().resource::<front::UiState>().dock_width;
+        assert!(closed > 0.0 && closed < 60.0, "collapsed to a strip ({} wide)", closed);
+        app.world_mut().resource_mut::<front::UiState>().show_build = true;
+        app.world_mut().resource_mut::<front::UiState>().show_resources = true;
         for t in [bench, stock, grow] {
             app.world_mut().resource_mut::<front::UiState>().selected = Some(front::Selection::Tile(t));
             for _ in 0..5 {

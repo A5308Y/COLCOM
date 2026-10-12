@@ -165,6 +165,14 @@ of the mood from light and atmosphere. The simulation stays on its grid; all of 
 - Eating: `Job::Eat` has an optional seat. Colonists take their food to the nearest free chair beside a
   table within 40 steps of the food, else eat on the spot and get "Ate without a table" (-3).
 - `SAVE_VERSION` 4. Sitting isn't animated yet (phase 10b).
+- Build menu (after phase 8): a full-height dock on the left (`src/front/build_menu.rs`) replaces the
+  toolbar: groups (Orders, Zones, then buildable categories), search, cost per entry (red when short),
+  shortcut keys, details on hover, a hint for the current tool at the bottom; `` ` `` toggles it.
+  Tools are `input::ToolEntry` (name, key, group, hint). egui 0.36 panels are shown inside a root `Ui`;
+  they don't count as "pointer over egui", so `UiState::dock_width` / `over_dock` keep clicks and
+  scrolling on the dock out of the world. Windows and labels keep to the right of it.
+- Windows are a `BuildLook::Opening` (wall block with a hole) meshed with the walls by the terrain
+  mesher, so they join walls without seams; only the frame and glass are props.
 - Phase 8 performance: 0.074 ms per tick in `--example profile` (0.7% of a frame at 3x speed).
 - Phase 7 (`src/production.rs`): a workbench is any buildable a recipe names (`BuildDef::recipes` is
   filled in at load). `World::benches` holds each bench's bills (`Count(n)`, `Until(n)`, `Forever`,

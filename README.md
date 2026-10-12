@@ -22,13 +22,15 @@ according to their **work priorities** (press `P`).
 |---|---|
 | `1` / `2` / `3` | Designate trees to chop / rock or structures to mine / berry bushes to forage |
 | `4` / `5` | Stockpile zone (loose items get hauled there) / grow zone (crops get planted) |
-| `V` `J` `T` `M` `I` `U` | Workbenches: stove, sawing bench, stonecutter, smelter, smithy, crafting bench |
+| `V` `J` `T` `M` `U` | Workbenches: stove, sawing bench, stonecutter, smelter, crafting bench (the smithy is in the build menu) |
 | `O` `G` / `Y` `R` `X` / `Z` | Window, fence / table, chair, shelf / torch (all buildables are also in the toolbar's category menus) |
 | `6` / `7` / `8` | Blueprint a wall (4 stone) / door (4 wood) / bed (8 wood) |
 | `-` / `=` | Blueprint a floor (2 wood) / stairs (6 wood) |
 | `B` | Blueprint a lamp (3 wood) |
 
-(Build shortcuts and costs come from `assets/defs.ron`; the help screen (`H`) lists the current ones.)
+Everything is also in the **build menu** docked on the left: grouped (orders, zones, structure,
+furniture, light, production), searchable, with costs (red if the colony is short) and details on hover.
+`` ` `` (the key left of `1`) hides and shows it. Build shortcuts and costs come from `assets/defs.ron`.
 | `PageDown` / `PageUp` (or `[` / `]`) | Layer view: hide everything above a level, and build on that level |
 | `9` / `0` | Clear zones / cancel designations and blueprints (refunds materials) |
 | `Esc` | Select tool: click colonists or tiles to inspect them |
@@ -39,7 +41,7 @@ according to their **work priorities** (press `P`).
 | `Q` / `E`, right-drag | Rotate and tilt the camera |
 | Mouse wheel | Zoom |
 | `Space` / `Tab` | Pause / cycle speed 1x-2x-3x |
-| `P` / `H` / `C` | Work priorities / help / center camera |
+| `P` / `I` / `H` / `C` | Work priorities / resources (what the colony has) / help / center camera |
 | `K` / `L` | Save / load (`savegame.json`; saves from other versions are refused with a message) |
 | `Shift+N` | New colony |
 

@@ -2,7 +2,8 @@
 //! Health tab), work priorities, help and game over.
 
 use super::camera::{CameraRig, MainCamera};
-use super::input::{self, Selection, Tool, UiState, TOOLS};
+use super::build_menu;
+use super::input::{self, Selection, UiState};
 use super::look::{pawn_look, Look};
 use super::overlay;
 use super::sim::Sim;
@@ -15,7 +16,6 @@ use my_world::map::{Block, Feature, Pos, Zone};
 use my_world::pawn::{Pawn, Skill, WorkType};
 use my_world::production::{BillMode, PRIORITY_NAMES};
 use my_world::rooms::TIERS;
-use my_world::world::Order;
 use my_world::world::World as SimWorld;
 use my_world::DAY_LEN;
 
@@ -29,10 +29,11 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 28] = [
+const HELP_REST: [&str; 29] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
+    "The build menu on the left lists everything (` hides it); hover an entry for details.",
     "Click a stockpile to set its priority and which items it takes; click a grow zone to pick its crop.",
     "Shelves hold three stacks. Colonists eat at a table if there's a chair beside it, and hate eating without.",
     "Room quality (size, beauty of furniture, windows and doors, cleanliness, light) affects mood when",
@@ -54,7 +55,7 @@ const HELP_REST: [&str; 28] = [
     "Drafted colonists shoot enemies in range; right-click to move, right-click an enemy to attack.",
     "",
     "Camera: WASD/arrows pan, Q/E rotate, wheel zooms, right-drag orbits, middle-drag pans.",
-    "Space: pause   Tab: speed   P: work priorities   C: center camera",
+    "Space: pause   Tab: speed   P: work priorities   I: resources   C: center camera",
     "K: save   L: load   Shift+N: new colony",
     "",
     "H or Esc closes this help.",
@@ -89,18 +90,26 @@ fn draw_ui(
     let ctx = contexts.ctx_mut()?.clone();
     let (cam, gt) = *camera;
     let cut = st.top_level(&sim.world.map);
-    overlay::draw(&ctx, &sim.world, cam, gt, rig.distance, cut);
+    // The build menu first: everything else keeps to the right of it.
+    let left = build_menu::draw(&ctx, &sim, &mut st);
+    st.dock_width = left;
+    let mut view = ctx.viewport_rect();
+    view.min.x += left;
+    overlay::draw(&ctx, &sim.world, cam, gt, rig.distance, cut, view);
 
-    hud(&ctx, &mut sim, &mut st, &mut rig);
-    colonist_bar(&ctx, &sim, &mut st);
+    hud(&ctx, &mut sim, &mut st, &mut rig, left);
+    colonist_bar(&ctx, &sim, &mut st, left);
     alerts(&ctx, &sim);
     match st.selected {
-        Some(Selection::Pawn(id)) => pawn_inspector(&ctx, &sim, &mut st, id),
-        Some(Selection::Tile(t)) => tile_inspector(&ctx, &mut sim, t),
+        Some(Selection::Pawn(id)) => pawn_inspector(&ctx, &sim, &mut st, id, left),
+        Some(Selection::Tile(t)) => tile_inspector(&ctx, &mut sim, t, left),
         None => {}
     }
     if st.show_work {
         work_panel(&ctx, &mut sim, &mut st);
+    }
+    if st.show_resources {
+        resources(&ctx, &sim, &mut st);
     }
     if st.show_help {
         egui::Window::new("Help").open(&mut st.show_help).collapsible(false).resizable(false).anchor(
@@ -154,21 +163,15 @@ fn portrait(ui: &mut egui::Ui, look: &Look, size: f32) {
     p.circle_filled(c + egui::vec2(0.0, size * 0.14), size * 0.33, look.skin.egui());
 }
 
-fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig) {
-    egui::Area::new(egui::Id::new("hud")).anchor(Align2::LEFT_BOTTOM, [8.0, -8.0]).show(ctx, |ui| {
+fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig, left: f32) {
+    egui::Area::new(egui::Id::new("hud")).anchor(Align2::LEFT_BOTTOM, [left + 8.0, -8.0]).show(ctx, |ui| {
         egui::Frame::window(&ctx.global_style()).show(ui, |ui| {
             let w = &sim.world;
             let hour = w.hour();
             let clock = format!("Day {}  {:02}:{:02}", w.day(), hour as u32, ((hour - hour.floor()) * 60.0) as u32);
-            let stock: Vec<String> =
-                ItemId::all().map(|k| format!("{} {}", k.name(), w.map.count_items(k))).collect();
             let colonists = format!("Colonists {}", w.colonists_alive());
             ui.horizontal(|ui| {
                 ui.label(RichText::new(clock).strong());
-                ui.separator();
-                for s in stock {
-                    ui.label(s);
-                }
                 ui.separator();
                 ui.label(colonists);
                 ui.separator();
@@ -180,7 +183,6 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                     sim.cycle_speed();
                 }
             });
-            ui.horizontal(|ui| toolbar(ui, st));
             ui.horizontal(|ui| {
                 let view = match st.view_level {
                     Some(l) => format!("Viewing level {} of {}", l, sim.world.map.d - 1),
@@ -197,6 +199,9 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                     st.view_level = None;
                 }
                 ui.separator();
+                if ui.add(egui::Button::new("Resources (I)").selected(st.show_resources)).clicked() {
+                    st.show_resources = !st.show_resources;
+                }
                 if ui.add(egui::Button::new("Work (P)").selected(st.show_work)).clicked() {
                     st.show_work = !st.show_work;
                 }
@@ -225,49 +230,42 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
     });
 }
 
-/// The building tools, one menu per category of buildable.
-fn category_of(tool: Tool) -> Option<&'static str> {
-    match tool {
-        Tool::Paint(Order::Build(kind)) => Some(&kind.def().category),
-        _ => None,
-    }
-}
-
-/// Tool buttons; buildables are grouped into a menu per category, shown
-/// where the first of them would be.
-fn toolbar(ui: &mut egui::Ui, st: &mut UiState) {
-    let mut shown: Vec<&str> = Vec::new();
-    for (tool, label, _) in TOOLS.iter() {
-        let Some(cat) = category_of(*tool) else {
-            if ui.add(egui::Button::new(label.as_str()).selected(st.tool == *tool)).clicked() {
-                st.tool = *tool;
-                st.drag_start = None;
-            }
-            continue;
-        };
-        if shown.contains(&cat) {
-            continue;
+/// What the colony has, by category, leaving out what it has none of.
+fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
+    let totals = sim.world.item_totals();
+    let mut categories: Vec<&str> = Vec::new();
+    for k in ItemId::all() {
+        if totals[k.index()] > 0 && !categories.contains(&k.def().category.as_str()) {
+            categories.push(&k.def().category);
         }
-        shown.push(cat);
-        let active = category_of(st.tool) == Some(cat);
-        let title = match st.tool {
-            Tool::Paint(Order::Build(k)) if active => RichText::new(format!("{}: {}", cat, k.name())).strong(),
-            _ => RichText::new(format!("{} ...", cat)),
-        };
-        ui.menu_button(title, |ui| {
-            for (t, l, _) in TOOLS.iter().filter(|t| category_of(t.0) == Some(cat)) {
-                if ui.add(egui::Button::new(l.as_str()).selected(st.tool == *t)).clicked() {
-                    st.tool = *t;
-                    st.drag_start = None;
-                    ui.close();
-                }
+    }
+    egui::Window::new("Resources")
+        .open(&mut st.show_resources)
+        .anchor(Align2::RIGHT_BOTTOM, [-8.0, -8.0])
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            if categories.is_empty() {
+                ui.label(RichText::new("Nothing yet").weak());
+            }
+            for cat in categories {
+                ui.label(RichText::new(cat).strong());
+                egui::Grid::new(("resources", cat)).num_columns(2).spacing([24.0, 2.0]).show(ui, |ui| {
+                    for k in ItemId::all().filter(|k| k.def().category == cat && totals[k.index()] > 0) {
+                        ui.label(k.name());
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(totals[k.index()].to_string());
+                        });
+                        ui.end_row();
+                    }
+                });
+                ui.add_space(4.0);
             }
         });
-    }
 }
 
-fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
-    egui::Area::new(egui::Id::new("colonists")).anchor(Align2::LEFT_TOP, [8.0, 8.0]).show(ctx, |ui| {
+fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, left: f32) {
+    egui::Area::new(egui::Id::new("colonists")).anchor(Align2::LEFT_TOP, [left + 8.0, 8.0]).show(ctx, |ui| {
         ui.horizontal(|ui| {
             for p in sim.world.pawns.iter().filter(|p| p.is_colonist()) {
                 let selected = st.selected == Some(Selection::Pawn(p.id));
@@ -318,12 +316,12 @@ fn alerts(ctx: &egui::Context, sim: &Sim) {
     });
 }
 
-fn pawn_inspector(ctx: &egui::Context, sim: &Sim, st: &mut UiState, id: u32) {
+fn pawn_inspector(ctx: &egui::Context, sim: &Sim, st: &mut UiState, id: u32, left: f32) {
     let Some(p) = sim.world.pawn(id) else { return };
     let title = if p.is_colonist() { p.name.clone() } else { format!("{} (raider)", p.name) };
     egui::Window::new(RichText::new(title).strong())
         .id(egui::Id::new("inspector"))
-        .anchor(Align2::LEFT_TOP, [8.0, 92.0])
+        .anchor(Align2::LEFT_TOP, [left + 8.0, 92.0])
         .collapsible(false)
         .resizable(false)
         .default_width(340.0)
@@ -460,14 +458,14 @@ fn health_tab(ui: &mut egui::Ui, p: &Pawn) {
 /// A change to the world chosen in the inspector, applied after drawing it.
 type Action = Box<dyn FnOnce(&mut SimWorld)>;
 
-fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos) {
+fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) {
     let mut actions: Vec<Action> = Vec::new();
     let w = &sim.world;
     let m = &w.map;
     let i = m.idx(t);
     egui::Window::new(RichText::new(format!("Cell {}, {}  level {}", t.0, t.1, t.2)).strong())
         .id(egui::Id::new("inspector"))
-        .anchor(Align2::LEFT_TOP, [8.0, 92.0])
+        .anchor(Align2::LEFT_TOP, [left + 8.0, 92.0])
         .collapsible(false)
         .resizable(false)
         .show(ctx, |ui| {
