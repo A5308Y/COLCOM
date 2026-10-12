@@ -107,7 +107,9 @@ of the mood from light and atmosphere. The simulation stays on its grid; all of 
   between smooth, sharp (nearest) and pixel (quarter resolution, nearest).
   Findings for later: the character files carry no animation data, so their bones are given animation
   target ids by name path at spawn (they share the library's skeleton exactly); the free packs have no
-  separate head, so dressed characters are outfit + full body (may clip); the library has no chop,
+  separate head, so `tools/make_heads.py` cuts one from each base body (triangles weighted to the head
+and neck bones) and dressed characters are outfit + head + hair; each character has one
+`AnimationPlayer` on its root driving the bones of all its parts (separate players drifted apart); the library has no chop,
   mine or carry animations (use Sword_Attack, Fixing_Kneeling, PickUp_Table or find more); the packs
   differ in scale (pine 2.7, stylised tree 5.5, house 3.4 units), so definitions need a scale per model.
   Still to do: judge the look in the test and decide: choose asset packs (Quaternius is closest among CC0 packs; Kenney is too clean;

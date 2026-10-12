@@ -11,6 +11,9 @@ By Quaternius (https://quaternius.com, https://www.patreon.com/quaternius). Free
 | `models/characters/outfits/`, `outfit_parts/` | Modular Character Outfits – Fantasy (whole outfits and separate parts, plus colour variants) |
 | `models/characters/animations/` | Universal Animation Library (`UAL1_Standard.glb`; `_RM` has root motion baked in) |
 
+`base/Superhero_Male_Head.gltf` and `Superhero_Female_Head.gltf` are cut from the base characters by
+`tools/make_heads.py` (only the triangles bound to the head and neck bones), to wear under outfits.
+
 Fix applied: the base character glTF files referred to `T_Eye_Normal_png.png` and
 `T_Hair_1_Normal_png.png`, which the pack doesn't contain; they now use `T_Eye_Normal.png` and
 `T_Hair_1_Normal.png`.

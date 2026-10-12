@@ -154,19 +154,22 @@ fn setup(
         commands.spawn((Mesh3d(cube.clone()), MeshMaterial3d(mat), Transform::from_xyz(x, 0.5, z)));
     }
 
-    // Characters: two bodies, then dressed ones (outfit + body for the head + hair).
+    // Characters: two bodies, then dressed ones (outfit + head cut from the
+    // body by tools/make_heads.py + hair). One animation player per character
+    // drives the bones of all its parts, so they move as one.
     let people: [(&[&str], f32); 4] = [
         (&["base/Superhero_Male_FullBody"], -3.0),
         (&["base/Superhero_Female_FullBody"], -1.5),
-        (&["outfits/Male_Ranger", "base/Superhero_Male_FullBody", "hair/Hair_SimpleParted"], 0.0),
-        (&["outfits/Female_Peasant", "base/Superhero_Female_FullBody", "hair/Hair_Buns"], 1.5),
+        (&["outfits/Male_Ranger", "base/Superhero_Male_Head", "hair/Hair_SimpleParted"], 0.0),
+        (&["outfits/Female_Peasant", "base/Superhero_Female_Head", "hair/Hair_Buns"], 1.5),
     ];
     for (parts, x) in people {
+        let character = commands
+            .spawn((AnimationPlayer::default(), Rig, Transform::from_xyz(x, 0.0, 0.0).with_scale(Vec3::splat(SCALE))))
+            .id();
         for part in parts {
             let path = format!("models/characters/{}.gltf", part);
-            commands
-                .spawn((model(&assets, &path), Transform::from_xyz(x, 0.0, 0.0).with_scale(Vec3::splat(SCALE))))
-                .observe(rig_skeleton);
+            commands.spawn((model(&assets, &path), ChildOf(character))).observe(rig_skeleton);
         }
     }
 
@@ -207,25 +210,26 @@ fn setup(
 }
 
 /// Character files have no animations of their own, so the glTF loader
-/// doesn't mark their bones. Do what it does for the animation library: an
-/// `AnimationPlayer` on the `Armature`, and each bone named by its path from
-/// there, so the library's clips find them.
+/// doesn't mark their bones. Do what it does for the animation library: name
+/// each bone by its path from the `Armature`, so the library's clips find
+/// them, and have the character's one player animate it.
 fn rig_skeleton(
     ready: On<WorldInstanceReady>,
     mut commands: Commands,
     children: Query<&Children>,
     names: Query<&Name>,
+    parents: Query<&ChildOf>,
 ) {
-    let root = ready.event().entity;
+    let part = ready.event().entity;
+    let Ok(character) = parents.get(part).map(ChildOf::parent) else { return };
     let Some(armature) =
-        children.iter_descendants(root).find(|&e| names.get(e).is_ok_and(|n| n.as_str() == "Armature"))
+        children.iter_descendants(part).find(|&e| names.get(e).is_ok_and(|n| n.as_str() == "Armature"))
     else {
         return;
     };
-    commands.entity(armature).insert((AnimationPlayer::default(), Rig));
     let mut stack = vec![(armature, vec![names.get(armature).unwrap().clone()])];
     while let Some((e, path)) = stack.pop() {
-        commands.entity(e).insert((AnimationTargetId::from_names(path.iter()), AnimatedBy(armature)));
+        commands.entity(e).insert((AnimationTargetId::from_names(path.iter()), AnimatedBy(character)));
         for child in children.get(e).into_iter().flatten() {
             if let Ok(name) = names.get(*child) {
                 let mut p = path.clone();
