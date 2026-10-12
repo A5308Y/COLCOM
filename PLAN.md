@@ -112,7 +112,12 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
 `AnimationPlayer` on its root driving the bones of all its parts (separate players drifted apart); the library has no chop,
   mine or carry animations (use Sword_Attack, Fixing_Kneeling, PickUp_Table or find more); the packs
   differ in scale (pine 2.7, stylised tree 5.5, house 3.4 units), so definitions need a scale per model.
-  Still to do: judge the look in the test and decide: choose asset packs (Quaternius is closest among CC0 packs; Kenney is too clean;
+  **Decided (2026-10-12):** flat-coloured low-poly models (Ultimate Nature, Nature Crops, Medieval
+  Village; not the textured stylised trees), Quaternius characters dressed as outfit + cut head + hair
+  (the neck seam looks good), one animation player per character (animations line up). Textures stay
+  smooth: the pixel idea is dropped, because the world has no textures and the character textures are
+  far larger than characters appear on screen (a 4x reduction made no visible difference).
+  Originally planned: choose asset packs (Quaternius is closest among CC0 packs; Kenney is too clean;
   mixing in paid packs or Blender-made models is possible) and a texture approach (low-resolution
   textures with nearest-neighbour filtering and an atlas, instead of vertex colours). Build a small test
   scene to judge the look before converting everything. The user downloads assets (the sandbox can't).
