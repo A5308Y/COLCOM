@@ -160,6 +160,11 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
 
 ## Notes
 
+- Buildables must fit their cell (1.0 high): parts on a built floor are lifted by the slab (0.08), so
+  furniture stays below 0.92; doors and windows aren't lifted (they fill the cell like walls) and may
+  reach 1.0; stairs reach the level above. `defs::tests::buildables_fit_under_the_ceiling` checks it.
+  (The door leaf used to be 1.1 tall and poked through the lintel and the floor above.)
+
 - Equip order: select a colonist (drafted or not) and right-click a weapon or piece of apparel lying on
   the map (`World::order_equip`, `Job::Equip { chosen: true }`). What they're told to use goes into
   `Pawn::chosen` and isn't swapped for better gear automatically; switching or dying clears it. Both new

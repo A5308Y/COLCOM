@@ -70,6 +70,7 @@ struct PawnVisuals {
 #[derive(Resource)]
 struct PawnAssets {
     torso: Handle<Mesh>,
+    cylinder: Handle<Mesh>,
     leg: Handle<Mesh>,
     arm: Handle<Mesh>,
     sphere: Handle<Mesh>,
@@ -93,6 +94,7 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
         arm: meshes.add(Capsule3d::new(0.05, 0.22)),
         sphere: meshes.add(Sphere::new(0.5)),
         cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+        cylinder: meshes.add(Cylinder::new(0.5, 1.0)),
         metal: lit(&mut materials, METAL),
         wood: lit(&mut materials, WOOD),
     });
@@ -141,7 +143,16 @@ fn spawn_pawn(
     let carry_tf = Transform::from_xyz(0.0, 0.6 * SCALE, 0.28 * SCALE).with_scale(Vec3::splat(0.24 * SCALE));
     let carry = commands.spawn((mesh(&a.cube, a.wood.clone(), carry_tf, root), Visibility::Hidden)).id();
     let blanket_mat = lit(materials, Rgb(p.color[0], p.color[1], p.color[2]).shade(0.8));
-    let blanket = commands.spawn((mesh(&a.sphere, blanket_mat, Transform::default(), root), Visibility::Hidden)).id();
+    // Placed at the bed's floor point each frame; the parts are relative to it
+    // (bed head towards -Z): a lump over the body, and the blanket's edge
+    // rolled over under the chin so the head doesn't look detached.
+    let blanket = commands.spawn((Transform::default(), Visibility::Hidden, ChildOf(root))).id();
+    let lump = Transform::from_xyz(0.0, 0.36, 0.13).with_scale(Vec3::new(0.54, 0.2, 0.68));
+    commands.spawn(mesh(&a.sphere, blanket_mat.clone(), lump, blanket));
+    let fold = Transform::from_xyz(0.0, 0.42, -0.17)
+        .with_rotation(Quat::from_rotation_z(FRAC_PI_2))
+        .with_scale(Vec3::new(0.12, 0.5, 0.12));
+    commands.spawn(mesh(&a.cylinder, blanket_mat, fold, blanket));
     PawnVis {
         root,
         figure,
@@ -335,7 +346,7 @@ fn sync_pawns(
             let yaw = if in_bed { 0.0 } else { v.yaw };
             let turn = Quat::from_rotation_y(yaw);
             let (lift, along) = match (rig_ready, in_bed) {
-                (true, true) => (0.44, 0.55),
+                (true, true) => (0.44, 0.58),
                 (true, false) => (0.08, 0.48),
                 (false, true) => (0.52, 0.48),
                 (false, false) => (0.15, 0.48),
@@ -354,9 +365,9 @@ fn sync_pawns(
             *vis = if tucked { Visibility::Inherited } else { Visibility::Hidden };
         }
         if tucked {
-            let lump = Transform::from_translation(base + Vec3::new(0.0, 0.36, 0.1)).with_scale(Vec3::new(0.5, 0.16, 0.66));
+            let bed = Transform::from_translation(base);
             if let Ok(mut t) = transforms.get_mut(v.blanket) {
-                *t = Transform::from_matrix(root_tf.to_matrix().inverse() * lump.to_matrix());
+                *t = Transform::from_matrix(root_tf.to_matrix().inverse() * bed.to_matrix());
             }
         }
         if let Ok(mut vis) = visibility.get_mut(v.root) {

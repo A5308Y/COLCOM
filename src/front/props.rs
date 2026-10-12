@@ -272,7 +272,12 @@ fn sync_props(
                     }
                     _ => assets.blanket_free.clone(),
                 };
-                let lift = if m.floor[i] { FLOOR_T } else { 0.0 };
+                // Doors and windows fill their cell like the walls they sit in, floor or not.
+                let in_wall = match m.feature[i] {
+                    Feature::Built { kind, .. } | Feature::Blueprint { kind, .. } => kind.def().along_walls,
+                    _ => false,
+                };
+                let lift = if m.floor[i] && !in_wall { FLOOR_T } else { 0.0 };
                 let e = spawn_feature(&mut commands, &assets, key, pos, lift, blanket);
                 if hidden(pos) {
                     commands.entity(e).insert(Visibility::Hidden);

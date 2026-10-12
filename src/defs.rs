@@ -738,4 +738,34 @@ mod tests {
         assert_eq!(crop.stage(0.99), crop.stages.len() - 2);
         assert_eq!(crop.stage(1.0), crop.stages.len() - 1);
     }
+
+    /// Buildables stay inside their cell's height (1.0), so nothing pokes
+    /// through a lintel or the floor above. Standing on a built floor lifts
+    /// them by the slab (0.08), except doors and windows, which fill their
+    /// cell like walls.
+    #[test]
+    fn buildables_fit_under_the_ceiling() {
+        // Half the height of a box turned by Euler angles (degrees, X then Y then Z,
+        // as the front end turns parts): the Y row of Rx·Ry·Rz against the half sizes.
+        let half_height = |p: &Part| {
+            let (x, y, z) = (p.turn.0.to_radians(), p.turn.1.to_radians(), p.turn.2.to_radians());
+            let row = [
+                x.cos() * z.sin() + x.sin() * y.sin() * z.cos(),
+                x.cos() * z.cos() - x.sin() * y.sin() * z.sin(),
+                -x.sin() * y.cos(),
+            ];
+            (row[0].abs() * p.size.0 + row[1].abs() * p.size.1 + row[2].abs() * p.size.2) / 2.0
+        };
+        for kind in BuildId::all() {
+            let def = kind.def();
+            if def.special == Special::Stairs {
+                continue; // they lead up to the level above
+            }
+            let ceiling = if def.along_walls { 1.0 } else { 1.0 - 0.08 };
+            for p in def.parts() {
+                let half = half_height(p);
+                assert!(p.at.1 + half <= ceiling + 1e-4, "{}: a part reaches {:.2}", def.id, p.at.1 + half);
+            }
+        }
+    }
 }

@@ -350,9 +350,9 @@
             look: Parts([
                 (shape: Cube, color: "wall", at: (-0.45, 0.5, 0.0), size: (0.1, 1.0, 0.34)),
                 (shape: Cube, color: "wall", at: (0.45, 0.5, 0.0), size: (0.1, 1.0, 0.34)),
-                (shape: Cube, color: "wall", at: (0.0, 0.92, 0.0), size: (1.0, 0.16, 0.34)),
-                // Swings open around its left edge.
-                (shape: Cube, color: "wood_light", at: (0.0, 0.55, 0.0), size: (0.8, 1.1, 0.07), hinge: true),
+                (shape: Cube, color: "wall", at: (0.0, 0.97, 0.0), size: (1.0, 0.06, 0.34)),
+                // Swings open around its left edge; fits under the lintel (cells are 1.0 high).
+                (shape: Cube, color: "wood_light", at: (0.0, 0.48, 0.0), size: (0.8, 0.92, 0.07), hinge: true),
             ]),
         ),
         (
@@ -413,11 +413,11 @@
             cost: ("wood", 3),
             work_time: 2.0,
             passable: false,
-            light: Some((color: (1.0, 0.82, 0.6), intensity: 400000.0, range: 10.0, at: (0.0, 0.86, 0.0))),
+            light: Some((color: (1.0, 0.82, 0.6), intensity: 400000.0, range: 10.0, at: (0.0, 0.8, 0.0))),
             look: Parts([
                 (shape: Cylinder, color: "wood", at: (0.0, 0.03, 0.0), size: (0.3, 0.06, 0.3)),
-                (shape: Cylinder, color: "wood", at: (0.0, 0.42, 0.0), size: (0.06, 0.8, 0.06)),
-                (shape: Sphere, color: "lamp_glow", at: (0.0, 0.86, 0.0), size: (0.22, 0.22, 0.22)),
+                (shape: Cylinder, color: "wood", at: (0.0, 0.39, 0.0), size: (0.06, 0.74, 0.06)),
+                (shape: Sphere, color: "lamp_glow", at: (0.0, 0.8, 0.0), size: (0.22, 0.22, 0.22)),
             ]),
         ),
         (
@@ -435,8 +435,8 @@
             look: Parts([
                 (shape: Cube, color: "stone_block", at: (-0.45, 0.5, 0.0), size: (0.1, 1.0, 0.34)),
                 (shape: Cube, color: "stone_block", at: (0.45, 0.5, 0.0), size: (0.1, 1.0, 0.34)),
-                (shape: Cube, color: "stone_block", at: (0.0, 0.92, 0.0), size: (1.0, 0.16, 0.34)),
-                (shape: Cube, color: "stone", at: (0.0, 0.55, 0.0), size: (0.8, 1.1, 0.09), hinge: true),
+                (shape: Cube, color: "stone_block", at: (0.0, 0.97, 0.0), size: (1.0, 0.06, 0.34)),
+                (shape: Cube, color: "stone", at: (0.0, 0.48, 0.0), size: (0.8, 0.92, 0.09), hinge: true),
             ]),
         ),
         (
@@ -544,11 +544,11 @@
             work_time: 1.0,
             passable: false,
             beauty: 0.5,
-            light: Some((color: (1.0, 0.62, 0.3), intensity: 160000.0, range: 7.0, at: (0.0, 0.9, 0.0), flicker: true)),
+            light: Some((color: (1.0, 0.62, 0.3), intensity: 160000.0, range: 7.0, at: (0.0, 0.84, 0.0), flicker: true)),
             look: Parts([
                 (shape: Cylinder, color: "wood", at: (0.0, 0.4, 0.0), size: (0.06, 0.8, 0.06)),
                 (shape: Cylinder, color: "iron", at: (0.0, 0.8, 0.0), size: (0.12, 0.08, 0.12)),
-                (shape: Cone, color: "flame", at: (0.0, 0.92, 0.0), size: (0.12, 0.2, 0.12)),
+                (shape: Cone, color: "flame", at: (0.0, 0.82, 0.0), size: (0.12, 0.2, 0.12)),
             ]),
         ),
         // Workbenches: recipes below name them. Colonists work them from beside.
@@ -565,7 +565,7 @@
                 (shape: Cube, color: "iron", at: (0.0, 0.72, 0.0), size: (0.92, 0.05, 0.77)),
                 (shape: Cylinder, color: "ember", at: (-0.2, 0.75, 0.0), size: (0.22, 0.02, 0.22)),
                 (shape: Cylinder, color: "ember", at: (0.2, 0.75, 0.0), size: (0.22, 0.02, 0.22)),
-                (shape: Cylinder, color: "iron", at: (0.32, 1.0, -0.26), size: (0.1, 0.55, 0.1)),
+                (shape: Cylinder, color: "iron", at: (0.32, 0.82, -0.26), size: (0.1, 0.2, 0.1)),
             ]),
         ),
         (
@@ -611,9 +611,9 @@
             work_time: 6.0,
             passable: false,
             look: Parts([
-                (shape: Cube, color: "stone_block", at: (0.0, 0.45, 0.0), size: (0.85, 0.9, 0.85)),
+                (shape: Cube, color: "stone_block", at: (0.0, 0.425, 0.0), size: (0.85, 0.85, 0.85)),
                 (shape: Cube, color: "ember", at: (0.0, 0.25, 0.43), size: (0.36, 0.24, 0.02)),
-                (shape: Cylinder, color: "stone_block", at: (0.0, 1.0, 0.0), size: (0.4, 0.25, 0.4)),
+                (shape: Cylinder, color: "stone_block", at: (0.0, 0.885, 0.0), size: (0.4, 0.07, 0.4)),
             ]),
         ),
         (
