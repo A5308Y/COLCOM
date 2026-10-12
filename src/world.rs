@@ -30,6 +30,23 @@ pub struct Effect {
     pub hit: bool,
 }
 
+/// Something worth hearing, for the front end: a sound name from
+/// `assets/sounds.ron` and where it happened (cell coordinates; `None` is
+/// heard everywhere, like an alert).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SoundEvent {
+    pub name: &'static str,
+    pub at: Option<(f32, f32, f32)>,
+}
+
+/// Every sound name the simulation uses (checked against the sound table by
+/// the front end's tests); definitions add their own (harvest, weapons).
+pub const SIM_SOUNDS: [&str; 11] =
+    ["thud", "raid", "pods", "joined", "level_up", "dig", "rock_break", "built", "hit", "glance", "death"];
+
+/// Sound events kept until the front end takes them; older ones are dropped.
+const MAX_SOUNDS: usize = 128;
+
 /// Something the player paints onto tiles.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Order {
@@ -80,6 +97,9 @@ pub struct World {
     /// Quality per room id (index 0 unused). Derived, so not saved.
     #[serde(skip)]
     pub room_stats: Vec<RoomStats>,
+    /// Sounds since the front end last took them (see `take_sounds`).
+    #[serde(skip)]
+    pub sounds: Vec<SoundEvent>,
 }
 
 impl World {
@@ -133,6 +153,7 @@ impl World {
             stockpiles: Vec::new(),
             colony_timer: 0.0,
             room_stats: Vec::new(),
+            sounds: Vec::new(),
         }
     }
 
@@ -230,6 +251,20 @@ impl World {
             out.push((format!("{} idle colonist(s)", idle), false));
         }
         out
+    }
+
+    /// Note a sound at a cell (`None`: everywhere).
+    pub(crate) fn sound(&mut self, name: &'static str, at: Option<Pos>) {
+        if self.sounds.len() >= MAX_SOUNDS {
+            self.sounds.remove(0);
+        }
+        let at = at.map(|p| (p.0 as f32, p.1 as f32, p.2 as f32));
+        self.sounds.push(SoundEvent { name, at });
+    }
+
+    /// The sounds since the last call, for the front end to play.
+    pub fn take_sounds(&mut self) -> Vec<SoundEvent> {
+        std::mem::take(&mut self.sounds)
     }
 
     pub fn push_log(&mut self, msg: String) {
@@ -381,6 +416,7 @@ impl World {
         p.z = land.2 as f32;
         p.path.clear();
         p.path_goal = None;
+        self.sound("thud", Some(land));
         if levels >= 2 {
             for _ in 0..levels - 1 {
                 p.health.apply_damage(7.0, crate::health::DamageKind::Bruise, 0.0, &mut self.rng);
@@ -443,6 +479,7 @@ impl World {
                 p.drafted = false;
                 p.downed_time = 0.0;
                 self.push_log(format!("{} collapsed ({}).", p.name, reason));
+                self.sound("thud", Some(p.pos));
             }
             (true, None) => {
                 p.downed = false;
@@ -1235,6 +1272,44 @@ mod tests {
             w.map.count_items(yields.item) >= yields.count
         });
         assert!(harvested, "a harvest came in");
+    }
+
+    #[test]
+    fn things_that_happen_make_sounds() {
+        let mut w = test_world(20, 20);
+        colonist(&mut w, (2, 2, Z));
+        let t = w.map.idx((8, 8, Z));
+        w.map.feature[t] = Feature::plant("tree");
+        w.apply_order((8, 8, Z), Order::Desig(Desig::Chop));
+        let mut heard = Vec::new();
+        for _ in 0..(20.0 / TICK) as usize {
+            w.tick(TICK);
+            heard.extend(w.take_sounds().into_iter().map(|e| e.name));
+        }
+        assert!(heard.contains(&"tree_fall"), "{:?}", heard);
+        assert!(w.take_sounds().is_empty(), "taken sounds are gone");
+
+        // Shots, and hits or glancing blows.
+        let mut w = test_world(30, 30);
+        let id = colonist(&mut w, (5, 15, Z));
+        w.set_drafted(id, true);
+        w.spawn_raider("Grim".into(), (12, 15, Z));
+        let mut heard = Vec::new();
+        for _ in 0..(10.0 / TICK) as usize {
+            w.tick(TICK);
+            heard.extend(w.take_sounds().into_iter().map(|e| e.name));
+        }
+        assert!(heard.contains(&"rifle"), "{:?}", heard);
+        assert!(heard.iter().any(|n| *n == "hit" || *n == "glance"), "{:?}", heard);
+    }
+
+    #[test]
+    fn unheard_sounds_dont_pile_up() {
+        let mut w = test_world(8, 8);
+        for _ in 0..1000 {
+            w.sound("thud", None);
+        }
+        assert_eq!(w.sounds.len(), MAX_SOUNDS);
     }
 
     #[test]

@@ -4,6 +4,7 @@
 //! Each frame the wanted object for every tile is compared with what is
 //! spawned; changed tiles get their entity replaced.
 
+use super::audio::SoundQueue;
 use super::input::UiState;
 use super::look::*;
 use super::sim::Sim;
@@ -182,6 +183,7 @@ fn sync_props(
     props: ResMut<Props>,
     assets: Res<PropAssets>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut sounds: ResMut<SoundQueue>,
 ) {
     let props = props.into_inner();
     let w = &sim.world;
@@ -254,6 +256,10 @@ fn sync_props(
             Feature::Blueprint { kind, .. } => Some(PropKey::Blueprint { kind }),
         };
         let have = props.features[i].map(|(k, _)| k);
+        // A door swinging open.
+        if let (Some(PropKey::Built { open: true, .. }), Some(PropKey::Built { open: false, .. })) = (want, have) {
+            sounds.play("door", Some(tile_center(pos) + Vec3::Y * 0.5));
+        }
         if want != have {
             if let Some((_, e)) = props.features[i].take() {
                 commands.entity(e).despawn();

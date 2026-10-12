@@ -35,7 +35,7 @@ impl CameraRig {
     }
 
     /// Ground directions relative to the view: (forward, right).
-    fn axes(&self) -> (Vec3, Vec3) {
+    pub fn axes(&self) -> (Vec3, Vec3) {
         let forward = Vec3::new(-self.yaw.sin(), 0.0, -self.yaw.cos());
         let right = Vec3::new(self.yaw.cos(), 0.0, -self.yaw.sin());
         (forward, right)

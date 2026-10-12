@@ -223,7 +223,7 @@
             category: "Weapons",
             color: "iron",
             weapon: Some((
-                range: 11.0, damage: (9.0, 14.0), kind: Gunshot, cooldown: 1.8,
+                range: 11.0, damage: (9.0, 14.0), kind: Gunshot, cooldown: 1.8, sound: Some("rifle"),
                 held: (shape: Cube, color: "iron", at: (0.15, 0.62, 0.22), size: (0.05, 0.06, 0.52)),
             )),
             look: [
@@ -237,7 +237,7 @@
             category: "Weapons",
             color: "iron",
             weapon: Some((
-                range: 7.0, damage: (7.0, 11.0), kind: Gunshot, cooldown: 1.3,
+                range: 7.0, damage: (7.0, 11.0), kind: Gunshot, cooldown: 1.3, sound: Some("pistol"),
                 held: (shape: Cube, color: "iron", at: (0.17, 0.62, 0.2), size: (0.05, 0.08, 0.22)),
             )),
             look: [
@@ -655,7 +655,8 @@
     // `sow`: can be planted in grow zones (the first such plant is the default). `wild`: share of open soil covered when the
     // map is made, and relative chance of being the one that regrows.
     // `harvest`: work that removes the plant and drops its yield once grown,
-    // on cells designated `desig` (or automatically if there is none).
+    // on cells designated `desig` (or automatically if there is none), with
+    // `sound` while working and `done_sound` at the end.
     // Looks: `stages` by growth, each with variants picked at random per cell,
     // scaled by a random factor in `scale`.
     plants: [
@@ -664,7 +665,8 @@
             name: "Tree",
             passable: false,
             wild: Some((density: 0.11, regrow: 0.6)),
-            harvest: (desig: Some(Chop), work: PlantCutting, skill: Plants, time: 3.0, yields: ("wood", 10), verb: "chopping"),
+            harvest: (desig: Some(Chop), work: PlantCutting, skill: Plants, time: 3.0, yields: ("wood", 10), verb: "chopping",
+                sound: Some("chop"), done_sound: Some("tree_fall")),
             scale: (0.85, 1.2),
             stages: [
                 (from: 0.0, variants: [
@@ -841,23 +843,24 @@
 
     // Made at workbenches from `ingredients` (delivered by haulers) into
     // `products` (dropped beside the bench), by colonists doing `work`.
+    // `sound`: heard while working (names from assets/sounds.ron).
     recipes: [
         (id: "cook_meal", name: "Cook simple meal", bench: "stove", work: Cooking, skill: Cooking, time: 5.0,
-            ingredients: [("raw_food", 2)], products: [("meal", 1)]),
+            ingredients: [("raw_food", 2)], products: [("meal", 1)], sound: Some("sizzle")),
         (id: "saw_planks", name: "Saw planks", bench: "sawbench", work: Crafting, skill: Crafting, time: 4.0,
-            ingredients: [("wood", 5)], products: [("planks", 5)]),
+            ingredients: [("wood", 5)], products: [("planks", 5)], sound: Some("saw")),
         (id: "cut_blocks", name: "Cut stone blocks", bench: "stonecutter", work: Crafting, skill: Crafting, time: 5.0,
-            ingredients: [("stone", 4)], products: [("stone_blocks", 4)]),
+            ingredients: [("stone", 4)], products: [("stone_blocks", 4)], sound: Some("chisel")),
         (id: "smelt_steel", name: "Smelt steel", bench: "smelter", work: Crafting, skill: Crafting, time: 6.0,
-            ingredients: [("iron_ore", 4)], products: [("steel", 3)]),
+            ingredients: [("iron_ore", 4)], products: [("steel", 3)], sound: Some("furnace")),
         (id: "make_knife", name: "Make knife", bench: "smithy", work: Crafting, skill: Crafting, time: 6.0,
-            ingredients: [("steel", 3)], products: [("knife", 1)]),
+            ingredients: [("steel", 3)], products: [("knife", 1)], sound: Some("anvil")),
         (id: "make_pistol", name: "Make pistol", bench: "smithy", work: Crafting, skill: Crafting, time: 10.0,
-            ingredients: [("steel", 6), ("planks", 2)], products: [("pistol", 1)]),
+            ingredients: [("steel", 6), ("planks", 2)], products: [("pistol", 1)], sound: Some("anvil")),
         (id: "make_rifle", name: "Make rifle", bench: "smithy", work: Crafting, skill: Crafting, time: 14.0,
-            ingredients: [("steel", 10), ("planks", 4)], products: [("rifle", 1)]),
+            ingredients: [("steel", 10), ("planks", 4)], products: [("rifle", 1)], sound: Some("anvil")),
         (id: "make_armor", name: "Make steel armour", bench: "smithy", work: Crafting, skill: Crafting, time: 14.0,
-            ingredients: [("steel", 12)], products: [("steel_armor", 1)]),
+            ingredients: [("steel", 12)], products: [("steel_armor", 1)], sound: Some("anvil")),
         (id: "make_club", name: "Make club", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 4.0,
             ingredients: [("wood", 6)], products: [("club", 1)]),
         (id: "make_herbal_medicine", name: "Make herbal medicine", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 5.0,

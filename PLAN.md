@@ -44,9 +44,10 @@
 | 6 | Data-driven definitions: items, buildables, plants and recipes described in a data file, not code | done (recipes come with phase 7) |
 | 7 | Production chains: workbenches, job queues, Cooking/Crafting, new resources, stockpile filters | done (needs a visual check) |
 | 8 | More buildables: furniture, shelves, windows, torches, fences, room quality | done (needs a visual check) |
-| 9 | Sound: actions, ambience, interface | |
+| 9 | Sound: actions, ambience, interface | done with placeholder sounds (needs a listen) |
 | 10 | Graphics, Valheim-like (low poly, realistic movement): 10a art direction, 10b animated characters, 10c smoothed natural terrain, 10d glTF models, 10e atmosphere | |
 | 11 | Follow camera: optional close third-person view of one colonist | later |
+| – | Keyboard shortcuts: a thought-out scheme (all letters are taken; categories, rebinding?) | later |
 
 ## Next phases (agreed 2026-10-11)
 
@@ -92,11 +93,16 @@ the list of things has settled.
 Target look: like Valheim. Low-poly models with low-resolution textures, realistic movement, and most
 of the mood from light and atmosphere. The simulation stays on its grid; all of this is drawing.
 
-- **10a. Art direction.** Choose asset packs (Quaternius is closest among CC0 packs; Kenney is too clean;
+- **10a. Art direction.** Downloaded (2026-10-12, all Quaternius, CC0): Universal Base Characters,
+  Modular Character Outfits – Fantasy, Universal Animation Library (in `assets/models/characters/`,
+  glTF), and Ultimate Nature, Textured Stylized Trees, Nature Crops, Medieval Village (only OBJ / FBX /
+  .blend, kept in `asset-sources/quaternius/`: they need converting to glTF first, e.g. with a Blender
+  batch export or an OBJ to glTF converter). Bevy can't load glTF without a GPU, so model checks run with
+  `cargo test --release -- --ignored`.
+  Still to do: choose asset packs (Quaternius is closest among CC0 packs; Kenney is too clean;
   mixing in paid packs or Blender-made models is possible) and a texture approach (low-resolution
   textures with nearest-neighbour filtering and an atlas, instead of vertex colours). Build a small test
-  scene to judge the look before converting everything. The user downloads assets into `assets/` (the
-  sandbox can't). Could come before phase 8 or 9 if the look should settle early.
+  scene to judge the look before converting everything. The user downloads assets (the sandbox can't).
 - **10b. Animated characters.** Rigged glTF pawns with an animation library: walk, idle, chop, mine,
   hammer, carry, eat, lie down, downed, aim and shoot, melee, fall. Pick the animation from what the
   pawn is doing (`Job` / `Task`) and blend between them. Smooth movement for display: curved paths,
@@ -152,6 +158,25 @@ of the mood from light and atmosphere. The simulation stays on its grid; all of 
 - Still in code: blocks (soil, rock, water; rock yields `rock_drops`), work types, skills, designations
   and zones. Floors are still one kind (`Map::floor` is a bool), so only one buildable may be the floor.
   Grow zones plant the first plant with `sow`; choosing per zone comes with phase 7's crops.
+- Phase 9 (sound): `src/front/audio.rs` plays everything; `assets/sounds.ron` maps sound names to files
+  (random variant, volume, pitch range, `range` in cells, `max` at once, `every` for work strokes, `kind`
+  for the volume slider) plus three ambience loops. The files are synthesised placeholders from
+  `tools/make_sounds.py` (stdlib Python, deterministic): replace them by editing `sounds.ron`. Bevy's
+  `wav` feature is on for them (OGG works by default).
+  - The simulation notes `SoundEvent`s (`World::sounds`, capped, not saved; `take_sounds`): shots
+    (weapon `sound`), hits / armour glancing off, deaths, falls and collapses, trees falling
+    (`done_sound`), rock breaking, digging, finished buildings, raids, newcomers, cargo pods, skill-ups.
+    `SIM_SOUNDS` lists the names it uses.
+  - The front end adds footsteps (by floor / rock / grass underfoot), work strokes while a pawn's work
+    progresses (from the harvest / sow / buildable / recipe `sound`, mining by block), doors opening,
+    and interface sounds (tool change, windows, placing orders, inspector buttons).
+  - Volume comes from distance to the camera's focus and zoom, set by us; Bevy's spatial audio is used
+    only for left/right panning (the emitter goes one unit from the listener in the sound's direction),
+    because its own falloff is steep inverse-square. At most 32 effects at once and `max` per sound.
+  - Ambience: day / night by daylight, cave when the focus is under cover or the layer view is below
+    the surface. Sound window: master, effects, alerts, interface and ambience sliders, mute (not saved).
+  - Tests check every sound name the game and the definitions use exists, every file is there, WAVs
+    load, and the simulation makes the expected sounds.
 - Phase 8: table, chair, shelf, window, fence, torch, stone door, all as definitions. New definition
   fields: buildable `category` (toolbar menus), `beauty`, `daylight` (windows), `storage` (cell holds
   `stack_limit`, items drawn at `height`; `Map::capacity`), `along_walls` (doors and windows turn to their

@@ -140,9 +140,12 @@ pub struct Attack {
     pub kind: DamageKind,
     pub cooldown: f32,
     pub ranged: bool,
+    /// Heard when attacking.
+    pub sound: &'static str,
 }
 
-const FISTS: Attack = Attack { range: 1.5, damage: (3.0, 6.0), kind: DamageKind::Bruise, cooldown: 1.0, ranged: false };
+const FISTS: Attack =
+    Attack { range: 1.5, damage: (3.0, 6.0), kind: DamageKind::Bruise, cooldown: 1.0, ranged: false, sound: "swing" };
 
 /// What a pawn is currently doing. Multi-step jobs track their stage in fields.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -419,7 +422,14 @@ impl Pawn {
     /// The weapon's numbers, or fists.
     pub fn attack(&self) -> Attack {
         match self.weapon.and_then(|w| w.def().weapon.as_ref()) {
-            Some(w) => Attack { range: w.range, damage: w.damage, kind: w.kind, cooldown: w.cooldown, ranged: w.ranged() },
+            Some(w) => Attack {
+                range: w.range,
+                damage: w.damage,
+                kind: w.kind,
+                cooldown: w.cooldown,
+                ranged: w.ranged(),
+                sound: w.sound.as_deref().unwrap_or("swing"),
+            },
             None => FISTS,
         }
     }

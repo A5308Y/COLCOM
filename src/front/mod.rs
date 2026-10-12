@@ -1,6 +1,7 @@
 //! Bevy front end: 3D scene, camera, input and egui interface around the
 //! simulation library.
 
+mod audio;
 mod build_menu;
 mod camera;
 mod input;
@@ -19,6 +20,10 @@ use my_world::map::Pos;
 #[cfg(test)]
 pub use input::{Selection, UiState};
 #[cfg(test)]
+pub use audio::SoundQueue;
+#[cfg(test)]
+pub use camera::CameraRig;
+#[cfg(test)]
 pub use sim::Sim;
 
 pub struct FrontPlugin;
@@ -34,6 +39,7 @@ impl Plugin for FrontPlugin {
             pawns::PawnsPlugin,
             input::InputPlugin,
             ui::UiPlugin,
+            audio::AudioPlugin,
         ));
     }
 }

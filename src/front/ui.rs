@@ -2,6 +2,7 @@
 //! Health tab), work priorities, help and game over.
 
 use super::camera::{CameraRig, MainCamera};
+use super::audio::{self, AudioSettings, SoundQueue};
 use super::build_menu;
 use super::input::{self, Selection, UiState};
 use super::look::{pawn_look, Look};
@@ -85,6 +86,8 @@ fn draw_ui(
     mut sim: ResMut<Sim>,
     mut st: ResMut<UiState>,
     mut rig: ResMut<CameraRig>,
+    mut audio: ResMut<AudioSettings>,
+    mut sounds: ResMut<SoundQueue>,
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
@@ -102,7 +105,11 @@ fn draw_ui(
     alerts(&ctx, &sim);
     match st.selected {
         Some(Selection::Pawn(id)) => pawn_inspector(&ctx, &sim, &mut st, id, left),
-        Some(Selection::Tile(t)) => tile_inspector(&ctx, &mut sim, t, left),
+        Some(Selection::Tile(t)) => {
+            if tile_inspector(&ctx, &mut sim, t, left) {
+                sounds.play("ui_click", None);
+            }
+        }
         None => {}
     }
     if st.show_work {
@@ -110,6 +117,14 @@ fn draw_ui(
     }
     if st.show_resources {
         resources(&ctx, &sim, &mut st);
+    }
+    if st.show_sound {
+        egui::Window::new("Sound")
+            .open(&mut st.show_sound)
+            .anchor(Align2::RIGHT_BOTTOM, [-8.0, -8.0])
+            .collapsible(false)
+            .resizable(false)
+            .show(&ctx, |ui| audio::settings_ui(ui, &mut audio));
     }
     if st.show_help {
         egui::Window::new("Help").open(&mut st.show_help).collapsible(false).resizable(false).anchor(
@@ -199,6 +214,9 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                     st.view_level = None;
                 }
                 ui.separator();
+                if ui.add(egui::Button::new("Sound").selected(st.show_sound)).clicked() {
+                    st.show_sound = !st.show_sound;
+                }
                 if ui.add(egui::Button::new("Resources (I)").selected(st.show_resources)).clicked() {
                     st.show_resources = !st.show_resources;
                 }
@@ -458,7 +476,8 @@ fn health_tab(ui: &mut egui::Ui, p: &Pawn) {
 /// A change to the world chosen in the inspector, applied after drawing it.
 type Action = Box<dyn FnOnce(&mut SimWorld)>;
 
-fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) {
+/// Returns whether anything was changed in it.
+fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) -> bool {
     let mut actions: Vec<Action> = Vec::new();
     let w = &sim.world;
     let m = &w.map;
@@ -523,9 +542,11 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) {
                 bills(ui, w, t, kind, &mut actions);
             }
         });
+    let changed = !actions.is_empty();
     for act in actions {
         act(&mut sim.world);
     }
+    changed
 }
 
 fn stockpile_settings(ui: &mut egui::Ui, w: &SimWorld, id: u16, actions: &mut Vec<Action>) {

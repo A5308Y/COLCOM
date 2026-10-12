@@ -262,6 +262,7 @@ impl World {
                 p.job_progress += dt * p.work_speed(skill) / time;
                 if p.learn(skill, dt) {
                     let msg = format!("{} reached {} level {}.", p.name, skill.name(), p.skill(skill));
+                    self.sound("level_up", None);
                     self.push_log(msg);
                 }
                 if p.job_progress >= 1.0 {
@@ -325,6 +326,9 @@ impl World {
         match task {
             Task::Harvest(kind) => {
                 self.map.set_feature(i, Feature::None);
+                if let Some(s) = kind.def().harvest.done_sound.as_deref() {
+                    self.sound(s, Some(target));
+                }
                 let y = &kind.def().harvest.yields;
                 drop(&mut self.map, target, (y.item, y.count));
             }
@@ -334,6 +338,7 @@ impl World {
                 if dug.solid() {
                     // Dug out: rock or soil becomes open space (a tunnel if there's more above).
                     self.map.set_block(i, Block::Air);
+                    self.sound(if dug == Block::Soil { "dig" } else { "rock_break" }, Some(target));
                     let yields = match dug {
                         Block::Rock => Some(&defs().rock_drops),
                         Block::Ore => Some(&defs().ore_drops),
@@ -344,6 +349,7 @@ impl World {
                     }
                 } else if let Some(def) = f.structure() {
                     self.map.set_feature(i, Feature::None);
+                    self.sound("rock_break", Some(target));
                     drop(&mut self.map, target, def.drops());
                 } else if self.map.floor[i] {
                     self.map.set_floor(i, false);
@@ -367,6 +373,7 @@ impl World {
                         }
                         _ => self.map.set_feature(i, Feature::Built { kind, dir: 0 }),
                     }
+                    self.sound("built", Some(target));
                     // Shove anything lying here out of the way.
                     if let Some(s) = self.map.items[i].take() {
                         self.map.drop_item(target, s);

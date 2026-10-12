@@ -136,11 +136,66 @@ mod tests {
         assert!(closed > 0.0 && closed < 60.0, "collapsed to a strip ({} wide)", closed);
         app.world_mut().resource_mut::<front::UiState>().show_build = true;
         app.world_mut().resource_mut::<front::UiState>().show_resources = true;
+        app.world_mut().resource_mut::<front::UiState>().show_sound = true;
         for t in [bench, stock, grow] {
             app.world_mut().resource_mut::<front::UiState>().selected = Some(front::Selection::Tile(t));
             for _ in 0..5 {
                 app.update();
             }
         }
+
+        // Sound: the placeholder files load (WAV support is on), ambience
+        // loops exist, and a sound asked for gets played.
+        let focus = app.world().resource::<front::CameraRig>().focus;
+        app.world_mut().resource_mut::<front::SoundQueue>().play("hammer", Some(focus));
+        app.world_mut().resource_mut::<front::SoundQueue>().play("ui_click", None);
+        for _ in 0..20 {
+            app.update();
+        }
+        let clip: Handle<AudioSource> = app.world().resource::<AssetServer>().load("sounds/hammer_1.wav");
+        for _ in 0..200 {
+            if app.world().resource::<AssetServer>().is_loaded(&clip) {
+                break;
+            }
+            app.update();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(app.world().resource::<AssetServer>().is_loaded(&clip), "WAV files load");
+        let players = app.world_mut().query::<&AudioPlayer>().iter(app.world()).count();
+        assert!(players >= 3, "ambience loops and effects ({} players)", players);
+    }
+
+    /// The character models and animations in `assets/models` load in Bevy
+    /// (with all their buffers and textures). Loading glTF needs a GPU, so
+    /// this only runs when asked: `cargo test --release -- --ignored`.
+    #[test]
+    #[ignore = "needs a GPU"]
+    fn character_models_load() {
+        let mut app = App::new();
+        app.add_plugins(DefaultPlugins.build().disable::<WinitPlugin>());
+        let files = [
+            "models/characters/base/Superhero_Male_FullBody.gltf",
+            "models/characters/base/Superhero_Female_FullBody.gltf",
+            "models/characters/outfits/Male_Ranger.gltf",
+            "models/characters/hair/Hair_SimpleParted.gltf",
+            "models/characters/animations/UAL1_Standard.glb",
+        ];
+        let handles: Vec<Handle<Gltf>> = files.iter().map(|f| app.world().resource::<AssetServer>().load(*f)).collect();
+        for _ in 0..2000 {
+            app.update();
+            let server = app.world().resource::<AssetServer>();
+            if handles.iter().all(|h| server.is_loaded_with_dependencies(h) || server.load_state(h).is_failed()) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let server = app.world().resource::<AssetServer>();
+        for (f, h) in files.iter().zip(&handles) {
+            assert!(server.is_loaded_with_dependencies(h), "{} didn't load: {:?}", f, server.load_state(h));
+        }
+        let gltfs = app.world().resource::<Assets<Gltf>>();
+        let animations = gltfs.get(&handles[4]).unwrap().named_animations.len();
+        assert!(animations > 20, "the animation library has {} animations", animations);
+        eprintln!("animation library: {} animations", animations);
     }
 }

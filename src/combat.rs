@@ -58,6 +58,7 @@ impl World {
         let chance = (base * (0.4 + 0.6 * caps.sight.min(1.0)) * (0.5 + 0.5 * caps.manipulation.min(1.0))).clamp(0.05, 0.95);
         let hit = self.rng.chance(chance);
         p.cooldown = w.cooldown;
+        self.sound(w.sound, Some(p.pos));
         p.learn(skill, 2.0);
         if w.ranged {
             let to = if hit {
@@ -82,6 +83,8 @@ impl World {
         let armor = t.armor();
         let hit = t.health.apply_damage(amount, kind, armor, &mut self.rng);
         t.health.recompute();
+        // Blows that don't get through the armour glance off.
+        self.sound(if hit.is_some() { "hit" } else { "glance" }, Some(t.pos));
         let wound = hit.map_or(String::new(), |h| {
             format!(" ({} to the {})", kind.name().to_lowercase(), h.part.name().to_lowercase())
         });
@@ -98,6 +101,7 @@ impl World {
                     t.drafted = false;
                     t.downed_time = 0.0;
                     self.push_log(format!("{} was downed by {}{}: {}.", t.name, by, wound, reason));
+                    self.sound("thud", Some(t.pos));
                 }
             }
         }
@@ -115,6 +119,7 @@ impl World {
         }
         p.dead = true;
         p.downed = false;
+        self.sound("death", Some(p.pos));
         p.drafted = false;
         self.push_log(format!("{} {}.", p.name, cause));
         if p.is_colonist() {

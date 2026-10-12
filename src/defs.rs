@@ -158,6 +158,9 @@ pub struct WeaponDef {
     pub cooldown: f32,
     /// How it looks in hand (relative to the pawn's feet, facing +z).
     pub held: Part,
+    /// Sound of an attack (see `assets/sounds.ron`); a swing if not given.
+    #[serde(default)]
+    pub sound: Option<String>,
 }
 
 impl WeaponDef {
@@ -299,6 +302,9 @@ pub struct BuildDef {
     pub work: WorkType,
     #[serde(default = "construction_skill")]
     pub skill: Skill,
+    /// Sound of each stroke while building it; hammering if not given.
+    #[serde(default)]
+    pub sound: Option<String>,
     pub passable: bool,
     #[serde(default)]
     pub blocks_room: bool,
@@ -359,6 +365,9 @@ pub struct Sow {
     pub work: WorkType,
     pub skill: Skill,
     pub time: f32,
+    /// Sound while planting; rustling if not given.
+    #[serde(default)]
+    pub sound: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -380,6 +389,12 @@ pub struct Harvest {
     pub yields: Amount,
     /// Shown as what the pawn is doing.
     pub verb: String,
+    /// Sound while harvesting; rustling if not given.
+    #[serde(default)]
+    pub sound: Option<String>,
+    /// Sound when it comes down (a tree falling).
+    #[serde(default)]
+    pub done_sound: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -431,6 +446,9 @@ pub struct RecipeDef {
     pub time: f32,
     pub ingredients: Vec<Amount>,
     pub products: Vec<Amount>,
+    /// Sound while making it; generic crafting if not given.
+    #[serde(default)]
+    pub sound: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -55,6 +55,11 @@ furniture, light, production), searchable, with costs (red if the colony is shor
   themselves; armour stops part of every blow, and clothes cheer colonists up.
 - **Stockpiles:** each has a priority (low to critical) and a list of item kinds it takes; things move
   to better stockpiles. Grow zones plant the crop chosen for them (corn, healroot, cotton).
+- **Sound:** footsteps that depend on the ground, chopping, mining, hammering, sawing, cooking and
+  smithing while colonists work, trees crashing down, rock breaking, doors, gunshots, hits and armour
+  glancing off, falls, alerts for raids and newcomers, interface clicks, and ambience that fades between
+  day, night and caves. Sounds are placed in the world: quieter further from the camera's focus and when
+  zoomed out, panned left and right. The **Sound** button opens volume sliders.
 - **Furniture and rooms:** tables and chairs (colonists eat sitting at a table, and dislike eating
   without one), shelves (three stacks per cell), windows, fences that join up, flickering torches, stone
   doors. Each room has a quality from its size, the beauty of its furniture, doors and windows, its
@@ -108,6 +113,8 @@ The simulation is a library with no rendering code, so it can be tested headless
 - `src/defs.rs`: loads and checks the definitions; `ItemId`, `BuildId`, `PlantId`, `RecipeId`
 - `src/production.rs`: workbenches and bills, stockpile settings, picking up better gear
 - `src/rooms.rs`: room quality (space, beauty, cleanliness, light)
+- `assets/sounds.ron`: sound names → files, volume, pitch variation, range; `assets/sounds/` holds
+  generated placeholders (`python3 tools/make_sounds.py` remakes them)
 - `src/map.rs`: 3D cells (blocks, features, items, zones), walking rules, rooms, terrain generation
 - `src/pathing.rs`: BFS distance fields over the walking graph, 3D line of sight
 - `src/pawn.rs`: pawns, skills, mood, jobs
@@ -121,7 +128,8 @@ The simulation is a library with no rendering code, so it can be tested headless
 
 The binary (`src/main.rs` and `src/front/`) is the Bevy app: `terrain.rs` (chunked ground, rock and wall
 meshes), `props.rs` (trees, plants, furniture, doors, items), `pawns.rs` (3D figures), `scene.rs`
-(sun, moon, sky), `camera.rs`, `input.rs` (picking, tools, gizmo markers), `ui.rs` and `overlay.rs`
+(sun, moon, sky), `camera.rs`, `input.rs` (picking, tools, gizmo markers), `audio.rs` (sound effects,
+footsteps, ambience), `build_menu.rs`, `ui.rs` and `overlay.rs`
 (egui interface and labels over the 3D view).
 
 ### Adding content
@@ -134,5 +142,24 @@ Behaviour the code has to know about is a field: `nutrition` (food), `medicine`,
 `poison`, `weapon`, `apparel`, `beauty`, `daylight`, `storage`, `along_walls`, and `link` on parts. A buildable that a recipe names becomes a workbench.
 `cargo test` checks that the file loads and that every buildable can be built and removed, every plant
 harvested and every recipe made.
+
+### Assets
+
+- `assets/defs.ron`, `assets/sounds.ron`: definitions and the sound table (built into the game)
+- `assets/sounds/`: placeholder sounds
+- `assets/models/characters/`: Quaternius characters, hair, outfits and animation library (glTF, CC0)
+- `asset-sources/`: the original downloads (FBX, OBJ, Blender files). Not used by the game and not in
+  git (see `.gitignore`); `assets/CREDITS.md` says where everything comes from.
+
+`cargo test --release -- --ignored` loads the character models and animations with the GPU (it can't run
+in a sandbox without one).
+
+### Replacing the sounds
+
+The sounds in `assets/sounds/` are simple synthesised placeholders. To use real ones (e.g. a CC0 pack),
+put the files in `assets/` and point the entries in `assets/sounds.ron` at them (WAV or OGG). Several
+files per sound are picked at random. Definitions name the sounds they make (`sound` on harvests,
+buildables, recipes and weapons; `done_sound` on harvests), and `cargo test` checks that every name used
+exists and every file is there.
 
 See `PLAN.md` for the roadmap.

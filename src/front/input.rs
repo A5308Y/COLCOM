@@ -1,6 +1,7 @@
 //! Player input: picking tiles and pawns, tools, keyboard shortcuts, and the
 //! in-world markers (designations, selection, drag box, gunfire) as gizmos.
 
+use super::audio::SoundQueue;
 use super::camera::{colony_center, CameraRig, DragTracker, MainCamera};
 use super::sim::{seed, Sim};
 use super::terrain::{FLOOR_T, LEVEL_H};
@@ -206,6 +207,8 @@ pub struct UiState {
     pub build_filter: String,
     /// The window listing what the colony has.
     pub show_resources: bool,
+    /// The sound settings window.
+    pub show_sound: bool,
     /// Width of the docked build menu last frame (in logical pixels).
     pub dock_width: f32,
 }
@@ -247,6 +250,7 @@ impl Plugin for InputPlugin {
             build_filter: String::new(),
             dock_width: 0.0,
             show_resources: false,
+            show_sound: false,
         })
         .add_systems(
             Update,
@@ -496,6 +500,7 @@ fn mouse(
     window: Single<&Window, With<PrimaryWindow>>,
     mut sim: ResMut<Sim>,
     mut ui: ResMut<UiState>,
+    mut sounds: ResMut<SoundQueue>,
 ) {
     let over_ui = egui_input.wants_any_pointer_input() || ui.over_dock(&window);
     let hover = ui.hover;
@@ -518,7 +523,9 @@ fn mouse(
             if buttons.just_released(MouseButton::Left) {
                 if let (Some(a), Some(h)) = (ui.drag_start, hover) {
                     let b = order_target(&sim.world, h, order);
-                    paint_box(&mut sim.world, a, b, order);
+                    if paint_box(&mut sim.world, a, b, order) > 0 {
+                        sounds.play("ui_place", None);
+                    }
                 }
                 ui.drag_start = None;
             }
@@ -546,20 +553,24 @@ fn mouse(
 }
 
 /// Apply an order over a rectangle at the level where the drag started,
-/// following the ground one level up or down where it slopes.
-fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order) {
+/// following the ground one level up or down where it slopes. Returns how
+/// many cells it applied to.
+fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order) -> usize {
     let z0 = a.2 as i32;
+    let mut done = 0;
     for y in a.1.min(b.1)..=a.1.max(b.1) {
         for x in a.0.min(b.0)..=a.0.max(b.0) {
             for dz in [0, 1, -1] {
                 if let Some(p) = w.map.at(x as i32, y as i32, z0 + dz) {
                     if w.apply_order(p, order) {
+                        done += 1;
                         break;
                     }
                 }
             }
         }
     }
+    done
 }
 
 fn forget_missing_selection(sim: Res<Sim>, mut ui: ResMut<UiState>) {

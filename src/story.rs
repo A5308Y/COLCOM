@@ -65,6 +65,7 @@ impl World {
             self.spawn_raider(name, pos);
         }
         self.story.raids += 1;
+        self.sound("raid", None);
         self.push_log(format!("RAID! {} raiders are attacking. Draft your colonists with F!", count));
     }
 
@@ -99,6 +100,7 @@ impl World {
         let id = self.spawn_colonist(pos);
         let name = self.pawn(id).map(|p| p.name.clone()).unwrap_or_default();
         self.push_log(format!("{} wandered in and asked to join the colony.", name));
+        self.sound("joined", None);
     }
 
     fn blight(&mut self) {
@@ -149,6 +151,7 @@ impl World {
         let (kind, (lo, hi)) = kinds[self.rng.below(kinds.len())];
         let count = lo + self.rng.below((hi - lo + 1) as usize) as u32;
         self.map.drop_item((x, y, z), Stack { kind, count });
+        self.sound("pods", Some((x, y, z)));
         self.push_log(format!("Cargo pods crashed nearby: {} {}.", count, kind.name().to_lowercase()));
     }
 }
