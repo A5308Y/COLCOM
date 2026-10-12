@@ -160,6 +160,11 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
 
 ## Notes
 
+- Walls, doors and windows (`blocks_room`) can be placed straight on top of a wall or window (anything
+  `holds_floors`) without a floor first: click the wall's top, or the cell above it in the layer view.
+  Builders work up to one level above where they stand, so the second level is built from the ground;
+  higher ones need a floor or stairs beside them to stand on.
+
 - Phase 10b (`src/front/characters.rs`, `src/front/pawns.rs`): every pawn spawns a Quaternius character
   (outfit + cut head + hair, beard for some men) under its root, scaled `RIG_SCALE` 0.55. Colonists wear
   the peasant outfit (half with the second colour scheme), tinted halfway towards the pawn's colour;
@@ -174,8 +179,10 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
     floors and tending, Interact for walls and workbenches, Sitting_Idle on a chair (moved onto the
     seat, facing the table), Crouch_Idle eating without one, Pistol_Idle / Sword_Idle when armed, a
     one-shot Pistol_Shoot / Sword_Attack / Punch_Cross when an attack starts the weapon's cooldown,
-    Death01 held when downed or dead off a bed, Jump_Loop while falling. In bed or asleep the body is
-    laid flat (as the figure was) with a slow idle. Cross-fades of 0.25 s via `AnimationTransitions`.
+    Death01 held when downed or dead off a bed, Jump_Loop while falling. In bed the character is tucked in: the outfit
+    (everything below the head) is hidden under a blanket lump in the pawn's colour, the back of the head
+    rests on the pillow. Asleep off a bed, the body is laid flat with a slow idle. Sleeping, downed and
+    dead characters close their eyes (eye meshes painted in a skin-coloured eyelid material). Cross-fades of 0.25 s via `AnimationTransitions`.
     Non-walking clips run at the simulation speed (stopped when paused).
   - Movement: the drawn position trails the simulated one (`FOLLOW`, scaled with game speed), which
     rounds path corners and eases starts and stops; turning is rate-limited (`TURN_RATE`), facing the
@@ -187,7 +194,7 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
     until every character is ready, has a hand and plays) needs a GPU: `cargo test --release -- --ignored`.
   - Left for later: a real carry pose (the library has none; an upper-body mask over walking), pick-up
     and put-down clips (the simulation doesn't pause for them), hit reactions (Hit_Chest), a proper
-    lying/sleeping pose, walking on stairs/slopes beyond the hop, foot IK, apparel shown on the body,
+    pose for sleeping on the ground, walking on stairs/slopes beyond the hop, foot IK, apparel shown on the body,
     tuning everything by eye.
 
 - Phase 6: `assets/defs.ron` (RON, built in with `include_str!`) holds items, buildables and plants;

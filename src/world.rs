@@ -723,7 +723,14 @@ impl World {
                 Special::Stairs => {
                     m.standable(p) && f == Feature::None && m.above(p).is_some_and(|a| m.block[m.idx(a)] == Block::Air)
                 }
-                _ => m.standable(p) && f == Feature::None,
+                // Walls, doors and windows also stack straight onto walls below them.
+                _ => {
+                    f == Feature::None
+                        && (m.standable(p)
+                            || kind.def().blocks_room
+                                && m.open(p)
+                                && m.below(p).is_some_and(|b| m.feature[m.idx(b)].structure().is_some_and(|d| d.holds_floors)))
+                }
             },
             Order::Cancel => m.desig[i].is_some() || matches!(f, Feature::Blueprint { .. }),
         }
@@ -1183,6 +1190,24 @@ mod tests {
         let built = (5..=9).flat_map(|y| (5..=9).map(move |x| (x, y))).filter(|&(x, y)| w.map.floor[w.map.idx((x, y, Z + 1))]).count();
         assert_eq!(built, 25, "all floors built");
         assert!(w.map.roofed((7, 7, Z)), "now it's a room");
+    }
+
+    #[test]
+    fn walls_stack_onto_walls() {
+        let mut w = test_world(20, 20);
+        colonist(&mut w, (2, 2, Z));
+        let wall = BuildId::named("wall");
+        let i = w.map.idx((10, 10, Z));
+        w.map.set_feature(i, Feature::built("wall"));
+        assert!(!w.apply_order((12, 10, Z + 1), Order::Build(wall)), "not on thin air");
+        assert!(!w.apply_order((10, 10, Z + 1), Order::Build(BuildId::named("bed"))), "only walls go on walls");
+        assert!(w.apply_order((10, 10, Z + 1), Order::Build(wall)));
+        // Built from the ground beside it, one level down.
+        w.map.drop_item((4, 4, Z), Stack { kind: item("stone"), count: 4 });
+        run(&mut w, 40.0);
+        assert_eq!(w.map.feature[w.map.idx((10, 10, Z + 1))], Feature::built("wall"));
+        // And again on top of that (building it needs somewhere to stand up there).
+        assert!(w.apply_order((10, 10, Z + 2), Order::Build(wall)));
     }
 
     #[test]

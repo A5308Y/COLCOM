@@ -32,6 +32,8 @@ struct PawnVis {
     figure: Entity,
     rig: Entity,
     rig_weapon: Option<Entity>,
+    /// The blanket over a character in bed (its body hidden underneath).
+    blanket: Entity,
     rig_shown: bool,
     rig_dead: bool,
     /// An attack animation, the seconds it has left, and whether it starts this frame.
@@ -138,10 +140,13 @@ fn spawn_pawn(
     // Carried things are held in front of the chest, by either body.
     let carry_tf = Transform::from_xyz(0.0, 0.6 * SCALE, 0.28 * SCALE).with_scale(Vec3::splat(0.24 * SCALE));
     let carry = commands.spawn((mesh(&a.cube, a.wood.clone(), carry_tf, root), Visibility::Hidden)).id();
+    let blanket_mat = lit(materials, Rgb(p.color[0], p.color[1], p.color[2]).shade(0.8));
+    let blanket = commands.spawn((mesh(&a.sphere, blanket_mat, Transform::default(), root), Visibility::Hidden)).id();
     PawnVis {
         root,
         figure,
         rig,
+        blanket,
         rig_weapon: None,
         rig_shown: false,
         rig_dead: false,
@@ -325,17 +330,34 @@ fn sync_pawns(
 
         v.swing += ((moving as u8 as f32) - v.swing) * (dt * 8.0).min(1.0);
         let root_tf = if tipped {
-            // Upright along +Y; tip over so the head points along -Z (towards a bed's pillow).
+            // Upright along +Y; tip over so the head points along -Z (towards a
+            // bed's pillow). A character in bed rests the back of its head on the pillow.
             let yaw = if in_bed { 0.0 } else { v.yaw };
             let turn = Quat::from_rotation_y(yaw);
-            let lift = if rig_ready { 0.08 } else { 0.15 } + if in_bed { 0.37 } else { 0.0 };
-            Transform::from_translation(base + Vec3::Y * lift + turn * Vec3::new(0.0, 0.0, 0.48))
+            let (lift, along) = match (rig_ready, in_bed) {
+                (true, true) => (0.44, 0.55),
+                (true, false) => (0.08, 0.48),
+                (false, true) => (0.52, 0.48),
+                (false, false) => (0.15, 0.48),
+            };
+            Transform::from_translation(base + Vec3::Y * lift + turn * Vec3::new(0.0, 0.0, along))
                 .with_rotation(turn * Quat::from_rotation_x(-FRAC_PI_2))
         } else {
             Transform::from_translation(base).with_rotation(Quat::from_rotation_y(v.yaw))
         };
         if let Ok(mut tf) = transforms.get_mut(v.root) {
             *tf = root_tf;
+        }
+        // In bed the character is tucked in: a blanket up to the chin, only the head showing.
+        let tucked = rig_ready && in_bed;
+        if let Ok(mut vis) = visibility.get_mut(v.blanket) {
+            *vis = if tucked { Visibility::Inherited } else { Visibility::Hidden };
+        }
+        if tucked {
+            let lump = Transform::from_translation(base + Vec3::new(0.0, 0.36, 0.1)).with_scale(Vec3::new(0.5, 0.16, 0.66));
+            if let Ok(mut t) = transforms.get_mut(v.blanket) {
+                *t = Transform::from_matrix(root_tf.to_matrix().inverse() * lump.to_matrix());
+            }
         }
         if let Ok(mut vis) = visibility.get_mut(v.root) {
             *vis = if ui.shows(m, p.z) { Visibility::Inherited } else { Visibility::Hidden };
@@ -367,6 +389,8 @@ fn sync_pawns(
                 (characters::activity(p, w, armed), sim_rate, false)
             };
             characters::play(&library, r, player, transitions, anim, restart, rate);
+            characters::cover_body(r, in_bed, &mut visibility);
+            characters::close_eyes(&mut commands, r, p.sleeping || p.downed || p.dead, &mut materials);
             // Sitting leans back onto the seat: move forward and up onto the chair.
             let sit = if anim == Anim::Sit { Vec3::new(0.0, 0.07, 0.18) } else { Vec3::ZERO };
             if let Ok(mut t) = transforms.get_mut(v.rig) {
@@ -408,13 +432,8 @@ fn sync_pawns(
                 let (Some(e), Some((tf, mesh, mat))) = (e, p.weapon.and_then(|w| weapon_pose(w, &props, in_hand))) else {
                     continue;
                 };
-                if let Ok(mut t) = transforms.get_mut(e) {
-                    *t = tf;
-                }
-                if let Ok(mut mm) = mats.get_mut(e) {
-                    mm.0 = mat;
-                }
-                commands.entity(e).insert(Mesh3d(mesh));
+                // Through commands: the hand's weapon may have been spawned this frame.
+                commands.entity(e).insert((tf, Mesh3d(mesh), MeshMaterial3d(mat)));
             }
             v.weapon_kind = Some(p.weapon);
         }

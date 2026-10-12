@@ -146,6 +146,14 @@ pub struct Rig {
     pending: usize,
     /// The right hand bone, where weapons go.
     pub hand: Option<Entity>,
+    /// The outfit part (the body below the head), hidden under a blanket in bed.
+    outfit: Entity,
+    covered: bool,
+    /// Eye meshes and their own material; closed eyes are painted like eyelids.
+    eyes: Vec<(Entity, Handle<StandardMaterial>)>,
+    lids: Option<Handle<StandardMaterial>>,
+    lid_color: Color,
+    closed: bool,
     clothes: Color,
     skin: Color,
     hair: Color,
@@ -192,7 +200,9 @@ fn build_library(
     if library.graph.is_some() {
         return;
     }
-    let Some(gltf) = gltfs.get(&library.gltf) else { return };
+    let Some(gltf) = gltfs.get(&library.gltf) else {
+        return;
+    };
     let mut graph = AnimationGraph::new();
     let mut nodes = HashMap::new();
     for a in Anim::ALL {
@@ -237,28 +247,39 @@ pub fn spawn_rig(commands: &mut Commands, assets: &AssetServer, p: &Pawn, parent
         .spawn((
             AnimationPlayer::default(),
             AnimationTransitions::new(),
-            Rig {
-                pending: parts.len(),
-                hand: None,
-                clothes: clothes.color(),
-                skin: Color::linear_rgb(skin.red / base.red, skin.green / base.green, skin.blue / base.blue),
-                hair: look.hair.color(),
-                variant: !raider && h(4) < 0.5,
-                own: Vec::new(),
-                animated: false,
-                playing: None,
-            },
             Transform::from_scale(Vec3::splat(RIG_SCALE)),
             Visibility::Hidden,
             ChildOf(parent),
         ))
         .id();
-    for part in parts {
-        let path = format!("models/characters/{}.gltf", part);
-        commands
-            .spawn((WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(path))), ChildOf(rig)))
-            .observe(rig_part);
-    }
+    let parts: Vec<Entity> = parts
+        .into_iter()
+        .map(|part| {
+            let path = format!("models/characters/{}.gltf", part);
+            commands
+                .spawn((WorldAssetRoot(assets.load(GltfAssetLabel::Scene(0).from_asset(path))), ChildOf(rig)))
+                .observe(rig_part)
+                .id()
+        })
+        .collect();
+    commands.entity(rig).insert(Rig {
+        pending: parts.len(),
+        hand: None,
+        outfit: parts[0],
+        covered: false,
+        eyes: Vec::new(),
+        lids: None,
+        // The textures' skin is darker than the tone it's tinted by.
+        lid_color: look.skin.shade(0.78).color(),
+        closed: false,
+        clothes: clothes.color(),
+        skin: Color::linear_rgb(skin.red / base.red, skin.green / base.green, skin.blue / base.blue),
+        hair: look.hair.color(),
+        variant: !raider && h(4) < 0.5,
+        own: Vec::new(),
+        animated: false,
+        playing: None,
+    });
     rig
 }
 
@@ -279,8 +300,12 @@ fn rig_part(
     library: Res<CharacterLibrary>,
 ) {
     let part = ready.event().entity;
-    let Ok(character) = parents.get(part).map(ChildOf::parent) else { return };
-    let Ok(mut rig) = rigs.get_mut(character) else { return };
+    let Ok(character) = parents.get(part).map(ChildOf::parent) else {
+        return;
+    };
+    let Ok(mut rig) = rigs.get_mut(character) else {
+        return;
+    };
     rig.pending = rig.pending.saturating_sub(1);
 
     if let Some(armature) =
@@ -303,9 +328,12 @@ fn rig_part(
     }
 
     for e in children.iter_descendants(part) {
-        let Ok((name, mat)) = meshes.get(e) else { continue };
+        let Ok((name, mat)) = meshes.get(e) else {
+            continue;
+        };
         let name = name.0.as_str();
         let tint = if name.starts_with("MI_Eyes") {
+            rig.eyes.push((e, mat.0.clone()));
             continue;
         } else if name.starts_with("MI_Hair") {
             rig.hair
@@ -314,7 +342,9 @@ fn rig_part(
         } else {
             rig.clothes
         };
-        let Some(mut own) = materials.get(&mat.0).cloned() else { continue };
+        let Some(mut own) = materials.get(&mat.0).cloned() else {
+            continue;
+        };
         own.base_color = tint;
         if rig.variant && name.starts_with("MI_Peasant") {
             own.base_color_texture = Some(library.peasant_2.clone());
@@ -347,6 +377,35 @@ pub fn set_dead(rig: &Rig, dead: bool, materials: &mut Assets<StandardMaterial>)
     }
 }
 
+/// Sleeping or unconscious characters close their eyes.
+pub fn close_eyes(commands: &mut Commands, rig: &mut Rig, closed: bool, materials: &mut Assets<StandardMaterial>) {
+    if rig.closed == closed {
+        return;
+    }
+    rig.closed = closed;
+    let color = rig.lid_color;
+    let lids = rig
+        .lids
+        .get_or_insert_with(|| {
+            materials.add(StandardMaterial { base_color: color, perceptual_roughness: 0.7, ..default() })
+        })
+        .clone();
+    for (e, open) in &rig.eyes {
+        commands.entity(*e).insert(MeshMaterial3d(if closed { lids.clone() } else { open.clone() }));
+    }
+}
+
+/// Hide the body (everything but head and hair) under a blanket.
+pub fn cover_body(rig: &mut Rig, covered: bool, visibility: &mut Query<&mut Visibility>) {
+    if rig.covered == covered {
+        return;
+    }
+    rig.covered = covered;
+    if let Ok(mut vis) = visibility.get_mut(rig.outfit) {
+        *vis = if covered { Visibility::Hidden } else { Visibility::Inherited };
+    }
+}
+
 /// Play `anim` (fading from the last one), restarting it if `restart`.
 /// `rate` scales its speed (walk speed, simulation speed; 0 pauses).
 pub fn play(
@@ -358,7 +417,9 @@ pub fn play(
     restart: bool,
     rate: f32,
 ) {
-    let Some(&(node, _)) = library.nodes.get(&anim) else { return };
+    let Some(&(node, _)) = library.nodes.get(&anim) else {
+        return;
+    };
     let same_clip = rig.playing.is_some_and(|a| a.clip() == anim.clip()) && player.is_playing_animation(node);
     if !same_clip || restart {
         let active = transitions.play(player, node, BLEND);

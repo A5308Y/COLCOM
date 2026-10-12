@@ -227,9 +227,19 @@ mod tests {
             app.update();
         }
         let mut q = app.world_mut().query::<(&front::Rig, &AnimationPlayer)>();
-        for (rig, player) in q.iter(app.world()) {
-            assert!(rig.hand.is_some(), "found the right hand bone");
-            assert!(player.playing_animations().next().is_some(), "an animation plays");
+        let hands: Vec<Entity> = q
+            .iter(app.world())
+            .map(|(rig, player)| {
+                assert!(player.playing_animations().next().is_some(), "an animation plays");
+                rig.hand.expect("found the right hand bone")
+            })
+            .collect();
+        // Weapons in hands are sized from their definitions, not left as unit cubes.
+        let mut held = app.world_mut().query::<(&ChildOf, &Transform, &Mesh3d)>();
+        for (parent, tf, _) in held.iter(app.world()) {
+            if hands.contains(&parent.parent()) {
+                assert!(tf.scale.max_element() < 1.0, "weapon scaled {:?}", tf.scale);
+            }
         }
     }
 }
