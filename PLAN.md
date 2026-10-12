@@ -45,7 +45,7 @@
 | 7 | Production chains: workbenches, job queues, Cooking/Crafting, new resources, stockpile filters | done (needs a visual check) |
 | 8 | More buildables: furniture, shelves, windows, torches, fences, room quality | done (needs a visual check) |
 | 9 | Sound: actions, ambience, interface | done with placeholder sounds (needs a listen) |
-| 10 | Graphics, Valheim-like (low poly, realistic movement): 10a art direction, 10b animated characters, 10c smoothed natural terrain, 10d glTF models, 10e atmosphere | |
+| 10 | Graphics, Valheim-like (low poly, realistic movement): 10a art direction, 10b animated characters, 10c smoothed natural terrain, 10d glTF models, 10e atmosphere | 10a done; 10b done (needs a visual check) |
 | 11 | Follow camera: optional close third-person view of one colonist | later |
 | – | Keyboard shortcuts: a thought-out scheme (all letters are taken; categories, rebinding?) | later |
 
@@ -144,6 +144,8 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
 - A close third-person camera that follows one colonist, to show off the animations; toggled from the
   normal top-down camera.
 
+- **10b done (2026-10-12, needs a visual check):** see the notes below.
+
 ## Working in this repo (handoff notes)
 
 - Build and test from the sandbox with
@@ -157,6 +159,36 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
   downloaded sources under `$TMPDIR/cargo-home/registry/src/` before using them.
 
 ## Notes
+
+- Phase 10b (`src/front/characters.rs`, `src/front/pawns.rs`): every pawn spawns a Quaternius character
+  (outfit + cut head + hair, beard for some men) under its root, scaled `RIG_SCALE` 0.55. Colonists wear
+  the peasant outfit (half with the second colour scheme), tinted halfway towards the pawn's colour;
+  raiders wear the hooded ranger outfit tinted red. Sex and hair come from a hash of the pawn id (front
+  end only, not saved). Skin materials are tinted relative to the texture's own tone, hair textures
+  (grey) by hair colour. Each character's materials are its own copies, greyed on death.
+  - The code-built figure stays as the fallback: shown until all parts are spawned and the animation
+    graph is attached, and for good if the models don't load (headless tests, no GPU).
+  - Animations (`Anim`): idle, walk/jog/sprint by drawn speed (thresholds 1.2 and 4.3 cells/s; the clip
+    rate is speed ÷ the clip's root-motion speed, so feet don't slide; colonists' 4 cells/s is a quick
+    jog), Sword_Attack looped for chopping and mining, Fixing_Kneeling for sowing, crop harvests,
+    floors and tending, Interact for walls and workbenches, Sitting_Idle on a chair (moved onto the
+    seat, facing the table), Crouch_Idle eating without one, Pistol_Idle / Sword_Idle when armed, a
+    one-shot Pistol_Shoot / Sword_Attack / Punch_Cross when an attack starts the weapon's cooldown,
+    Death01 held when downed or dead off a bed, Jump_Loop while falling. In bed or asleep the body is
+    laid flat (as the figure was) with a slow idle. Cross-fades of 0.25 s via `AnimationTransitions`.
+    Non-walking clips run at the simulation speed (stopped when paused).
+  - Movement: the drawn position trails the simulated one (`FOLLOW`, scaled with game speed), which
+    rounds path corners and eases starts and stops; turning is rate-limited (`TURN_RATE`), facing the
+    walking direction, else the work target, enemy or table.
+  - Weapons hang off the `hand_r` bone: the definitions' `held` size and turn, rotated by the inverse of
+    the hand's measured rotation in the aiming pose (`AIM_HAND`) so they point forward when aiming,
+    gripped near one end. Carried items are still a box in front of the chest (no carry clip).
+  - Tests: walk-speed matching and weapon orientation run normally; `characters_animate` (whole game
+    until every character is ready, has a hand and plays) needs a GPU: `cargo test --release -- --ignored`.
+  - Left for later: a real carry pose (the library has none; an upper-body mask over walking), pick-up
+    and put-down clips (the simulation doesn't pause for them), hit reactions (Hit_Chest), a proper
+    lying/sleeping pose, walking on stairs/slopes beyond the hop, foot IK, apparel shown on the body,
+    tuning everything by eye.
 
 - Phase 6: `assets/defs.ron` (RON, built in with `include_str!`) holds items, buildables and plants;
   `src/defs.rs` loads it once into a global registry (`defs()`), checks it (unique ids, known items and

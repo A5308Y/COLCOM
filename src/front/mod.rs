@@ -4,6 +4,7 @@
 mod audio;
 mod build_menu;
 mod camera;
+mod characters;
 mod input;
 mod look;
 mod overlay;
@@ -25,6 +26,8 @@ pub use audio::SoundQueue;
 pub use camera::CameraRig;
 #[cfg(test)]
 pub use sim::Sim;
+#[cfg(test)]
+pub use characters::Rig;
 
 pub struct FrontPlugin;
 
@@ -36,6 +39,7 @@ impl Plugin for FrontPlugin {
             scene::ScenePlugin,
             terrain::TerrainPlugin,
             props::PropsPlugin,
+            characters::CharactersPlugin,
             pawns::PawnsPlugin,
             input::InputPlugin,
             ui::UiPlugin,

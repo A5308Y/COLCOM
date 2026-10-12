@@ -198,4 +198,38 @@ mod tests {
         assert!(animations > 20, "the animation library has {} animations", animations);
         eprintln!("animation library: {} animations", animations);
     }
+
+    /// The whole game with a GPU: pawns' characters spawn, get their
+    /// animations and a hand for weapons, and animate.
+    /// `cargo test --release -- --ignored`
+    #[test]
+    #[ignore = "needs a GPU"]
+    fn characters_animate() {
+        let mut app = App::new();
+        app.add_plugins(DefaultPlugins.build().disable::<WinitPlugin>())
+            .add_plugins(EguiPlugin::default())
+            .add_plugins(front::FrontPlugin)
+            .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(16)));
+        let ready = |app: &mut App| {
+            let mut q = app.world_mut().query::<(&front::Rig, &AnimationPlayer)>();
+            q.iter(app.world()).filter(|(r, _)| r.ready()).count()
+        };
+        for _ in 0..3000 {
+            app.update();
+            if ready(&mut app) >= 3 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let colonists = app.world().resource::<front::Sim>().world.pawns.len();
+        assert_eq!(ready(&mut app), colonists, "every pawn's character is ready");
+        for _ in 0..60 {
+            app.update();
+        }
+        let mut q = app.world_mut().query::<(&front::Rig, &AnimationPlayer)>();
+        for (rig, player) in q.iter(app.world()) {
+            assert!(rig.hand.is_some(), "found the right hand bone");
+            assert!(player.playing_animations().next().is_some(), "an animation plays");
+        }
+    }
 }
