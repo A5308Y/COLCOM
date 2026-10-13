@@ -182,7 +182,7 @@ fn parse_key(key: &str) -> Option<KeyCode> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Selection {
     Pawn(u32),
     Tile(Pos),
@@ -199,7 +199,12 @@ pub struct Hover {
 #[derive(Resource)]
 pub struct UiState {
     pub tool: Tool,
+    /// What the inspector shows; with several colonists selected, the first.
     pub selected: Option<Selection>,
+    /// Every selected colonist when there's more than one (else empty).
+    pub group: Vec<u32>,
+    /// Screen point where a box selection started (left drag with Select).
+    pub box_start: Option<Vec2>,
     /// Cell where a paint drag started (its level is used for the whole box).
     pub drag_start: Option<Pos>,
     /// Under the cursor (last known, so drags can end over the UI).
@@ -237,6 +242,66 @@ impl UiState {
 }
 
 impl UiState {
+    pub fn new() -> Self {
+        UiState {
+            tool: Tool::Select,
+            selected: None,
+            group: Vec::new(),
+            box_start: None,
+            drag_start: None,
+            hover: None,
+            show_work: false,
+            show_help: false,
+            inspector_health: false,
+            view_level: None,
+            hide_roofs: false,
+            roof_cut: Vec::new(),
+            roof_version: 0,
+            show_build: true,
+            build_filter: String::new(),
+            dock_width: 0.0,
+            show_resources: false,
+            show_sound: false,
+        }
+    }
+
+    /// Every selected pawn: the group, or the one selected pawn.
+    pub fn selected_pawns(&self) -> Vec<u32> {
+        match self.selected {
+            _ if !self.group.is_empty() => self.group.clone(),
+            Some(Selection::Pawn(id)) => vec![id],
+            _ => Vec::new(),
+        }
+    }
+
+    pub fn is_selected(&self, id: u32) -> bool {
+        self.selected == Some(Selection::Pawn(id)) || self.group.contains(&id)
+    }
+
+    /// Select exactly these pawns (the first is shown in the inspector).
+    pub fn select_pawns(&mut self, ids: Vec<u32>) {
+        self.selected = ids.first().map(|&id| Selection::Pawn(id));
+        self.group = if ids.len() > 1 { ids } else { Vec::new() };
+    }
+
+    /// Select something else: a single pawn or a cell.
+    pub fn select(&mut self, s: Option<Selection>) {
+        self.selected = s;
+        self.group.clear();
+    }
+
+    /// Shift+click: add a pawn to the selection, or take it out.
+    pub fn toggle_pawn(&mut self, id: u32) {
+        let mut ids = self.selected_pawns();
+        match ids.iter().position(|&i| i == id) {
+            Some(k) => {
+                ids.remove(k);
+            }
+            None => ids.push(id),
+        }
+        self.select_pawns(ids);
+    }
+
     /// Highest level being shown.
     pub fn top_level(&self, m: &Map) -> usize {
         self.view_level.unwrap_or(m.d - 1).min(m.d - 1)
@@ -263,36 +328,19 @@ pub struct InputPlugin;
 
 impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(UiState {
-            tool: Tool::Select,
-            selected: None,
-            drag_start: None,
-            hover: None,
-            show_work: false,
-            show_help: false,
-            inspector_health: false,
-            view_level: None,
-            hide_roofs: false,
-            roof_cut: Vec::new(),
-            roof_version: 0,
-            show_build: true,
-            build_filter: String::new(),
-            dock_width: 0.0,
-            show_resources: false,
-            show_sound: false,
-        })
-        .add_systems(PreUpdate, update_roof_cut)
-        .add_systems(
-            Update,
-            (
-                update_hover,
-                keyboard.run_if(not(egui_wants_any_keyboard_input)),
-                mouse,
-                forget_missing_selection,
-                draw_markers,
-            )
-                .chain(),
-        );
+        app.insert_resource(UiState::new())
+            .add_systems(PreUpdate, update_roof_cut)
+            .add_systems(
+                Update,
+                (
+                    update_hover,
+                    keyboard.run_if(not(egui_wants_any_keyboard_input)),
+                    mouse,
+                    forget_missing_selection,
+                    draw_markers,
+                )
+                    .chain(),
+            );
     }
 }
 
@@ -391,22 +439,63 @@ pub fn pawn_at(w: &SimWorld, t: Pos) -> Option<u32> {
 
 // ---------- actions shared by keys and buttons ----------
 
-pub fn toggle_draft(sim: &mut Sim, ui: &UiState) {
-    if let Some(Selection::Pawn(id)) = ui.selected {
-        if let Some(p) = sim.world.pawn(id) {
-            if p.is_colonist() {
-                let d = !p.drafted;
-                sim.world.set_drafted(id, d);
-                return;
+/// Draft the selected colonists (or undraft them if they all are). With
+/// none selected, draft everyone and select them, ready for orders.
+pub fn toggle_draft(sim: &mut Sim, ui: &mut UiState) {
+    let w = &sim.world;
+    let chosen: Vec<u32> =
+        ui.selected_pawns().into_iter().filter(|&id| w.pawn(id).is_some_and(|p| p.is_colonist())).collect();
+    let everyone = chosen.is_empty();
+    let ids: Vec<u32> = if everyone {
+        w.pawns.iter().filter(|p| p.is_colonist() && p.active()).map(|p| p.id).collect()
+    } else {
+        chosen
+    };
+    let draft = ids.iter().any(|&id| w.pawn(id).is_some_and(|p| p.active() && !p.drafted));
+    for &id in &ids {
+        sim.world.set_drafted(id, draft);
+    }
+    if everyone && draft {
+        ui.select_pawns(ids);
+    }
+}
+
+/// `n` cells to send a group to: `t` and the walkable cells nearest to it,
+/// so they spread out instead of piling onto one cell.
+fn spread_targets(m: &Map, t: Pos, n: usize) -> Vec<Pos> {
+    if !m.standable(t) {
+        return Vec::new();
+    }
+    let mut out = vec![t];
+    let mut queue = std::collections::VecDeque::from([t]);
+    while let Some(c) = queue.pop_front() {
+        if out.len() >= n {
+            break;
+        }
+        for nb in m.walk_neighbors(c) {
+            if !out.contains(&nb) && out.len() < n {
+                out.push(nb);
+                queue.push_back(nb);
             }
         }
     }
-    let colonists: Vec<(u32, bool)> =
-        sim.world.pawns.iter().filter(|p| p.is_colonist() && p.active()).map(|p| (p.id, p.drafted)).collect();
-    let draft = colonists.iter().any(|(_, d)| !d);
-    for (id, _) in colonists {
-        sim.world.set_drafted(id, draft);
-    }
+    out
+}
+
+/// Colonists whose figures are inside a screen rectangle (box selection).
+fn colonists_in_box(sim: &Sim, ui: &UiState, cam: &Camera, gt: &GlobalTransform, a: Vec2, b: Vec2) -> Vec<u32> {
+    let rect = Rect::from_corners(a, b);
+    let m = &sim.world.map;
+    sim.world
+        .pawns
+        .iter()
+        .filter(|p| p.is_colonist() && !p.dead && !p.left && ui.shows_at(m, p.x, p.y, p.z))
+        .filter(|p| {
+            let at = tile_point(p.x, p.y, p.z) + Vec3::Y * 0.5;
+            cam.world_to_viewport(gt, at).is_ok_and(|v| rect.contains(v))
+        })
+        .map(|p| p.id)
+        .collect()
 }
 
 pub fn save(sim: &mut Sim) {
@@ -426,7 +515,7 @@ pub fn load(sim: &mut Sim, ui: &mut UiState) {
     match loaded {
         Ok(w) => {
             sim.replace(w);
-            ui.selected = None;
+            ui.select(None);
             sim.world.push_log("Game loaded.".into());
         }
         Err(e) => sim.world.push_log(format!("Loading failed: {}", e)),
@@ -435,7 +524,7 @@ pub fn load(sim: &mut Sim, ui: &mut UiState) {
 
 pub fn new_colony(sim: &mut Sim, ui: &mut UiState, rig: &mut CameraRig) {
     sim.replace(SimWorld::new(seed()));
-    ui.selected = None;
+    ui.select(None);
     rig.focus = colony_center(sim);
 }
 
@@ -532,7 +621,7 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
         ui.show_help = !ui.show_help;
     }
     if keys.just_pressed(KeyCode::KeyF) {
-        toggle_draft(&mut sim, &ui);
+        toggle_draft(&mut sim, &mut ui);
     }
     if keys.just_pressed(KeyCode::KeyC) {
         center_on_selection(&sim, &ui, &mut rig);
@@ -548,26 +637,49 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn mouse(
     buttons: Res<ButtonInput<MouseButton>>,
+    keys: Res<ButtonInput<KeyCode>>,
     egui_input: Res<EguiWantsInput>,
     drag: Res<DragTracker>,
     window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut sim: ResMut<Sim>,
     mut ui: ResMut<UiState>,
     mut sounds: ResMut<SoundQueue>,
 ) {
     let over_ui = egui_input.wants_any_pointer_input() || ui.over_dock(&window);
     let hover = ui.hover;
+    let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+    let cursor = window.cursor_position();
     match ui.tool {
         Tool::Select => {
             if buttons.just_pressed(MouseButton::Left) && !over_ui {
-                if let Some(h) = hover {
+                ui.box_start = cursor;
+            }
+            if buttons.just_released(MouseButton::Left) {
+                let start = ui.box_start.take();
+                let dragged = start.zip(cursor).filter(|(a, b)| a.distance(*b) > 6.0);
+                if let Some((a, b)) = dragged {
+                    // Box selection: the colonists inside it (added to the selection with Shift).
+                    let (cam, gt) = *camera;
+                    let found = colonists_in_box(&sim, &ui, cam, gt, a, b);
+                    if shift {
+                        let mut ids = ui.selected_pawns();
+                        ids.extend(found.into_iter().filter(|id| !ids.contains(id)).collect::<Vec<_>>());
+                        ui.select_pawns(ids);
+                    } else {
+                        ui.select_pawns(found);
+                    }
+                } else if let (Some(_), Some(h)) = (start, hover) {
                     let wall = sim.world.map.feature[sim.world.map.idx(h.solid)].is_block();
-                    ui.selected = Some(match pawn_at(&sim.world, h.stand) {
-                        Some(id) => Selection::Pawn(id),
-                        None => Selection::Tile(if wall { h.solid } else { h.stand }),
-                    });
+                    match pawn_at(&sim.world, h.stand) {
+                        Some(id) if shift => ui.toggle_pawn(id),
+                        Some(id) => ui.select(Some(Selection::Pawn(id))),
+                        None if shift => {}
+                        None => ui.select(Some(Selection::Tile(if wall { h.solid } else { h.stand }))),
+                    }
                 }
             }
         }
@@ -594,24 +706,40 @@ fn mouse(
             ui.drag_start = None;
             return;
         }
-        let (Some(Selection::Pawn(id)), Some(Hover { stand: t, .. })) = (ui.selected, hover) else { return };
-        // A weapon or piece of clothing: equip it (drafted or not).
+        let ids = ui.selected_pawns();
+        let (Some(&first), Some(Hover { stand: t, .. })) = (ids.first(), hover) else { return };
+        // A weapon or piece of clothing: the first selected colonist equips it (drafted or not).
         let m = &sim.world.map;
         let gear = m.items[m.idx(t)].is_some_and(|s| s.kind.def().weapon.is_some() || s.kind.def().apparel.is_some());
-        if gear && sim.world.pawn(id).is_some_and(|p| p.is_colonist()) {
-            if sim.world.order_equip(id, t) {
+        if gear && sim.world.pawn(first).is_some_and(|p| p.is_colonist()) {
+            if sim.world.order_equip(first, t) {
                 sounds.play("ui_place", None);
             }
             return;
         }
-        if !sim.world.pawn(id).is_some_and(|p| p.drafted) {
+        let drafted: Vec<u32> = ids.into_iter().filter(|&id| sim.world.pawn(id).is_some_and(|p| p.drafted)).collect();
+        if drafted.is_empty() {
             return;
         }
         let enemy = pawn_at(&sim.world, t)
             .filter(|&o| sim.world.pawn(o).is_some_and(|o| o.faction == Faction::Raider && o.active()));
-        match enemy {
-            Some(target) => sim.world.order_attack(id, target),
-            None => sim.world.order_move(id, t),
+        if let Some(target) = enemy {
+            for id in drafted {
+                sim.world.order_attack(id, target);
+            }
+            return;
+        }
+        // Spread out over the cells nearest the target, each colonist taking the closest free one.
+        let mut cells = spread_targets(&sim.world.map, t, drafted.len());
+        for id in drafted {
+            let Some(p) = sim.world.pawn(id) else { continue };
+            let here = (p.x, p.y, p.z);
+            let dist = |c: &Pos| {
+                let (dx, dy, dz) = (c.0 as f32 - here.0, c.1 as f32 - here.1, c.2 as f32 - here.2);
+                dx * dx + dy * dy + dz * dz
+            };
+            let Some(k) = (0..cells.len()).min_by(|&a, &b| dist(&cells[a]).total_cmp(&dist(&cells[b]))) else { break };
+            sim.world.order_move(id, cells.swap_remove(k));
         }
     }
 }
@@ -638,9 +766,14 @@ fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order) -> usize {
 }
 
 fn forget_missing_selection(sim: Res<Sim>, mut ui: ResMut<UiState>) {
+    let gone = |id: &u32| sim.world.pawn(*id).is_none_or(|p| p.left);
+    if ui.group.iter().any(gone) {
+        let ids: Vec<u32> = ui.group.iter().copied().filter(|id| !gone(id)).collect();
+        ui.select_pawns(ids);
+    }
     if let Some(Selection::Pawn(id)) = ui.selected {
-        if sim.world.pawn(id).is_none() {
-            ui.selected = None;
+        if gone(&id) {
+            ui.select(None);
         }
     }
 }
@@ -710,7 +843,7 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
 
     for p in w.pawns.iter().filter(|p| !p.left && !p.dead && ui.shows_at(m, p.x, p.y, p.z)) {
         let feet = Isometry3d::new(tile_point(p.x, p.y, p.z) + Vec3::Y * 0.03, Quat::from_rotation_x(FRAC_PI_2));
-        if ui.selected == Some(Selection::Pawn(p.id)) {
+        if ui.is_selected(p.id) {
             gizmos.circle(feet, 0.48, Color::WHITE);
         }
         if p.drafted {
@@ -737,6 +870,43 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selecting_several_colonists() {
+        let mut ui = UiState::new();
+        ui.select(Some(Selection::Pawn(1)));
+        assert_eq!(ui.selected_pawns(), vec![1]);
+        ui.toggle_pawn(2);
+        ui.toggle_pawn(3);
+        assert_eq!(ui.selected_pawns(), vec![1, 2, 3]);
+        assert!(ui.is_selected(2) && ui.is_selected(3));
+        assert_eq!(ui.selected, Some(Selection::Pawn(1)), "the first stays in the inspector");
+        ui.toggle_pawn(1);
+        ui.toggle_pawn(3);
+        assert_eq!(ui.selected_pawns(), vec![2]);
+        assert!(ui.group.is_empty(), "one left: a plain selection again");
+        ui.toggle_pawn(4);
+        ui.select(Some(Selection::Tile((1, 1, 1))));
+        assert!(ui.selected_pawns().is_empty() && !ui.is_selected(4), "selecting a cell drops the group");
+    }
+
+    #[test]
+    fn groups_spread_out_over_nearby_cells() {
+        let w = SimWorld::new(5);
+        let m = &w.map;
+        let (x, y) = (m.w / 2, m.h / 2);
+        let t = (x, y, m.surface(x, y).unwrap());
+        let cells = spread_targets(m, t, 6);
+        assert_eq!(cells.len(), 6);
+        assert_eq!(cells[0], t, "someone goes where you clicked");
+        for (k, c) in cells.iter().enumerate() {
+            assert!(m.standable(*c), "{:?} can be stood on", c);
+            assert!(!cells[k + 1..].contains(c), "no two on one cell");
+            assert!(c.0.abs_diff(t.0) + c.1.abs_diff(t.1) <= 3, "{:?} is close by", c);
+        }
+        let air = (x, y, m.d - 1);
+        assert!(spread_targets(m, air, 3).is_empty(), "nowhere to stand");
+    }
 
     #[test]
     fn every_buildable_has_a_usable_distinct_shortcut() {

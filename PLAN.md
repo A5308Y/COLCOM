@@ -160,6 +160,13 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
 
 ## Notes
 
+- Multi-selection: drag a box with the Select tool (colonists inside it; Shift adds) or Shift+click on
+  the map or in the colonist bar. `UiState::group` holds them (the first is `selected`, shown in the
+  inspector); use `selected_pawns` / `select_pawns` / `toggle_pawn` / `select`. Right-click sends every
+  selected drafted colonist: all attack an enemy, or spread over the walkable cells nearest the click
+  (`spread_targets`, each taking the closest). F drafts or undrafts the selection; with nothing
+  selected it drafts everyone and selects them. Equipping still goes to the first selected.
+
 - Hide roofs (Shift+R or the HUD button; like Going Medieval's roof toggle): every column over a roofed
   room whose ceiling is a built floor is cut off just above the topmost such room
   (`UiState::roof_cut`, recomputed each frame in `update_roof_cut`), so the top room of every building

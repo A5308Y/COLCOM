@@ -19,7 +19,7 @@ use bevy::prelude::*;
 use my_world::map::Pos;
 
 #[cfg(test)]
-pub use input::{Selection, UiState};
+pub use input::{toggle_draft, Selection, UiState};
 #[cfg(test)]
 pub use audio::SoundQueue;
 #[cfg(test)]

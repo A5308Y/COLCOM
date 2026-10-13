@@ -101,6 +101,32 @@ mod tests {
             app.update();
         }
 
+        // Several colonists selected: F drafts them all; F with nothing
+        // selected drafts everyone and selects them.
+        let ids: Vec<u32> = app.world().resource::<front::Sim>().world.pawns.iter().filter(|p| p.is_colonist()).map(|p| p.id).collect();
+        assert!(ids.len() >= 3, "a starting colony has a few colonists");
+        app.world_mut().resource_mut::<front::UiState>().select_pawns(ids[..2].to_vec());
+        let toggle = |app: &mut App| {
+            app.world_mut().resource_scope(|world, mut sim: Mut<front::Sim>| {
+                front::toggle_draft(&mut sim, &mut world.resource_mut::<front::UiState>());
+            });
+        };
+        let drafted = |app: &App| -> Vec<u32> {
+            app.world().resource::<front::Sim>().world.pawns.iter().filter(|p| p.drafted).map(|p| p.id).collect()
+        };
+        toggle(&mut app);
+        assert_eq!(drafted(&app), ids[..2].to_vec(), "the two selected are drafted");
+        toggle(&mut app);
+        assert!(drafted(&app).is_empty(), "and undrafted again");
+        app.world_mut().resource_mut::<front::UiState>().select(None);
+        toggle(&mut app);
+        assert_eq!(drafted(&app).len(), ids.len(), "everyone drafted");
+        assert_eq!(app.world().resource::<front::UiState>().selected_pawns(), ids, "and selected");
+        toggle(&mut app);
+        for _ in 0..3 {
+            app.update();
+        }
+
         // Hidden roofs: a walled room with a built roof, seen into from above.
         let (room, z) = {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();

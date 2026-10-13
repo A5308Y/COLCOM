@@ -30,7 +30,7 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 31] = [
+const HELP_REST: [&str; 32] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -54,8 +54,9 @@ const HELP_REST: [&str; 31] = [
     "Anything left with nothing underneath falls - more than one level hurts.",
     "Wounds bleed and can get infected. Doctors (see P) rescue downed colonists to a bed",
     "and tend them - better with medicine and skill. Click a colonist, then Health for details.",
-    "Raids come every few days: press F to draft the selected colonist (or everyone).",
-    "Drafted colonists shoot enemies in range; right-click to move, right-click an enemy to attack.",
+    "Raids come every few days: press F to draft the selected colonists (or everyone, who then get selected).",
+    "Drag a box or Shift+click to select several colonists. Drafted ones shoot enemies in range;",
+    "      right-click to move them (they spread out), right-click an enemy to attack.",
     "",
     "Camera: WASD/arrows pan, Q/E rotate, wheel zooms, right-drag orbits, middle-drag pans.",
     "Space: pause   Tab: speed   P: work priorities   I: resources   C: center camera",
@@ -100,6 +101,16 @@ fn draw_ui(
     let mut view = ctx.viewport_rect();
     view.min.x += left;
     overlay::draw(&ctx, &sim.world, cam, gt, rig.distance, &st, view);
+    // The selection box while dragging with the Select tool.
+    if let (Some(a), Some(b)) = (st.box_start, ctx.pointer_latest_pos()) {
+        let a = egui::pos2(a.x, a.y);
+        if a.distance(b) > 6.0 {
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("select_box")));
+            let rect = egui::Rect::from_two_pos(a, b);
+            painter.rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(255, 255, 255, 18));
+            painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, Color32::WHITE), egui::StrokeKind::Inside);
+        }
+    }
 
     hud(&ctx, &mut sim, &mut st, &mut rig, left);
     colonist_bar(&ctx, &sim, &mut st, left);
@@ -291,7 +302,7 @@ fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, left: f32) {
     egui::Area::new(egui::Id::new("colonists")).anchor(Align2::LEFT_TOP, [left + 8.0, 8.0]).show(ctx, |ui| {
         ui.horizontal(|ui| {
             for p in sim.world.pawns.iter().filter(|p| p.is_colonist()) {
-                let selected = st.selected == Some(Selection::Pawn(p.id));
+                let selected = st.is_selected(p.id);
                 let trouble = p.downed || p.hunger <= 0.0 || p.break_timer > 0.0 || p.health.bleed_rate() > 0.0;
                 let stroke = if selected {
                     egui::Stroke::new(2.0, Color32::WHITE)
@@ -317,7 +328,11 @@ fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, left: f32) {
                     .response
                     .interact(egui::Sense::click());
                 if resp.clicked() {
-                    st.selected = Some(Selection::Pawn(p.id));
+                    if ui.input(|i| i.modifiers.shift) {
+                        st.toggle_pawn(p.id);
+                    } else {
+                        st.select(Some(Selection::Pawn(p.id)));
+                    }
                 }
             }
         });
@@ -353,6 +368,11 @@ fn pawn_inspector(ctx: &egui::Context, sim: &Sim, st: &mut UiState, id: u32, lef
                 ui.selectable_value(&mut st.inspector_health, false, "Overview");
                 ui.selectable_value(&mut st.inspector_health, true, "Health");
             });
+            if st.group.len() > 1 {
+                let others = st.group.len() - 1;
+                let text = format!("and {} more selected (orders go to all; Shift+click to add or remove)", others);
+                ui.label(RichText::new(text).small());
+            }
             ui.label(RichText::new(format!("{} - {}", p.status(), p.weapon_name())).weak());
             if !p.apparel.is_empty() {
                 let worn: Vec<&str> = p.apparel.iter().map(|a| a.name()).collect();
