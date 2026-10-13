@@ -278,7 +278,7 @@ impl Memory {
 /// Walking pace in cells per second (a cell is about 1.8 m: a brisk walk).
 pub const WALK_SPEED: f32 = 1.0;
 /// Running pace in battles.
-pub const RUN_SPEED: f32 = 3.0;
+pub const RUN_SPEED: f32 = 2.2;
 
 /// What a colonist does when a battle starts (see `squads.rs`, `battle.rs`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]

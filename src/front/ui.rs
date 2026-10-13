@@ -213,7 +213,12 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 if ui.button(pause).clicked() {
                     sim.paused = !sim.paused;
                 }
-                if ui.button(format!("Speed {}x (Tab)", sim.speed)).clicked() {
+                let speed = if sim.world.battle.is_some() {
+                    "Speed 1x (battle)".to_string()
+                } else {
+                    format!("Speed {}x (Tab)", sim.speed)
+                };
+                if ui.button(speed).clicked() {
                     sim.cycle_speed();
                 }
             });

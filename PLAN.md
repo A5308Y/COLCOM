@@ -179,6 +179,15 @@ real play.
 
 ## Notes
 
+- Battle pacing (after the first play test): battles always run at 1x game speed (`Sim::rate`);
+  running is `RUN_SPEED` 2.2 cells/s (an easy jog). An attack is a sequence of `Strike`s
+  (`Battle::strikes`): the unit takes aim (0.6 s), then each member fires 0.45 s (blows 0.8 s) after
+  the last, and the attack ends 0.7 s after the last. Each one is resolved as it happens, so a target
+  who went down is swapped for another one in reach. Pawns face their `aim_target`. Rifle range is
+  now 16. Hovering an enemy switches to an attack preview: the move marker hides; aiming lines run from
+  each member who can reach, bold rings mark the targets, a label gives the best chance, how many can
+  reach and the AP cost (or why not), and the pointer becomes a crosshair.
+
 - Game speeds (Tab or the HUD button): 1x, 2x, 5x, 10x (`sim::SPEEDS`). At most 40 simulation steps
   run per frame, which 10x needs only below 15 fps.
 - Build orders replace a blueprint of something else in place (`order_applies` treats the cell as

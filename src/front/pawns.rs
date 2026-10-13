@@ -212,7 +212,8 @@ fn facing(p: &Pawn, w: &SimWorld) -> Option<f32> {
             .map(|o| (o.x, o.y))
     };
     let target = match p.job {
-        _ if w.battle.is_some() => enemy(),
+        // Whoever they're aiming at in an attack, else the nearest enemy.
+        _ if w.battle.is_some() => w.aim_target(p.id).and_then(|t| w.pawn(t)).map(|t| (t.x, t.y)).or_else(enemy),
         Some(Job::Eat { seat: Some(seat), .. }) if seat == p.pos => m
             .neighbors(seat)
             .find(|&nb| m.feature[m.idx(nb)].is_special(Special::Table))
@@ -271,7 +272,7 @@ fn sync_pawns(
 
     let dt = time.delta_secs();
     // Simulation seconds per real second: animations other than walking run at this rate.
-    let sim_rate = if sim.paused { 0.0 } else { sim.speed as f32 };
+    let sim_rate = if sim.paused { 0.0 } else { sim.rate() as f32 };
     for p in w.pawns.iter().filter(|p| !p.left) {
         let v = visuals
             .map

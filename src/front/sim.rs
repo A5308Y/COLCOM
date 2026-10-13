@@ -25,6 +25,15 @@ impl Sim {
         self.acc = 0.0;
     }
 
+    /// Game speed in effect: battles always play at 1x, so moves and shots can be followed.
+    pub fn rate(&self) -> u32 {
+        if self.world.battle.is_some() {
+            1
+        } else {
+            self.speed
+        }
+    }
+
     pub fn cycle_speed(&mut self) {
         let next = SPEEDS.iter().position(|&s| s == self.speed).map_or(0, |k| (k + 1) % SPEEDS.len());
         self.speed = SPEEDS[next];
@@ -52,7 +61,7 @@ fn step_simulation(time: Res<Time>, mut sim: ResMut<Sim>) {
     if sim.paused || sim.world.colony_lost() {
         return;
     }
-    sim.acc += time.delta_secs().min(0.25) * sim.speed as f32;
+    sim.acc += time.delta_secs().min(0.25) * sim.rate() as f32;
     let mut steps = 0;
     while sim.acc >= TICK && steps < 40 {
         sim.world.tick(TICK);

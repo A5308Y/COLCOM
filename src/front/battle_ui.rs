@@ -12,7 +12,7 @@ use bevy::mesh::{Indices, PrimitiveTopology};
 use std::collections::{HashMap, HashSet};
 use super::{tile_center, tile_point};
 use bevy::prelude::*;
-use bevy::window::PrimaryWindow;
+use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 use bevy_egui::egui::{self, Align2, Color32, ProgressBar, RichText};
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
@@ -31,7 +31,7 @@ impl Plugin for BattleUiPlugin {
             .init_resource::<ReachArea>()
             .init_gizmo_group::<BattleGizmos>()
             .add_systems(Startup, setup)
-            .add_systems(Update, (battle_input, follow_action, update_reach, draw_battle).chain())
+            .add_systems(Update, (battle_input, follow_action, update_reach, draw_battle, cursor).chain())
             .add_systems(EguiPrimaryContextPass, battle_panels);
     }
 }
@@ -305,6 +305,28 @@ fn draw_battle(sim: Res<Sim>, ui: Res<UiState>, area: Res<ReachArea>, mut gizmos
         }
     }
     let Some(h) = ui.hover else { return };
+    // Over an enemy, clicking attacks: show who would shoot or strike whom
+    // instead of where the unit could walk.
+    if let Some(t) = hovered_enemy(w, b, h.stand) {
+        let options = w.attack_options(u, t);
+        let chest = |p: &my_world::pawn::Pawn| tile_point(p.x, p.y, p.z) + Vec3::Y * 0.55;
+        let red = Color::srgb(1.0, 0.25, 0.15);
+        for &(a, o) in &options {
+            if let (Some(a), Some(o)) = (w.pawn(a), w.pawn(o)) {
+                bold.line(chest(a), chest(o), red.with_alpha(0.85));
+            }
+        }
+        let flat = Quat::from_rotation_x(FRAC_PI_2);
+        for &id in &b.units[t].members {
+            let Some(p) = w.pawn(id) else { continue };
+            let aimed_at = options.iter().any(|o| o.1 == id);
+            let feet = tile_point(p.x, p.y, p.z) + Vec3::Y * 0.05;
+            let color = if aimed_at { red } else { Color::srgb(0.6, 0.6, 0.6) };
+            bold.circle(Isometry3d::new(feet, flat), 0.45, color);
+            cell_outline(&mut gizmos, p.pos, color);
+        }
+        return;
+    }
     // The chosen destination: a bold ring and the way there.
     if let Some(&cost) = area.cost.get(&h.stand) {
         let attack = unit.ap - cost >= AP_ATTACK;
@@ -333,12 +355,29 @@ fn draw_battle(sim: Res<Sim>, ui: Res<UiState>, area: Res<ReachArea>, mut gizmos
             gizmos.linestrip([edge - side, edge - side + up, edge + side + up, edge + side], color);
         }
     }
-    if let Some(t) = pawn_at(w, h.stand).and_then(|id| b.unit_of(id)).filter(|&t| b.units[t].side != Faction::Colony) {
-        for &id in &b.units[t].members {
-            if let Some(p) = w.pawn(id) {
-                cell_outline(&mut gizmos, p.pos, Color::srgb(1.0, 0.3, 0.2));
-            }
-        }
+}
+
+/// The enemy unit under the cursor, if any.
+fn hovered_enemy(w: &SimWorld, b: &Battle, at: Pos) -> Option<usize> {
+    pawn_at(w, at).and_then(|id| b.unit_of(id)).filter(|&t| b.units[t].side != Faction::Colony)
+}
+
+/// A crosshair over enemies when clicking would attack.
+fn cursor(
+    mut commands: Commands,
+    sim: Res<Sim>,
+    ui: Res<UiState>,
+    window: Single<Entity, With<PrimaryWindow>>,
+    mut aiming: Local<bool>,
+) {
+    let w = &sim.world;
+    let now = w.battle.as_ref().is_some_and(|b| {
+        my_unit(b).is_some() && ui.hover.is_some_and(|h| hovered_enemy(w, b, h.stand).is_some())
+    });
+    if now != *aiming {
+        *aiming = now;
+        let icon = if now { SystemCursorIcon::Crosshair } else { SystemCursorIcon::Default };
+        commands.entity(*window).insert(CursorIcon::System(icon));
     }
 }
 
@@ -374,8 +413,42 @@ fn battle_panels(
     if let Some(u) = my_unit(b) {
         let (cam, gt) = *camera;
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("battle_odds")));
+        // Over an enemy: what attacking means, by the target.
+        let target = ui.hover.and_then(|h| Some((h, hovered_enemy(w, b, h.stand)?)));
+        if let Some((h, t)) = target {
+            let options = w.attack_options(u, t);
+            let shooters = {
+                let mut a: Vec<u32> = options.iter().map(|o| o.0).collect();
+                a.dedup();
+                a.len()
+            };
+            let name = w.pawn(*b.units[t].members.first().unwrap_or(&0)).map_or("them".to_string(), |p| p.name.clone());
+            let best = options.iter().filter_map(|o| Some(w.hit_chance(w.pawn(o.0)?, w.pawn(o.1)?))).reduce(f32::max);
+            let ap = b.units[u].ap;
+            let (text, color) = match best {
+                _ if ap < AP_ATTACK => (format!("Attack {}: not enough AP ({} needed)", name, AP_ATTACK), Color32::from_gray(180)),
+                Some(c) => (
+                    format!(
+                        "Click to attack {}: {:.0}%, {} of {} can reach - {} AP",
+                        name,
+                        c * 100.0,
+                        shooters,
+                        b.units[u].members.len(),
+                        AP_ATTACK
+                    ),
+                    Color32::from_rgb(255, 120, 100),
+                ),
+                None => (format!("{} is out of reach: move closer or find a line of sight", name), Color32::from_gray(180)),
+            };
+            if let Ok(p) = cam.world_to_viewport(gt, tile_center(h.stand) + Vec3::Y * 1.7) {
+                let pos = egui::pos2(p.x, p.y - 16.0);
+                let font = egui::FontId::proportional(16.0);
+                painter.text(pos + egui::vec2(1.0, 1.0), Align2::CENTER_BOTTOM, &text, font.clone(), Color32::from_black_alpha(220));
+                painter.text(pos, Align2::CENTER_BOTTOM, text, font, color);
+            }
+        }
         // What moving to the hovered cell costs, by the destination marker.
-        if let Some((h, &cost)) = ui.hover.and_then(|h| Some((h, area.cost.get(&h.stand)?))) {
+        if let Some((h, &cost)) = ui.hover.filter(|_| target.is_none()).and_then(|h| Some((h, area.cost.get(&h.stand)?))) {
             let at = tile_center(h.stand) + Vec3::Y * 0.3;
             if let Ok(p) = cam.world_to_viewport(gt, at) {
                 let left = b.units[u].ap - cost;

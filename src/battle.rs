@@ -35,8 +35,12 @@ pub const PINNED: f32 = 50.0;
 pub const BROKEN: f32 = 25.0;
 /// Largest raider squad.
 const RAIDER_SQUAD: usize = 4;
-/// Seconds an attack takes to play out.
-const ATTACK_TIME: f32 = 0.9;
+/// An attack: seconds to take aim, between one member's shot and the next
+/// (longer for blows), and to let the last one sink in.
+const AIM_TIME: f32 = 0.6;
+const SHOT_GAP: f32 = 0.45;
+const MELEE_GAP: f32 = 0.8;
+const AFTER_ATTACK: f32 = 0.7;
 /// Rounds without an attack and without the sides getting any closer
 /// after which the raiders give up.
 pub const STALEMATE: u32 = 10;
@@ -122,6 +126,14 @@ impl Unit {
     }
 }
 
+/// A shot or blow still to come in an attack, `delay` seconds from now.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct Strike {
+    pub attacker: u32,
+    pub target: u32,
+    pub delay: f32,
+}
+
 /// A squad member on the way to their leader.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Arrival {
@@ -177,12 +189,15 @@ pub struct Battle {
     /// Closest the sides have been (cells), to tell closing in from a stalemate.
     #[serde(default)]
     pub closest: Option<usize>,
+    /// The attack playing out: shots and blows still to come.
+    #[serde(default)]
+    pub strikes: Vec<Strike>,
 }
 
 impl Battle {
     /// Waiting for an attack or a move to play out.
     pub fn busy(&self) -> bool {
-        self.busy > 0.0 || !self.moving.is_empty()
+        self.busy > 0.0 || !self.moving.is_empty() || !self.strikes.is_empty()
     }
 
     /// The unit pawn `id` fights in.
@@ -322,6 +337,7 @@ impl World {
             events: Vec::new(),
             quiet_rounds: 0,
             closest: None,
+            strikes: Vec::new(),
         };
         // Everyone drops what they're doing.
         for i in 0..self.pawns.len() {
@@ -673,55 +689,82 @@ impl World {
         }
     }
 
+    /// Line up an attack: each member who can reach someone in unit `t`
+    /// takes aim, then they fire (or strike) one after another.
     fn attack_unit(&mut self, u: usize, t: usize) -> Result<(), String> {
         let options = self.attack_options(u, t);
         if options.is_empty() {
             return Err("out of reach (range, sight, or not next to them)".into());
         }
-        let attackers: Vec<u32> = {
-            let mut a: Vec<u32> = options.iter().map(|o| o.0).collect();
-            a.dedup();
-            a
-        };
-        let mut shots = 0.0;
+        let mut attackers: Vec<u32> = options.iter().map(|o| o.0).collect();
+        attackers.dedup();
+        let mut strikes = Vec::new();
+        let mut at = AIM_TIME;
         for a in attackers {
             let targets: Vec<u32> = options.iter().filter(|o| o.0 == a).map(|o| o.1).collect();
             let target = targets[self.rng.below(targets.len())];
-            let (Some(ai), Some(ti)) = (self.pawn_index(a), self.pawn_index(target)) else { continue };
-            if !self.pawns[ti].active() {
-                continue;
-            }
-            let chance = self.hit_chance(&self.pawns[ai], &self.pawns[ti]);
-            let hit = self.rng.chance(chance);
-            let w = self.pawns[ai].attack();
-            let skill = if w.ranged { Skill::Shooting } else { Skill::Melee };
-            let (from, to) = ((self.pawns[ai].x, self.pawns[ai].y, self.pawns[ai].z), (self.pawns[ti].x, self.pawns[ti].y, self.pawns[ti].z));
-            {
-                let p = &mut self.pawns[ai];
-                // A jump in cooldown is what the front end animates as a shot or blow.
-                p.cooldown = 1.0;
-                p.learn(skill, 2.0);
-            }
-            self.sound(w.sound, Some(self.pawns[ai].pos));
-            if w.ranged {
-                let to = if hit { to } else { (to.0 + self.rng.range_f32(-1.0, 1.0), to.1 + self.rng.range_f32(-1.0, 1.0), to.2) };
-                self.effects.push(Effect { from, to, ttl: 0.15, hit });
-            }
-            shots += if hit { 15.0 } else { 8.0 };
-            if hit {
-                let (lo, hi) = w.damage;
-                let dmg = self.rng.range_f32(lo, hi);
-                let by = self.pawns[ai].name.clone();
-                self.damage(ti, dmg, w.kind, &by);
+            strikes.push(Strike { attacker: a, target, delay: at });
+            let melee = self.pawn(a).is_some_and(|p| !p.attack().ranged);
+            at += if melee { MELEE_GAP } else { SHOT_GAP };
+        }
+        let b = self.battle.as_mut().unwrap();
+        b.strikes = strikes;
+        b.quiet_rounds = 0;
+        Ok(())
+    }
+
+    /// One shot or blow of an attack. If the target is already down, the
+    /// attacker picks someone else from that unit in reach.
+    fn fire_strike(&mut self, s: Strike) {
+        let Some(ai) = self.pawn_index(s.attacker).filter(|&i| self.pawns[i].active()) else { return };
+        let target = if self.pawn(s.target).is_some_and(|p| p.active()) {
+            Some(s.target)
+        } else {
+            let b = self.battle.as_ref().unwrap();
+            let others: Vec<u32> = b
+                .unit_of(s.target)
+                .map(|t| b.units[t].members.clone())
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|&o| self.pawn(o).is_some_and(|o| self.can_attack(&self.pawns[ai], o)))
+                .collect();
+            (!others.is_empty()).then(|| others[self.rng.below(others.len())])
+        };
+        let Some(ti) = target.and_then(|t| self.pawn_index(t)) else { return };
+        let chance = self.hit_chance(&self.pawns[ai], &self.pawns[ti]);
+        let hit = self.rng.chance(chance);
+        let w = self.pawns[ai].attack();
+        let skill = if w.ranged { Skill::Shooting } else { Skill::Melee };
+        let (from, to) = ((self.pawns[ai].x, self.pawns[ai].y, self.pawns[ai].z), (self.pawns[ti].x, self.pawns[ti].y, self.pawns[ti].z));
+        {
+            let p = &mut self.pawns[ai];
+            // A jump in cooldown is what the front end animates as a shot or blow.
+            p.cooldown = 1.0;
+            p.learn(skill, 2.0);
+        }
+        self.sound(w.sound, Some(self.pawns[ai].pos));
+        if w.ranged {
+            let to = if hit { to } else { (to.0 + self.rng.range_f32(-1.0, 1.0), to.1 + self.rng.range_f32(-1.0, 1.0), to.2) };
+            self.effects.push(Effect { from, to, ttl: 0.15, hit });
+        }
+        let target_id = self.pawns[ti].id;
+        if let Some(b) = self.battle.as_mut() {
+            if let Some(tu) = b.unit_of(target_id) {
+                b.units[tu].suppression += if hit { 15.0 } else { 8.0 };
             }
         }
-        if let Some(b) = self.battle.as_mut() {
-            b.units[t].suppression += shots;
-            b.busy = ATTACK_TIME;
-            b.quiet_rounds = 0;
+        if hit {
+            let (lo, hi) = w.damage;
+            let dmg = self.rng.range_f32(lo, hi);
+            let by = self.pawns[ai].name.clone();
+            self.damage(ti, dmg, w.kind, &by);
         }
         self.refresh_units();
-        Ok(())
+    }
+
+    /// Who pawn `id` is aiming at in the attack playing out, if anyone.
+    pub fn aim_target(&self, id: u32) -> Option<u32> {
+        self.battle.as_ref()?.strikes.iter().find(|s| s.attacker == id).map(|s| s.target)
     }
 
     /// Chance that `a`'s shot or blow hits `o`.
@@ -972,6 +1015,25 @@ impl World {
         let Some(b) = self.battle.as_mut() else { return };
         if b.busy > 0.0 {
             b.busy -= dt;
+            return;
+        }
+        if !b.strikes.is_empty() {
+            for s in b.strikes.iter_mut() {
+                s.delay -= dt;
+            }
+            let (due, later): (Vec<Strike>, Vec<Strike>) = b.strikes.drain(..).partition(|s| s.delay <= 0.0);
+            b.strikes = later;
+            for s in due {
+                if self.battle.is_none() {
+                    return;
+                }
+                self.fire_strike(s);
+            }
+            if let Some(b) = self.battle.as_mut() {
+                if b.strikes.is_empty() {
+                    b.busy = AFTER_ATTACK;
+                }
+            }
             return;
         }
         if !b.moving.is_empty() {
@@ -1424,9 +1486,51 @@ mod tests {
         let walk = w.pawn(id).unwrap().move_speed();
         fight(&mut w, 1, (27, 6, Z));
         assert!(w.pawns.iter().all(|p| p.running));
-        assert!(w.pawn(id).unwrap().move_speed() > 2.5 * walk);
+        assert!(w.pawn(id).unwrap().move_speed() > 2.0 * walk);
         w.end_battle(Outcome::Won);
         assert!(w.pawns.iter().all(|p| !p.running));
+    }
+
+    #[test]
+    fn attacks_play_out_one_shot_after_another() {
+        let mut w = world(40, 20, 15);
+        let leader = colonist(&mut w, (5, 10, Z));
+        let member = colonist(&mut w, (5, 11, Z));
+        w.set_role(leader, Role::Leader).unwrap();
+        w.set_role(member, Role::Member(leader)).unwrap();
+        for id in [leader, member] {
+            let i = w.pawn_index(id).unwrap();
+            w.pawns[i].weapon = Some(item("rifle"));
+        }
+        fight(&mut w, 1, (14, 10, Z));
+        let u = battle(&w).unit_of(leader).unwrap();
+        let raider = battle(&w).units.iter().position(|u| u.side == Faction::Raider).unwrap();
+        w.battle_order(BattleOrder::Activate(u)).unwrap();
+        w.battle_order(BattleOrder::Attack(raider)).unwrap();
+        let strikes = battle(&w).strikes.clone();
+        assert_eq!(strikes.len(), 2, "both take a shot");
+        assert!(strikes[1].delay > strikes[0].delay, "one after the other");
+        assert_eq!(w.aim_target(leader), Some(strikes[0].target), "aiming first");
+        assert!(w.battle_order(BattleOrder::End).is_err(), "busy while the attack plays out");
+        let shots = |w: &mut World| w.take_sounds().iter().filter(|s| s.name == "rifle").count();
+        shots(&mut w);
+        for _ in 0..(0.3 / TICK) as usize {
+            w.tick(TICK);
+        }
+        assert_eq!(shots(&mut w), 0, "still taking aim");
+        let mut fired = Vec::new();
+        for k in 0..(3.0 / TICK) as usize {
+            if w.battle.is_none() {
+                break;
+            }
+            w.tick(TICK);
+            if shots(&mut w) > 0 {
+                fired.push(k);
+            }
+        }
+        assert!(!fired.is_empty(), "shots were fired");
+        assert!(fired.len() < 2 || fired[1] - fired[0] >= 10, "not at the same moment: {:?}", fired);
+        assert!(w.battle.as_ref().is_none_or(|b| b.strikes.is_empty() && !b.busy()), "and it's over");
     }
 
     #[test]

@@ -532,10 +532,10 @@ mod tests {
         let (a, rate) = locomotion(WALK_SPEED, 1.0, false);
         assert_eq!(a, Anim::Walk);
         assert!(rate > 1.5 && rate < 2.2, "{}", rate);
-        // In battle they run at about the jog's own pace.
+        // In battle they run: an easy jog, a little under the clip's own pace.
         let (a, rate) = locomotion(RUN_SPEED, 1.0, true);
         assert_eq!(a, Anim::Jog);
-        assert!((rate - 1.0).abs() < 0.1, "{}", rate);
+        assert!(rate > 0.6 && rate <= 1.0, "{}", rate);
         // A faster game plays the same clip faster.
         assert_eq!(locomotion(3.0 * WALK_SPEED, 3.0, false).0, Anim::Walk);
         assert_eq!(locomotion(3.0 * RUN_SPEED, 3.0, true).0, Anim::Jog);
