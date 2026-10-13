@@ -290,6 +290,63 @@ mod tests {
         assert!(players >= 3, "ambience loops and effects ({} players)", players);
     }
 
+    /// The app started in the battle scenario: the battle screen draws from
+    /// the first frame, the player's unit moves, and restarting brings the
+    /// scenario back.
+    #[test]
+    fn battle_scenario_runs_headless() {
+        let mut app = App::new();
+        app.add_plugins(
+            DefaultPlugins
+                .build()
+                .disable::<WinitPlugin>()
+                .set(RenderPlugin {
+                    render_creation: RenderCreation::Automatic(Box::new(WgpuSettings { backends: None, ..default() })),
+                    ..default()
+                }),
+        )
+        .add_plugins(EguiPlugin::default())
+        .add_plugins(front::FrontPlugin)
+        .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(16)));
+        {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            sim.scenario = Some("battle".into());
+            let world = sim.fresh_world();
+            sim.replace(world);
+        }
+        for _ in 0..60 {
+            app.update();
+        }
+        let (leader, to) = {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            let w = &mut sim.world;
+            let b = w.battle.as_ref().expect("the scenario starts in battle");
+            assert_eq!(b.round, 1);
+            let u = (0..b.units.len()).find(|&u| b.units[u].side == my_world::pawn::Faction::Colony && b.units[u].led).unwrap();
+            let leader = b.units[u].members[0];
+            w.battle_order(my_world::battle::BattleOrder::Activate(u)).unwrap();
+            let lead = w.pawn(leader).unwrap().pos;
+            let to = (lead.0 + 2, lead.1, lead.2);
+            w.battle_order(my_world::battle::BattleOrder::Move(to)).unwrap();
+            (leader, to)
+        };
+        for _ in 0..240 {
+            app.update();
+        }
+        {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            assert!(sim.world.battle.is_some(), "the battle goes on");
+            assert_eq!(sim.world.pawn(leader).unwrap().pos, to, "the squad leader walked there");
+            let world = sim.fresh_world();
+            sim.replace(world);
+            assert_eq!(sim.scenario.as_deref(), Some("battle"));
+            assert!(sim.world.battle.as_ref().is_some_and(|b| b.round == 1), "restarted");
+        }
+        for _ in 0..10 {
+            app.update();
+        }
+    }
+
     /// The character models and animations in `assets/models` load in Bevy
     /// (with all their buffers and textures). Loading glTF needs a GPU, so
     /// this only runs when asked: `cargo test --release -- --ignored`.

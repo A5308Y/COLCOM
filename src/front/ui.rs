@@ -221,6 +221,10 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 if ui.button(speed).clicked() {
                     sim.cycle_speed();
                 }
+                if let Some(name) = &sim.scenario {
+                    ui.separator();
+                    ui.label(RichText::new(format!("Scenario: {} (Shift+N restarts)", name)).color(Color32::LIGHT_BLUE));
+                }
             });
             ui.horizontal(|ui| {
                 let view = match st.view_level {

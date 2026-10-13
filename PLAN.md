@@ -173,6 +173,11 @@ real play.
 - The sandbox has no GPU: the game can't be seen there. `cargo test --bin my-world` runs the whole app
   headless for a few hundred frames (catches Bevy setup and query errors); the user checks visuals.
 - `cargo run --release --example profile` times the simulation and saving on a busy colony.
+- Scenarios (`src/scenarios.rs`) are fixed test worlds: `cargo run --release -- --scenario battle`
+  (or `MY_WORLD_SCENARIO=battle`) starts straight in round 1 of a battle, the colony's turn; Shift+N
+  restarts the scenario. New ones go in `SCENARIOS` and `build`, built like the battle tests
+  (`World::with_map(Map::flat(..))`, storyteller off, set skills and weapons, fixed rng seed).
+  `main.rs::battle_scenario_runs_headless` runs the app in it.
 - Don't touch `.git`; the user commits.
 - Bevy 0.20 / bevy_egui 0.43 / egui 0.36 are newer than most training data: check APIs in the
   downloaded sources under `$TMPDIR/cargo-home/registry/src/` before using them.

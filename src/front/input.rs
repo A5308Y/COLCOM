@@ -3,7 +3,7 @@
 
 use super::audio::SoundQueue;
 use super::camera::{colony_center, CameraRig, DragTracker, MainCamera};
-use super::sim::{seed, Sim};
+use super::sim::Sim;
 use super::terrain::{FLOOR_T, LEVEL_H};
 use super::{tile_center, tile_point};
 use bevy::prelude::*;
@@ -498,8 +498,10 @@ pub fn load(sim: &mut Sim, ui: &mut UiState) {
     }
 }
 
+/// A new colony, or the scenario again if the game started in one.
 pub fn new_colony(sim: &mut Sim, ui: &mut UiState, rig: &mut CameraRig) {
-    sim.replace(SimWorld::new(seed()));
+    let world = sim.fresh_world();
+    sim.replace(world);
     ui.select(None);
     rig.focus = colony_center(sim);
 }

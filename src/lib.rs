@@ -15,6 +15,7 @@ pub mod production;
 pub mod rng;
 pub mod rooms;
 pub mod save;
+pub mod scenarios;
 pub mod squads;
 pub mod story;
 pub mod world;

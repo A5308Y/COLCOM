@@ -7,10 +7,16 @@ A small RimWorld-style colony sim in Rust, shown in 3D with [Bevy](https://bevy.
 ```sh
 cargo run --release            # first build takes several minutes (Bevy)
 cargo run --features dev       # faster rebuilds while developing (dynamic linking)
+cargo run --release -- --scenario battle   # start in a prepared battle (Shift+N restarts it)
 cargo test                     # simulation tests + a headless run of the whole app
 cargo run --release --example profile   # time the simulation and saving on a busy colony
 cargo run --release --example look      # the downloaded models in the game's lighting (art direction test)
 ```
+
+Scenarios are fixed worlds for trying things out (`src/scenarios.rs`). `--scenario <name>` or
+`MY_WORLD_SCENARIO=<name>` picks one; an unknown name lists the ones there are. `battle` starts in
+round 1 of a battle on a 48×32 yard: Ada's squad (one member arrives two rounds late), two lone
+fighters (one gears up from the stockpile), a civilian in the house, and six raiders from the east.
 
 (No Rust yet? `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 
@@ -126,6 +132,7 @@ The simulation is a library with no rendering code, so it can be tested headless
 - `src/combat.rs`: shooting, injuries, raider AI
 - `src/story.rs`: storyteller events
 - `src/save.rs`: versioned save format, run-length encoding of per-cell arrays
+- `src/scenarios.rs`: prepared worlds to start in (`--scenario battle`)
 
 The binary (`src/main.rs` and `src/front/`) is the Bevy app: `terrain.rs` (chunked ground, rock and wall
 meshes), `props.rs` (trees, plants, furniture, doors, items), `pawns.rs` (3D figures), `scene.rs`
