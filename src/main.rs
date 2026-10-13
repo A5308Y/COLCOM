@@ -101,29 +101,82 @@ mod tests {
             app.update();
         }
 
-        // Several colonists selected: F drafts them all; F with nothing
-        // selected drafts everyone and selects them.
         let ids: Vec<u32> = app.world().resource::<front::Sim>().world.pawns.iter().filter(|p| p.is_colonist()).map(|p| p.id).collect();
         assert!(ids.len() >= 3, "a starting colony has a few colonists");
         app.world_mut().resource_mut::<front::UiState>().select_pawns(ids[..2].to_vec());
-        let toggle = |app: &mut App| {
-            app.world_mut().resource_scope(|world, mut sim: Mut<front::Sim>| {
-                front::toggle_draft(&mut sim, &mut world.resource_mut::<front::UiState>());
-            });
-        };
-        let drafted = |app: &App| -> Vec<u32> {
-            app.world().resource::<front::Sim>().world.pawns.iter().filter(|p| p.drafted).map(|p| p.id).collect()
-        };
-        toggle(&mut app);
-        assert_eq!(drafted(&app), ids[..2].to_vec(), "the two selected are drafted");
-        toggle(&mut app);
-        assert!(drafted(&app).is_empty(), "and undrafted again");
-        app.world_mut().resource_mut::<front::UiState>().select(None);
-        toggle(&mut app);
-        assert_eq!(drafted(&app).len(), ids.len(), "everyone drafted");
-        assert_eq!(app.world().resource::<front::UiState>().selected_pawns(), ids, "and selected");
-        toggle(&mut app);
         for _ in 0..3 {
+            app.update();
+        }
+
+        // Squads: a leader with a member, a civilian; the Squads window and the Combat tab.
+        {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            let w = &mut sim.world;
+            w.set_role(ids[0], my_world::pawn::Role::Leader).unwrap();
+            w.set_role(ids[1], my_world::pawn::Role::Member(ids[0])).unwrap();
+            w.set_role(ids[2], my_world::pawn::Role::Civilian).unwrap();
+        }
+        {
+            let mut ui = app.world_mut().resource_mut::<front::UiState>();
+            ui.show_squads = true;
+            ui.select(Some(front::Selection::Pawn(ids[0])));
+            ui.inspector_tab = front::InspectorTab::Combat;
+        }
+        for _ in 0..5 {
+            app.update();
+        }
+        {
+            let mut ui = app.world_mut().resource_mut::<front::UiState>();
+            ui.show_squads = false;
+            ui.select(None);
+            ui.inspector_tab = front::InspectorTab::Overview;
+        }
+
+        // A raid: the parley dialog, then a battle. The player's unit moves; then
+        // the AI plays both sides to the end while the battle screen draws.
+        {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            let w = &mut sim.world;
+            w.map.drop_item((w.map.w / 2, w.map.h / 2 + 3, w.map.surface(w.map.w / 2, w.map.h / 2 + 3).unwrap()),
+                my_world::map::Stack { kind: my_world::defs::ItemId::named("steel"), count: 40 });
+            w.spawn_raid();
+            assert!(w.parley.is_some(), "raiders make a demand");
+        }
+        for _ in 0..5 {
+            app.update();
+        }
+        app.world_mut().resource_mut::<front::Sim>().world.refuse_tribute();
+        for _ in 0..5 {
+            app.update();
+        }
+        {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            let w = &mut sim.world;
+            let b = w.battle.as_ref().expect("a battle");
+            assert_eq!(b.side_to_act, my_world::pawn::Faction::Colony);
+            let u = (0..b.units.len()).find(|&u| b.units[u].side == my_world::pawn::Faction::Colony && b.units[u].can_act()).unwrap();
+            let leader = b.units[u].members[0];
+            w.battle_order(my_world::battle::BattleOrder::Activate(u)).unwrap();
+            let lead = w.pawn(leader).unwrap().pos;
+            let to = (lead.0 + 1, lead.1, lead.2);
+            if w.move_cost(u, to).is_ok() {
+                w.battle_order(my_world::battle::BattleOrder::Move(to)).unwrap();
+            }
+        }
+        for _ in 0..30 {
+            app.update();
+        }
+        app.world_mut().resource_mut::<front::Sim>().world.battle.as_mut().unwrap().auto_colony = true;
+        app.world_mut().resource_mut::<front::Sim>().speed = 3;
+        for _ in 0..20000 {
+            if app.world().resource::<front::Sim>().world.battle.is_none() {
+                break;
+            }
+            app.update();
+        }
+        assert!(app.world().resource::<front::Sim>().world.battle.is_none(), "the battle ends");
+        app.world_mut().resource_mut::<front::Sim>().speed = 1;
+        for _ in 0..10 {
             app.update();
         }
 

@@ -233,12 +233,6 @@ impl World {
                     self.end_job(p);
                 }
             }
-            Job::Leave { to } => {
-                if !matches!(self.go_to(p, to, false, dt), Step::Moving) {
-                    p.left = true;
-                }
-            }
-            Job::Attack { target } => self.run_attack(p, target, dt),
             Job::Work { target, task } => self.run_work(p, target, task, dt),
             Job::Haul { from, to, deliver, picked } => self.run_haul(p, from, to, deliver, picked, dt),
             Job::Eat { from, picked, seat } => self.run_eat(p, from, picked, seat, dt),

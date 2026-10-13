@@ -8,7 +8,7 @@
 //! recipe's work type makes it. Products are dropped beside the bench and
 //! hauled to stockpiles like anything else.
 
-use crate::defs::{defs, ItemId, RecipeId, Slot};
+use crate::defs::{defs, ItemId, RecipeId};
 use crate::map::{Feature, Pos, Stack, Zone};
 use crate::pawn::{Job, Pawn};
 use crate::world::{Step, World};
@@ -370,15 +370,7 @@ impl World {
                 if let Some(s) = kind.and_then(|k| self.map.take_item(i, k, 1)) {
                     self.res_item[i] = 0;
                     let d = s.kind.def();
-                    let old = if d.weapon.is_some() {
-                        p.weapon.replace(s.kind)
-                    } else {
-                        let slot = d.apparel.as_ref().map_or(Slot::Body, |a| a.slot);
-                        let old = p.worn(slot);
-                        p.apparel.retain(|&a| Some(a) != old);
-                        p.apparel.push(s.kind);
-                        old
-                    };
+                    let old = p.wear(s.kind);
                     if let Some(old) = old {
                         self.map.drop_item(p.pos, Stack { kind: old, count: 1 });
                         if let Some(k) = p.chosen.iter().position(|&c| c == old) {
@@ -552,15 +544,13 @@ mod tests {
         assert_eq!(w.pawn(id).unwrap().weapon, Some(item("club")));
         assert_eq!(w.map.count_items(item("rifle")), 1);
 
-        // Drafted colonists can be told too, and switching drops the old choice.
-        w.set_drafted(id, true);
+        // Switching drops the old choice.
         let rifle = (0..w.map.len()).find(|&i| w.map.items[i].is_some_and(|s| s.kind == item("rifle"))).unwrap();
         assert!(w.order_equip(id, w.map.pos(rifle)));
         run(&mut w, 10.0);
         let p = w.pawn(id).unwrap();
         assert_eq!(p.weapon, Some(item("rifle")));
         assert_eq!(p.chosen, vec![item("rifle")]);
-        assert!(p.drafted);
     }
 
     #[test]

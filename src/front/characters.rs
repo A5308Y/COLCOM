@@ -453,6 +453,12 @@ pub fn locomotion(speed: f32) -> (Anim, f32) {
 pub fn activity(p: &Pawn, w: &SimWorld, armed: bool) -> Anim {
     let m = &w.map;
     let arrived = p.path.is_empty();
+    // In a battle: crouched behind cover when hunkered (civilians always are).
+    if let Some(b) = &w.battle {
+        if b.unit_of(p.id).is_some_and(|u| b.units[u].hunkered) {
+            return Anim::Crouch;
+        }
+    }
     match p.job {
         Some(Job::Work { target, task }) if arrived => match task {
             Task::Harvest(plant) if plant.def().harvest.desig == Some(Desig::Chop) => Anim::Swing,

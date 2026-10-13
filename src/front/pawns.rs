@@ -11,7 +11,7 @@ use super::sim::Sim;
 use super::tile_point;
 use bevy::prelude::*;
 use my_world::defs::{ItemId, Special};
-use my_world::pawn::{Faction, Job, Pawn};
+use my_world::pawn::{Job, Pawn};
 use my_world::world::World as SimWorld;
 use std::collections::HashMap;
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
@@ -195,17 +195,30 @@ fn weapon_pose(w: ItemId, props: &PropAssets, in_hand: bool) -> Option<(Transfor
     Some((tf, props.mesh(h.shape).clone(), props.paint(&h.color)))
 }
 
-/// Direction the pawn should face when not moving: what it's working on or
-/// fighting, or the table it's eating at.
+/// Direction the pawn should face when not moving: the nearest enemy in a
+/// battle, what it's working on, or the table it's eating at.
 fn facing(p: &Pawn, w: &SimWorld) -> Option<f32> {
     let m = &w.map;
+    let enemy = || {
+        let b = w.battle.as_ref()?;
+        b.unit_of(p.id)?;
+        w.pawns
+            .iter()
+            .filter(|o| o.faction != p.faction && o.active() && b.unit_of(o.id).is_some())
+            .min_by(|a, c| {
+                let d = |o: &&Pawn| (o.x - p.x).powi(2) + (o.y - p.y).powi(2);
+                d(a).total_cmp(&d(c))
+            })
+            .map(|o| (o.x, o.y))
+    };
     let target = match p.job {
+        _ if w.battle.is_some() => enemy(),
         Some(Job::Eat { seat: Some(seat), .. }) if seat == p.pos => m
             .neighbors(seat)
             .find(|&nb| m.feature[m.idx(nb)].is_special(Special::Table))
             .map(|t| (t.0 as f32, t.1 as f32)),
         Some(Job::Work { target, .. }) => Some((target.0 as f32, target.1 as f32)),
-        Some(Job::Attack { target } | Job::Tend { patient: target, .. } | Job::Feed { patient: target, .. }) => {
+        Some(Job::Tend { patient: target, .. } | Job::Feed { patient: target, .. }) => {
             w.pawn(target).map(|t| (t.x, t.y))
         }
         _ => None,
@@ -374,8 +387,9 @@ fn sync_pawns(
             *vis = if ui.shows_at(m, p.x, p.y, p.z) { Visibility::Inherited } else { Visibility::Hidden };
         }
 
-        // Weapon in hand when fighting or drafted.
-        let armed = !lying && (p.drafted || p.faction == Faction::Raider || matches!(p.job, Some(Job::Attack { .. })));
+        // Weapon in hand when fighting in a battle (civilians just keep their heads down).
+        let armed = !lying
+            && w.battle.as_ref().is_some_and(|b| b.unit_of(p.id).is_some_and(|u| !b.units[u].passive));
 
         // An attack starts the weapon's cooldown: play the shot or blow.
         if p.cooldown > v.last_cooldown + 0.05 && !lying {

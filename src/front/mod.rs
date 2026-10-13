@@ -2,6 +2,7 @@
 //! simulation library.
 
 mod audio;
+mod battle_ui;
 mod build_menu;
 mod camera;
 mod characters;
@@ -12,6 +13,7 @@ mod pawns;
 mod props;
 mod scene;
 mod sim;
+mod squads_ui;
 mod terrain;
 mod ui;
 
@@ -19,7 +21,7 @@ use bevy::prelude::*;
 use my_world::map::Pos;
 
 #[cfg(test)]
-pub use input::{toggle_draft, Selection, UiState};
+pub use input::{InspectorTab, Selection, UiState};
 #[cfg(test)]
 pub use audio::SoundQueue;
 #[cfg(test)]
@@ -41,6 +43,7 @@ impl Plugin for FrontPlugin {
             props::PropsPlugin,
             characters::CharactersPlugin,
             pawns::PawnsPlugin,
+            battle_ui::BattleUiPlugin,
             input::InputPlugin,
             ui::UiPlugin,
             audio::AudioPlugin,

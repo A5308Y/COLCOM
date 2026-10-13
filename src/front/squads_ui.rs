@@ -1,0 +1,215 @@
+//! Setting up squads during normal play: the Combat tab of the colonist
+//! inspector (role, squad, loadout) and the Squads overview window.
+
+use super::input::{Selection, UiState};
+use super::sim::Sim;
+use bevy_egui::egui::{self, Align2, Color32, RichText};
+use my_world::defs::{ItemId, Slot};
+use my_world::map::Zone;
+use my_world::pawn::{Pawn, Role};
+use my_world::squads::SQUAD_MAX;
+use my_world::world::World as SimWorld;
+
+/// Cells a squad member covers per battle round on the way to their leader.
+const CELLS_PER_ROUND: usize = 5;
+
+/// A change asked for in the Combat tab, applied after drawing.
+pub enum CombatAction {
+    Role(Role),
+    Loadout(Vec<ItemId>),
+}
+
+fn label_or_none(kind: Option<ItemId>) -> String {
+    kind.map_or("None".to_string(), |k| k.name().to_string())
+}
+
+/// One loadout slot: a dropdown of every item that fits it, with how many are in storage.
+fn slot_choice(
+    ui: &mut egui::Ui,
+    w: &SimWorld,
+    id: u32,
+    label: &str,
+    current: Option<ItemId>,
+    fits: impl Fn(ItemId) -> bool,
+) -> Option<Option<ItemId>> {
+    let mut chosen = None;
+    ui.horizontal(|ui| {
+        ui.add_sized([70.0, 18.0], egui::Label::new(label));
+        egui::ComboBox::from_id_salt(("loadout", id, label)).selected_text(label_or_none(current)).show_ui(ui, |ui| {
+            if ui.selectable_label(current.is_none(), "None").clicked() {
+                chosen = Some(None);
+            }
+            for k in ItemId::all().filter(|&k| fits(k)) {
+                let text = format!("{} ({} stored)", k.name(), w.map.count_items(k));
+                if ui.selectable_label(current == Some(k), text).clicked() {
+                    chosen = Some(Some(k));
+                }
+            }
+        });
+    });
+    chosen
+}
+
+/// Role, squad and loadout of a colonist.
+pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction> {
+    let mut actions = Vec::new();
+    ui.label(RichText::new("When a battle starts").strong());
+    let mut role = p.role;
+    ui.horizontal(|ui| {
+        ui.radio_value(&mut role, Role::Fighter, "Fighter").on_hover_text("Fights as a unit of their own");
+        ui.radio_value(&mut role, Role::Civilian, "Civilian").on_hover_text("Shelters in the safe zone");
+        ui.radio_value(&mut role, Role::Leader, "Squad leader")
+            .on_hover_text("Others can join their squad; needs a decent bedroom of their own");
+    });
+    let leaders: Vec<&Pawn> = w.pawns.iter().filter(|o| o.role == Role::Leader && o.id != p.id && !o.dead).collect();
+    if !leaders.is_empty() {
+        ui.horizontal(|ui| {
+            let current = match p.role {
+                Role::Member(l) => w.pawn(l).map_or("?".to_string(), |l| format!("{}'s squad", l.name)),
+                _ => "No squad".to_string(),
+            };
+            ui.label("Squad:");
+            egui::ComboBox::from_id_salt(("squad", p.id)).selected_text(current).show_ui(ui, |ui| {
+                for l in leaders {
+                    let size = 1 + w.squad_members(l.id).len();
+                    let text = format!("{}'s squad ({}/{})", l.name, size, SQUAD_MAX);
+                    if ui.selectable_label(p.role == Role::Member(l.id), text).clicked() {
+                        role = Role::Member(l.id);
+                    }
+                }
+            });
+        });
+    }
+    if role != p.role {
+        actions.push(CombatAction::Role(role));
+    }
+    if p.role == Role::Leader {
+        let members: Vec<String> =
+            w.squad_members(p.id).iter().filter_map(|&m| w.pawn(m).map(|m| m.name.clone())).collect();
+        let text = if members.is_empty() { "No one in the squad yet".to_string() } else { members.join(", ") };
+        ui.label(RichText::new(format!("Squad: {}", text)).weak());
+        if p.poor_quarters {
+            ui.label(RichText::new("Wants a decent bedroom of their own.").color(Color32::from_rgb(255, 140, 100)));
+        }
+    }
+
+    ui.separator();
+    ui.label(RichText::new("Combat loadout").strong());
+    ui.label(RichText::new("Put on from storage when a battle starts, taken off afterwards.").small().weak());
+    let weapon = p.loadout.iter().copied().find(|k| k.def().weapon.is_some());
+    let worn = |slot: Slot| p.loadout.iter().copied().find(|k| k.def().apparel.as_ref().is_some_and(|a| a.slot == slot));
+    let mut change: Option<(Option<Slot>, Option<ItemId>)> = None;
+    if let Some(c) = slot_choice(ui, w, p.id, "Weapon", weapon, |k| k.def().weapon.is_some()) {
+        change = Some((None, c));
+    }
+    for (slot, label) in [(Slot::Body, "Clothes"), (Slot::Outer, "Armour")] {
+        let fits = |k: ItemId| k.def().apparel.as_ref().is_some_and(|a| a.slot == slot);
+        if let Some(c) = slot_choice(ui, w, p.id, label, worn(slot), fits) {
+            change = Some((Some(slot), c));
+        }
+    }
+    if let Some((slot, item)) = change {
+        let same_slot = |k: &ItemId| match slot {
+            None => k.def().weapon.is_some(),
+            Some(s) => k.def().apparel.as_ref().is_some_and(|a| a.slot == s),
+        };
+        let mut loadout: Vec<ItemId> = p.loadout.iter().copied().filter(|k| !same_slot(k)).collect();
+        loadout.extend(item);
+        actions.push(CombatAction::Loadout(loadout));
+    }
+    ui.horizontal(|ui| {
+        if ui.button("Use current gear").clicked() {
+            actions.push(CombatAction::Loadout(p.weapon.into_iter().chain(p.apparel.iter().copied()).collect()));
+        }
+        if !p.loadout.is_empty() && ui.button("Clear").clicked() {
+            actions.push(CombatAction::Loadout(Vec::new()));
+        }
+    });
+    actions
+}
+
+pub fn apply(w: &mut SimWorld, id: u32, actions: Vec<CombatAction>) {
+    for a in actions {
+        match a {
+            CombatAction::Role(role) => {
+                if let Err(e) = w.set_role(id, role) {
+                    w.push_log(format!("Can't do that: {}.", e));
+                }
+            }
+            CombatAction::Loadout(items) => w.set_loadout(id, &items),
+        }
+    }
+}
+
+/// Roughly how many rounds a member needs to reach their leader.
+fn rounds_away(a: &Pawn, b: &Pawn) -> usize {
+    let cells = a.pos.0.abs_diff(b.pos.0) + a.pos.1.abs_diff(b.pos.1) + a.pos.2.abs_diff(b.pos.2);
+    cells.saturating_sub(2).div_ceil(CELLS_PER_ROUND)
+}
+
+/// Overview of squads, fighters and civilians; clicking a name selects them.
+pub fn squads_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
+    let w = &sim.world;
+    let colonists: Vec<&Pawn> = w.pawns.iter().filter(|p| p.is_colonist() && !p.dead).collect();
+    let mut select = None;
+    let mut open = st.show_squads;
+    let name = |ui: &mut egui::Ui, p: &Pawn, extra: String, select: &mut Option<u32>| {
+        if ui.link(format!("{}{}", p.name, extra)).clicked() {
+            *select = Some(p.id);
+        }
+    };
+    egui::Window::new("Squads")
+        .open(&mut open)
+        .anchor(Align2::RIGHT_TOP, [-8.0, 92.0])
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            let leaders: Vec<&&Pawn> = colonists.iter().filter(|p| p.role == Role::Leader).collect();
+            if leaders.is_empty() {
+                ui.label(RichText::new("No squads: everyone fights on their own.").weak());
+            }
+            for l in leaders {
+                let members: Vec<&&Pawn> = colonists.iter().filter(|p| p.role == Role::Member(l.id)).collect();
+                ui.horizontal(|ui| {
+                    name(ui, l, format!(" ({}/{})", 1 + members.len(), SQUAD_MAX), &mut select);
+                    if l.poor_quarters {
+                        ui.label(RichText::new("wants a decent bedroom").small().color(Color32::from_rgb(255, 140, 100)));
+                    }
+                });
+                for m in members {
+                    ui.horizontal(|ui| {
+                        ui.add_space(16.0);
+                        let away = match rounds_away(m, l) {
+                            0 => " - with them".to_string(),
+                            r => format!(" - about {} round{} away", r, if r == 1 { "" } else { "s" }),
+                        };
+                        name(ui, m, away, &mut select);
+                    });
+                }
+            }
+            for (role, title) in [(Role::Fighter, "Fighting alone"), (Role::Civilian, "Civilians")] {
+                let group: Vec<&&Pawn> = colonists.iter().filter(|p| p.role == role).collect();
+                if group.is_empty() {
+                    continue;
+                }
+                ui.separator();
+                ui.label(RichText::new(title).strong());
+                ui.horizontal_wrapped(|ui| {
+                    for p in group {
+                        name(ui, p, String::new(), &mut select);
+                    }
+                });
+            }
+            let civilians = colonists.iter().any(|p| p.role == Role::Civilian);
+            if civilians && !w.map.zone.contains(&Zone::Safe) {
+                ui.label(RichText::new("No safe zone: civilians stay where they are.").color(Color32::from_rgb(255, 140, 100)));
+            }
+            ui.separator();
+            ui.label(RichText::new("Set roles and loadouts in a colonist's Combat tab.").small().weak());
+        });
+    st.show_squads = open;
+    if let Some(id) = select {
+        st.select(Some(Selection::Pawn(id)));
+        st.inspector_tab = super::input::InspectorTab::Combat;
+    }
+}

@@ -56,10 +56,12 @@
     // food poisoning (`poison`: chance per unit eaten). `medicine`: how much
     // it improves tending (1 = full medicine). `pods`: amounts arriving in
     // cargo pods. `weapon` and `apparel` items are picked up and used by
-    // colonists; `held` is how a weapon looks in hand.
+    // colonists; `held` is how a weapon looks in hand. `value`: worth of one,
+    // for what raiders demand and take.
     items: [
         (
             id: "wood",
+            value: 1.0,
             name: "Wood",
             category: "Materials",
             color: "wood",
@@ -72,6 +74,7 @@
         ),
         (
             id: "planks",
+            value: 2.0,
             name: "Planks",
             category: "Materials",
             color: "wood_light",
@@ -84,6 +87,7 @@
         ),
         (
             id: "stone",
+            value: 1.0,
             name: "Stone",
             category: "Materials",
             color: "stone",
@@ -96,6 +100,7 @@
         ),
         (
             id: "stone_blocks",
+            value: 2.0,
             name: "Stone blocks",
             category: "Materials",
             color: "stone_block",
@@ -109,6 +114,7 @@
         ),
         (
             id: "iron_ore",
+            value: 3.0,
             name: "Iron ore",
             category: "Materials",
             color: "ore",
@@ -120,6 +126,7 @@
         ),
         (
             id: "steel",
+            value: 8.0,
             name: "Steel",
             category: "Materials",
             color: "steel",
@@ -132,6 +139,7 @@
         ),
         (
             id: "cotton",
+            value: 2.0,
             name: "Cotton",
             category: "Materials",
             color: "cotton",
@@ -143,6 +151,7 @@
         ),
         (
             id: "cloth",
+            value: 5.0,
             name: "Cloth",
             category: "Materials",
             color: "cloth",
@@ -154,6 +163,7 @@
         ),
         (
             id: "raw_food",
+            value: 1.0,
             name: "Raw food",
             category: "Food",
             color: "berry",
@@ -171,6 +181,7 @@
         ),
         (
             id: "meal",
+            value: 4.0,
             name: "Simple meal",
             category: "Food",
             color: "meal",
@@ -184,6 +195,7 @@
         ),
         (
             id: "healroot",
+            value: 3.0,
             name: "Healroot",
             category: "Medicine",
             color: "healroot",
@@ -195,6 +207,7 @@
         ),
         (
             id: "herbal_medicine",
+            value: 12.0,
             name: "Herbal medicine",
             category: "Medicine",
             color: "healroot",
@@ -206,6 +219,7 @@
         ),
         (
             id: "medicine",
+            value: 20.0,
             name: "Medicine",
             category: "Medicine",
             color: "white",
@@ -219,6 +233,7 @@
         ),
         (
             id: "rifle",
+            value: 120.0,
             name: "Rifle",
             category: "Weapons",
             color: "iron",
@@ -233,6 +248,7 @@
         ),
         (
             id: "pistol",
+            value: 80.0,
             name: "Pistol",
             category: "Weapons",
             color: "iron",
@@ -247,6 +263,7 @@
         ),
         (
             id: "club",
+            value: 20.0,
             name: "Club",
             category: "Weapons",
             color: "wood",
@@ -260,6 +277,7 @@
         ),
         (
             id: "knife",
+            value: 30.0,
             name: "Knife",
             category: "Weapons",
             color: "steel",
@@ -274,6 +292,7 @@
         ),
         (
             id: "clothes",
+            value: 25.0,
             name: "Simple clothes",
             category: "Apparel",
             color: "dye",
@@ -286,6 +305,7 @@
         ),
         (
             id: "steel_armor",
+            value: 150.0,
             name: "Steel armour",
             category: "Apparel",
             color: "steel",

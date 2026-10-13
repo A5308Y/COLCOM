@@ -183,6 +183,8 @@ pub enum Zone {
     Stockpile(u16),
     /// Planted with this crop.
     Grow(PlantId),
+    /// Where civilians shelter during battles.
+    Safe,
 }
 
 impl Zone {

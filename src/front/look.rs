@@ -43,6 +43,8 @@ pub const ORE: Rgb = Rgb(0.62, 0.36, 0.22);
 pub const WALL_TOP: Rgb = Rgb(0.76, 0.73, 0.68);
 pub const WALL_FACE: Rgb = Rgb(0.6, 0.57, 0.53);
 pub const STOCKPILE: Rgb = Rgb(0.75, 0.75, 0.95);
+/// Tint of safe zones (where civilians shelter in battles).
+pub const SAFE: Rgb = Rgb(0.45, 0.9, 0.55);
 pub const BLOOD: Rgb = Rgb(0.45, 0.03, 0.04);
 
 pub const WOOD: Rgb = Rgb(0.55, 0.37, 0.2);

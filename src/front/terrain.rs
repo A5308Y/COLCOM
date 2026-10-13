@@ -216,6 +216,7 @@ fn zone_code(z: Zone) -> u8 {
         Zone::None => 0,
         Zone::Stockpile(_) => 1,
         Zone::Grow(_) => 2,
+        Zone::Safe => 3,
     }
 }
 
@@ -343,6 +344,9 @@ fn ground_color(m: &Map, solid: Pos, look: Look3) -> Rgb {
         if zone.stockpile().is_some() {
             c = c.mix(STOCKPILE, 0.22);
         }
+        if zone == Zone::Safe {
+            c = c.mix(SAFE, 0.25);
+        }
         let blood = blood_level(m, a);
         if blood > 0 {
             c = c.mix(BLOOD, 0.22 * blood as f32);
@@ -358,6 +362,7 @@ fn floor_color(m: &Map, p: Pos) -> Rgb {
     match m.zone[i] {
         Zone::Stockpile(_) => c = c.mix(STOCKPILE, 0.22),
         Zone::Grow(_) => c = c.mix(SOIL, 0.5),
+        Zone::Safe => c = c.mix(SAFE, 0.25),
         Zone::None => {}
     }
     let blood = blood_level(m, i);

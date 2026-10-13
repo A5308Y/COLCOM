@@ -47,6 +47,7 @@
 | 9 | Sound: actions, ambience, interface | done with placeholder sounds (needs a listen) |
 | 10 | Graphics, Valheim-like (low poly, realistic movement): 10a art direction, 10b animated characters, 10c smoothed natural terrain, 10d glTF models, 10e atmosphere | 10a done; 10b done (needs a visual check) |
 | 11 | Follow camera: optional close third-person view of one colonist | later |
+| 12 | Turn-based battles (MENACE-style): squads and leaders, loadouts, safe zone, parley, battle UI; real-time combat removed | done (needs a play test) |
 | – | Keyboard shortcuts: a thought-out scheme (all letters are taken; categories, rebinding?) | later |
 
 ## Next phases (agreed 2026-10-11)
@@ -144,6 +145,24 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
 - A close third-person camera that follows one colonist, to show off the animations; toggled from the
   normal top-down camera.
 
+### 12. Turn-based battles (agreed 2026-10-13)
+MENACE-style battles instead of RimWorld's real-time fights, built around squads organised during
+normal play. Decisions:
+- **Squads:** a leader plus colonists assigned to them (at most 5), fighting as one unit that moves and
+  fires together; members keep their own health.
+- **Leaders:** -2 for "Responsible for a squad", and -8 without a decent bedroom of their own.
+- **Getting into the fight:** members far from their leader arrive a few rounds in, in their combat
+  loadout taken from storage (and put back afterwards). Without leaders everyone fights alone. The
+  default role is fighter.
+- **Civilians:** they shelter in a safe zone and can still be attacked there.
+- **Raids:** raids come as squads too. A parley comes first: pay their demand or fight. No battle
+  resolves automatically.
+- **Turn order and time:** MENACE turn order (alternating single activations, one AP pool, no
+  overwatch), and the whole colony stops during a battle.
+- **Real-time combat is removed:** drafting, auto-fire and the attack job.
+Milestones 12a (squads in normal play), 12b (battle core), 12c (battle UI) are done; 12d is tuning from
+real play.
+
 - **10b done (2026-10-12, needs a visual check):** see the notes below.
 
 ## Working in this repo (handoff notes)
@@ -160,12 +179,73 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
 
 ## Notes
 
+- Phase 12 (turn-based battles):
+  - **Squads (`src/squads.rs`):** `Pawn::role` is `Fighter` (default), `Civilian`, `Leader` or
+    `Member(leader)`; `set_role` checks the leader and `SQUAD_MAX`, and stepping down or dying releases
+    the members. `update_squads` runs once a second and sets the cached `Pawn::poor_quarters`: a leader
+    needs a bed in a room of tier Decent or better that nobody else sleeps in. `Pawn::loadout` holds
+    one weapon and one item per slot (`set_loadout`). `Zone::Safe` is painted from the Zones menu.
+    - Interface (`src/front/squads_ui.rs`): the inspector's Combat tab (role, squad, loadout dropdowns
+      with stored counts, "Use current gear") and the Squads window (HUD button).
+  - **Parley and battles (`src/battle.rs`):**
+    - **Parley:** `spawn_raid` opens `World::parley` (raider squads of up to 4, entry cell, a demand of
+      `DEMAND_PER_RAIDER` value each, most valuable goods first; empty if the colony can't pay). Item
+      values are a new `value` field in `defs.ron`. While a parley is open `tick` does nothing;
+      `pay_tribute` / `refuse_tribute` answer it.
+    - **Starting:** `start_battle` ends everyone's job, spawns the raiders in squads near the entry, and
+      forms the colony's units: leaders' squads (members within 2 cells join at once; the rest are
+      `Arrival`s after `ceil((path steps - 2) / 5)` rounds), lone fighters where they stand, and
+      civilians moved to safe-zone cells as passive units. Fighters put on their loadout from storage;
+      `Pawn::stash` remembers (item taken, what it replaced) and `gear_down` reverses it afterwards
+      (the battle gear is left at their feet for haulers; death drops the stash too).
+    - **Turns:** while `World::battle` is set, `tick` runs only `battle_tick`. The sides take turns
+      activating one unit each (`BattleOrder::Activate`, switchable until AP are spent); every unit
+      acts once per round and the colony goes first. AP: 100; moving 20 a step (the leader walks the
+      path and members gather on free cells around the goal); attacking 40 (every member who can reach
+      someone shoots or strikes); hunkering 20 (ends the turn, better cover until next activation).
+      Each round passes `TURN_SECS` (6 s) for health and hunger, halves suppression, counts arrivals
+      down and restores AP (60 if pinned).
+    - **Hit chance:** `hit_chance` uses the old formula (skill, distance, sight, manipulation) and
+      then: cover on the side facing the shooter (`cover` / `cover_at`: rock, walls and doors full
+      ×0.45; other structures and trees half ×0.7; weaker when shot from above), hunkered ×0.75,
+      higher ground ×1.15, a pinned shooter ×0.7. `battle_sight` is line of sight that ignores cover
+      next to either end (you lean out to shoot).
+    - **Suppression and morale:** suppression +8 per shot at a unit (+15 if it hits); 50 or more pins
+      it. Morale starts from mood (raiders 60); -20 per member lost, -20 more for the leader. Below 25
+      raiders flee (to the nearest edge, gone there) and colonists cower (their turn is skipped,
+      hunkered).
+    - **Ending:** won when no raider unit is left; lost when no colony unit can act (the raiders take
+      1.5× the demand and leave); after `STALEMATE` (10) rounds without an attack, the raiders give
+      up. Then gear comes off, everyone gets "Won a battle" (+6) or "Lost a battle" (-10), standing
+      raiders leave, and the downed stay.
+  - **AI (`src/battle_ai.rs`):** activates the unit nearest the enemy and attacks when its expected
+    hits reach 0.45. Otherwise it moves first: to a spot it can attack from with AP to spare (+10, plus
+    cover), else one to attack from next round (+3), else as far along the walking path towards the
+    nearest enemy as it can (-0.3 per step; it measures walking distance, so it goes round obstacles).
+    Then it attacks, hunkers, or ends. `Battle::auto_colony` lets it play the colony too (tests and
+    `--example profile`).
+  - **Interface (`src/front/battle_ui.rs`):**
+    - the parley dialog;
+    - the battle panel: whose turn it is, the active unit's AP, Hunker / End turn, your units, arrivals
+      and events;
+    - hit chances over enemies;
+    - reachable cells, green while there are AP left to attack;
+    - the path preview, cover markers on the hovered cell's sides, and unit rings with squad lines;
+    - clicks: your unit to activate it, an enemy to attack, a cell to move. Space ends the turn; Tab
+      goes to the next unit;
+    - the camera eases to the acting unit.
+  - During a battle the normal clicks, tools, Space and Tab are off. Hunkered pawns crouch, fighters
+    hold their weapons and face the nearest enemy.
+  - **Removed:** drafting (`Pawn::drafted`, F, the Draft button, right-click orders), `Job::Attack` and
+    `Job::Leave`, `auto_fire` and `raider_think`. Raiders exist only in battles. `SAVE_VERSION` is 5.
+  - **Left for 12d:** tuning from real play (AP costs, odds, morale, raid sizes and demand), a proper
+    pick-up for loadouts that aren't in storage, prisoners, explosives and vehicles, overwatch-like
+    reactions (MENACE has none), and showing the hit chance per member.
+
 - Multi-selection: drag a box with the Select tool (colonists inside it; Shift adds) or Shift+click on
   the map or in the colonist bar. `UiState::group` holds them (the first is `selected`, shown in the
-  inspector); use `selected_pawns` / `select_pawns` / `toggle_pawn` / `select`. Right-click sends every
-  selected drafted colonist: all attack an enemy, or spread over the walkable cells nearest the click
-  (`spread_targets`, each taking the closest). F drafts or undrafts the selection; with nothing
-  selected it drafts everyone and selects them. Equipping still goes to the first selected.
+  inspector); use `selected_pawns` / `select_pawns` / `toggle_pawn` / `select`. Its drafted-group
+  orders went with real-time combat (phase 12); equipping goes to the first selected.
 
 - Hide roofs (Shift+R or the HUD button; like Going Medieval's roof toggle): every column over a roofed
   room whose ceiling is a built floor is cut off just above the topmost such room
@@ -179,7 +259,7 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
   reach 1.0; stairs reach the level above. `defs::tests::buildables_fit_under_the_ceiling` checks it.
   (The door leaf used to be 1.1 tall and poked through the lintel and the floor above.)
 
-- Equip order: select a colonist (drafted or not) and right-click a weapon or piece of apparel lying on
+- Equip order: select a colonist and right-click a weapon or piece of apparel lying on
   the map (`World::order_equip`, `Job::Equip { chosen: true }`). What they're told to use goes into
   `Pawn::chosen` and isn't swapped for better gear automatically; switching or dying clears it. Both new
   fields default when missing, so older saves still load. Not done yet: dropping or unequipping gear from

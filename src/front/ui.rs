@@ -4,7 +4,8 @@
 use super::camera::{CameraRig, MainCamera};
 use super::audio::{self, AudioSettings, SoundQueue};
 use super::build_menu;
-use super::input::{self, Selection, UiState};
+use super::input::{self, InspectorTab, Selection, UiState};
+use super::squads_ui;
 use super::look::{pawn_look, Look};
 use super::overlay;
 use super::sim::Sim;
@@ -30,7 +31,7 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 32] = [
+const HELP_REST: [&str; 33] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -54,9 +55,10 @@ const HELP_REST: [&str; 32] = [
     "Anything left with nothing underneath falls - more than one level hurts.",
     "Wounds bleed and can get infected. Doctors (see P) rescue downed colonists to a bed",
     "and tend them - better with medicine and skill. Click a colonist, then Health for details.",
-    "Raids come every few days: press F to draft the selected colonists (or everyone, who then get selected).",
-    "Drag a box or Shift+click to select several colonists. Drafted ones shoot enemies in range;",
-    "      right-click to move them (they spread out), right-click an enemy to attack.",
+    "Raids come every few days. Pay what the raiders demand, or fight a turn-based battle (the colony stops).",
+    "      Squads: in a colonist's Combat tab make them a leader, put others in their squad, set loadouts;",
+    "      mark civilians and paint a safe zone. Far-away squad members join their leader a few rounds in.",
+    "      In battle: click your unit (or Tab), click a cell to move, an enemy to attack; Space ends its turn.",
     "",
     "Camera: WASD/arrows pan, Q/E rotate, wheel zooms, right-drag orbits, middle-drag pans.",
     "Space: pause   Tab: speed   P: work priorities   I: resources   C: center camera",
@@ -116,7 +118,7 @@ fn draw_ui(
     colonist_bar(&ctx, &sim, &mut st, left);
     alerts(&ctx, &sim);
     match st.selected {
-        Some(Selection::Pawn(id)) => pawn_inspector(&ctx, &sim, &mut st, id, left),
+        Some(Selection::Pawn(id)) => pawn_inspector(&ctx, &mut sim, &mut st, id, left),
         Some(Selection::Tile(t)) => {
             if tile_inspector(&ctx, &mut sim, t, left) {
                 sounds.play("ui_click", None);
@@ -129,6 +131,9 @@ fn draw_ui(
     }
     if st.show_resources {
         resources(&ctx, &sim, &mut st);
+    }
+    if st.show_squads {
+        squads_ui::squads_window(&ctx, &sim, &mut st);
     }
     if st.show_sound {
         egui::Window::new("Sound")
@@ -233,6 +238,9 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 if ui.add(egui::Button::new("Sound").selected(st.show_sound)).clicked() {
                     st.show_sound = !st.show_sound;
                 }
+                if ui.add(egui::Button::new("Squads").selected(st.show_squads)).clicked() {
+                    st.show_squads = !st.show_squads;
+                }
                 if ui.add(egui::Button::new("Resources (I)").selected(st.show_resources)).clicked() {
                     st.show_resources = !st.show_resources;
                 }
@@ -241,9 +249,6 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 }
                 if ui.add(egui::Button::new("Help (H)").selected(st.show_help)).clicked() {
                     st.show_help = !st.show_help;
-                }
-                if ui.button("Draft (F)").clicked() {
-                    input::toggle_draft(sim, st);
                 }
                 if ui.button("Center (C)").clicked() {
                     input::center_on_selection(sim, st, rig);
@@ -306,7 +311,7 @@ fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, left: f32) {
                 let trouble = p.downed || p.hunger <= 0.0 || p.break_timer > 0.0 || p.health.bleed_rate() > 0.0;
                 let stroke = if selected {
                     egui::Stroke::new(2.0, Color32::WHITE)
-                } else if p.drafted {
+                } else if sim.world.battle.as_ref().is_some_and(|b| b.unit_of(p.id).is_some_and(|u| b.units[u].can_act())) {
                     egui::Stroke::new(2.0, Color32::GOLD)
                 } else if trouble && !p.dead {
                     egui::Stroke::new(2.0, Color32::RED)
@@ -354,8 +359,13 @@ fn alerts(ctx: &egui::Context, sim: &Sim) {
     });
 }
 
-fn pawn_inspector(ctx: &egui::Context, sim: &Sim, st: &mut UiState, id: u32, left: f32) {
+fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32, left: f32) {
     let Some(p) = sim.world.pawn(id) else { return };
+    let combat = p.is_colonist() && !p.dead;
+    if !combat && st.inspector_tab == InspectorTab::Combat {
+        st.inspector_tab = InspectorTab::Overview;
+    }
+    let mut actions = Vec::new();
     let title = if p.is_colonist() { p.name.clone() } else { format!("{} (raider)", p.name) };
     egui::Window::new(RichText::new(title).strong())
         .id(egui::Id::new("inspector"))
@@ -365,8 +375,11 @@ fn pawn_inspector(ctx: &egui::Context, sim: &Sim, st: &mut UiState, id: u32, lef
         .default_width(340.0)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut st.inspector_health, false, "Overview");
-                ui.selectable_value(&mut st.inspector_health, true, "Health");
+                ui.selectable_value(&mut st.inspector_tab, InspectorTab::Overview, "Overview");
+                ui.selectable_value(&mut st.inspector_tab, InspectorTab::Health, "Health");
+                if combat {
+                    ui.selectable_value(&mut st.inspector_tab, InspectorTab::Combat, "Combat");
+                }
             });
             if st.group.len() > 1 {
                 let others = st.group.len() - 1;
@@ -379,12 +392,15 @@ fn pawn_inspector(ctx: &egui::Context, sim: &Sim, st: &mut UiState, id: u32, lef
                 ui.label(RichText::new(format!("Wearing {}", worn.join(", ").to_lowercase())).weak());
             }
             ui.separator();
-            if st.inspector_health {
-                health_tab(ui, p);
-            } else {
-                overview_tab(ui, p);
+            match st.inspector_tab {
+                InspectorTab::Overview => overview_tab(ui, p),
+                InspectorTab::Health => health_tab(ui, p),
+                InspectorTab::Combat => actions = squads_ui::combat_tab(ui, &sim.world, p),
             }
         });
+    if !actions.is_empty() {
+        squads_ui::apply(&mut sim.world, id, actions);
+    }
 }
 
 fn overview_tab(ui: &mut egui::Ui, p: &Pawn) {
@@ -416,12 +432,7 @@ fn overview_tab(ui: &mut egui::Ui, p: &Pawn) {
         ui.label(RichText::new(format!("{:+}  {}", value as i32, label)).color(color));
     }
     if p.is_colonist() && !p.dead {
-        let hint = if p.drafted {
-            "F: undraft   right-click: move / attack / equip"
-        } else {
-            "F: draft   right-click a weapon or clothes: equip"
-        };
-        ui.label(RichText::new(hint).small().weak());
+        ui.label(RichText::new("Right-click a weapon or clothes: equip   Combat tab: squad and loadout").small().weak());
     }
 }
 
@@ -565,6 +576,9 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) -> bool
             match m.zone[i] {
                 Zone::Stockpile(id) => stockpile_settings(ui, w, id, &mut actions),
                 Zone::Grow(crop) => crop_choice(ui, t, crop, &mut actions),
+                Zone::Safe => {
+                    ui.label("Safe zone: civilians shelter here during battles.");
+                }
                 Zone::None => {}
             }
             if let Some(kind) = m.feature[i].structure_id().filter(|k| !k.def().recipes.is_empty()) {

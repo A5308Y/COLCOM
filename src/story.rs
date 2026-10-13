@@ -2,7 +2,6 @@
 
 use crate::defs::ItemId;
 use crate::map::{Feature, Pos, Stack};
-use crate::pathing::bfs;
 use crate::world::World;
 use crate::DAY_LEN;
 use serde::{Deserialize, Serialize};
@@ -30,6 +29,10 @@ impl Default for Storyteller {
     }
 }
 
+pub(crate) fn raider_name(rng: &mut crate::rng::Rng) -> String {
+    RAIDER_NAMES[rng.below(RAIDER_NAMES.len())].to_string()
+}
+
 impl World {
     pub(crate) fn storyteller_tick(&mut self) {
         if self.colony_lost() {
@@ -52,21 +55,16 @@ impl World {
         items + structures * 10
     }
 
+    /// Raiders arrive at the edge of the map and make their demand (see
+    /// `battle.rs`): pay, or fight.
     pub fn spawn_raid(&mut self) {
         let size = (1 + self.day() as usize / 3 + self.wealth() as usize / 800).min(8);
         let Some(entry) = self.random_edge_tile() else { return };
-        let df = bfs(&self.map, entry);
-        // Reached cells come nearest first.
-        let spots: Vec<usize> = df.order.iter().copied().take_while(|&i| df.dist_i(i).is_some_and(|d| d <= 6)).collect();
-        let count = size.min(spots.len());
-        for &i in spots.iter().take(count) {
-            let name = RAIDER_NAMES[self.rng.below(RAIDER_NAMES.len())].to_string();
-            let pos = self.map.pos(i);
-            self.spawn_raider(name, pos);
-        }
         self.story.raids += 1;
+        self.open_parley(size, entry);
         self.sound("raid", None);
-        self.push_log(format!("RAID! {} raiders are attacking. Draft your colonists with F!", count));
+        let who = if size == 1 { "A raider is".to_string() } else { format!("{} raiders are", size) };
+        self.push_log(format!("Raiders! {} at the edge of the colony, demanding goods.", who));
     }
 
     fn random_edge_tile(&mut self) -> Option<Pos> {

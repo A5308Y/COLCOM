@@ -27,7 +27,6 @@ impl World {
             o.id != id
                 && o.is_colonist()
                 && o.active()
-                && !o.drafted
                 && o.break_timer <= 0.0
                 && o.priorities[WorkType::Doctor as usize] > 0
         })

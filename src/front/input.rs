@@ -86,7 +86,14 @@ pub static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(|| {
         let hint = "Colonists plant and harvest crops here. Click it to choose the crop.";
         tools.push(fixed(Tool::Paint(Order::Zone(Zone::Grow(crop))), "Grow zone", "5", KeyCode::Digit5, "Zones", hint));
     }
-    tools.push(fixed(Tool::Paint(Order::Zone(Zone::None)), "Clear zone", "9", KeyCode::Digit9, "Zones", "Remove stockpile and grow zones."));
+    tools.push(ToolEntry {
+        tool: Tool::Paint(Order::Zone(Zone::Safe)),
+        name: "Safe zone".to_string(),
+        key: None,
+        group: "Zones".to_string(),
+        hint: "Civilians shelter here when a battle starts. Raiders can still reach it.",
+    });
+    tools.push(fixed(Tool::Paint(Order::Zone(Zone::None)), "Clear zone", "9", KeyCode::Digit9, "Zones", "Remove stockpile, grow and safe zones."));
     for kind in BuildId::all() {
         let def = kind.def();
         let key = def.key.as_deref().and_then(|k| match parse_key(k) {
@@ -182,6 +189,15 @@ fn parse_key(key: &str) -> Option<KeyCode> {
     }
 }
 
+/// Tabs of the colonist inspector.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum InspectorTab {
+    Overview,
+    Health,
+    /// Role, squad and loadout (colonists only).
+    Combat,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Selection {
     Pawn(u32),
@@ -211,7 +227,9 @@ pub struct UiState {
     pub hover: Option<Hover>,
     pub show_work: bool,
     pub show_help: bool,
-    pub inspector_health: bool,
+    pub inspector_tab: InspectorTab,
+    /// The Squads overview window.
+    pub show_squads: bool,
     /// Layer view: hide everything above this level (None = show all).
     pub view_level: Option<usize>,
     /// Hide built roofs: each column over a roofed room is cut off above
@@ -252,7 +270,8 @@ impl UiState {
             hover: None,
             show_work: false,
             show_help: false,
-            inspector_health: false,
+            inspector_tab: InspectorTab::Overview,
+            show_squads: false,
             view_level: None,
             hide_roofs: false,
             roof_cut: Vec::new(),
@@ -439,49 +458,6 @@ pub fn pawn_at(w: &SimWorld, t: Pos) -> Option<u32> {
 
 // ---------- actions shared by keys and buttons ----------
 
-/// Draft the selected colonists (or undraft them if they all are). With
-/// none selected, draft everyone and select them, ready for orders.
-pub fn toggle_draft(sim: &mut Sim, ui: &mut UiState) {
-    let w = &sim.world;
-    let chosen: Vec<u32> =
-        ui.selected_pawns().into_iter().filter(|&id| w.pawn(id).is_some_and(|p| p.is_colonist())).collect();
-    let everyone = chosen.is_empty();
-    let ids: Vec<u32> = if everyone {
-        w.pawns.iter().filter(|p| p.is_colonist() && p.active()).map(|p| p.id).collect()
-    } else {
-        chosen
-    };
-    let draft = ids.iter().any(|&id| w.pawn(id).is_some_and(|p| p.active() && !p.drafted));
-    for &id in &ids {
-        sim.world.set_drafted(id, draft);
-    }
-    if everyone && draft {
-        ui.select_pawns(ids);
-    }
-}
-
-/// `n` cells to send a group to: `t` and the walkable cells nearest to it,
-/// so they spread out instead of piling onto one cell.
-fn spread_targets(m: &Map, t: Pos, n: usize) -> Vec<Pos> {
-    if !m.standable(t) {
-        return Vec::new();
-    }
-    let mut out = vec![t];
-    let mut queue = std::collections::VecDeque::from([t]);
-    while let Some(c) = queue.pop_front() {
-        if out.len() >= n {
-            break;
-        }
-        for nb in m.walk_neighbors(c) {
-            if !out.contains(&nb) && out.len() < n {
-                out.push(nb);
-                queue.push_back(nb);
-            }
-        }
-    }
-    out
-}
-
 /// Colonists whose figures are inside a screen rectangle (box selection).
 fn colonists_in_box(sim: &Sim, ui: &UiState, cam: &Camera, gt: &GlobalTransform, a: Vec2, b: Vec2) -> Vec<u32> {
     let rect = Rect::from_corners(a, b);
@@ -582,10 +558,13 @@ fn update_roof_cut(sim: Res<Sim>, mut ui: ResMut<UiState>) {
 
 fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMut<UiState>, mut rig: ResMut<CameraRig>) {
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    if keys.just_pressed(KeyCode::Space) {
+    // In a battle, Space and Tab belong to the battle (`battle_ui.rs`), and
+    // there's nothing to build.
+    let battle = sim.world.battle.is_some();
+    if keys.just_pressed(KeyCode::Space) && !battle {
         sim.paused = !sim.paused;
     }
-    if keys.just_pressed(KeyCode::Tab) {
+    if keys.just_pressed(KeyCode::Tab) && !battle {
         sim.cycle_speed();
     }
     if keys.just_pressed(KeyCode::Escape) {
@@ -596,7 +575,7 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
         ui.hide_roofs = !ui.hide_roofs;
     }
     // Shift+key is for other things (Shift+N, Shift+R).
-    for e in TOOLS.iter().filter(|_| !shift) {
+    for e in TOOLS.iter().filter(|_| !shift && !battle) {
         if e.key.as_ref().is_some_and(|(_, k)| keys.just_pressed(*k)) {
             ui.tool = e.tool;
             ui.drag_start = None;
@@ -619,9 +598,6 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
     }
     if keys.just_pressed(KeyCode::KeyH) {
         ui.show_help = !ui.show_help;
-    }
-    if keys.just_pressed(KeyCode::KeyF) {
-        toggle_draft(&mut sim, &mut ui);
     }
     if keys.just_pressed(KeyCode::KeyC) {
         center_on_selection(&sim, &ui, &mut rig);
@@ -649,6 +625,13 @@ fn mouse(
     mut ui: ResMut<UiState>,
     mut sounds: ResMut<SoundQueue>,
 ) {
+    // Battles have their own clicks (`battle_ui.rs`).
+    if sim.world.battle.is_some() || sim.world.parley.is_some() {
+        ui.box_start = None;
+        ui.drag_start = None;
+        ui.tool = Tool::Select;
+        return;
+    }
     let over_ui = egui_input.wants_any_pointer_input() || ui.over_dock(&window);
     let hover = ui.hover;
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
@@ -699,7 +682,7 @@ fn mouse(
         }
     }
 
-    // A right *click* (not a camera drag): back to Select, or order a drafted colonist.
+    // A right *click* (not a camera drag): back to Select, or equip something.
     if buttons.just_released(MouseButton::Right) && drag.right_moved <= 4.0 && !over_ui {
         if let Tool::Paint(_) = ui.tool {
             ui.tool = Tool::Select;
@@ -708,38 +691,11 @@ fn mouse(
         }
         let ids = ui.selected_pawns();
         let (Some(&first), Some(Hover { stand: t, .. })) = (ids.first(), hover) else { return };
-        // A weapon or piece of clothing: the first selected colonist equips it (drafted or not).
+        // A weapon or piece of clothing: the first selected colonist equips it.
         let m = &sim.world.map;
         let gear = m.items[m.idx(t)].is_some_and(|s| s.kind.def().weapon.is_some() || s.kind.def().apparel.is_some());
-        if gear && sim.world.pawn(first).is_some_and(|p| p.is_colonist()) {
-            if sim.world.order_equip(first, t) {
-                sounds.play("ui_place", None);
-            }
-            return;
-        }
-        let drafted: Vec<u32> = ids.into_iter().filter(|&id| sim.world.pawn(id).is_some_and(|p| p.drafted)).collect();
-        if drafted.is_empty() {
-            return;
-        }
-        let enemy = pawn_at(&sim.world, t)
-            .filter(|&o| sim.world.pawn(o).is_some_and(|o| o.faction == Faction::Raider && o.active()));
-        if let Some(target) = enemy {
-            for id in drafted {
-                sim.world.order_attack(id, target);
-            }
-            return;
-        }
-        // Spread out over the cells nearest the target, each colonist taking the closest free one.
-        let mut cells = spread_targets(&sim.world.map, t, drafted.len());
-        for id in drafted {
-            let Some(p) = sim.world.pawn(id) else { continue };
-            let here = (p.x, p.y, p.z);
-            let dist = |c: &Pos| {
-                let (dx, dy, dz) = (c.0 as f32 - here.0, c.1 as f32 - here.1, c.2 as f32 - here.2);
-                dx * dx + dy * dy + dz * dz
-            };
-            let Some(k) = (0..cells.len()).min_by(|&a, &b| dist(&cells[a]).total_cmp(&dist(&cells[b]))) else { break };
-            sim.world.order_move(id, cells.swap_remove(k));
+        if gear && sim.world.pawn(first).is_some_and(|p| p.is_colonist()) && sim.world.order_equip(first, t) {
+            sounds.play("ui_place", None);
         }
     }
 }
@@ -779,13 +735,13 @@ fn forget_missing_selection(sim: Res<Sim>, mut ui: ResMut<UiState>) {
 }
 
 /// Flat square outline on the floor of a cell.
-fn floor_outline(gizmos: &mut Gizmos, t: Pos, inset: f32, color: Color) {
+pub fn floor_outline(gizmos: &mut Gizmos, t: Pos, inset: f32, color: Color) {
     let c = tile_center(t) + Vec3::Y * 0.03;
     gizmos.rect(Isometry3d::new(c, Quat::from_rotation_x(FRAC_PI_2)), Vec2::splat(1.0 - inset), color);
 }
 
 /// Box outline around a whole (solid) cell.
-fn cell_outline(gizmos: &mut Gizmos, t: Pos, color: Color) {
+pub fn cell_outline(gizmos: &mut Gizmos, t: Pos, color: Color) {
     let c = tile_center(t) + Vec3::Y * (LEVEL_H / 2.0);
     gizmos.cube(Transform::from_translation(c).with_scale(Vec3::new(1.03, LEVEL_H * 1.03, 1.03)), color);
 }
@@ -846,9 +802,7 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
         if ui.is_selected(p.id) {
             gizmos.circle(feet, 0.48, Color::WHITE);
         }
-        if p.drafted {
-            gizmos.circle(feet, 0.4, Color::srgb(1.0, 0.8, 0.1));
-        } else if p.faction == Faction::Raider {
+        if p.faction == Faction::Raider {
             gizmos.circle(feet, 0.4, Color::srgb(0.9, 0.15, 0.1));
         }
     }
@@ -888,24 +842,6 @@ mod tests {
         ui.toggle_pawn(4);
         ui.select(Some(Selection::Tile((1, 1, 1))));
         assert!(ui.selected_pawns().is_empty() && !ui.is_selected(4), "selecting a cell drops the group");
-    }
-
-    #[test]
-    fn groups_spread_out_over_nearby_cells() {
-        let w = SimWorld::new(5);
-        let m = &w.map;
-        let (x, y) = (m.w / 2, m.h / 2);
-        let t = (x, y, m.surface(x, y).unwrap());
-        let cells = spread_targets(m, t, 6);
-        assert_eq!(cells.len(), 6);
-        assert_eq!(cells[0], t, "someone goes where you clicked");
-        for (k, c) in cells.iter().enumerate() {
-            assert!(m.standable(*c), "{:?} can be stood on", c);
-            assert!(!cells[k + 1..].contains(c), "no two on one cell");
-            assert!(c.0.abs_diff(t.0) + c.1.abs_diff(t.1) <= 3, "{:?} is close by", c);
-        }
-        let air = (x, y, m.d - 1);
-        assert!(spread_targets(m, air, 3).is_empty(), "nowhere to stand");
     }
 
     #[test]

@@ -204,6 +204,9 @@ pub struct ItemDef {
     pub name: String,
     /// Group in stockpile settings.
     pub category: String,
+    /// Worth of one, for what raiders demand and take.
+    #[serde(default = "one_each")]
+    pub value: f32,
     /// Palette colour for small views (an item being carried).
     pub color: String,
     /// Hunger restored per unit eaten; 0 = not food.
@@ -403,6 +406,10 @@ pub struct Stage {
     pub from: f32,
     /// One is picked per cell.
     pub variants: Vec<Vec<Part>>,
+}
+
+fn one_each() -> f32 {
+    1.0
 }
 
 fn one() -> (f32, f32) {

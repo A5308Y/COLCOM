@@ -162,8 +162,6 @@ pub enum Job {
     /// Fetch food, then eat it, sitting at a table if there's a `seat`.
     Eat { from: Pos, picked: bool, seat: Option<Pos> },
     Sleep { bed: Option<Pos> },
-    Attack { target: u32 },
-    Leave { to: Pos },
     /// Lie in bed (or on the ground) to be treated and recover.
     Patient { bed: Option<Pos> },
     /// Fetch medicine (if any) and treat a patient (possibly oneself).
@@ -191,8 +189,6 @@ impl Job {
             Job::Haul { .. } => "hauling",
             Job::Eat { .. } => "eating",
             Job::Sleep { .. } => "sleeping",
-            Job::Attack { .. } => "fighting",
-            Job::Leave { .. } => "leaving",
             Job::Patient { .. } => "resting in bed",
             Job::Tend { .. } => "tending",
             Job::Rescue { .. } => "rescuing",
@@ -215,6 +211,8 @@ pub enum Memory {
     /// Ate at a table in a room of this quality tier.
     DiningRoom(u8),
     AteWithoutTable,
+    WonBattle,
+    LostBattle,
 }
 
 impl Memory {
@@ -241,6 +239,8 @@ impl Memory {
                 "Ate in an impressive dining room",
             ][tier.min(4) as usize],
             Memory::AteWithoutTable => "Ate without a table",
+            Memory::WonBattle => "Won a battle",
+            Memory::LostBattle => "Lost a battle",
         }
     }
 
@@ -255,6 +255,8 @@ impl Memory {
             Memory::AteMeal => 2.0,
             Memory::DiningRoom(tier) => [-2.0, 0.0, 2.0, 4.0, 6.0][tier.min(4) as usize],
             Memory::AteWithoutTable => -3.0,
+            Memory::WonBattle => 6.0,
+            Memory::LostBattle => -10.0,
         }
     }
 
@@ -270,6 +272,31 @@ impl Memory {
     /// Memories that replace each other: a new bedroom replaces the last one.
     fn same_kind(self, other: Memory) -> bool {
         std::mem::discriminant(&self) == std::mem::discriminant(&other)
+    }
+}
+
+/// What a colonist does when a battle starts (see `squads.rs`, `battle.rs`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum Role {
+    /// Fights as a unit of their own.
+    #[default]
+    Fighter,
+    /// Shelters in the safe zone.
+    Civilian,
+    /// Leads a squad: the colonists assigned to them fight as one unit with them.
+    Leader,
+    /// In the squad of the leader with this pawn id.
+    Member(u32),
+}
+
+impl Role {
+    pub fn name(self) -> &'static str {
+        match self {
+            Role::Fighter => "Fighter",
+            Role::Civilian => "Civilian",
+            Role::Leader => "Squad leader",
+            Role::Member(_) => "Squad member",
+        }
     }
 }
 
@@ -312,7 +339,6 @@ pub struct Pawn {
     #[serde(default)]
     pub chosen: Vec<ItemId>,
     pub cooldown: f32,
-    pub drafted: bool,
     pub downed: bool,
     pub downed_time: f32,
     pub dead: bool,
@@ -326,7 +352,18 @@ pub struct Pawn {
     pub color: [f32; 3],
     pub think_timer: f32,
     pub break_timer: f32,
-    pub leave_timer: f32,
+    #[serde(default)]
+    pub role: Role,
+    /// Weapon and apparel to fight in (at most one weapon, one per slot).
+    #[serde(default)]
+    pub loadout: Vec<ItemId>,
+    /// Battle gear taken from storage, each with what it replaced (put
+    /// back on after the battle).
+    #[serde(default)]
+    pub stash: Vec<(ItemId, Option<ItemId>)>,
+    /// A leader without a decent bedroom of their own (updated once a second).
+    #[serde(skip)]
+    pub poor_quarters: bool,
 }
 
 impl Pawn {
@@ -355,7 +392,6 @@ impl Pawn {
             apparel: Vec::new(),
             chosen: Vec::new(),
             cooldown: 0.0,
-            drafted: false,
             downed: false,
             downed_time: 0.0,
             dead: false,
@@ -367,7 +403,10 @@ impl Pawn {
             color: [rng.range_f32(0.5, 1.0), rng.range_f32(0.45, 0.95), rng.range_f32(0.45, 0.95)],
             think_timer: rng.f32(),
             break_timer: 0.0,
-            leave_timer: 0.0,
+            role: Role::Fighter,
+            loadout: Vec::new(),
+            stash: Vec::new(),
+            poor_quarters: false,
         }
     }
 
@@ -399,7 +438,6 @@ impl Pawn {
         p.skills[Skill::Melee as usize] = 3 + rng.below(6) as u8;
         p.color = [0.85, 0.2, 0.2];
         p.priorities = [0; WorkType::ALL.len()];
-        p.leave_timer = 100.0;
         p
     }
 
@@ -530,6 +568,12 @@ impl Pawn {
                 t.push((a.name(), d.mood));
             }
         }
+        if self.role == Role::Leader {
+            t.push(("Responsible for a squad", -2.0));
+            if self.poor_quarters {
+                t.push(("No proper quarters for a leader", -8.0));
+            }
+        }
         t
     }
 
@@ -551,12 +595,31 @@ impl Pawn {
         if self.break_timer > 0.0 {
             return "mental break".into();
         }
-        let job = self.job.map_or("idle", |j| j.describe());
-        if self.drafted {
-            format!("drafted, {}", job)
-        } else {
-            job.into()
+        self.job.map_or("idle", |j| j.describe()).into()
+    }
+
+    /// Hold a weapon or put on apparel; returns what it replaced.
+    pub fn wear(&mut self, kind: ItemId) -> Option<ItemId> {
+        let d = kind.def();
+        if d.weapon.is_some() {
+            return self.weapon.replace(kind);
         }
+        let slot = d.apparel.as_ref().map_or(Slot::Body, |a| a.slot);
+        let old = self.worn(slot);
+        self.apparel.retain(|&a| Some(a) != old);
+        self.apparel.push(kind);
+        old
+    }
+
+    /// Put down a weapon or take off apparel; false if they don't have it.
+    pub fn take_off(&mut self, kind: ItemId) -> bool {
+        if self.weapon == Some(kind) {
+            self.weapon = None;
+            return true;
+        }
+        let before = self.apparel.len();
+        self.apparel.retain(|&a| a != kind);
+        self.apparel.len() != before
     }
 }
 

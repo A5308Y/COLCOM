@@ -1,5 +1,6 @@
 //! The whole simulation state and its fixed-step update.
 
+use crate::battle::{Battle, Parley};
 use crate::health::TickCtx;
 use crate::defs::{defs, BuildId, PlantId, Special};
 use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone};
@@ -97,6 +98,12 @@ pub struct World {
     /// Quality per room id (index 0 unused). Derived, so not saved.
     #[serde(skip)]
     pub room_stats: Vec<RoomStats>,
+    /// A raid waiting for an answer: pay, or fight (the colony stops meanwhile).
+    #[serde(default)]
+    pub parley: Option<Parley>,
+    /// The battle going on, if any (the colony stops meanwhile).
+    #[serde(default)]
+    pub battle: Option<Battle>,
     /// Sounds since the front end last took them (see `take_sounds`).
     #[serde(skip)]
     pub sounds: Vec<SoundEvent>,
@@ -153,6 +160,8 @@ impl World {
             stockpiles: Vec::new(),
             colony_timer: 0.0,
             room_stats: Vec::new(),
+            parley: None,
+            battle: None,
             sounds: Vec::new(),
         }
     }
@@ -245,7 +254,7 @@ impl World {
         }
         let idle = colonists
             .iter()
-            .filter(|p| p.active() && !p.drafted && matches!(p.job, None | Some(Job::Wander { .. })))
+            .filter(|p| p.active() && matches!(p.job, None | Some(Job::Wander { .. })))
             .count();
         if idle > 0 {
             out.push((format!("{} idle colonist(s)", idle), false));
@@ -300,6 +309,15 @@ impl World {
     // ---------- simulation ----------
 
     pub fn tick(&mut self, dt: f32) {
+        // A raid stops the colony: while the parley is open, and during the battle.
+        if self.parley.is_some() {
+            return;
+        }
+        if self.battle.is_some() {
+            self.battle_tick(dt);
+            self.age_effects(dt);
+            return;
+        }
         self.time += dt;
         if self.map.rooms_dirty {
             self.map.recompute_rooms();
@@ -314,6 +332,7 @@ impl World {
             self.colony_timer = 1.0;
             self.update_production();
             self.update_room_stats();
+            self.update_squads();
         }
         self.storyteller_tick();
         let fade = dt / (1.5 * DAY_LEN);
@@ -330,6 +349,10 @@ impl World {
         }
         self.pawns.retain(|p| p.is_colonist() || !(p.dead || p.left));
 
+        self.age_effects(dt);
+    }
+
+    fn age_effects(&mut self, dt: f32) {
         for e in self.effects.iter_mut() {
             e.ttl -= dt;
         }
@@ -447,14 +470,14 @@ impl World {
             }
             return;
         }
-        match p.faction {
-            Faction::Colony => self.colonist_think(p, dt),
-            Faction::Raider => self.raider_think(p, dt),
+        // Raiders only act in battles (`battle.rs`).
+        if p.faction == Faction::Colony {
+            self.colonist_think(p, dt);
+            self.run_job(p, dt);
         }
-        self.run_job(p, dt);
     }
 
-    fn update_health(&mut self, p: &mut Pawn, dt: f32) {
+    pub(crate) fn update_health(&mut self, p: &mut Pawn, dt: f32) {
         let lying = p.lying();
         let ctx = TickCtx { in_bed: lying && self.in_bed(p), resting: lying, fed: !p.is_colonist() || p.hunger > 0.0 };
         let events = p.health.tick(dt, ctx, &mut self.rng);
@@ -476,7 +499,6 @@ impl World {
             (false, Some(reason)) => {
                 self.end_job(p);
                 p.downed = true;
-                p.drafted = false;
                 p.downed_time = 0.0;
                 self.push_log(format!("{} collapsed ({}).", p.name, reason));
                 self.sound("thud", Some(p.pos));
@@ -508,7 +530,7 @@ impl World {
                 p.add_memory(Memory::Catharsis);
                 self.push_log(format!("{} has recovered from their mental break.", p.name));
             }
-        } else if p.mood < 20.0 && !p.drafted && !p.downed && self.rng.chance(dt * 0.01) {
+        } else if p.mood < 20.0 && !p.downed && self.rng.chance(dt * 0.01) {
             self.end_job(p);
             p.break_timer = 40.0;
             self.push_log(format!("{} is having a mental break and wanders off in a daze.", p.name));
@@ -516,12 +538,6 @@ impl World {
     }
 
     fn colonist_think(&mut self, p: &mut Pawn, dt: f32) {
-        if p.drafted {
-            if p.job.is_none() {
-                self.auto_fire(p);
-            }
-            return;
-        }
         if p.break_timer > 0.0 {
             if p.job.is_none() {
                 self.start_wander(p, 10);
@@ -715,6 +731,8 @@ impl World {
             Order::Desig(d) => f.harvest_desig() == Some(d),
             Order::Zone(Zone::None) => m.zone[i] != Zone::None,
             Order::Zone(Zone::Stockpile(_)) => false,
+            // Safe zones go indoors too, among the furniture.
+            Order::Zone(Zone::Safe) => m.standable(p) && m.zone[i] != Zone::Safe,
             Order::Zone(z) => m.standable(p) && (f == Feature::None || f.is_crop()) && m.zone[i] != z,
             Order::Stockpile => {
                 m.standable(p) && (f == Feature::None || f.is_crop()) && m.zone[i].stockpile().is_none()
@@ -773,27 +791,8 @@ impl World {
         }
     }
 
-    pub fn set_drafted(&mut self, id: u32, drafted: bool) {
-        self.with_pawn(id, |w, p| {
-            if p.is_colonist() && p.active() && p.drafted != drafted {
-                w.end_job(p);
-                p.drafted = drafted;
-                p.break_timer = 0.0;
-            }
-        });
-    }
-
-    pub fn order_move(&mut self, id: u32, to: Pos) {
-        self.with_pawn(id, |w, p| {
-            if p.drafted && p.active() && w.map.passable(to) {
-                w.end_job(p);
-                w.start_job(p, Job::Goto { to });
-            }
-        });
-    }
-
     /// Have colonist `id` pick up the weapon or apparel lying at `at` and use
-    /// it, keeping it even when something better turns up. Drafted or not.
+    /// it, keeping it even when something better turns up.
     pub fn order_equip(&mut self, id: u32, at: Pos) -> bool {
         let i = self.map.idx(at);
         let Some(s) = self.map.items[i] else { return false };
@@ -810,15 +809,6 @@ impl World {
             }
         });
         ordered
-    }
-
-    pub fn order_attack(&mut self, id: u32, target: u32) {
-        self.with_pawn(id, |w, p| {
-            if p.drafted && p.active() {
-                w.end_job(p);
-                w.start_job(p, Job::Attack { target });
-            }
-        });
     }
 
     pub fn set_priority(&mut self, id: u32, wt: WorkType, prio: u8) {
@@ -888,6 +878,12 @@ mod tests {
         world.story.next_event = f32::MAX;
         world.regrow_timer = f32::MAX;
         world
+    }
+
+    /// Never thinks of anything to do, so stays where they are.
+    fn hold_still(w: &mut World, id: u32) {
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].think_timer = f32::MAX;
     }
 
     fn colonist(world: &mut World, pos: Pos) -> u32 {
@@ -983,21 +979,6 @@ mod tests {
         run(&mut w, 1.5);
         let job = w.pawn(id).unwrap().job;
         assert!(matches!(job, Some(Job::Work { task: crate::pawn::Task::Mine, .. })), "{:?}", job);
-    }
-
-    #[test]
-    fn drafted_colonist_shoots_an_approaching_raider() {
-        let mut w = test_world(30, 30);
-        let id = colonist(&mut w, (5, 15, Z));
-        let i = w.pawn_index(id).unwrap();
-        w.pawns[i].skills[crate::pawn::Skill::Shooting as usize] = 20;
-        w.set_drafted(id, true);
-        let rid = w.spawn_raider("Grim".into(), (14, 15, Z));
-        let ri = w.pawn_index(rid).unwrap();
-        w.pawns[ri].weapon = Some(item("club"));
-        run(&mut w, 10.0);
-        let hurt_or_gone = w.pawn(rid).map_or(true, |r| !r.health.hediffs.is_empty() || r.dead);
-        assert!(hurt_or_gone);
     }
 
     fn wound(w: &mut World, id: u32, part: crate::health::Part, amount: f32, kind: crate::health::DamageKind) {
@@ -1162,7 +1143,7 @@ mod tests {
         let bystander = colonist(&mut w, (6, 6, 3));
         w.set_priority(bystander, WorkType::Mining, 0);
         // Keep the bystander standing still on the spot being dug out.
-        w.set_drafted(bystander, true);
+        hold_still(&mut w, bystander);
         assert!(w.apply_order((6, 6, 2), Order::Desig(Desig::Mine)), "soil can be dug");
         run(&mut w, 30.0);
         assert_eq!(w.map.block[w.map.idx((6, 6, 2))], Block::Air);
@@ -1176,7 +1157,7 @@ mod tests {
         let ledge = w.map.idx((4, 4, 5));
         w.map.floor[ledge] = true;
         let id = colonist(&mut w, (4, 4, 5));
-        w.set_drafted(id, true);
+        hold_still(&mut w, id);
         let i = w.map.idx((4, 4, 5));
         w.map.set_floor(i, false);
         run(&mut w, 0.5);
@@ -1358,11 +1339,11 @@ mod tests {
         assert!(heard.contains(&"tree_fall"), "{:?}", heard);
         assert!(w.take_sounds().is_empty(), "taken sounds are gone");
 
-        // Shots, and hits or glancing blows.
+        // Shots, and hits or glancing blows, in a battle the AI plays for both sides.
         let mut w = test_world(30, 30);
-        let id = colonist(&mut w, (5, 15, Z));
-        w.set_drafted(id, true);
-        w.spawn_raider("Grim".into(), (12, 15, Z));
+        colonist(&mut w, (5, 15, Z));
+        w.start_battle(crate::battle::Parley { squads: vec![1], entry: (12, 15, Z), demand: Vec::new() });
+        w.battle.as_mut().unwrap().auto_colony = true;
         let mut heard = Vec::new();
         for _ in 0..(10.0 / TICK) as usize {
             w.tick(TICK);

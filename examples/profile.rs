@@ -62,6 +62,13 @@ fn main() {
             copy.recompute_rooms();
             rooms_time += t.elapsed().as_secs_f64();
         }
+        // Raids: fight them, with the AI playing the colony too (so battles get timed).
+        if w.parley.is_some() {
+            w.refuse_tribute();
+            if let Some(b) = w.battle.as_mut() {
+                b.auto_colony = true;
+            }
+        }
         let t = Instant::now();
         w.tick(TICK);
         let dt = t.elapsed().as_secs_f64();

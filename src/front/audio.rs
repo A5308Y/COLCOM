@@ -5,7 +5,7 @@
 //! levels come from `assets/sounds.ron`.
 
 use super::camera::CameraRig;
-use super::input::{Tool, UiState};
+use super::input::{InspectorTab, Tool, UiState};
 use super::sim::Sim;
 use super::terrain::LEVEL_H;
 use super::tile_point;
@@ -313,8 +313,17 @@ fn pawn_sounds(
 }
 
 /// Clicks for choosing tools and opening windows.
-fn ui_sounds(ui: Res<UiState>, mut queue: ResMut<SoundQueue>, mut last: Local<Option<(Tool, [bool; 6])>>) {
-    let windows = [ui.show_work, ui.show_help, ui.show_build, ui.show_resources, ui.show_sound, ui.inspector_health];
+fn ui_sounds(ui: Res<UiState>, mut queue: ResMut<SoundQueue>, mut last: Local<Option<(Tool, [bool; 8])>>) {
+    let windows = [
+        ui.show_work,
+        ui.show_help,
+        ui.show_build,
+        ui.show_resources,
+        ui.show_sound,
+        ui.show_squads,
+        ui.inspector_tab == InspectorTab::Health,
+        ui.inspector_tab == InspectorTab::Combat,
+    ];
     if let Some((tool, open)) = *last {
         if tool != ui.tool {
             queue.play("ui_click", None);
