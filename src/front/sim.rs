@@ -4,10 +4,13 @@ use bevy::prelude::*;
 use my_world::world::World as SimWorld;
 use my_world::TICK;
 
+/// Game speeds Tab and the speed button cycle through.
+pub const SPEEDS: [u32; 4] = [1, 2, 5, 10];
+
 #[derive(Resource)]
 pub struct Sim {
     pub world: SimWorld,
-    /// 1, 2 or 3 simulation steps per real step.
+    /// Game seconds per real second: one of `SPEEDS`.
     pub speed: u32,
     pub paused: bool,
     /// Bumped whenever `world` is replaced (new game, load), so visuals rebuild.
@@ -23,11 +26,8 @@ impl Sim {
     }
 
     pub fn cycle_speed(&mut self) {
-        self.speed = match self.speed {
-            1 => 2,
-            2 => 3,
-            _ => 1,
-        };
+        let next = SPEEDS.iter().position(|&s| s == self.speed).map_or(0, |k| (k + 1) % SPEEDS.len());
+        self.speed = SPEEDS[next];
     }
 }
 

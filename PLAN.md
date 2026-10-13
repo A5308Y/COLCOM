@@ -179,6 +179,12 @@ real play.
 
 ## Notes
 
+- Game speeds (Tab or the HUD button): 1x, 2x, 5x, 10x (`sim::SPEEDS`). At most 40 simulation steps
+  run per frame, which 10x needs only below 15 fps.
+- Build orders replace a blueprint of something else in place (`order_applies` treats the cell as
+  empty; materials already delivered are dropped there for the haulers). The same blueprint again
+  doesn't apply.
+
 - Phase 12 (turn-based battles):
   - **Squads (`src/squads.rs`):** `Pawn::role` is `Fighter` (default), `Civilian`, `Leader` or
     `Member(leader)`; `set_role` checks the leader and `SQUAD_MAX`, and stepping down or dying releases

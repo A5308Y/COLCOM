@@ -737,20 +737,27 @@ impl World {
             Order::Stockpile => {
                 m.standable(p) && (f == Feature::None || f.is_crop()) && m.zone[i].stockpile().is_none()
             }
-            Order::Build(kind) => match kind.def().special {
-                Special::Floor => m.floor_buildable(p),
-                Special::Stairs => {
-                    m.standable(p) && f == Feature::None && m.above(p).is_some_and(|a| m.block[m.idx(a)] == Block::Air)
-                }
-                // Walls, doors and windows also stack straight onto walls below them.
-                _ => {
-                    f == Feature::None
-                        && (m.standable(p)
+            Order::Build(kind) => {
+                // A blueprint of something else is simply replaced.
+                let replacing = matches!(f, Feature::Blueprint { kind: other, .. } if other != kind);
+                let empty = f == Feature::None || replacing;
+                match kind.def().special {
+                    Special::Floor => {
+                        empty && m.block[i] == Block::Air && !m.floor[i] && !m.on_ground(p) && m.floor_supported(p)
+                    }
+                    Special::Stairs => {
+                        m.standable(p) && empty && m.above(p).is_some_and(|a| m.block[m.idx(a)] == Block::Air)
+                    }
+                    // Walls, doors and windows also stack straight onto walls below them.
+                    _ => {
+                        empty
+                            && (m.standable(p)
                             || kind.def().blocks_room
                                 && m.open(p)
-                                && m.below(p).is_some_and(|b| m.feature[m.idx(b)].structure().is_some_and(|d| d.holds_floors)))
+                                    && m.below(p).is_some_and(|b| m.feature[m.idx(b)].structure().is_some_and(|d| d.holds_floors)))
+                    }
                 }
-            },
+            }
             Order::Cancel => m.desig[i].is_some() || matches!(f, Feature::Blueprint { .. }),
         }
     }
@@ -768,7 +775,15 @@ impl World {
                 let id = self.stockpile_for(p);
                 self.map.zone[i] = Zone::Stockpile(id);
             }
-            Order::Build(kind) => self.map.feature[i] = Feature::Blueprint { kind, delivered: 0 },
+            Order::Build(kind) => {
+                // Materials already delivered to a replaced blueprint are left for the haulers.
+                if let Feature::Blueprint { kind: old, delivered } = self.map.feature[i] {
+                    if delivered > 0 {
+                        self.map.drop_item(p, Stack { kind: old.def().cost.item, count: delivered });
+                    }
+                }
+                self.map.feature[i] = Feature::Blueprint { kind, delivered: 0 };
+            }
             Order::Cancel => {
                 self.map.desig[i] = None;
                 if let Feature::Blueprint { kind, delivered } = self.map.feature[i] {
@@ -1215,6 +1230,24 @@ mod tests {
         assert_eq!(w.map.desig[i], None);
         let (item, count) = BuildId::named("wall").def().drops();
         assert_eq!(w.map.count_items(item), count);
+    }
+
+    #[test]
+    fn blueprints_can_be_replaced_directly() {
+        let mut w = test_world(20, 20);
+        colonist(&mut w, (2, 2, Z));
+        let (wall, door) = (BuildId::named("wall"), BuildId::named("door"));
+        let at = (10, 10, Z);
+        let i = w.map.idx(at);
+        assert!(w.apply_order(at, Order::Build(wall)));
+        w.map.feature[i] = Feature::Blueprint { kind: wall, delivered: 3 };
+        assert!(!w.apply_order(at, Order::Build(wall)), "the same thing again changes nothing");
+        assert!(w.apply_order(at, Order::Build(door)), "a door replaces the wall blueprint");
+        assert_eq!(w.map.feature[i], Feature::Blueprint { kind: door, delivered: 0 });
+        assert_eq!(w.map.count_items(wall.def().cost.item), 3, "what was delivered is left for the haulers");
+        w.map.drop_item((4, 4, Z), Stack { kind: door.def().cost.item, count: door.def().cost.count });
+        run(&mut w, 160.0);
+        assert_eq!(w.map.feature[i], Feature::built("door"));
     }
 
     #[test]

@@ -168,7 +168,7 @@ mod tests {
             app.update();
         }
         app.world_mut().resource_mut::<front::Sim>().world.battle.as_mut().unwrap().auto_colony = true;
-        app.world_mut().resource_mut::<front::Sim>().speed = 3;
+        app.world_mut().resource_mut::<front::Sim>().speed = 5;
         for _ in 0..20000 {
             if app.world().resource::<front::Sim>().world.battle.is_none() {
                 break;
