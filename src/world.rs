@@ -910,7 +910,7 @@ mod tests {
         }
         let src = w.map.idx((12, 12, Z));
         w.map.items[src] = Some(Stack { kind: item("wood"), count: 20 });
-        run(&mut w, 30.0);
+        run(&mut w, 120.0);
         assert!(w.map.items[src].is_none(), "wood should have been picked up");
         let stored: u32 = (2..5).filter_map(|x| w.map.items[w.map.idx((x, 10, Z))]).map(|s| s.count).sum();
         assert_eq!(stored, 20);
@@ -948,8 +948,9 @@ mod tests {
         w.pawns[i].hunger = 15.0;
         let f = w.map.idx((6, 6, Z));
         w.map.items[f] = Some(Stack { kind: item("raw_food"), count: 3 });
-        run(&mut w, 10.0);
-        assert!(w.pawn(id).unwrap().hunger > 40.0);
+        // Walk over (about 8 s), eat, and check before hunger drains again.
+        run(&mut w, 20.0);
+        assert!(w.pawn(id).unwrap().hunger > 30.0, "ate: {}", w.pawn(id).unwrap().hunger);
         assert_eq!(w.map.count_items(item("raw_food")), 2);
     }
 
@@ -1058,7 +1059,7 @@ mod tests {
         }
         let src = w.map.idx((15, 15, Z + 1));
         w.map.items[src] = Some(Stack { kind: item("wood"), count: 20 });
-        run(&mut w, 40.0);
+        run(&mut w, 160.0);
         assert!(w.map.items[src].is_none(), "wood on the hill should have been fetched");
         assert_eq!(w.map.count_items(item("wood")), 20);
     }
@@ -1188,7 +1189,7 @@ mod tests {
         }
         assert_eq!(placed, 25, "every cell over the room has wall support nearby");
         w.map.drop_item((7, 7, Z), Stack { kind: item("wood"), count: 50 });
-        run(&mut w, 120.0);
+        run(&mut w, 480.0);
         let built = (5..=9).flat_map(|y| (5..=9).map(move |x| (x, y))).filter(|&(x, y)| w.map.floor[w.map.idx((x, y, Z + 1))]).count();
         assert_eq!(built, 25, "all floors built");
         assert!(w.map.roofed((7, 7, Z)), "now it's a room");

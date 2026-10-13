@@ -491,14 +491,14 @@ mod tests {
         assert_eq!(w.map.zone[w.map.idx((4, 10, Z))].stockpile(), Some(a), "painting next to one extends it");
         w.set_stockpile_allows(a, item("wood"), false);
         w.map.drop_item((12, 12, Z), Stack { kind: item("wood"), count: 10 });
-        run(&mut w, 30.0);
+        run(&mut w, 120.0);
         let in_b: u32 = (2..5).filter_map(|x| w.map.items[w.map.idx((x, 16, Z))]).map(|s| s.count).sum();
         assert_eq!(in_b, 10, "wood skips the stockpile that refuses it");
 
         // A more important stockpile pulls things out of a less important one.
         w.set_stockpile_priority(a, 4);
         w.set_stockpile_allows(a, item("wood"), true);
-        run(&mut w, 30.0);
+        run(&mut w, 120.0);
         let in_a: u32 = (2..5).filter_map(|x| w.map.items[w.map.idx((x, 10, Z))]).map(|s| s.count).sum();
         assert_eq!(in_a, 10);
     }
@@ -512,7 +512,7 @@ mod tests {
         w.map.drop_item((8, 8, Z), Stack { kind: item("knife"), count: 1 });
         w.map.drop_item((10, 4, Z), Stack { kind: item("clothes"), count: 1 });
         w.map.drop_item((4, 10, Z), Stack { kind: item("steel_armor"), count: 1 });
-        run(&mut w, 20.0);
+        run(&mut w, 80.0);
         let p = w.pawn(id).unwrap();
         assert_eq!(p.weapon, Some(item("knife")));
         assert!(p.apparel.contains(&item("clothes")) && p.apparel.contains(&item("steel_armor")), "{:?}", p.apparel);
@@ -521,7 +521,7 @@ mod tests {
 
         // A better weapon replaces the old one, which is left on the ground.
         w.map.drop_item((12, 12, Z), Stack { kind: item("rifle"), count: 1 });
-        run(&mut w, 20.0);
+        run(&mut w, 80.0);
         assert_eq!(w.pawn(id).unwrap().weapon, Some(item("rifle")));
         assert_eq!(w.map.count_items(item("knife")), 1);
     }
@@ -536,18 +536,18 @@ mod tests {
         assert!(!w.order_equip(id, (6, 2, Z)), "wood isn't gear");
         assert!(!w.order_equip(id, (9, 9, Z)), "nothing there");
         assert!(w.order_equip(id, (8, 8, Z)));
-        run(&mut w, 10.0);
+        run(&mut w, 40.0);
         // A worse weapon, because the player said so; the rifle is left behind
         // and not picked up again.
         assert_eq!(w.pawn(id).unwrap().weapon, Some(item("club")));
-        run(&mut w, 20.0);
+        run(&mut w, 80.0);
         assert_eq!(w.pawn(id).unwrap().weapon, Some(item("club")));
         assert_eq!(w.map.count_items(item("rifle")), 1);
 
         // Switching drops the old choice.
         let rifle = (0..w.map.len()).find(|&i| w.map.items[i].is_some_and(|s| s.kind == item("rifle"))).unwrap();
         assert!(w.order_equip(id, w.map.pos(rifle)));
-        run(&mut w, 10.0);
+        run(&mut w, 40.0);
         let p = w.pawn(id).unwrap();
         assert_eq!(p.weapon, Some(item("rifle")));
         assert_eq!(p.chosen, vec![item("rifle")]);
@@ -561,12 +561,12 @@ mod tests {
         w.pawns[i].hunger = 15.0;
         w.map.drop_item((4, 4, Z), Stack { kind: item("raw_food"), count: 5 });
         w.map.drop_item((10, 10, Z), Stack { kind: item("meal"), count: 1 });
-        run(&mut w, 15.0);
+        run(&mut w, 60.0);
         assert_eq!(w.map.count_items(item("meal")), 0, "the meal, though further away");
         assert!(w.pawn(id).unwrap().memories.iter().any(|m| m.kind == Memory::AteMeal));
         let i = w.pawn_index(id).unwrap();
         w.pawns[i].hunger = 15.0;
-        run(&mut w, 15.0);
+        run(&mut w, 60.0);
         assert!(w.pawn(id).unwrap().memories.iter().any(|m| m.kind == Memory::AteRawFood));
     }
 
@@ -609,7 +609,7 @@ mod tests {
         place_bench(&mut w, "table", (10, 10, Z));
         place_bench(&mut w, "chair", (10, 11, Z));
         let mut sat = false;
-        for _ in 0..(15.0 / TICK) as usize {
+        for _ in 0..(60.0 / TICK) as usize {
             w.tick(TICK);
             let p = w.pawn(id).unwrap();
             sat |= matches!(p.job, Some(Job::Eat { picked: true, .. })) && p.pos == (10, 11, Z);
@@ -625,7 +625,7 @@ mod tests {
         let i = w.pawn_index(id).unwrap();
         w.pawns[i].hunger = 15.0;
         w.map.drop_item((4, 4, Z), Stack { kind: item("meal"), count: 1 });
-        run(&mut w, 15.0);
+        run(&mut w, 60.0);
         assert!(w.pawn(id).unwrap().memories.iter().any(|m| m.kind == Memory::AteWithoutTable));
     }
 
@@ -638,7 +638,7 @@ mod tests {
         let shelf = w.map.idx((5, 5, Z));
         assert_eq!(w.map.capacity(shelf), 150);
         w.map.drop_item((12, 12, Z), Stack { kind: item("wood"), count: 120 });
-        run(&mut w, 60.0);
+        run(&mut w, 240.0);
         assert_eq!(w.map.items[shelf].map(|s| s.count), Some(120), "all on the one shelf");
     }
 

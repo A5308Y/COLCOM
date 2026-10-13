@@ -7,11 +7,10 @@ use bevy_egui::egui::{self, Align2, Color32, RichText};
 use my_world::defs::{ItemId, Slot};
 use my_world::map::Zone;
 use my_world::pawn::{Pawn, Role};
+use my_world::battle::CELLS_PER_ROUND;
 use my_world::squads::SQUAD_MAX;
 use my_world::world::World as SimWorld;
 
-/// Cells a squad member covers per battle round on the way to their leader.
-const CELLS_PER_ROUND: usize = 5;
 
 /// A change asked for in the Combat tab, applied after drawing.
 pub enum CombatAction {

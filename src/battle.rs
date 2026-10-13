@@ -19,13 +19,14 @@ use serde::{Deserialize, Serialize};
 
 /// Action points per unit and round, and what things cost.
 pub const AP_MAX: i32 = 100;
-pub const AP_MOVE: i32 = 20;
+pub const AP_MOVE: i32 = 10;
 pub const AP_ATTACK: i32 = 40;
 pub const AP_HUNKER: i32 = 20;
 /// Game seconds that pass per round (for bleeding, healing and hunger).
 pub const TURN_SECS: f32 = 6.0;
-/// Cells a squad member covers per round on the way to their leader.
-pub const CELLS_PER_ROUND: usize = 5;
+/// Cells a squad member covers per round on the way to their leader (as
+/// far as a unit can run in a round).
+pub const CELLS_PER_ROUND: usize = (AP_MAX / AP_MOVE) as usize;
 /// Members within this many cells of their leader start the battle with them.
 const WITH_LEADER: usize = 2;
 /// Suppression from which a unit is pinned down (less AP, worse aim).
@@ -36,7 +37,8 @@ pub const BROKEN: f32 = 25.0;
 const RAIDER_SQUAD: usize = 4;
 /// Seconds an attack takes to play out.
 const ATTACK_TIME: f32 = 0.9;
-/// Rounds without anyone attacking after which the raiders give up.
+/// Rounds without an attack and without the sides getting any closer
+/// after which the raiders give up.
 pub const STALEMATE: u32 = 10;
 /// What a raid demands per raider, in item value.
 pub const DEMAND_PER_RAIDER: f32 = 40.0;
@@ -168,9 +170,13 @@ pub struct Battle {
     pub auto_colony: bool,
     /// What happened, newest last.
     pub events: Vec<String>,
-    /// Rounds in a row without an attack; raiders give up after `STALEMATE`.
+    /// Rounds in a row without an attack or the sides closing in; raiders
+    /// give up after `STALEMATE`.
     #[serde(default)]
     pub quiet_rounds: u32,
+    /// Closest the sides have been (cells), to tell closing in from a stalemate.
+    #[serde(default)]
+    pub closest: Option<usize>,
 }
 
 impl Battle {
@@ -315,6 +321,7 @@ impl World {
             auto_colony: false,
             events: Vec::new(),
             quiet_rounds: 0,
+            closest: None,
         };
         // Everyone drops what they're doing.
         for i in 0..self.pawns.len() {
@@ -404,6 +411,10 @@ impl World {
         for id in fighters {
             self.gear_up(id);
         }
+        // Everyone runs while the battle lasts.
+        for p in self.pawns.iter_mut() {
+            p.running = true;
+        }
         let raiders = parley.raiders();
         let who = if raiders == 1 { "1 raider attacks".to_string() } else { format!("{} raiders attack", raiders) };
         b.events.push(format!("Battle! {}.", who));
@@ -468,6 +479,9 @@ impl World {
 
     fn end_battle(&mut self, outcome: Outcome) {
         let Some(b) = self.battle.take() else { return };
+        for p in self.pawns.iter_mut() {
+            p.running = false;
+        }
         let colonists: Vec<u32> = self.pawns.iter().filter(|p| p.is_colonist() && !p.dead).map(|p| p.id).collect();
         for &id in &colonists {
             self.gear_down(id);
@@ -808,6 +822,13 @@ impl World {
             }
             b.quiet_rounds += 1;
         }
+        // Closing in counts as progress too.
+        let gap = self.gap_between_sides();
+        let b = self.battle.as_mut().unwrap();
+        if gap.is_some_and(|g| b.closest.is_none_or(|c| g < c)) {
+            b.closest = gap;
+            b.quiet_rounds = 0;
+        }
         if self.battle.as_ref().is_some_and(|b| b.quiet_rounds >= STALEMATE) {
             self.push_log("The raiders gave up and left.".into());
             self.end_battle(Outcome::Won);
@@ -834,6 +855,22 @@ impl World {
                 b.side_to_act = Faction::Raider;
             }
         }
+    }
+
+    /// Fewest cells between any fighter of the colony and any raider.
+    fn gap_between_sides(&self) -> Option<usize> {
+        let b = self.battle.as_ref()?;
+        let side = |s: Faction| -> Vec<Pos> {
+            b.units
+                .iter()
+                .filter(|u| u.side == s && !u.passive)
+                .flat_map(|u| u.members.iter().filter_map(|&id| self.pawn(id)).map(|p| p.pos))
+                .collect()
+        };
+        let (ours, theirs) = (side(Faction::Colony), side(Faction::Raider));
+        ours.iter()
+            .flat_map(|a| theirs.iter().map(move |b| a.0.abs_diff(b.0) + a.1.abs_diff(b.1) + a.2.abs_diff(b.2)))
+            .min()
     }
 
     /// Squad members whose time is up join their leader.
@@ -1133,18 +1170,16 @@ mod tests {
         let squad = &b.units[b.unit_of(leader).unwrap()];
         assert_eq!(squad.members, vec![leader, near], "the near one is with the leader");
         assert!(squad.led);
-        // 12 cells away: 10 beyond the leader's side, 5 a round.
+        // 12 cells away: 10 beyond the leader's side, run in one round.
         assert_eq!(b.arrivals.len(), 1);
-        assert_eq!((b.arrivals[0].pawn, b.arrivals[0].rounds), (far, 2));
+        assert_eq!((b.arrivals[0].pawn, b.arrivals[0].rounds), (far, 1));
         assert_eq!(b.units[b.unit_of(lone).unwrap()].members, vec![lone], "fights alone");
         let civilians = &b.units[b.unit_of(civ).unwrap()];
         assert!(civilians.passive && !civilians.can_act());
         assert_eq!(w.map.zone[w.map.idx(w.pawn(civ).unwrap().pos)], Zone::Safe, "ran to the safe zone");
 
-        // Two rounds later, the far member stands beside the leader.
-        for _ in 0..2 {
-            w.new_round();
-        }
+        // A round later, the far member stands beside the leader.
+        w.new_round();
         let b = battle(&w);
         assert!(b.arrivals.is_empty());
         assert!(b.units[b.unit_of(leader).unwrap()].members.contains(&far));
@@ -1213,7 +1248,7 @@ mod tests {
         let u = battle(&w).unit_of(id).unwrap();
         w.battle_order(BattleOrder::Activate(u)).unwrap();
         assert_eq!(w.move_cost(u, (8, 10, Z)), Ok(3 * AP_MOVE));
-        assert!(w.battle_order(BattleOrder::Move((5, 16, Z))).is_err(), "6 cells is more than 100 AP");
+        assert!(w.battle_order(BattleOrder::Move((17, 10, Z))).is_err(), "12 cells is more than 100 AP");
         w.battle_order(BattleOrder::Move((8, 10, Z))).unwrap();
         assert!(w.battle_order(BattleOrder::End).is_err(), "busy walking");
         for _ in 0..60 {
@@ -1222,7 +1257,7 @@ mod tests {
         assert_eq!(w.pawn(id).unwrap().pos, (8, 10, Z));
         assert_eq!(battle(&w).units[u].ap, AP_MAX - 3 * AP_MOVE);
         let raider = battle(&w).units.iter().position(|u| u.side == Faction::Raider).unwrap();
-        assert!(w.battle_order(BattleOrder::Attack(raider)).is_err(), "40 AP left, but 25 cells is out of range");
+        assert!(w.battle_order(BattleOrder::Attack(raider)).is_err(), "AP left, but 25 cells is out of range");
         assert!(w.battle_order(BattleOrder::Activate(raider)).is_err());
     }
 
@@ -1338,6 +1373,60 @@ mod tests {
         assert!(!w.pawn(id).unwrap().active(), "the colonist went down");
         assert!(w.map.count_items(item("steel")) < 60, "the raiders took goods");
         assert!(raiders(&w).iter().all(|&r| !w.pawn(r).unwrap().active()), "the rest left");
+    }
+
+    #[test]
+    fn raiders_closing_in_from_afar_dont_give_up() {
+        let mut w = world(150, 12, 12);
+        let id = colonist(&mut w, (2, 6, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].weapon = Some(item("knife"));
+        fight(&mut w, 1, (147, 6, Z));
+        let r = raiders(&w)[0];
+        let ri = w.pawn_index(r).unwrap();
+        w.pawns[ri].weapon = Some(item("knife"));
+        w.battle.as_mut().unwrap().auto_colony = true;
+        play_out(&mut w, 900.0);
+        assert!(w.battle.is_none(), "over in time");
+        assert!(!w.log.iter().any(|l| l.contains("gave up")), "they kept coming: {:?}", w.log);
+    }
+
+    #[test]
+    fn raiders_who_cant_get_at_anyone_give_up() {
+        let mut w = world(30, 12, 13);
+        let id = colonist(&mut w, (4, 6, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].weapon = Some(item("knife"));
+        // Walled in, no door: nobody gets in or out.
+        for y in 4..=8 {
+            for x in 2..=6 {
+                if x == 2 || x == 6 || y == 4 || y == 8 {
+                    let c = w.map.idx((x, y, Z));
+                    w.map.feature[c] = Feature::built("wall");
+                }
+            }
+        }
+        fight(&mut w, 1, (27, 6, Z));
+        let r = raiders(&w)[0];
+        let ri = w.pawn_index(r).unwrap();
+        w.pawns[ri].weapon = Some(item("knife"));
+        w.battle.as_mut().unwrap().auto_colony = true;
+        play_out(&mut w, 900.0);
+        assert!(w.battle.is_none(), "over in time");
+        assert!(w.log.iter().any(|l| l.contains("gave up")));
+    }
+
+    #[test]
+    fn everyone_runs_in_battle_and_walks_after() {
+        let mut w = world(30, 12, 14);
+        let id = colonist(&mut w, (4, 6, Z));
+        assert!(!w.pawn(id).unwrap().running);
+        let walk = w.pawn(id).unwrap().move_speed();
+        fight(&mut w, 1, (27, 6, Z));
+        assert!(w.pawns.iter().all(|p| p.running));
+        assert!(w.pawn(id).unwrap().move_speed() > 2.5 * walk);
+        w.end_battle(Outcome::Won);
+        assert!(w.pawns.iter().all(|p| !p.running));
     }
 
     #[test]

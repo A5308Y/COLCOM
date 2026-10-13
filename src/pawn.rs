@@ -275,6 +275,11 @@ impl Memory {
     }
 }
 
+/// Walking pace in cells per second (a cell is about 1.8 m: a brisk walk).
+pub const WALK_SPEED: f32 = 1.0;
+/// Running pace in battles.
+pub const RUN_SPEED: f32 = 3.0;
+
 /// What a colonist does when a battle starts (see `squads.rs`, `battle.rs`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub enum Role {
@@ -361,6 +366,9 @@ pub struct Pawn {
     /// back on after the battle).
     #[serde(default)]
     pub stash: Vec<(ItemId, Option<ItemId>)>,
+    /// Runs instead of walking (in battles).
+    #[serde(default)]
+    pub running: bool,
     /// A leader without a decent bedroom of their own (updated once a second).
     #[serde(skip)]
     pub poor_quarters: bool,
@@ -406,6 +414,7 @@ impl Pawn {
             role: Role::Fighter,
             loadout: Vec::new(),
             stash: Vec::new(),
+            running: false,
             poor_quarters: false,
         }
     }
@@ -461,7 +470,9 @@ impl Pawn {
 
     pub fn work_speed(&self, s: Skill) -> f32 {
         let caps = &self.health.caps;
-        let mut speed = (0.6 + 0.07 * self.skill(s) as f32) * caps.manipulation.min(1.0) * (0.7 + 0.3 * caps.sight.min(1.0));
+        // Quicker hands make up a little for walking between jobs.
+        let mut speed =
+            1.25 * (0.6 + 0.07 * self.skill(s) as f32) * caps.manipulation.min(1.0) * (0.7 + 0.3 * caps.sight.min(1.0));
         if self.mood > 70.0 {
             speed *= 1.1;
         } else if self.mood < 25.0 {
@@ -500,8 +511,9 @@ impl Pawn {
         self.apparel.iter().copied().find(|a| a.def().apparel.as_ref().is_some_and(|d| d.slot == slot))
     }
 
+    /// Cells per second: a brisk walk around the colony, running in battle.
     pub fn move_speed(&self) -> f32 {
-        let base = if self.is_colonist() { 4.0 } else { 3.6 };
+        let base = if self.running { RUN_SPEED } else { WALK_SPEED };
         base * self.health.caps.moving.clamp(0.15, 1.0)
     }
 

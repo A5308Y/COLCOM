@@ -145,6 +145,7 @@ mod tests {
         for _ in 0..5 {
             app.update();
         }
+        assert_eq!(app.world().resource::<front::UiState>().dock_width, 0.0, "no build menu during a raid");
         app.world_mut().resource_mut::<front::Sim>().world.refuse_tribute();
         for _ in 0..5 {
             app.update();

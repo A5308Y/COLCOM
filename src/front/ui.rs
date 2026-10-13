@@ -98,7 +98,9 @@ fn draw_ui(
     let ctx = contexts.ctx_mut()?.clone();
     let (cam, gt) = *camera;
     // The build menu first: everything else keeps to the right of it.
-    let left = build_menu::draw(&ctx, &sim, &mut st);
+    // Nothing to build during a raid: the build menu makes way for the battle.
+    let raid = sim.world.battle.is_some() || sim.world.parley.is_some();
+    let left = if raid { 0.0 } else { build_menu::draw(&ctx, &sim, &mut st) };
     st.dock_width = left;
     let mut view = ctx.viewport_rect();
     view.min.x += left;

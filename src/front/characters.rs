@@ -435,12 +435,14 @@ pub fn play(
     }
 }
 
-/// Picks the locomotion clip for a speed in cells per second, and the rate
-/// to play it at so the feet keep pace with the ground.
-pub fn locomotion(speed: f32) -> (Anim, f32) {
-    let anim = if speed < 1.2 {
+/// Picks the locomotion clip, walking around the colony or running in a
+/// battle (sprinting if very fast), and the rate to play it at so the feet
+/// keep pace with the ground. `speed` is in cells per real second, so a
+/// faster game plays the same clip faster.
+pub fn locomotion(speed: f32, sim_rate: f32, running: bool) -> (Anim, f32) {
+    let anim = if !running {
         Anim::Walk
-    } else if speed < 4.3 {
+    } else if speed / sim_rate.max(1.0) < 4.3 {
         Anim::Jog
     } else {
         Anim::Sprint
@@ -521,16 +523,22 @@ mod tests {
 
     #[test]
     fn locomotion_matches_speed() {
+        use my_world::pawn::{RUN_SPEED, WALK_SPEED};
         // A clip played at its own speed doesn't slide.
-        let (a, rate) = locomotion(JOG_SPEED);
+        let (a, rate) = locomotion(JOG_SPEED, 1.0, true);
         assert_eq!(a, Anim::Jog);
         assert!((rate - 1.0).abs() < 1e-4);
-        assert_eq!(locomotion(0.5).0, Anim::Walk);
-        assert_eq!(locomotion(8.0).0, Anim::Sprint);
-        // Colonists' normal pace (4 cells/s) is a quick jog.
-        let (a, rate) = locomotion(4.0);
+        // Around the colony they walk, a little quicker than the clip's own stroll.
+        let (a, rate) = locomotion(WALK_SPEED, 1.0, false);
+        assert_eq!(a, Anim::Walk);
+        assert!(rate > 1.5 && rate < 2.2, "{}", rate);
+        // In battle they run at about the jog's own pace.
+        let (a, rate) = locomotion(RUN_SPEED, 1.0, true);
         assert_eq!(a, Anim::Jog);
-        assert!(rate > 1.0 && rate < 1.5);
+        assert!((rate - 1.0).abs() < 0.1, "{}", rate);
+        // A faster game plays the same clip faster.
+        assert_eq!(locomotion(3.0 * WALK_SPEED, 3.0, false).0, Anim::Walk);
+        assert_eq!(locomotion(3.0 * RUN_SPEED, 3.0, true).0, Anim::Jog);
     }
 
     #[test]

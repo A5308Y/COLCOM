@@ -406,7 +406,7 @@ fn sync_pawns(
             } else if falling {
                 (Anim::Fall, 1.0, false)
             } else if moving {
-                let (a, rate) = characters::locomotion(v.speed);
+                let (a, rate) = characters::locomotion(v.speed, sim_rate, p.running);
                 (a, rate, false)
             } else if let Some((a, _, fresh)) = v.action {
                 (a, sim_rate, fresh)

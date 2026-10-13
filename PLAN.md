@@ -194,15 +194,17 @@ real play.
       `pay_tribute` / `refuse_tribute` answer it.
     - **Starting:** `start_battle` ends everyone's job, spawns the raiders in squads near the entry, and
       forms the colony's units: leaders' squads (members within 2 cells join at once; the rest are
-      `Arrival`s after `ceil((path steps - 2) / 5)` rounds), lone fighters where they stand, and
+      `Arrival`s after `ceil((path steps - 2) / CELLS_PER_ROUND)` rounds, 10 cells a round), lone
+      fighters where they stand, and
       civilians moved to safe-zone cells as passive units. Fighters put on their loadout from storage;
       `Pawn::stash` remembers (item taken, what it replaced) and `gear_down` reverses it afterwards
       (the battle gear is left at their feet for haulers; death drops the stash too).
     - **Turns:** while `World::battle` is set, `tick` runs only `battle_tick`. The sides take turns
       activating one unit each (`BattleOrder::Activate`, switchable until AP are spent); every unit
-      acts once per round and the colony goes first. AP: 100; moving 20 a step (the leader walks the
-      path and members gather on free cells around the goal); attacking 40 (every member who can reach
-      someone shoots or strikes); hunkering 20 (ends the turn, better cover until next activation).
+      acts once per round and the colony goes first. AP: 100; moving 10 a step (so 10 cells, or 6 and
+      an attack; the leader walks the path and members gather on free cells around the goal); attacking
+      40 (every member who can reach someone shoots or strikes); hunkering 20 (ends the turn, better
+      cover until next activation).
       Each round passes `TURN_SECS` (6 s) for health and hunger, halves suppression, counts arrivals
       down and restores AP (60 if pinned).
     - **Hit chance:** `hit_chance` uses the old formula (skill, distance, sight, manipulation) and
@@ -215,8 +217,8 @@ real play.
       raiders flee (to the nearest edge, gone there) and colonists cower (their turn is skipped,
       hunkered).
     - **Ending:** won when no raider unit is left; lost when no colony unit can act (the raiders take
-      1.5× the demand and leave); after `STALEMATE` (10) rounds without an attack, the raiders give
-      up. Then gear comes off, everyone gets "Won a battle" (+6) or "Lost a battle" (-10), standing
+      1.5× the demand and leave); after `STALEMATE` (10) rounds with no attack and the sides getting no
+      closer than they have been (`Battle::closest`), the raiders give up. Then gear comes off, everyone gets "Won a battle" (+6) or "Lost a battle" (-10), standing
       raiders leave, and the downed stay.
   - **AI (`src/battle_ai.rs`):** activates the unit nearest the enemy and attacks when its expected
     hits reach 0.45. Otherwise it moves first: to a spot it can attack from with AP to spare (+10, plus
@@ -234,8 +236,20 @@ real play.
     - clicks: your unit to activate it, an enemy to attack, a cell to move. Space ends the turn; Tab
       goes to the next unit;
     - the camera eases to the acting unit.
-  - During a battle the normal clicks, tools, Space and Tab are off. Hunkered pawns crouch, fighters
-    hold their weapons and face the nearest enemy.
+  - During a battle the normal clicks, tools, Space and Tab are off, and the build menu is hidden (also
+    during the parley). Hunkered pawns crouch; fighters hold their weapons and face the nearest enemy.
+  - **Movement area:** a see-through mesh (`ReachArea`, rebuilt only when the unit, its cell, AP or
+    the view change): blue where the unit can still attack after moving, yellow for a full run.
+    Bold outlines in a gizmo group with 4 px lines (`BattleGizmos`). The hovered destination gets a
+    bold ring, the path, and a label with the AP cost and whether an attack is still possible.
+  - **Walking and running:** colonists walk around the colony at `WALK_SPEED` 1.0 cells/s (about
+    1.8 m/s; it was 4, a sprint) and run in battle at `RUN_SPEED` 3.0 (`Pawn::running`, set for
+    everyone while a battle lasts). The clip follows: walk out of battle (about 1.9× its own pace),
+    jog in battle (its own pace), sprint only if very fast; a faster game plays the same clip faster.
+    Footsteps come once per stride of the clip (0.36 cells walking, 1.37 running); running uses the
+    louder, deeper `run_*` sounds (same files). To make up a little for the walking, `work_speed` is
+    ×1.25. A two-day `--example profile` colony now makes fewer things (17 meals, 82 planks and 9
+    clubs, against 22, 146 and 30 before).
   - **Removed:** drafting (`Pawn::drafted`, F, the Draft button, right-click orders), `Job::Attack` and
     `Job::Leave`, `auto_fire` and `raider_think`. Raiders exist only in battles. `SAVE_VERSION` is 5.
   - **Left for 12d:** tuning from real play (AP costs, odds, morale, raid sizes and demand), a proper

@@ -21,6 +21,10 @@ use std::sync::LazyLock;
 const MAX_PLAYING: usize = 32;
 /// Pawns further than this from the camera's focus make no footsteps or work sounds.
 const PAWN_SOUND_RANGE: f32 = 40.0;
+/// Cells between footsteps, as in the animations: the walk clip's half
+/// stride (0.65 m) and the jog's (2.5 m), at 0.55 cells a metre.
+const WALK_STRIDE: f32 = 0.36;
+const RUN_STRIDE: f32 = 1.37;
 
 /// Which volume slider a sound follows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]
@@ -84,10 +88,13 @@ pub fn sound_table() -> &'static SoundTable {
 
 /// Names the front end itself plays (the simulation's are in `my_world::world::SIM_SOUNDS`).
 #[cfg(test)]
-const FRONT_SOUNDS: [&str; 13] = [
+const FRONT_SOUNDS: [&str; 16] = [
     "step_grass",
     "step_stone",
     "step_wood",
+    "run_grass",
+    "run_stone",
+    "run_wood",
     "rustle",
     "hammer",
     "craft",
@@ -272,19 +279,25 @@ fn pawn_sounds(
         if pos.distance(rig.focus) > PAWN_SOUND_RANGE {
             continue;
         }
-        // A step every three quarters of a cell walked.
+        // A step per stride of the animation: short walking steps, long running ones.
         if !p.lying() && moved < 1.0 {
             t.walked += moved;
-            if t.walked >= 0.75 {
+            let stride = if p.running { RUN_STRIDE } else { WALK_STRIDE };
+            if t.walked >= stride {
                 t.walked = 0.0;
                 let i = m.idx(p.pos);
                 let below = m.below(p.pos).map(|b| m.block[m.idx(b)]);
-                let step = if m.floor[i] || m.below(p.pos).is_some_and(|b| m.stairs_dir(b).is_some()) {
-                    "step_wood"
+                let ground = if m.floor[i] || m.below(p.pos).is_some_and(|b| m.stairs_dir(b).is_some()) {
+                    0
                 } else if matches!(below, Some(Block::Rock | Block::Ore)) {
-                    "step_stone"
+                    1
                 } else {
-                    "step_grass"
+                    2
+                };
+                let step = if p.running {
+                    ["run_wood", "run_stone", "run_grass"][ground]
+                } else {
+                    ["step_wood", "step_stone", "step_grass"][ground]
                 };
                 queue.play(step, Some(pos));
             }
