@@ -219,7 +219,16 @@ fn battle_input(
             let w = &sim.world;
             match fighter_at(w, b, h.stand).or_else(|| pawn_at(w, h.stand)).and_then(|id| Some((id, b.unit_of(id)?))) {
                 Some((id, u)) => {
-                    ui.select(Some(Selection::Pawn(id)));
+                    // Clicking a unit again goes through its members (the fallen too).
+                    let roster = &b.units[u].roster;
+                    let next = match ui.selected {
+                        Some(Selection::Pawn(cur)) if roster.contains(&cur) && roster.len() > 1 => {
+                            let k = roster.iter().position(|&r| r == cur).unwrap();
+                            roster[(k + 1) % roster.len()]
+                        }
+                        _ => id,
+                    };
+                    ui.select(Some(Selection::Pawn(next)));
                     let unit = &b.units[u];
                     if unit.side == Faction::Colony && unit.can_act() {
                         orders.push(BattleOrder::Activate(u));
@@ -467,6 +476,7 @@ fn battle_panels(
         return Ok(());
     };
     let mut orders = Vec::new();
+    let mut end_all = false;
 
     // "Round N" in the middle of the screen when a round starts, fading away.
     if view.announced != Some(b.round) {
@@ -712,7 +722,18 @@ fn battle_panels(
             }
 
             panel.separator();
-            panel.label(RichText::new("Your units").strong());
+            panel.horizontal(|row| {
+                row.label(RichText::new("Your units").strong());
+                let waiting = b.units.iter().any(|u| u.side == Faction::Colony && u.can_act() && !u.acted);
+                let button = egui::Button::new("End all turns").small();
+                if row
+                    .add_enabled(waiting && !b.colony_passes, button)
+                    .on_hover_text("Every unit that hasn't acted yet ends its turn this round")
+                    .clicked()
+                {
+                    end_all = true;
+                }
+            });
             for (u, unit) in b.units.iter().enumerate().filter(|(_, u)| u.side == Faction::Colony && u.can_act()) {
                 let status = if b.active == Some(u) {
                     "acting".to_string()
@@ -756,6 +777,9 @@ fn battle_panels(
             Ok(()) => sounds.play("ui_click", None),
             Err(_) => sounds.play("ui_click", None),
         }
+    }
+    if end_all && sim.world.end_colony_turns().is_ok() {
+        sounds.play("ui_click", None);
     }
     // Show the acting unit in the inspector when its turn starts (it can be
     // let go of after that).

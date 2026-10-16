@@ -184,6 +184,11 @@ real play.
 
 ## Notes
 
+- "End all turns" (battle panel): `World::end_colony_turns` sets `Battle::colony_passes`, so each of
+  the colony's remaining units ends its turn as it comes up (the raiders still alternate). It
+  resets each round. Clicking a unit's square again cycles the selection through its roster (the
+  fallen too), to inspect every member of a squad, raiders' included.
+
 - Real sounds (2026-10-16):
   - **Kenney (CC0):** Impact Sounds, RPG Audio and UI Audio, copied into `assets/sounds/kenney/`.
     They cover footsteps (grass, concrete, wood; snow for digging), mining and rock, planks for

@@ -226,6 +226,10 @@ pub struct Battle {
     /// Closest the sides have been (cells), to tell closing in from a stalemate.
     #[serde(default)]
     pub closest: Option<usize>,
+    /// The colony passes for the rest of the round: its remaining units end
+    /// their turns as they come up.
+    #[serde(default)]
+    pub colony_passes: bool,
     /// The attack playing out: shots and blows still to come.
     #[serde(default)]
     pub strikes: Vec<Strike>,
@@ -378,6 +382,7 @@ impl World {
             events: Vec::new(),
             quiet_rounds: 0,
             closest: None,
+            colony_passes: false,
             strikes: Vec::new(),
         };
         // Everyone drops what they're doing.
@@ -660,6 +665,17 @@ impl World {
         }
     }
 
+    /// End the turns of all the colony's units still to act this round (the
+    /// raiders still take theirs in between).
+    pub fn end_colony_turns(&mut self) -> Result<(), String> {
+        let b = self.battle.as_mut().ok_or("there's no battle")?;
+        if b.busy() {
+            return Err("wait for the last action to finish".into());
+        }
+        b.colony_passes = true;
+        Ok(())
+    }
+
     /// AP to walk unit `u` to `to`, if it can stand there.
     pub fn move_cost(&self, u: usize, to: Pos) -> Result<i32, String> {
         let b = self.battle.as_ref().ok_or("there's no battle")?;
@@ -936,6 +952,7 @@ impl World {
                 u.suppression *= 0.5;
             }
             b.side_to_act = Faction::Colony;
+            b.colony_passes = false;
             for a in b.arrivals.iter_mut() {
                 a.rounds = a.rounds.saturating_sub(1);
             }
@@ -1143,6 +1160,15 @@ impl World {
         let b = self.battle.as_ref().unwrap();
         if b.side_to_act == Faction::Raider || b.auto_colony {
             self.ai_step();
+        } else if b.colony_passes {
+            // Passing for the round: end the active unit's turn, or the next one's.
+            let next = b.active.or_else(|| b.units.iter().position(|u| u.side == Faction::Colony && u.can_act() && !u.acted));
+            if let Some(u) = next {
+                if b.active.is_none() {
+                    let _ = self.do_order(BattleOrder::Activate(u));
+                }
+                let _ = self.do_order(BattleOrder::End);
+            }
         } else if b.active.is_none() {
             // Shaken colonists sit their turn out on their own.
             let cowering = b
@@ -1878,6 +1904,25 @@ mod tests {
         place(&mut w.pawns[i], dest);
         let actual = w.hit_chance(w.pawn(id).unwrap(), w.pawn(r).unwrap());
         assert!((preview - actual).abs() < 1e-6, "{} == {}", preview, actual);
+    }
+
+    #[test]
+    fn the_colony_can_pass_for_the_round() {
+        let mut w = world(40, 20, 25);
+        for y in [5, 10, 15] {
+            colonist(&mut w, (5, y, Z));
+        }
+        fight(&mut w, 1, (39, 10, Z));
+        w.end_colony_turns().unwrap();
+        for _ in 0..(6.0 / TICK) as usize {
+            if battle(&w).round > 1 {
+                break;
+            }
+            w.tick(TICK);
+        }
+        let b = battle(&w);
+        assert_eq!(b.round, 2, "all three passed and the raiders acted: a new round");
+        assert!(!b.colony_passes, "passing is only for one round");
     }
 
     #[test]
