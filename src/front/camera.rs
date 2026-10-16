@@ -172,6 +172,26 @@ fn mouse_controls(
     }
 }
 
+/// The level just above the highest ground, water or built floor in a
+/// column (what the camera sees from above; walls don't count, so it
+/// doesn't bump over buildings).
+fn visible_top(m: &my_world::map::Map, x: usize, y: usize) -> usize {
+    (0..m.d)
+        .rev()
+        .find_map(|z| {
+            let i = m.idx((x, y, z));
+            if m.block[i] != my_world::map::Block::Air {
+                Some(z + 1)
+            } else if m.floor[i] {
+                Some(z)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0)
+        .min(m.d - 1)
+}
+
 fn apply_rig(
     sim: Res<Sim>,
     ui: Res<UiState>,
@@ -182,12 +202,43 @@ fn apply_rig(
     let m = &sim.world.map;
     rig.focus.x = rig.focus.x.clamp(0.0, m.w as f32 - 0.01);
     rig.focus.z = rig.focus.z.clamp(0.0, m.h as f32 - 0.01);
-    // Glide up and down with the ground under the focus point.
-    // (In the layer view, never above the viewed level.)
-    let (fx, fz) = (rig.focus.x as usize, rig.focus.z as usize);
-    let level = m.surface(fx, fz).unwrap_or(0).min(ui.top_level(m));
-    let ground = level as f32 * super::terrain::LEVEL_H;
+    // Glide up and down with the surface around the focus point: the top
+    // of the ground, water or buildings, averaged over a few cells so lakes,
+    // pits and shafts don't pull the camera down. (In the layer view or with
+    // roofs hidden, never above what's shown.)
+    let (fx, fz) = (rig.focus.x as i32, rig.focus.z as i32);
+    let mut sum = 0.0;
+    let mut n = 0.0;
+    for dy in -2..=2 {
+        for dx in -2..=2 {
+            let Some((x, y, _)) = m.at(fx + dx, fz + dy, 0) else { continue };
+            sum += visible_top(m, x, y).min(ui.top_at(m, x, y)) as f32;
+            n += 1.0;
+        }
+    }
+    let ground = if n > 0.0 { sum / n } else { 0.0 } * super::terrain::LEVEL_H;
     let k = (time.delta_secs() * 4.0).min(1.0);
     rig.focus.y += (ground - rig.focus.y) * k;
     **camera = rig.transform();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use my_world::map::{Block, Map, FLAT_Z as Z};
+
+    #[test]
+    fn lakes_count_by_their_surface() {
+        let mut m = Map::flat(4, 4);
+        assert_eq!(visible_top(&m, 1, 1), Z, "on the ground");
+        // A lake: dug two levels down and filled with water up to the old ground.
+        for z in Z - 1..Z {
+            let i = m.idx((1, 1, z));
+            m.block[i] = Block::Water;
+        }
+        assert_eq!(visible_top(&m, 1, 1), Z, "the water's surface, not the lake bed");
+        let i = m.idx((1, 1, Z - 1));
+        m.block[i] = Block::Air;
+        assert_eq!(visible_top(&m, 1, 1), Z - 1, "an empty pit is lower");
+    }
 }
