@@ -29,6 +29,8 @@ pub const TURN_SECS: f32 = 6.0;
 pub const CELLS_PER_ROUND: usize = (AP_MAX / AP_MOVE) as usize;
 /// Members within this many cells of their leader start the battle with them.
 const WITH_LEADER: usize = 2;
+/// Seconds between squad members setting off when the squad moves.
+const FOLLOW_GAP: f32 = 0.35;
 /// Suppression from which a unit is pinned down (less AP, worse aim).
 pub const PINNED: f32 = 50.0;
 /// Morale below which a unit breaks: raiders flee, colonists cower.
@@ -126,6 +128,15 @@ impl Unit {
     }
 }
 
+/// Someone walking to their unit's new cell. Squad members set off `wait`
+/// seconds after one another, so the squad moves as a column.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct Mover {
+    pub pawn: u32,
+    pub goal: Pos,
+    pub wait: f32,
+}
+
 /// A shot or blow still to come in an attack, `delay` seconds from now.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Strike {
@@ -174,8 +185,8 @@ pub struct Battle {
     pub active: Option<usize>,
     /// Seconds the last attack still plays out.
     pub busy: f32,
-    /// Pawns walking to their spots, and the spot.
-    pub moving: Vec<(u32, Pos)>,
+    /// Pawns walking to their unit's new cell.
+    pub moving: Vec<Mover>,
     /// What the raiders came for (taken if they win).
     pub demand: Vec<Stack>,
     /// The AI plays the colony's units too (for tests).
@@ -350,13 +361,12 @@ impl World {
 
         // Raiders come in squads near where they entered.
         let df = bfs(&self.map, parley.entry);
-        let spots: Vec<Pos> = df.order.iter().map(|&i| self.map.pos(i)).take(parley.raiders() * 3).collect();
-        let mut k = 0;
-        for &size in &parley.squads {
+        // Each squad stands on one cell, a few cells from the next.
+        let spots: Vec<Pos> = df.order.iter().map(|&i| self.map.pos(i)).collect();
+        for (k, &size) in parley.squads.iter().enumerate() {
+            let Some(&at) = spots.get(k * 6).or(spots.last()) else { break };
             let mut members = Vec::new();
             for _ in 0..size {
-                let Some(&at) = spots.get(k) else { break };
-                k += 1;
                 let name = crate::story::raider_name(&mut self.rng);
                 members.push(self.spawn_raider(name, at));
             }
@@ -382,6 +392,9 @@ impl World {
                 }
                 let steps = df.dist(pos).map_or(pos.0.abs_diff(at.0) + pos.1.abs_diff(at.1), |d| d as usize);
                 if steps <= WITH_LEADER {
+                    // A squad holds one cell: the leader's.
+                    let i = self.pawn_index(id).unwrap();
+                    place(&mut self.pawns[i], at);
                     members.push(id);
                 } else {
                     let rounds = steps.saturating_sub(WITH_LEADER).div_ceil(CELLS_PER_ROUND).max(1) as u32;
@@ -620,43 +633,22 @@ impl World {
         Ok(d * AP_MOVE)
     }
 
-    /// Free cells around `t` (nearest first), not taken by anyone but `own`.
-    fn free_cells_near(&self, t: Pos, n: usize, own: &[u32]) -> Vec<Pos> {
-        let taken = |c: Pos| self.pawns.iter().any(|p| p.active() && p.pos == c && !own.contains(&p.id));
-        let mut out = Vec::new();
-        let mut queue = std::collections::VecDeque::from([t]);
-        let mut seen = vec![t];
-        while let Some(c) = queue.pop_front() {
-            if out.len() >= n || seen.len() > 400 {
-                break;
-            }
-            if self.map.standable(c) && !taken(c) {
-                out.push(c);
-            }
-            for nb in self.map.walk_neighbors(c) {
-                if !seen.contains(&nb) {
-                    seen.push(nb);
-                    queue.push_back(nb);
-                }
-            }
-        }
-        out
-    }
-
+    /// The whole unit goes to `to`: the leader first, the others following
+    /// in a column.
     fn start_move(&mut self, u: usize, to: Pos) {
         let members = self.battle.as_ref().unwrap().units[u].members.clone();
-        let mut spots = self.free_cells_near(to, members.len() + 4, &members);
-        spots.retain(|&c| c != to);
-        let mut moving = vec![(members[0], to)];
-        for &m in &members[1..] {
-            let Some(p) = self.pawn(m) else { continue };
-            let here = p.pos;
-            let near = |c: &Pos| c.0.abs_diff(here.0) + c.1.abs_diff(here.1) + c.2.abs_diff(here.2);
-            if let Some(k) = (0..spots.len()).min_by_key(|&k| near(&spots[k])) {
-                moving.push((m, spots.swap_remove(k)));
-            }
-        }
+        let moving = members
+            .iter()
+            .enumerate()
+            .map(|(k, &pawn)| Mover { pawn, goal: to, wait: k as f32 * FOLLOW_GAP })
+            .collect();
         self.battle.as_mut().unwrap().moving = moving;
+    }
+
+    /// The cell unit `u` holds (its leader's).
+    pub fn unit_cell(&self, u: usize) -> Option<Pos> {
+        let b = self.battle.as_ref()?;
+        self.pawn(*b.units.get(u)?.members.first()?).map(|p| p.pos)
     }
 
     /// Who in unit `u` can attack whom in unit `t`: (attacker, target) pawn ids.
@@ -929,10 +921,8 @@ impl World {
             match leader_unit {
                 Some(u) => {
                     let members = b.units[u].members.clone();
-                    let at = self.pawn(a.leader).unwrap().pos;
-                    if let Some(&c) = self.free_cells_near(at, 1, &[]).first() {
-                        place(&mut self.pawns[pi], c);
-                    }
+                    let at = self.pawn(members[0]).unwrap().pos;
+                    place(&mut self.pawns[pi], at);
                     let b = self.battle.as_mut().unwrap();
                     b.units[u].members.push(a.pawn);
                     b.units[u].morale = (b.units[u].morale + 5.0).min(90.0);
@@ -1039,11 +1029,16 @@ impl World {
         if !b.moving.is_empty() {
             let moving = b.moving.clone();
             let mut still = Vec::new();
-            for (id, goal) in moving {
-                let Some(i) = self.pawn_index(id) else { continue };
+            for mut m in moving {
+                if m.wait > 0.0 {
+                    m.wait -= dt;
+                    still.push(m);
+                    continue;
+                }
+                let Some(i) = self.pawn_index(m.pawn) else { continue };
                 let mut p = self.pawns[i].clone();
-                if matches!(self.go_to(&mut p, goal, false, dt), Step::Moving) {
-                    still.push((id, goal));
+                if matches!(self.go_to(&mut p, m.goal, false, dt), Step::Moving) {
+                    still.push(m);
                 }
                 self.pawns[i] = p;
             }
@@ -1231,6 +1226,7 @@ mod tests {
         let b = battle(&w);
         let squad = &b.units[b.unit_of(leader).unwrap()];
         assert_eq!(squad.members, vec![leader, near], "the near one is with the leader");
+        assert_eq!(w.pawn(near).unwrap().pos, w.pawn(leader).unwrap().pos, "a squad holds one cell");
         assert!(squad.led);
         // 12 cells away: 10 beyond the leader's side, run in one round.
         assert_eq!(b.arrivals.len(), 1);
@@ -1246,7 +1242,7 @@ mod tests {
         assert!(b.arrivals.is_empty());
         assert!(b.units[b.unit_of(leader).unwrap()].members.contains(&far));
         let (a, l) = (w.pawn(far).unwrap().pos, w.pawn(leader).unwrap().pos);
-        assert!(a.0.abs_diff(l.0) + a.1.abs_diff(l.1) <= 2, "arrived next to the leader");
+        assert_eq!(a, l, "arrived on the leader's cell");
     }
 
     #[test]
@@ -1300,6 +1296,45 @@ mod tests {
         assert_eq!(b.round, 2, "everyone has acted: a new round");
         assert!(b.units.iter().all(|u| !u.acted));
         assert_eq!(w.time, t + TURN_SECS, "time passes per round");
+    }
+
+    #[test]
+    fn squads_move_as_one_in_a_column() {
+        let mut w = world(40, 20, 16);
+        let leader = colonist(&mut w, (5, 10, Z));
+        let a = colonist(&mut w, (5, 11, Z));
+        let b2 = colonist(&mut w, (6, 10, Z));
+        w.set_role(leader, Role::Leader).unwrap();
+        for m in [a, b2] {
+            w.set_role(m, Role::Member(leader)).unwrap();
+        }
+        fight(&mut w, 1, (39, 10, Z));
+        let u = battle(&w).unit_of(leader).unwrap();
+        assert_eq!(w.unit_cell(u), Some((5, 10, Z)));
+        // Another unit's cell can't be shared.
+        let lone = colonist(&mut w, (9, 10, Z));
+        let i = w.pawn_index(lone).unwrap();
+        w.pawns[i].role = Role::Fighter;
+        w.battle.as_mut().unwrap().units.push(Unit::new(Faction::Colony, vec![lone], false, 50.0));
+        w.battle_order(BattleOrder::Activate(u)).unwrap();
+        assert!(w.move_cost(u, (9, 10, Z)).is_err(), "taken by another unit");
+        w.battle_order(BattleOrder::Move((10, 12, Z))).unwrap();
+        // A moment in, the leader is ahead and the last one hasn't set off.
+        for _ in 0..(0.5 / TICK) as usize {
+            w.tick(TICK);
+        }
+        let moved = |id: u32| {
+            let p = w.pawn(id).unwrap();
+            ((p.x - 5.0).powi(2) + (p.y - 10.0).powi(2)).sqrt()
+        };
+        assert!(moved(leader) > 0.5 && moved(b2) < 0.2, "leader {} ahead, last {} still waiting", moved(leader), moved(b2));
+        for _ in 0..(8.0 / TICK) as usize {
+            w.tick(TICK);
+        }
+        for id in [leader, a, b2] {
+            assert_eq!(w.pawn(id).unwrap().pos, (10, 12, Z), "everyone on the new cell");
+        }
+        assert!(!battle(&w).busy());
     }
 
     #[test]

@@ -262,8 +262,9 @@ fn draw_battle(sim: Res<Sim>, ui: Res<UiState>, area: Res<ReachArea>, mut gizmos
     let w = &sim.world;
     let Some(b) = &w.battle else { return };
     let m = &w.map;
-    // Rings: the acting unit gold, the colony's others blue (grey once done),
-    // civilians green, raiders red; lines from squad leaders to their members.
+    // One ring per unit on the cell it holds (following its leader while it
+    // moves): the acting unit gold, the colony's others blue (grey once
+    // done), civilians green, raiders red.
     for (u, unit) in b.units.iter().enumerate() {
         let color = match unit.side {
             Faction::Raider => Color::srgb(0.95, 0.2, 0.15),
@@ -272,15 +273,12 @@ fn draw_battle(sim: Res<Sim>, ui: Res<UiState>, area: Res<ReachArea>, mut gizmos
             _ if unit.acted => Color::srgb(0.55, 0.55, 0.6),
             _ => Color::srgb(0.35, 0.65, 1.0),
         };
-        let lead = unit.members.first().and_then(|&id| w.pawn(id));
-        for &id in &unit.members {
-            let Some(p) = w.pawn(id).filter(|p| ui.shows_at(m, p.x, p.y, p.z)) else { continue };
-            let feet = tile_point(p.x, p.y, p.z) + Vec3::Y * 0.04;
-            gizmos.circle(Isometry3d::new(feet, Quat::from_rotation_x(FRAC_PI_2)), 0.42, color);
-            if let Some(l) = lead.filter(|l| unit.led && l.id != id) {
-                gizmos.line(tile_point(l.x, l.y, l.z) + Vec3::Y * 0.04, feet, color.with_alpha(0.5));
-            }
+        let Some(lead) = unit.members.first().and_then(|&id| w.pawn(id)) else { continue };
+        if !ui.shows_at(m, lead.x, lead.y, lead.z) {
+            continue;
         }
+        let feet = tile_point(lead.x, lead.y, lead.z) + Vec3::Y * 0.04;
+        gizmos.circle(Isometry3d::new(feet, Quat::from_rotation_x(FRAC_PI_2)), 0.5, color);
     }
 
     let Some(u) = my_unit(b).filter(|_| !b.busy()) else { return };
@@ -305,26 +303,20 @@ fn draw_battle(sim: Res<Sim>, ui: Res<UiState>, area: Res<ReachArea>, mut gizmos
         }
     }
     let Some(h) = ui.hover else { return };
-    // Over an enemy, clicking attacks: show who would shoot or strike whom
-    // instead of where the unit could walk.
+    // Over an enemy, clicking attacks: an aiming line from our square to
+    // theirs (red if anyone can reach, grey if not) instead of where the unit
+    // could walk.
     if let Some(t) = hovered_enemy(w, b, h.stand) {
-        let options = w.attack_options(u, t);
-        let chest = |p: &my_world::pawn::Pawn| tile_point(p.x, p.y, p.z) + Vec3::Y * 0.55;
-        let red = Color::srgb(1.0, 0.25, 0.15);
-        for &(a, o) in &options {
-            if let (Some(a), Some(o)) = (w.pawn(a), w.pawn(o)) {
-                bold.line(chest(a), chest(o), red.with_alpha(0.85));
-            }
+        let reach = !w.attack_options(u, t).is_empty();
+        let color = if reach { Color::srgb(1.0, 0.25, 0.15) } else { Color::srgb(0.6, 0.6, 0.6) };
+        let (Some(from), Some(to)) = (w.unit_cell(u), w.unit_cell(t)) else { return };
+        let chest = |c: Pos| tile_center(c) + Vec3::Y * 0.55;
+        if reach {
+            bold.line(chest(from), chest(to), color.with_alpha(0.85));
         }
-        let flat = Quat::from_rotation_x(FRAC_PI_2);
-        for &id in &b.units[t].members {
-            let Some(p) = w.pawn(id) else { continue };
-            let aimed_at = options.iter().any(|o| o.1 == id);
-            let feet = tile_point(p.x, p.y, p.z) + Vec3::Y * 0.05;
-            let color = if aimed_at { red } else { Color::srgb(0.6, 0.6, 0.6) };
-            bold.circle(Isometry3d::new(feet, flat), 0.45, color);
-            cell_outline(&mut gizmos, p.pos, color);
-        }
+        let feet = tile_center(to) + Vec3::Y * 0.05;
+        bold.circle(Isometry3d::new(feet, Quat::from_rotation_x(FRAC_PI_2)), 0.5, color);
+        cell_outline(&mut gizmos, to, color);
         return;
     }
     // The chosen destination: a bold ring and the way there.
@@ -409,6 +401,26 @@ fn battle_panels(
     let Some(b) = &w.battle else { return Ok(()) };
     let mut orders = Vec::new();
 
+    // How many stand in each squad's square, beside its ring.
+    {
+        let (cam, gt) = *camera;
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("battle_counts")));
+        for unit in b.units.iter().filter(|u| u.members.len() > 1) {
+            let Some(lead) = unit.members.first().and_then(|&id| w.pawn(id)) else { continue };
+            if !ui.shows_at(&w.map, lead.x, lead.y, lead.z) {
+                continue;
+            }
+            let at = tile_point(lead.x, lead.y, lead.z) + Vec3::new(0.5, 0.05, 0.5);
+            let Ok(p) = cam.world_to_viewport(gt, at) else { continue };
+            let color = if unit.side == Faction::Raider { Color32::from_rgb(255, 150, 130) } else { Color32::from_rgb(170, 210, 255) };
+            let text = format!("x{}", unit.members.len());
+            let pos = egui::pos2(p.x, p.y);
+            let font = egui::FontId::proportional(13.0);
+            painter.text(pos + egui::vec2(1.0, 1.0), Align2::LEFT_TOP, &text, font.clone(), Color32::from_black_alpha(200));
+            painter.text(pos, Align2::LEFT_TOP, text, font, color);
+        }
+    }
+
     // Hit chances over the enemies the acting unit can reach.
     if let Some(u) = my_unit(b) {
         let (cam, gt) = *camera;
@@ -463,19 +475,22 @@ fn battle_panels(
                 painter.text(pos, Align2::CENTER_BOTTOM, text, font, color);
             }
         }
+        // One label per enemy unit (its square): the best chance against anyone in it.
         for unit in b.units.iter().filter(|t| t.side != Faction::Colony) {
-            for &id in &unit.members {
-                let Some(p) = w.pawn(id).filter(|p| ui.shows_at(&w.map, p.x, p.y, p.z)) else { continue };
-                let Ok(at) = cam.world_to_viewport(gt, tile_point(p.x, p.y, p.z) + Vec3::Y * 1.3) else { continue };
-                let (text, color) = match best_chance(w, u, id) {
-                    Some(c) => (format!("{:.0}%", c * 100.0), Color32::from_rgb(255, 225, 120)),
-                    None => ("out of reach".to_string(), Color32::from_gray(170)),
-                };
-                let pos = egui::pos2(at.x, at.y);
-                let font = egui::FontId::proportional(14.0);
-                painter.text(pos + egui::vec2(1.0, 1.0), Align2::CENTER_BOTTOM, &text, font.clone(), Color32::from_black_alpha(200));
-                painter.text(pos, Align2::CENTER_BOTTOM, text, font, color);
+            let Some(p) = unit.members.first().and_then(|&id| w.pawn(id)) else { continue };
+            if !ui.shows_at(&w.map, p.x, p.y, p.z) {
+                continue;
             }
+            let Ok(at) = cam.world_to_viewport(gt, tile_point(p.x, p.y, p.z) + Vec3::Y * 1.3) else { continue };
+            let best = unit.members.iter().filter_map(|&id| best_chance(w, u, id)).reduce(f32::max);
+            let (text, color) = match best {
+                Some(c) => (format!("{:.0}%", c * 100.0), Color32::from_rgb(255, 225, 120)),
+                None => ("out of reach".to_string(), Color32::from_gray(170)),
+            };
+            let pos = egui::pos2(at.x, at.y);
+            let font = egui::FontId::proportional(14.0);
+            painter.text(pos + egui::vec2(1.0, 1.0), Align2::CENTER_BOTTOM, &text, font.clone(), Color32::from_black_alpha(200));
+            painter.text(pos, Align2::CENTER_BOTTOM, text, font, color);
         }
     }
 

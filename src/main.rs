@@ -185,8 +185,17 @@ mod tests {
         let (room, z) = {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             let m = &mut sim.world.map;
-            let (cx, cy) = (m.w / 2 - 8, m.h / 2 - 8);
-            let z = m.surface(cx, cy).unwrap();
+            // A flat, empty 5x5 patch near the middle (the map is random).
+            let flat = |m: &my_world::map::Map, cx: usize, cy: usize| {
+                let z = m.surface(cx, cy)?;
+                (cy..cy + 5)
+                    .all(|y| (cx..cx + 5).all(|x| m.surface(x, y) == Some(z) && m.feature[m.idx((x, y, z))] == my_world::map::Feature::None))
+                    .then_some(z)
+            };
+            let (cx, cy, z) = (8..m.h - 8)
+                .flat_map(|y| (8..m.w - 8).map(move |x| (x, y)))
+                .find_map(|(x, y)| flat(m, x, y).map(|z| (x, y, z)))
+                .expect("somewhere flat");
             for y in cy..cy + 5 {
                 for x in cx..cx + 5 {
                     let i = m.idx((x, y, z));

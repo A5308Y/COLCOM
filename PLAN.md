@@ -148,7 +148,7 @@ and neck bones) and dressed characters are outfit + head + hair; each character 
 ### 12. Turn-based battles (agreed 2026-10-13)
 MENACE-style battles instead of RimWorld's real-time fights, built around squads organised during
 normal play. Decisions:
-- **Squads:** a leader plus colonists assigned to them (at most 5), fighting as one unit that moves and
+- **Squads:** a leader plus colonists assigned to them (at most 4), fighting as one unit that moves and
   fires together; members keep their own health.
 - **Leaders:** -2 for "Responsible for a squad", and -8 without a decent bedroom of their own.
 - **Getting into the fight:** members far from their leader arrive a few rounds in, in their combat
@@ -183,6 +183,17 @@ real play.
   downloaded sources under `$TMPDIR/cargo-home/registry/src/` before using them.
 
 ## Notes
+
+- Squads hold one cell (2026-10-16): a squad stands in for a single colonist in battle. It has one
+  cell (its leader's; `World::unit_cell`), one cover check, one line of sight, and no other unit may
+  share it. At most 4 people (`SQUAD_MAX`), because a 1.8 m cell fits 4 shoulder to shoulder.
+  Members start the battle and arrive on the leader's cell. A move sends everyone to the same cell,
+  setting off `FOLLOW_GAP` (0.35 s) apart (`Battle::moving: Vec<Mover>`), so the squad walks as a
+  column. Shots at a squad hit a random member; area attacks could later hit all of them. The front
+  end only draws the members apart (`pawns.rs::squad_slot`): in a row against the cover facing the
+  nearest enemy, else in a huddle, overlapping the neighbouring cells a little. There's one ring per
+  unit, an "xN" count beside a squad's ring, one hit-chance label per enemy unit, and a single aiming
+  line in the attack preview. `SAVE_VERSION` is 6.
 
 - Battle pacing (after the first play test): battles always run at 1x game speed (`Sim::rate`);
   running is `RUN_SPEED` 2.2 cells/s (an easy jog). An attack is a sequence of `Strike`s
@@ -222,7 +233,7 @@ real play.
     - **Turns:** while `World::battle` is set, `tick` runs only `battle_tick`. The sides take turns
       activating one unit each (`BattleOrder::Activate`, switchable until AP are spent); every unit
       acts once per round and the colony goes first. AP: 100; moving 10 a step (so 10 cells, or 6 and
-      an attack; the leader walks the path and members gather on free cells around the goal); attacking
+      an attack; the whole unit walks to the one cell); attacking
       40 (every member who can reach someone shoots or strikes); hunkering 20 (ends the turn, better
       cover until next activation).
       Each round passes `TURN_SECS` (6 s) for health and hunger, halves suppression, counts arrivals

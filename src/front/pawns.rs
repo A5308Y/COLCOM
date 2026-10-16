@@ -228,6 +228,55 @@ fn facing(p: &Pawn, w: &SimWorld) -> Option<f32> {
     (dx * dx + dz * dz > 1e-4).then(|| dx.atan2(dz))
 }
 
+/// Where a squad member stands within the squad's one cell, as an offset in
+/// cells: in a row against the side with cover facing the enemy, else in a
+/// huddle. Nothing while walking (the squad moves as a column) or alone.
+fn squad_slot(p: &Pawn, w: &SimWorld) -> Vec2 {
+    let Some(b) = &w.battle else { return Vec2::ZERO };
+    let Some(unit) = b.unit_of(p.id).map(|u| &b.units[u]) else { return Vec2::ZERO };
+    let n = unit.members.len();
+    let Some(k) = unit.members.iter().position(|&id| id == p.id) else { return Vec2::ZERO };
+    if n < 2 || !p.path.is_empty() || b.moving.iter().any(|m| m.pawn == p.id) {
+        return Vec2::ZERO;
+    }
+    let m = &w.map;
+    // The side facing the nearest enemy, and what cover it has.
+    let enemy = w
+        .pawns
+        .iter()
+        .filter(|o| o.faction != p.faction && o.active() && b.unit_of(o.id).is_some())
+        .min_by(|a, c| {
+            let d = |o: &&Pawn| (o.x - p.x).powi(2) + (o.y - p.y).powi(2);
+            d(a).total_cmp(&d(c))
+        });
+    let cover = enemy.and_then(|e| {
+        let (dx, dy) = ((e.pos.0 as i32 - p.pos.0 as i32).signum(), (e.pos.1 as i32 - p.pos.1 as i32).signum());
+        [(dx, 0), (0, dy)]
+            .into_iter()
+            .filter(|&d| d != (0, 0))
+            .filter_map(|(cx, cy)| {
+                let c = m.at(p.pos.0 as i32 + cx, p.pos.1 as i32 + cy, p.pos.2 as i32)?;
+                let cover = w.cover_at(c);
+                (cover != my_world::battle::Cover::None).then_some((cover, cx, cy))
+            })
+            .max_by_key(|c| c.0)
+    });
+    if let Some((_, cx, cy)) = cover {
+        // Shoulder to shoulder against the cover.
+        let toward = Vec2::new(cx as f32, cy as f32);
+        let along = Vec2::new(-toward.y, toward.x);
+        let t = k as f32 - (n as f32 - 1.0) / 2.0;
+        return toward * 0.2 + along * t * 0.27;
+    }
+    const HUDDLE: [[(f32, f32); 4]; 3] = [
+        [(-0.22, 0.0), (0.22, 0.0), (0.0, 0.0), (0.0, 0.0)],
+        [(0.0, -0.2), (-0.22, 0.18), (0.22, 0.18), (0.0, 0.0)],
+        [(-0.22, -0.22), (0.22, -0.22), (-0.22, 0.22), (0.22, 0.22)],
+    ];
+    let (x, y) = HUDDLE[n.clamp(2, 4) - 2][k.min(3)];
+    Vec2::new(x, y)
+}
+
 /// Turn from `a` towards `b` by at most `max` radians.
 fn turn_towards(a: f32, b: f32, max: f32) -> f32 {
     let diff = (b - a + PI).rem_euclid(TAU) - PI;
@@ -309,7 +358,7 @@ fn sync_pawns(
 
         // The drawn position trails the simulated one a little, which rounds
         // corners and eases into and out of walking. Big jumps snap.
-        let target = Vec2::new(p.x, p.y);
+        let target = Vec2::new(p.x, p.y) + squad_slot(p, w);
         let before = v.shown;
         if v.shown.distance(target) > 2.0 || sim_rate == 0.0 && v.shown.distance(target) > 0.5 {
             v.shown = target;

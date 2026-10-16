@@ -7,7 +7,7 @@ use crate::pawn::{Pawn, Role};
 use crate::world::World;
 
 /// Most colonists in one squad, the leader included.
-pub const SQUAD_MAX: usize = 5;
+pub const SQUAD_MAX: usize = 4;
 /// Least bedroom quality tier a leader is content with (2 = Decent).
 pub const LEADER_ROOM_TIER: u8 = 2;
 
