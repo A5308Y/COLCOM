@@ -203,7 +203,7 @@ fn battle_input(
     if buttons.just_pressed(MouseButton::Left) && !over_ui {
         if let Some(h) = ui.hover {
             let w = &sim.world;
-            match pawn_at(w, h.stand).and_then(|id| Some((id, b.unit_of(id)?))) {
+            match fighter_at(w, b, h.stand).or_else(|| pawn_at(w, h.stand)).and_then(|id| Some((id, b.unit_of(id)?))) {
                 Some((id, u)) => {
                     ui.select(Some(Selection::Pawn(id)));
                     let unit = &b.units[u];
@@ -332,7 +332,7 @@ fn draw_battle(sim: Res<Sim>, ui: Res<UiState>, area: Res<ReachArea>, mut gizmos
         points.extend(df.path_to(h.stand).iter().rev().map(|&c| Vec3::new(c.0 as f32 + 0.5, floor_y(m, c) + 0.08, c.1 as f32 + 0.5)));
         bold.linestrip(points, Color::WHITE.with_alpha(0.9));
     }
-    if pawn_at(w, h.stand).is_none() && m.standable(h.stand) {
+    if fighter_at(w, b, h.stand).is_none() && m.standable(h.stand) {
         for (dx, dy) in DIRS {
             let Some(c) = m.at(h.stand.0 as i32 + dx, h.stand.1 as i32 + dy, h.stand.2 as i32) else { continue };
             let height = match w.cover_at(c) {
@@ -351,7 +351,19 @@ fn draw_battle(sim: Res<Sim>, ui: Res<UiState>, area: Res<ReachArea>, mut gizmos
 
 /// The enemy unit under the cursor, if any.
 fn hovered_enemy(w: &SimWorld, b: &Battle, at: Pos) -> Option<usize> {
-    pawn_at(w, at).and_then(|id| b.unit_of(id)).filter(|&t| b.units[t].side != Faction::Colony)
+    fighter_at(w, b, at).and_then(|id| b.unit_of(id)).filter(|&t| b.units[t].side != Faction::Colony)
+}
+
+/// Someone still fighting (in a unit) at or right next to cell `at`, nearest
+/// first: the downed lying there don't get in the way of clicking the living.
+fn fighter_at(w: &SimWorld, b: &Battle, at: Pos) -> Option<u32> {
+    w.pawns
+        .iter()
+        .filter(|p| b.unit_of(p.id).is_some())
+        .map(|p| (((p.x - at.0 as f32).powi(2) + (p.y - at.1 as f32).powi(2) + (p.z - at.2 as f32).powi(2)).sqrt(), p.id))
+        .filter(|(d, _)| *d < 0.9)
+        .min_by(|a, c| a.0.total_cmp(&c.0))
+        .map(|(_, id)| id)
 }
 
 /// A crosshair over enemies when clicking would attack.
@@ -401,23 +413,54 @@ fn battle_panels(
     let Some(b) = &w.battle else { return Ok(()) };
     let mut orders = Vec::new();
 
-    // How many stand in each squad's square, beside its ring.
+    // Each squad's state over its square: a bar per member (health while
+    // standing, dark red when downed, grey and crossed out when dead), the
+    // leader's outlined, and the squad's name.
     {
         let (cam, gt) = *camera;
-        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("battle_counts")));
-        for unit in b.units.iter().filter(|u| u.members.len() > 1) {
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("squad_status")));
+        for unit in b.units.iter().filter(|u| u.roster.len() > 1 && !u.out()) {
             let Some(lead) = unit.members.first().and_then(|&id| w.pawn(id)) else { continue };
             if !ui.shows_at(&w.map, lead.x, lead.y, lead.z) {
                 continue;
             }
-            let at = tile_point(lead.x, lead.y, lead.z) + Vec3::new(0.5, 0.05, 0.5);
-            let Ok(p) = cam.world_to_viewport(gt, at) else { continue };
+            let Ok(p) = cam.world_to_viewport(gt, tile_point(lead.x, lead.y, lead.z) + Vec3::Y * 1.25) else { continue };
+            let (bw, gap, bh) = (12.0, 3.0, 5.0);
+            let total = unit.roster.len() as f32 * (bw + gap) - gap;
+            let left = p.x - total / 2.0;
+            for (k, &id) in unit.roster.iter().enumerate() {
+                let Some(m) = w.pawn(id) else { continue };
+                let x = left + k as f32 * (bw + gap);
+                let rect = egui::Rect::from_min_size(egui::pos2(x, p.y), egui::vec2(bw, bh));
+                painter.rect_filled(rect, 1.0, Color32::from_black_alpha(190));
+                if m.dead {
+                    painter.line_segment([rect.left_top(), rect.right_bottom()], egui::Stroke::new(1.5, Color32::from_gray(150)));
+                    painter.line_segment([rect.left_bottom(), rect.right_top()], egui::Stroke::new(1.5, Color32::from_gray(150)));
+                } else if !m.active() {
+                    painter.rect_filled(rect, 1.0, Color32::from_rgb(110, 25, 25));
+                } else {
+                    let h = m.health.summary().clamp(0.0, 1.0);
+                    let fill = if h > 0.7 {
+                        Color32::from_rgb(90, 200, 90)
+                    } else if h > 0.4 {
+                        Color32::from_rgb(230, 190, 60)
+                    } else {
+                        Color32::from_rgb(230, 70, 50)
+                    };
+                    let mut inner = rect;
+                    inner.set_width(bw * h.max(0.1));
+                    painter.rect_filled(inner, 1.0, fill);
+                }
+                if unit.members.first() == Some(&id) {
+                    painter.rect_stroke(rect.expand(1.0), 1.0, egui::Stroke::new(1.0, Color32::WHITE), egui::StrokeKind::Outside);
+                }
+            }
             let color = if unit.side == Faction::Raider { Color32::from_rgb(255, 150, 130) } else { Color32::from_rgb(170, 210, 255) };
-            let text = format!("x{}", unit.members.len());
-            let pos = egui::pos2(p.x, p.y);
-            let font = egui::FontId::proportional(13.0);
-            painter.text(pos + egui::vec2(1.0, 1.0), Align2::LEFT_TOP, &text, font.clone(), Color32::from_black_alpha(200));
-            painter.text(pos, Align2::LEFT_TOP, text, font, color);
+            let text = format!("{} ({}/{})", lead.name, unit.members.len(), unit.roster.len());
+            let pos = egui::pos2(p.x, p.y - 2.0);
+            let font = egui::FontId::proportional(12.0);
+            painter.text(pos + egui::vec2(1.0, 1.0), Align2::CENTER_BOTTOM, &text, font.clone(), Color32::from_black_alpha(200));
+            painter.text(pos, Align2::CENTER_BOTTOM, text, font, color);
         }
     }
 
@@ -481,7 +524,8 @@ fn battle_panels(
             if !ui.shows_at(&w.map, p.x, p.y, p.z) {
                 continue;
             }
-            let Ok(at) = cam.world_to_viewport(gt, tile_point(p.x, p.y, p.z) + Vec3::Y * 1.3) else { continue };
+            // Above the squad's status row.
+            let Ok(at) = cam.world_to_viewport(gt, tile_point(p.x, p.y, p.z) + Vec3::Y * 1.8) else { continue };
             let best = unit.members.iter().filter_map(|&id| best_chance(w, u, id)).reduce(f32::max);
             let (text, color) = match best {
                 Some(c) => (format!("{:.0}%", c * 100.0), Color32::from_rgb(255, 225, 120)),
@@ -570,7 +614,12 @@ fn battle_panels(
                 } else {
                     format!("{} AP", unit.ap)
                 };
-                let text = format!("{} - {}", names(w, &unit.members), status);
+                let standing = if unit.roster.len() > 1 {
+                    format!(" - {}/{} standing", unit.members.len(), unit.roster.len())
+                } else {
+                    String::new()
+                };
+                let text = format!("{}{} - {}", names(w, &unit.members), standing, status);
                 let ready = !unit.acted && b.side_to_act == Faction::Colony;
                 if panel.add_enabled(ready, egui::Button::new(text).small()).clicked() {
                     orders.push(BattleOrder::Activate(u));

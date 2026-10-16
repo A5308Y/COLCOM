@@ -43,7 +43,12 @@ pub fn draw(
     };
     let m = &w.map;
 
-    for p in w.pawns.iter().filter(|p| !p.left && ui.shows_at(m, p.x, p.y, p.z)) {
+    // In a battle, squads show their members in one status row (`battle_ui.rs`)
+    // instead of labels stacked on one square.
+    let in_squad = |id: u32| {
+        w.battle.as_ref().is_some_and(|b| b.units.iter().any(|u| u.roster.len() > 1 && u.roster.contains(&id)))
+    };
+    for p in w.pawns.iter().filter(|p| !p.left && ui.shows_at(m, p.x, p.y, p.z) && !in_squad(p.id)) {
         let base = tile_point(p.x, p.y, p.z);
         let lying = p.dead || p.lying();
         let Some(top) = to_screen(base + Vec3::Y * if lying { 0.7 } else { 1.15 }) else { continue };

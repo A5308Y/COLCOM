@@ -161,6 +161,13 @@ pub struct WeaponDef {
     /// Sound of an attack (see `assets/sounds.ron`); a swing if not given.
     #[serde(default)]
     pub sound: Option<String>,
+    /// Shots (or blows) per attack in a battle.
+    #[serde(default = "one_shot")]
+    pub shots: u32,
+}
+
+fn one_shot() -> u32 {
+    1
 }
 
 impl WeaponDef {

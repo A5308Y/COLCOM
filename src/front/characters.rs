@@ -442,13 +442,19 @@ pub fn play(
 pub fn locomotion(speed: f32, sim_rate: f32, running: bool) -> (Anim, f32) {
     let anim = if !running {
         Anim::Walk
-    } else if speed / sim_rate.max(1.0) < 4.3 {
+    } else if speed / sim_rate.max(1.0) < 6.0 {
         Anim::Jog
     } else {
         Anim::Sprint
     };
-    (anim, (speed / anim.moves().unwrap()).max(0.3))
+    // Running in battle takes longer strides than the clip: quick moves at a calm step.
+    let stride = if running { RUN_STRIDE } else { 1.0 };
+    (anim, (speed / (anim.moves().unwrap() * stride)).max(0.3))
 }
+
+/// How much longer a running stride is than the clip's own (a little foot
+/// slide, hardly visible from above, for a calmer step at battle speed).
+pub const RUN_STRIDE: f32 = 1.6;
 
 /// The animation for what a pawn is doing in place (not moving, not lying
 /// down, not falling, no attack being played).
@@ -524,15 +530,15 @@ mod tests {
     #[test]
     fn locomotion_matches_speed() {
         use my_world::pawn::{RUN_SPEED, WALK_SPEED};
-        // A clip played at its own speed doesn't slide.
-        let (a, rate) = locomotion(JOG_SPEED, 1.0, true);
-        assert_eq!(a, Anim::Jog);
+        // Walking, a clip played at its own speed doesn't slide.
+        let (a, rate) = locomotion(super::WALK_SPEED, 1.0, false);
+        assert_eq!(a, Anim::Walk);
         assert!((rate - 1.0).abs() < 1e-4);
         // Around the colony they walk, a little quicker than the clip's own stroll.
         let (a, rate) = locomotion(WALK_SPEED, 1.0, false);
         assert_eq!(a, Anim::Walk);
         assert!(rate > 1.5 && rate < 2.2, "{}", rate);
-        // In battle they run: an easy jog, a little under the clip's own pace.
+        // In battle they run with long strides: an easy jog's step rate at a good pace.
         let (a, rate) = locomotion(RUN_SPEED, 1.0, true);
         assert_eq!(a, Anim::Jog);
         assert!(rate > 0.6 && rate <= 1.0, "{}", rate);

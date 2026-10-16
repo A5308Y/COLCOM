@@ -78,6 +78,9 @@ pub struct Unit {
     pub members: Vec<u32>,
     /// A squad (led by `members[0]`) rather than a lone fighter.
     pub led: bool,
+    /// Everyone who has fought in it, the fallen too (to show losses).
+    #[serde(default)]
+    pub roster: Vec<u32>,
     pub ap: i32,
     /// AP at the start of this round (switching units is allowed until some is spent).
     pub ap_start: i32,
@@ -94,6 +97,7 @@ impl Unit {
     fn new(side: Faction, members: Vec<u32>, led: bool, morale: f32) -> Unit {
         Unit {
             side,
+            roster: members.clone(),
             members,
             led,
             ap: AP_MAX,
@@ -138,7 +142,11 @@ pub struct Mover {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Strike {
     pub attacker: u32,
+    /// Who they aim at to begin with (the actual target is picked when it fires).
     pub target: u32,
+    /// The unit attacked.
+    #[serde(default)]
+    pub unit: usize,
     pub delay: f32,
 }
 
@@ -682,14 +690,22 @@ impl World {
         }
         let mut attackers: Vec<u32> = options.iter().map(|o| o.0).collect();
         attackers.dedup();
+        // Shots go round the unit: everyone's first, then the second shots (rifles fire two).
+        let shots: Vec<(u32, u32)> = attackers
+            .iter()
+            .map(|&a| (a, self.pawn(a).and_then(|p| p.weapon).and_then(|k| k.def().weapon.as_ref()).map_or(1, |w| w.shots.max(1))))
+            .collect();
+        let most = shots.iter().map(|s| s.1).max().unwrap_or(1);
         let mut strikes = Vec::new();
         let mut at = AIM_TIME;
-        for a in attackers {
-            let targets: Vec<u32> = options.iter().filter(|o| o.0 == a).map(|o| o.1).collect();
-            let target = targets[self.rng.below(targets.len())];
-            strikes.push(Strike { attacker: a, target, delay: at });
-            let melee = self.pawn(a).is_some_and(|p| !p.attack().ranged);
-            at += if melee { MELEE_GAP } else { SHOT_GAP };
+        for round in 0..most {
+            for &(a, _) in shots.iter().filter(|s| s.1 > round) {
+                let Some(ai) = self.pawn_index(a) else { continue };
+                let Some(target) = self.pick_target(ai, t) else { continue };
+                strikes.push(Strike { attacker: a, target, unit: t, delay: at });
+                let melee = !self.pawns[ai].attack().ranged;
+                at += if melee { MELEE_GAP } else { SHOT_GAP };
+            }
         }
         let b = self.battle.as_mut().unwrap();
         b.strikes = strikes;
@@ -701,19 +717,7 @@ impl World {
     /// attacker picks someone else from that unit in reach.
     fn fire_strike(&mut self, s: Strike) {
         let Some(ai) = self.pawn_index(s.attacker).filter(|&i| self.pawns[i].active()) else { return };
-        let target = if self.pawn(s.target).is_some_and(|p| p.active()) {
-            Some(s.target)
-        } else {
-            let b = self.battle.as_ref().unwrap();
-            let others: Vec<u32> = b
-                .unit_of(s.target)
-                .map(|t| b.units[t].members.clone())
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|&o| self.pawn(o).is_some_and(|o| self.can_attack(&self.pawns[ai], o)))
-                .collect();
-            (!others.is_empty()).then(|| others[self.rng.below(others.len())])
-        };
+        let target = self.pick_target(ai, s.unit);
         let Some(ti) = target.and_then(|t| self.pawn_index(t)) else { return };
         let chance = self.hit_chance(&self.pawns[ai], &self.pawns[ti]);
         let hit = self.rng.chance(chance);
@@ -744,6 +748,24 @@ impl World {
             self.damage(ti, dmg, w.kind, &by);
         }
         self.refresh_units();
+    }
+
+    /// Someone in unit `t` the pawn at index `ai` can reach, at random; a
+    /// squad's leader only once nobody else in it is left standing.
+    fn pick_target(&mut self, ai: usize, t: usize) -> Option<u32> {
+        let b = self.battle.as_ref()?;
+        let unit = b.units.get(t)?;
+        let mut targets: Vec<u32> = unit
+            .members
+            .iter()
+            .copied()
+            .filter(|&o| self.pawn(o).is_some_and(|o| o.active() && self.can_attack(&self.pawns[ai], o)))
+            .collect();
+        if unit.led && targets.len() > 1 {
+            let leader = unit.members[0];
+            targets.retain(|&o| o != leader);
+        }
+        (!targets.is_empty()).then(|| targets[self.rng.below(targets.len())])
     }
 
     /// Who pawn `id` is aiming at in the attack playing out, if anyone.
@@ -917,6 +939,7 @@ impl World {
                     place(&mut self.pawns[pi], at);
                     let b = self.battle.as_mut().unwrap();
                     b.units[u].members.push(a.pawn);
+                    b.units[u].roster.push(a.pawn);
                     b.units[u].morale = (b.units[u].morale + 5.0).min(90.0);
                     let leader = self.pawn(members[0]).map_or(String::new(), |l| l.name.clone());
                     self.battle_event(format!("{} joins {}'s squad.", name, leader));
@@ -1534,8 +1557,10 @@ mod tests {
         w.battle_order(BattleOrder::Activate(u)).unwrap();
         w.battle_order(BattleOrder::Attack(raider)).unwrap();
         let strikes = battle(&w).strikes.clone();
-        assert_eq!(strikes.len(), 2, "both take a shot");
-        assert!(strikes[1].delay > strikes[0].delay, "one after the other");
+        assert_eq!(strikes.len(), 4, "rifles fire twice each");
+        let order: Vec<u32> = strikes.iter().map(|s| s.attacker).collect();
+        assert_eq!(order, vec![leader, member, leader, member], "everyone's first shot, then the second");
+        assert!(strikes.windows(2).all(|p| p[1].delay > p[0].delay), "one after the other");
         assert_eq!(w.aim_target(leader), Some(strikes[0].target), "aiming first");
         assert!(w.battle_order(BattleOrder::End).is_err(), "busy while the attack plays out");
         let shots = |w: &mut World| w.take_sounds().iter().filter(|s| s.name == "rifle").count();
@@ -1557,6 +1582,35 @@ mod tests {
         assert!(!fired.is_empty(), "shots were fired");
         assert!(fired.len() < 2 || fired[1] - fired[0] >= 10, "not at the same moment: {:?}", fired);
         assert!(w.battle.as_ref().is_none_or(|b| b.strikes.is_empty() && !b.busy()), "and it's over");
+    }
+
+    #[test]
+    fn squad_leaders_are_hit_last_and_losses_are_remembered() {
+        let mut w = world(40, 20, 17);
+        let shooter = colonist(&mut w, (5, 10, Z));
+        let i = w.pawn_index(shooter).unwrap();
+        w.pawns[i].weapon = Some(item("rifle"));
+        fight(&mut w, 3, (14, 10, Z));
+        let t = battle(&w).units.iter().position(|u| u.side == Faction::Raider).unwrap();
+        let leader = battle(&w).units[t].members[0];
+        assert!(battle(&w).units[t].led);
+        for _ in 0..200 {
+            let picked = w.pick_target(i, t).unwrap();
+            assert_ne!(picked, leader, "not the leader while others stand");
+        }
+        // Down the other two: now the leader is the only target.
+        let others: Vec<u32> = battle(&w).units[t].members[1..].to_vec();
+        for o in &others {
+            let oi = w.pawn_index(*o).unwrap();
+            let mut p = w.pawns[oi].clone();
+            w.kill(&mut p, "was shot");
+            w.pawns[oi] = p;
+        }
+        w.refresh_units();
+        assert_eq!(w.pick_target(i, t), Some(leader));
+        let unit = &battle(&w).units[t];
+        assert_eq!(unit.members, vec![leader]);
+        assert_eq!(unit.roster.len(), 3, "the fallen are still on the roster");
     }
 
     #[test]

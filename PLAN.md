@@ -184,6 +184,23 @@ real play.
 
 ## Notes
 
+- Battle fixes (2026-10-16):
+  - **Targets:** clicking and hovering prefer someone still in a unit (`battle_ui::fighter_at`), so
+    the downed lying on a cell don't block attacks on the living there.
+  - **Shots:** weapons have `shots` per attack (`defs.ron`, default 1; rifles 2), taken in turn: everyone's
+    first shot, then the second ones.
+  - **Picking who is hit:** the target is picked when each shot fires (`pick_target`, from the unit in
+    `Strike::unit`), and a squad's leader is only picked once nobody else in it is standing.
+  - **Showing losses:** `Unit::roster` keeps everyone who fought in a unit. Over each squad a status
+    row shows a bar per member (health, dark red when downed, grey crossed out when dead; the leader's
+    outlined) and "Name (standing/total)". The panel lists "3/4 standing". Per-person overlay labels
+    are left out for squad members in battle (they stacked on one square).
+
+- Battle running (2026-10-16): `RUN_SPEED` is 4.5 cells/s, with strides 60% longer than the jog
+  clip's (`characters::RUN_STRIDE`), so the clip plays at about 0.95x: a steady step, with the feet
+  sliding a little. The jog is kept up to 6 cells/s before the sprint takes over. Running footsteps
+  are spaced by the longer stride.
+
 - Squads hold one cell (2026-10-16): a squad stands in for a single colonist in battle. It has one
   cell (its leader's; `World::unit_cell`), one cover check, one line of sight, and no other unit may
   share it. At most 4 people (`SQUAD_MAX`), because a 1.8 m cell fits 4 shoulder to shoulder.

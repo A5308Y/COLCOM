@@ -24,7 +24,7 @@ const PAWN_SOUND_RANGE: f32 = 40.0;
 /// Cells between footsteps, as in the animations: the walk clip's half
 /// stride (0.65 m) and the jog's (2.5 m), at 0.55 cells a metre.
 const WALK_STRIDE: f32 = 0.36;
-const RUN_STRIDE: f32 = 1.37;
+const RUN_STRIDE: f32 = 1.37 * super::characters::RUN_STRIDE;
 
 /// Which volume slider a sound follows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]

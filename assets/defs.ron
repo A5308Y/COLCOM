@@ -56,7 +56,8 @@
     // food poisoning (`poison`: chance per unit eaten). `medicine`: how much
     // it improves tending (1 = full medicine). `pods`: amounts arriving in
     // cargo pods. `weapon` and `apparel` items are picked up and used by
-    // colonists; `held` is how a weapon looks in hand. `value`: worth of one,
+    // colonists; `held` is how a weapon looks in hand, `shots` how many shots it
+    // fires per attack in a battle (1 if not given). `value`: worth of one,
     // for what raiders demand and take.
     items: [
         (
@@ -238,7 +239,7 @@
             category: "Weapons",
             color: "iron",
             weapon: Some((
-                range: 16.0, damage: (9.0, 14.0), kind: Gunshot, cooldown: 1.8, sound: Some("rifle"),
+                range: 16.0, damage: (9.0, 14.0), kind: Gunshot, cooldown: 1.8, sound: Some("rifle"), shots: 2,
                 held: (shape: Cube, color: "iron", at: (0.15, 0.62, 0.22), size: (0.05, 0.06, 0.52)),
             )),
             look: [
