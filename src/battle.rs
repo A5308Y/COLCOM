@@ -478,7 +478,6 @@ impl World {
         let who = if raiders == 1 { "1 raider attacks".to_string() } else { format!("{} raiders attack", raiders) };
         b.events.push(format!("Battle! {}.", who));
         self.battle = Some(b);
-        self.sound("raid", None);
         self.push_log(format!("Battle! {} the colony.", who));
     }
 

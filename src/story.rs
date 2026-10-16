@@ -62,7 +62,6 @@ impl World {
         let Some(entry) = self.random_edge_tile() else { return };
         self.story.raids += 1;
         self.open_parley(size, entry);
-        self.sound("raid", None);
         let who = if size == 1 { "A raider is".to_string() } else { format!("{} raiders are", size) };
         self.push_log(format!("Raiders! {} at the edge of the colony, demanding goods.", who));
     }

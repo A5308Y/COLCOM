@@ -286,15 +286,19 @@ mod tests {
         for _ in 0..20 {
             app.update();
         }
-        let clip: Handle<AudioSource> = app.world().resource::<AssetServer>().load("sounds/hammer_1.wav");
-        for _ in 0..200 {
-            if app.world().resource::<AssetServer>().is_loaded(&clip) {
-                break;
+        // Every kind of sound file the game uses decodes: WAV (placeholders),
+        // OGG (Kenney) and MP3 (the raid music).
+        for file in ["sounds/hammer_1.wav", "sounds/kenney/footstep_grass_000.ogg", "sounds/music/dream_raid.mp3"] {
+            let clip: Handle<AudioSource> = app.world().resource::<AssetServer>().load(file);
+            for _ in 0..400 {
+                if app.world().resource::<AssetServer>().is_loaded(&clip) {
+                    break;
+                }
+                app.update();
+                std::thread::sleep(Duration::from_millis(5));
             }
-            app.update();
-            std::thread::sleep(Duration::from_millis(5));
+            assert!(app.world().resource::<AssetServer>().is_loaded(&clip), "{} loads", file);
         }
-        assert!(app.world().resource::<AssetServer>().is_loaded(&clip), "WAV files load");
         let players = app.world_mut().query::<&AudioPlayer>().iter(app.world()).count();
         assert!(players >= 3, "ambience loops and effects ({} players)", players);
     }

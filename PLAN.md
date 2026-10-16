@@ -184,6 +184,21 @@ real play.
 
 ## Notes
 
+- Real sounds (2026-10-16):
+  - **Kenney (CC0):** Impact Sounds, RPG Audio and UI Audio, copied into `assets/sounds/kenney/`.
+    They cover footsteps (grass, concrete, wood; snow for digging), mining and rock, planks for
+    building, metal for the anvil, chisel and glancing blows, punches for hits and thuds, chopping,
+    cloth rustles, crafting clicks, knife draws for swings, doors, creaks for falling trees, and UI
+    clicks.
+  - **Music:** "Dream Raid" by Matthew Pablo (CC-BY 3.0, credit in `assets/CREDITS.md`) at
+    `sounds/music/dream_raid.mp3`, with Bevy's `mp3` feature on. It plays from the start while
+    raiders are at the gate and through the battle (`ambience.battle` in `sounds.ron`,
+    `audio::battle_music`), replacing the ambience, then fades out. It's the alarm too, so the
+    "raid" horn is gone. There's a Music volume slider.
+  - **Still placeholders:** guns, saw, sizzle, furnace, death, pods, joined, level up, and the
+    ambience loops. Originals are in `asset-sources/kenney/` and `asset-sources/matthew-pablo/`.
+- "Round N" fades in and out in the middle of the screen when a round starts (`BANNER_SECS`, 1.8 s).
+
 - Cover tiers (2026-10-16), like MENACE: `defs::CoverKind` None / Light / Medium / Heavy
   (`battle::Cover`), set per buildable and plant with `cover` in `defs.ron`. Defaults: heavy if it
   blocks sight, medium if it can't be walked through, else light; plants medium if impassable.

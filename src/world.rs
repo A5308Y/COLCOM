@@ -42,8 +42,8 @@ pub struct SoundEvent {
 
 /// Every sound name the simulation uses (checked against the sound table by
 /// the front end's tests); definitions add their own (harvest, weapons).
-pub const SIM_SOUNDS: [&str; 11] =
-    ["thud", "raid", "pods", "joined", "level_up", "dig", "rock_break", "built", "hit", "glance", "death"];
+pub const SIM_SOUNDS: [&str; 10] =
+    ["thud", "pods", "joined", "level_up", "dig", "rock_break", "built", "hit", "glance", "death"];
 
 /// Sound events kept until the front end takes them; older ones are dropped.
 const MAX_SOUNDS: usize = 128;

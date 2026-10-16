@@ -70,6 +70,8 @@ pub struct AmbienceDefs {
     pub day: LoopDef,
     pub night: LoopDef,
     pub cave: LoopDef,
+    /// Music during a raid (from the parley to the battle's end), instead of the others.
+    pub battle: LoopDef,
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,12 +117,13 @@ pub struct AudioSettings {
     pub alerts: f32,
     pub interface: f32,
     pub ambience: f32,
+    pub music: f32,
     pub muted: bool,
 }
 
 impl Default for AudioSettings {
     fn default() -> Self {
-        AudioSettings { master: 0.8, effects: 1.0, alerts: 1.0, interface: 0.8, ambience: 0.8, muted: false }
+        AudioSettings { master: 0.8, effects: 1.0, alerts: 1.0, interface: 0.8, ambience: 0.8, music: 0.7, muted: false }
     }
 }
 
@@ -195,7 +198,7 @@ impl Plugin for AudioPlugin {
             .add_systems(Startup, setup)
             .add_systems(
                 Update,
-                (sim_sounds, pawn_sounds, ui_sounds, follow_camera, play_queued, ambience, clean_up).chain(),
+                (sim_sounds, pawn_sounds, ui_sounds, follow_camera, play_queued, ambience, battle_music, clean_up).chain(),
             );
     }
 }
@@ -456,6 +459,8 @@ fn ambience(
         ui.view_level.is_some_and(|l| l < surface) || (level < surface && m.covered((x, y, level)))
     });
     let day = ((w.daylight() - 0.2) / 0.5).clamp(0.0, 1.0);
+    // During a raid the music plays instead (`battle_music`).
+    let calm = if raid(&sim) { 0.0 } else { 1.0 };
     let table = &sound_table().ambience;
     let master = if settings.muted { 0.0 } else { settings.master * settings.ambience };
     let ease = (time.delta_secs() * 0.8).min(1.0);
@@ -465,10 +470,58 @@ fn ambience(
             AmbienceKind::Night => ((1.0 - day) * (1.0 - under as u8 as f32), &table.night),
             AmbienceKind::Cave => (under as u8 as f32, &table.cave),
         };
-        amb.level += (target - amb.level) * ease;
+        amb.level += (target * calm - amb.level) * ease;
         if let Some(mut sink) = sink {
             sink.set_volume(Volume::Linear(amb.level * def.volume * master));
         }
+    }
+}
+
+/// Raiders at the gate, or a battle on.
+fn raid(sim: &Sim) -> bool {
+    sim.world.parley.is_some() || sim.world.battle.is_some()
+}
+
+/// The raid music: starts from the beginning when raiders arrive (it's the
+/// alarm too), plays through the battle, fades out after and is removed, so
+/// the next raid starts it afresh.
+#[derive(Component)]
+struct BattleMusic {
+    level: f32,
+}
+
+fn battle_music(
+    mut commands: Commands,
+    sim: Res<Sim>,
+    settings: Res<AudioSettings>,
+    assets: Res<AssetServer>,
+    time: Res<Time>,
+    mut music: Query<(Entity, &mut BattleMusic, Option<&mut AudioSink>)>,
+) {
+    let def = &sound_table().ambience.battle;
+    let on = raid(&sim);
+    let dt = time.delta_secs();
+    match music.single_mut() {
+        Ok((e, mut m, sink)) => {
+            // In quickly when raiders come, out slowly after the battle.
+            let ease = if on { (dt * 2.0).min(1.0) } else { (dt * 0.5).min(1.0) };
+            m.level += ((on as u8 as f32) - m.level) * ease;
+            let master = if settings.muted { 0.0 } else { settings.master * settings.music };
+            if let Some(mut sink) = sink {
+                sink.set_volume(Volume::Linear(m.level * def.volume * master));
+            }
+            if !on && m.level < 0.01 {
+                commands.entity(e).despawn();
+            }
+        }
+        Err(_) if on => {
+            commands.spawn((
+                AudioPlayer::new(assets.load(def.file.as_str())),
+                PlaybackSettings::LOOP.with_volume(Volume::Linear(0.0)),
+                BattleMusic { level: 0.0 },
+            ));
+        }
+        Err(_) => {}
     }
 }
 
@@ -494,6 +547,7 @@ pub fn settings_ui(ui: &mut bevy_egui::egui::Ui, s: &mut AudioSettings) {
             ("Alerts", &mut s.alerts),
             ("Interface", &mut s.interface),
             ("Ambience", &mut s.ambience),
+            ("Music", &mut s.music),
         ] {
             ui.label(label);
             ui.add(egui::Slider::new(v, 0.0..=1.0).show_value(false));
@@ -521,7 +575,7 @@ mod tests {
             }
             assert!(def.volume > 0.0 && def.volume <= 1.0 && def.pitch.0 <= def.pitch.1 && def.max > 0, "{}", name);
         }
-        for l in [&t.ambience.day, &t.ambience.night, &t.ambience.cave] {
+        for l in [&t.ambience.day, &t.ambience.night, &t.ambience.cave, &t.ambience.battle] {
             assert!(exists(&l.file), "missing {}", l.file);
         }
     }

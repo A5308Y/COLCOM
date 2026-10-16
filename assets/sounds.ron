@@ -5,62 +5,64 @@
 // once; `every`: seconds between strokes for sounds repeated while working.
 // `kind` decides which volume slider it follows: Effect, Alert or Interface.
 //
-// The files in assets/sounds/ are generated placeholders
-// (`python3 tools/make_sounds.py`). Point entries at other WAV or OGG files
-// to replace them; nothing else needs to change.
+// Files in assets/sounds/kenney/ are from Kenney's Impact Sounds, RPG Audio
+// and UI Audio packs (CC0); the rest of assets/sounds/ are generated
+// placeholders (`python3 tools/make_sounds.py`) still waiting for real
+// sounds. Point entries at other WAV, OGG or MP3 files to replace them;
+// nothing else needs to change.
 (
     sounds: {
         // Footsteps walking (frequent, soft) and running in battle (heavier).
         "step_grass": (
-            files: ["sounds/step_grass_1.wav", "sounds/step_grass_2.wav", "sounds/step_grass_3.wav", "sounds/step_grass_4.wav"],
+            files: ["sounds/kenney/footstep_grass_000.ogg", "sounds/kenney/footstep_grass_001.ogg", "sounds/kenney/footstep_grass_002.ogg", "sounds/kenney/footstep_grass_003.ogg", "sounds/kenney/footstep_grass_004.ogg"],
             volume: 0.18, pitch: (0.95, 1.12), range: 18.0, max: 6, kind: Effect,
         ),
         "step_stone": (
-            files: ["sounds/step_stone_1.wav", "sounds/step_stone_2.wav", "sounds/step_stone_3.wav", "sounds/step_stone_4.wav"],
+            files: ["sounds/kenney/footstep_concrete_000.ogg", "sounds/kenney/footstep_concrete_001.ogg", "sounds/kenney/footstep_concrete_002.ogg", "sounds/kenney/footstep_concrete_003.ogg", "sounds/kenney/footstep_concrete_004.ogg"],
             volume: 0.18, pitch: (0.95, 1.12), range: 18.0, max: 6, kind: Effect,
         ),
         "step_wood": (
-            files: ["sounds/step_wood_1.wav", "sounds/step_wood_2.wav", "sounds/step_wood_3.wav", "sounds/step_wood_4.wav"],
+            files: ["sounds/kenney/footstep_wood_000.ogg", "sounds/kenney/footstep_wood_001.ogg", "sounds/kenney/footstep_wood_002.ogg", "sounds/kenney/footstep_wood_003.ogg", "sounds/kenney/footstep_wood_004.ogg"],
             volume: 0.22, pitch: (0.95, 1.12), range: 18.0, max: 6, kind: Effect,
         ),
         "run_grass": (
-            files: ["sounds/step_grass_1.wav", "sounds/step_grass_2.wav", "sounds/step_grass_3.wav", "sounds/step_grass_4.wav"],
+            files: ["sounds/kenney/footstep_grass_000.ogg", "sounds/kenney/footstep_grass_001.ogg", "sounds/kenney/footstep_grass_002.ogg", "sounds/kenney/footstep_grass_003.ogg", "sounds/kenney/footstep_grass_004.ogg"],
             volume: 0.4, pitch: (0.8, 0.95), range: 22.0, max: 8, kind: Effect,
         ),
         "run_stone": (
-            files: ["sounds/step_stone_1.wav", "sounds/step_stone_2.wav", "sounds/step_stone_3.wav", "sounds/step_stone_4.wav"],
+            files: ["sounds/kenney/footstep_concrete_000.ogg", "sounds/kenney/footstep_concrete_001.ogg", "sounds/kenney/footstep_concrete_002.ogg", "sounds/kenney/footstep_concrete_003.ogg", "sounds/kenney/footstep_concrete_004.ogg"],
             volume: 0.4, pitch: (0.8, 0.95), range: 22.0, max: 8, kind: Effect,
         ),
         "run_wood": (
-            files: ["sounds/step_wood_1.wav", "sounds/step_wood_2.wav", "sounds/step_wood_3.wav", "sounds/step_wood_4.wav"],
+            files: ["sounds/kenney/footstep_wood_000.ogg", "sounds/kenney/footstep_wood_001.ogg", "sounds/kenney/footstep_wood_002.ogg", "sounds/kenney/footstep_wood_003.ogg", "sounds/kenney/footstep_wood_004.ogg"],
             volume: 0.45, pitch: (0.8, 0.95), range: 22.0, max: 8, kind: Effect,
         ),
         "chop": (
-            files: ["sounds/chop_1.wav", "sounds/chop_2.wav", "sounds/chop_3.wav"],
-            volume: 0.6, pitch: (0.92, 1.08), range: 35.0, max: 4, every: Some(0.75), kind: Effect,
+            files: ["sounds/kenney/chop.ogg"],
+            volume: 0.6, pitch: (0.85, 1.1), range: 35.0, max: 4, every: Some(0.75), kind: Effect,
         ),
         "mine": (
-            files: ["sounds/mine_1.wav", "sounds/mine_2.wav", "sounds/mine_3.wav"],
+            files: ["sounds/kenney/impactMining_000.ogg", "sounds/kenney/impactMining_001.ogg", "sounds/kenney/impactMining_002.ogg", "sounds/kenney/impactMining_003.ogg", "sounds/kenney/impactMining_004.ogg"],
             volume: 0.5, pitch: (0.92, 1.08), range: 35.0, max: 4, every: Some(0.8), kind: Effect,
         ),
         "dig": (
-            files: ["sounds/dig_1.wav", "sounds/dig_2.wav"],
-            volume: 0.5, pitch: (0.9, 1.1), range: 30.0, max: 4, every: Some(0.8), kind: Effect,
+            files: ["sounds/kenney/footstep_snow_000.ogg", "sounds/kenney/footstep_snow_001.ogg", "sounds/kenney/footstep_snow_002.ogg", "sounds/kenney/footstep_snow_003.ogg", "sounds/kenney/footstep_snow_004.ogg"],
+            volume: 0.55, pitch: (0.7, 0.85), range: 30.0, max: 4, every: Some(0.8), kind: Effect,
         ),
         "hammer": (
-            files: ["sounds/hammer_1.wav", "sounds/hammer_2.wav", "sounds/hammer_3.wav"],
+            files: ["sounds/kenney/impactPlank_medium_000.ogg", "sounds/kenney/impactPlank_medium_001.ogg", "sounds/kenney/impactPlank_medium_002.ogg", "sounds/kenney/impactPlank_medium_003.ogg", "sounds/kenney/impactPlank_medium_004.ogg"],
             volume: 0.5, pitch: (0.92, 1.08), range: 35.0, max: 4, every: Some(0.6), kind: Effect,
         ),
         "anvil": (
-            files: ["sounds/anvil_1.wav", "sounds/anvil_2.wav"],
+            files: ["sounds/kenney/impactMetal_heavy_000.ogg", "sounds/kenney/impactMetal_heavy_001.ogg", "sounds/kenney/impactMetal_heavy_002.ogg"],
             volume: 0.45, pitch: (0.95, 1.05), range: 40.0, max: 3, every: Some(0.9), kind: Effect,
         ),
         "chisel": (
-            files: ["sounds/chisel_1.wav", "sounds/chisel_2.wav"],
-            volume: 0.4, pitch: (0.92, 1.08), range: 30.0, max: 3, every: Some(0.7), kind: Effect,
+            files: ["sounds/kenney/impactMetal_light_000.ogg", "sounds/kenney/impactMetal_light_001.ogg", "sounds/kenney/impactMetal_light_002.ogg", "sounds/kenney/impactMetal_light_003.ogg", "sounds/kenney/impactMetal_light_004.ogg"],
+            volume: 0.35, pitch: (0.92, 1.08), range: 30.0, max: 3, every: Some(0.7), kind: Effect,
         ),
         "rustle": (
-            files: ["sounds/rustle_1.wav", "sounds/rustle_2.wav", "sounds/rustle_3.wav"],
+            files: ["sounds/kenney/cloth1.ogg", "sounds/kenney/cloth2.ogg", "sounds/kenney/cloth3.ogg", "sounds/kenney/cloth4.ogg"],
             volume: 0.35, pitch: (0.9, 1.15), range: 25.0, max: 4, every: Some(0.7), kind: Effect,
         ),
         "sizzle": (
@@ -72,7 +74,7 @@
             volume: 0.4, pitch: (0.95, 1.05), range: 30.0, max: 2, every: Some(0.7), kind: Effect,
         ),
         "craft": (
-            files: ["sounds/craft_1.wav", "sounds/craft_2.wav", "sounds/craft_3.wav"],
+            files: ["sounds/kenney/beltHandle1.ogg", "sounds/kenney/beltHandle2.ogg", "sounds/kenney/metalLatch.ogg", "sounds/kenney/metalClick.ogg"],
             volume: 0.4, pitch: (0.9, 1.1), range: 25.0, max: 3, every: Some(0.6), kind: Effect,
         ),
         "furnace": (
@@ -80,16 +82,16 @@
             volume: 0.45, pitch: (0.95, 1.05), range: 30.0, max: 2, every: Some(0.95), kind: Effect,
         ),
         "tree_fall": (
-            files: ["sounds/tree_fall_1.wav"],
-            volume: 0.8, pitch: (0.92, 1.05), range: 50.0, max: 3, kind: Effect,
+            files: ["sounds/kenney/creak1.ogg", "sounds/kenney/creak2.ogg", "sounds/kenney/creak3.ogg"],
+            volume: 0.8, pitch: (0.6, 0.75), range: 50.0, max: 3, kind: Effect,
         ),
         "rock_break": (
-            files: ["sounds/rock_break_1.wav", "sounds/rock_break_2.wav"],
-            volume: 0.6, pitch: (0.9, 1.1), range: 40.0, max: 4, kind: Effect,
+            files: ["sounds/kenney/impactMining_000.ogg", "sounds/kenney/impactMining_001.ogg", "sounds/kenney/impactMining_002.ogg", "sounds/kenney/impactMining_003.ogg", "sounds/kenney/impactMining_004.ogg"],
+            volume: 0.75, pitch: (0.65, 0.8), range: 40.0, max: 4, kind: Effect,
         ),
         "built": (
-            files: ["sounds/built_1.wav"],
-            volume: 0.5, pitch: (0.98, 1.02), range: 35.0, max: 3, kind: Effect,
+            files: ["sounds/kenney/impactPlank_medium_000.ogg", "sounds/kenney/impactPlank_medium_001.ogg", "sounds/kenney/impactPlank_medium_002.ogg", "sounds/kenney/impactPlank_medium_003.ogg", "sounds/kenney/impactPlank_medium_004.ogg"],
+            volume: 0.6, pitch: (0.75, 0.85), range: 35.0, max: 3, kind: Effect,
         ),
         "rifle": (
             files: ["sounds/rifle_1.wav", "sounds/rifle_2.wav", "sounds/rifle_3.wav"],
@@ -100,15 +102,15 @@
             volume: 0.7, pitch: (0.92, 1.08), range: 70.0, max: 6, kind: Effect,
         ),
         "swing": (
-            files: ["sounds/swing_1.wav", "sounds/swing_2.wav"],
+            files: ["sounds/kenney/drawKnife1.ogg", "sounds/kenney/drawKnife2.ogg", "sounds/kenney/drawKnife3.ogg"],
             volume: 0.45, pitch: (0.9, 1.15), range: 30.0, max: 4, kind: Effect,
         ),
         "hit": (
-            files: ["sounds/hit_1.wav", "sounds/hit_2.wav", "sounds/hit_3.wav"],
+            files: ["sounds/kenney/impactPunch_medium_000.ogg", "sounds/kenney/impactPunch_medium_001.ogg", "sounds/kenney/impactPunch_medium_002.ogg", "sounds/kenney/impactPunch_medium_003.ogg", "sounds/kenney/impactPunch_medium_004.ogg"],
             volume: 0.6, pitch: (0.9, 1.1), range: 40.0, max: 6, kind: Effect,
         ),
         "glance": (
-            files: ["sounds/glance_1.wav", "sounds/glance_2.wav"],
+            files: ["sounds/kenney/impactMetal_light_000.ogg", "sounds/kenney/impactMetal_light_001.ogg", "sounds/kenney/impactMetal_light_002.ogg", "sounds/kenney/impactMetal_light_003.ogg", "sounds/kenney/impactMetal_light_004.ogg"],
             volume: 0.5, pitch: (0.9, 1.15), range: 40.0, max: 4, kind: Effect,
         ),
         "death": (
@@ -116,20 +118,16 @@
             volume: 0.6, pitch: (0.95, 1.05), range: 50.0, max: 2, kind: Effect,
         ),
         "thud": (
-            files: ["sounds/thud_1.wav", "sounds/thud_2.wav"],
+            files: ["sounds/kenney/impactPunch_heavy_000.ogg", "sounds/kenney/impactPunch_heavy_001.ogg", "sounds/kenney/impactPunch_heavy_002.ogg", "sounds/kenney/impactPunch_heavy_003.ogg", "sounds/kenney/impactPunch_heavy_004.ogg"],
             volume: 0.6, pitch: (0.9, 1.1), range: 40.0, max: 4, kind: Effect,
         ),
         "door": (
-            files: ["sounds/door_1.wav", "sounds/door_2.wav"],
-            volume: 0.3, pitch: (0.85, 1.15), range: 25.0, max: 3, kind: Effect,
+            files: ["sounds/kenney/doorOpen_1.ogg", "sounds/kenney/doorOpen_2.ogg"],
+            volume: 0.4, pitch: (0.95, 1.05), range: 25.0, max: 3, kind: Effect,
         ),
         "pods": (
             files: ["sounds/pods_1.wav"],
             volume: 0.7, pitch: (0.95, 1.05), range: 70.0, max: 2, kind: Effect,
-        ),
-        "raid": (
-            files: ["sounds/raid_1.wav"],
-            volume: 0.7, pitch: (1.0, 1.0), range: 0.0, max: 1, kind: Alert,
         ),
         "joined": (
             files: ["sounds/joined_1.wav"],
@@ -140,16 +138,16 @@
             volume: 0.35, pitch: (1.0, 1.0), range: 0.0, max: 1, kind: Alert,
         ),
         "ui_click": (
-            files: ["sounds/ui_click_1.wav"],
+            files: ["sounds/kenney/click1.ogg", "sounds/kenney/click2.ogg", "sounds/kenney/click3.ogg", "sounds/kenney/click4.ogg", "sounds/kenney/click5.ogg"],
             volume: 0.35, pitch: (0.97, 1.03), range: 0.0, max: 3, kind: Interface,
         ),
         "ui_place": (
-            files: ["sounds/ui_place_1.wav"],
+            files: ["sounds/kenney/switch1.ogg", "sounds/kenney/switch2.ogg", "sounds/kenney/switch3.ogg"],
             volume: 0.35, pitch: (0.95, 1.05), range: 0.0, max: 3, kind: Interface,
         ),
         "ui_open": (
-            files: ["sounds/ui_open_1.wav"],
-            volume: 0.3, pitch: (1.0, 1.0), range: 0.0, max: 2, kind: Interface,
+            files: ["sounds/kenney/switch10.ogg", "sounds/kenney/switch11.ogg", "sounds/kenney/switch12.ogg"],
+            volume: 0.3, pitch: (0.97, 1.03), range: 0.0, max: 2, kind: Interface,
         ),
     },
     // Loops that play all the time, faded by the time of day and whether the
@@ -158,5 +156,8 @@
         day: (file: "sounds/amb_day.wav", volume: 0.35),
         night: (file: "sounds/amb_night.wav", volume: 0.35),
         cave: (file: "sounds/amb_cave.wav", volume: 0.45),
+        // Played from the start while raiders are at the gate and through the
+        // battle (it doubles as the alarm), in place of the others.
+        battle: (file: "sounds/music/dream_raid.mp3", volume: 0.5),
     ),
 )

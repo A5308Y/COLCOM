@@ -45,6 +45,9 @@ struct BattleView {
     follow: f32,
     /// The acting unit last put in the inspector.
     inspected: Option<usize>,
+    /// The round last announced, and seconds the "Round N" banner still shows.
+    announced: Option<u32>,
+    banner: f32,
 }
 
 /// Bold lines for what matters in a battle: the edges of where the acting
@@ -150,6 +153,9 @@ fn update_reach(mut commands: Commands, sim: Res<Sim>, ui: Res<UiState>, mut are
         }
     }
 }
+
+/// Seconds the "Round N" banner shows.
+const BANNER_SECS: f32 = 1.8;
 
 /// The colony's unit taking its turn, when the player can give it orders.
 fn my_unit(b: &Battle) -> Option<usize> {
@@ -449,14 +455,36 @@ fn battle_panels(
     mut ui: ResMut<UiState>,
     mut view: ResMut<BattleView>,
     area: Res<ReachArea>,
+    time: Res<Time>,
     mut sounds: ResMut<SoundQueue>,
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?.clone();
     parley_dialog(&ctx, &mut sim, &mut sounds);
     let w = &sim.world;
-    let Some(b) = &w.battle else { return Ok(()) };
+    let Some(b) = &w.battle else {
+        view.announced = None;
+        return Ok(());
+    };
     let mut orders = Vec::new();
+
+    // "Round N" in the middle of the screen when a round starts, fading away.
+    if view.announced != Some(b.round) {
+        view.announced = Some(b.round);
+        view.banner = BANNER_SECS;
+    }
+    if view.banner > 0.0 {
+        view.banner -= time.delta_secs();
+        let shown = BANNER_SECS - view.banner;
+        let alpha = (shown / 0.25).min(view.banner / 0.6).clamp(0.0, 1.0);
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("round_banner")));
+        let at = ctx.content_rect().center() - egui::vec2(0.0, ctx.content_rect().height() * 0.22);
+        let fade = |c: Color32| Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (c.a() as f32 * alpha) as u8);
+        let big = egui::FontId::proportional(44.0);
+        let text = format!("Round {}", b.round);
+        painter.text(at + egui::vec2(2.0, 2.0), Align2::CENTER_CENTER, &text, big.clone(), fade(Color32::from_black_alpha(200)));
+        painter.text(at, Align2::CENTER_CENTER, text, big, fade(Color32::from_rgb(255, 235, 190)));
+    }
 
     // Each squad's state over its square: a bar per member (health while
     // standing, dark red when downed, grey and crossed out when dead), the
