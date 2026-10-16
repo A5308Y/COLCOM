@@ -229,16 +229,17 @@ fn facing(p: &Pawn, w: &SimWorld) -> Option<f32> {
 }
 
 /// Where a squad member stands within the squad's one cell, as an offset in
-/// cells: in a row against the side with cover facing the enemy, else in a
-/// huddle. Nothing while walking (the squad moves as a column) or alone.
+/// cells: in a row against the side with cover facing the enemy, else (and
+/// while the squad walks, together) in a huddle.
 fn squad_slot(p: &Pawn, w: &SimWorld) -> Vec2 {
     let Some(b) = &w.battle else { return Vec2::ZERO };
     let Some(unit) = b.unit_of(p.id).map(|u| &b.units[u]) else { return Vec2::ZERO };
     let n = unit.members.len();
     let Some(k) = unit.members.iter().position(|&id| id == p.id) else { return Vec2::ZERO };
-    if n < 2 || !p.path.is_empty() || b.moving.iter().any(|m| m.pawn == p.id) {
+    if n < 2 {
         return Vec2::ZERO;
     }
+    let walking = !p.path.is_empty() || b.moving.iter().any(|m| m.pawn == p.id);
     let m = &w.map;
     // The side facing the nearest enemy, and what cover it has.
     let enemy = w
@@ -249,7 +250,7 @@ fn squad_slot(p: &Pawn, w: &SimWorld) -> Vec2 {
             let d = |o: &&Pawn| (o.x - p.x).powi(2) + (o.y - p.y).powi(2);
             d(a).total_cmp(&d(c))
         });
-    let cover = enemy.and_then(|e| {
+    let cover = enemy.filter(|_| !walking).and_then(|e| {
         let (dx, dy) = ((e.pos.0 as i32 - p.pos.0 as i32).signum(), (e.pos.1 as i32 - p.pos.1 as i32).signum());
         [(dx, 0), (0, dy)]
             .into_iter()

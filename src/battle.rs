@@ -29,8 +29,6 @@ pub const TURN_SECS: f32 = 6.0;
 pub const CELLS_PER_ROUND: usize = (AP_MAX / AP_MOVE) as usize;
 /// Members within this many cells of their leader start the battle with them.
 const WITH_LEADER: usize = 2;
-/// Seconds between squad members setting off when the squad moves.
-const FOLLOW_GAP: f32 = 0.35;
 /// Suppression from which a unit is pinned down (less AP, worse aim).
 pub const PINNED: f32 = 50.0;
 /// Morale below which a unit breaks: raiders flee, colonists cower.
@@ -128,13 +126,12 @@ impl Unit {
     }
 }
 
-/// Someone walking to their unit's new cell. Squad members set off `wait`
-/// seconds after one another, so the squad moves as a column.
+/// Someone walking to their unit's new cell (a squad's members all go
+/// together, at the pace of the slowest).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Mover {
     pub pawn: u32,
     pub goal: Pos,
-    pub wait: f32,
 }
 
 /// A shot or blow still to come in an attack, `delay` seconds from now.
@@ -633,15 +630,10 @@ impl World {
         Ok(d * AP_MOVE)
     }
 
-    /// The whole unit goes to `to`: the leader first, the others following
-    /// in a column.
+    /// The whole unit sets off for `to` together.
     fn start_move(&mut self, u: usize, to: Pos) {
         let members = self.battle.as_ref().unwrap().units[u].members.clone();
-        let moving = members
-            .iter()
-            .enumerate()
-            .map(|(k, &pawn)| Mover { pawn, goal: to, wait: k as f32 * FOLLOW_GAP })
-            .collect();
+        let moving = members.iter().map(|&pawn| Mover { pawn, goal: to }).collect();
         self.battle.as_mut().unwrap().moving = moving;
     }
 
@@ -1028,16 +1020,14 @@ impl World {
         }
         if !b.moving.is_empty() {
             let moving = b.moving.clone();
+            // Everyone keeps to the pace of the slowest, so the squad stays together.
+            let pace = moving.iter().filter_map(|m| self.pawn(m.pawn)).map(|p| p.move_speed()).fold(f32::MAX, f32::min);
             let mut still = Vec::new();
-            for mut m in moving {
-                if m.wait > 0.0 {
-                    m.wait -= dt;
-                    still.push(m);
-                    continue;
-                }
+            for m in moving {
                 let Some(i) = self.pawn_index(m.pawn) else { continue };
                 let mut p = self.pawns[i].clone();
-                if matches!(self.go_to(&mut p, m.goal, false, dt), Step::Moving) {
+                let step = dt * pace / p.move_speed().max(0.01);
+                if matches!(self.go_to(&mut p, m.goal, false, step), Step::Moving) {
                     still.push(m);
                 }
                 self.pawns[i] = p;
@@ -1299,7 +1289,7 @@ mod tests {
     }
 
     #[test]
-    fn squads_move_as_one_in_a_column() {
+    fn squads_move_together() {
         let mut w = world(40, 20, 16);
         let leader = colonist(&mut w, (5, 10, Z));
         let a = colonist(&mut w, (5, 11, Z));
@@ -1308,26 +1298,27 @@ mod tests {
         for m in [a, b2] {
             w.set_role(m, Role::Member(leader)).unwrap();
         }
+        // One of them limps: the squad keeps to their pace.
+        let i = w.pawn_index(b2).unwrap();
+        w.pawns[i].health.caps.moving = 0.6;
         fight(&mut w, 1, (39, 10, Z));
         let u = battle(&w).unit_of(leader).unwrap();
         assert_eq!(w.unit_cell(u), Some((5, 10, Z)));
         // Another unit's cell can't be shared.
         let lone = colonist(&mut w, (9, 10, Z));
-        let i = w.pawn_index(lone).unwrap();
-        w.pawns[i].role = Role::Fighter;
         w.battle.as_mut().unwrap().units.push(Unit::new(Faction::Colony, vec![lone], false, 50.0));
         w.battle_order(BattleOrder::Activate(u)).unwrap();
         assert!(w.move_cost(u, (9, 10, Z)).is_err(), "taken by another unit");
         w.battle_order(BattleOrder::Move((10, 12, Z))).unwrap();
-        // A moment in, the leader is ahead and the last one hasn't set off.
-        for _ in 0..(0.5 / TICK) as usize {
+        for _ in 0..(0.7 / TICK) as usize {
             w.tick(TICK);
+            let at = |id: u32| {
+                let p = w.pawn(id).unwrap();
+                (p.x, p.y)
+            };
+            let (l, x, y) = (at(leader), at(a), at(b2));
+            assert!((l.0 - x.0).abs() + (l.1 - x.1).abs() < 0.01 && (l.0 - y.0).abs() + (l.1 - y.1).abs() < 0.01, "together");
         }
-        let moved = |id: u32| {
-            let p = w.pawn(id).unwrap();
-            ((p.x - 5.0).powi(2) + (p.y - 10.0).powi(2)).sqrt()
-        };
-        assert!(moved(leader) > 0.5 && moved(b2) < 0.2, "leader {} ahead, last {} still waiting", moved(leader), moved(b2));
         for _ in 0..(8.0 / TICK) as usize {
             w.tick(TICK);
         }

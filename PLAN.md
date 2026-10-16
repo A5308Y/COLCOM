@@ -187,11 +187,12 @@ real play.
 - Squads hold one cell (2026-10-16): a squad stands in for a single colonist in battle. It has one
   cell (its leader's; `World::unit_cell`), one cover check, one line of sight, and no other unit may
   share it. At most 4 people (`SQUAD_MAX`), because a 1.8 m cell fits 4 shoulder to shoulder.
-  Members start the battle and arrive on the leader's cell. A move sends everyone to the same cell,
-  setting off `FOLLOW_GAP` (0.35 s) apart (`Battle::moving: Vec<Mover>`), so the squad walks as a
-  column. Shots at a squad hit a random member; area attacks could later hit all of them. The front
-  end only draws the members apart (`pawns.rs::squad_slot`): in a row against the cover facing the
-  nearest enemy, else in a huddle, overlapping the neighbouring cells a little. There's one ring per
+  Members start the battle and arrive on the leader's cell. A move sends everyone to the same cell
+  together (`Battle::moving: Vec<Mover>`), at the pace of the slowest member, keeping the huddle
+  shape while walking (a staggered column made moves about a second longer and was dropped). Shots at a squad hit a random member; area attacks could later hit all of them. The front
+  end only draws the members apart (`pawns.rs::squad_slot`): standing still, in a row against the
+  cover facing the nearest enemy, else (and while walking) in a huddle, overlapping the neighbouring
+  cells a little. There's one ring per
   unit, an "xN" count beside a squad's ring, one hit-chance label per enemy unit, and a single aiming
   line in the attack preview. `SAVE_VERSION` is 6.
 
