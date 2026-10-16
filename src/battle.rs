@@ -55,26 +55,35 @@ pub const STALEMATE: u32 = 10;
 /// What a raid demands per raider, in item value.
 pub const DEMAND_PER_RAIDER: f32 = 40.0;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord)]
-pub enum Cover {
-    None,
-    Half,
-    Full,
-}
+pub use crate::defs::CoverKind as Cover;
 
 impl Cover {
     pub fn name(self) -> &'static str {
         match self {
             Cover::None => "no cover",
-            Cover::Half => "half cover",
-            Cover::Full => "full cover",
+            Cover::Light => "light cover",
+            Cover::Medium => "medium cover",
+            Cover::Heavy => "heavy cover",
         }
     }
 
+    /// One step less: what cover is worth against a shot from above.
     fn weaker(self) -> Cover {
         match self {
-            Cover::Full => Cover::Half,
+            Cover::Heavy => Cover::Medium,
+            Cover::Medium => Cover::Light,
             _ => Cover::None,
+        }
+    }
+
+    /// How much it scales the chance of being hit. (Heavy cover blocks the
+    /// view; this is for shots that get past it at an angle.)
+    pub fn hit_factor(self) -> f32 {
+        match self {
+            Cover::None => 1.0,
+            Cover::Light => 0.8,
+            Cover::Medium => 0.6,
+            Cover::Heavy => 0.45,
         }
     }
 }
@@ -831,11 +840,7 @@ impl World {
         let b = self.battle.as_ref();
         let unit = |id: u32| b.and_then(|b| b.unit_of(id).map(|u| &b.units[u]));
         if w.ranged {
-            c *= match self.cover(from, o.pos) {
-                Cover::None => 1.0,
-                Cover::Half => 0.7,
-                Cover::Full => 0.45,
-            };
+            c *= self.cover(from, o.pos).hit_factor();
             if unit(o.id).is_some_and(|u| u.hunkered) {
                 c *= 0.75;
             }
@@ -876,18 +881,32 @@ impl World {
         }
     }
 
-    /// How much cover the cell `c` gives: rock, walls and doors fully; any
-    /// other structure, and trees, half.
+    /// How much cover the cell `c` gives: rock and soil heavy; structures
+    /// and plants as their definition says (see `BuildDef::cover`).
     pub fn cover_at(&self, c: Pos) -> Cover {
         let m = &self.map;
         let i = m.idx(c);
-        let f = m.feature[i];
-        if m.block[i].solid() || f.blocks_sight() {
-            Cover::Full
-        } else if f.structure().is_some_and(|d| d.special != crate::defs::Special::Stairs) || !f.passable() {
-            Cover::Half
-        } else {
-            Cover::None
+        if m.block[i].solid() {
+            return Cover::Heavy;
+        }
+        match m.feature[i] {
+            crate::map::Feature::Built { kind, .. } => {
+                let d = kind.def();
+                d.cover.unwrap_or(if d.blocks_sight {
+                    Cover::Heavy
+                } else if d.special == crate::defs::Special::Stairs {
+                    Cover::None
+                } else if !d.passable {
+                    Cover::Medium
+                } else {
+                    Cover::Light
+                })
+            }
+            crate::map::Feature::Plant { kind, .. } => {
+                let d = kind.def();
+                d.cover.unwrap_or(if d.passable { Cover::None } else { Cover::Medium })
+            }
+            _ => Cover::None,
         }
     }
 
@@ -1161,32 +1180,11 @@ impl World {
     }
 }
 
-/// Line of sight for battles. A unit with cover beside it may lean out: it
-/// sees from its own cell or an open cell next to it, and is seen there too.
-/// So you can shoot past the end of a wall or round a corner, but never
-/// through a wall that stands between you.
+/// Line of sight for battles: a clear line between the two cells (see
+/// `clear_line`). Heavy cover (rock, walls, doors) blocks it; there's no
+/// peeking past it.
 pub fn battle_sight(w: &World, a: Pos, b: Pos) -> bool {
-    let m = &w.map;
-    let from = peek_spots(w, a);
-    let to = peek_spots(w, b);
-    from.iter().any(|&f| to.iter().any(|&t| clear_line(m, f, t)))
-}
-
-/// Where someone at `c` can look (and be seen) from: their cell and, if
-/// they have cover beside them, the open cells next to it on their level.
-fn peek_spots(w: &World, c: Pos) -> Vec<Pos> {
-    let m = &w.map;
-    let mut spots = vec![c];
-    let beside = |dx: i32, dy: i32| m.at(c.0 as i32 + dx, c.1 as i32 + dy, c.2 as i32);
-    let in_cover = crate::map::DIRS.iter().any(|&(dx, dy)| beside(dx, dy).is_some_and(|n| w.cover_at(n) != Cover::None));
-    if in_cover {
-        for (dx, dy) in crate::map::DIRS {
-            if let Some(n) = beside(dx, dy).filter(|&n| see_through(m, n)) {
-                spots.push(n);
-            }
-        }
-    }
-    spots
+    clear_line(&w.map, a, b)
 }
 
 /// Air that doesn't block the view: no rock, soil, wall or door.
@@ -1500,23 +1498,29 @@ mod tests {
         let target = colonist(&mut w, (12, 15, Z));
         let chance = |w: &World| w.hit_chance(w.pawn(shooter).unwrap(), w.pawn(target).unwrap());
         let open = chance(&w);
-        let fence = w.map.idx((11, 15, Z));
-        w.map.feature[fence] = Feature::built("fence");
-        assert_eq!(w.cover((5, 15, Z), (12, 15, Z)), Cover::Half);
-        let half = chance(&w);
-        w.map.feature[fence] = Feature::built("wall");
-        assert_eq!(w.cover((5, 15, Z), (12, 15, Z)), Cover::Full);
-        assert!(battle_sight(&w, (5, 15, Z), (12, 15, Z)), "you can still lean out and shoot");
-        let full = chance(&w);
-        assert!(open > half && half > full, "{} > {} > {}", open, half, full);
+        let beside = w.map.idx((11, 15, Z));
+        w.map.feature[beside] = Feature::built("fence");
+        assert_eq!(w.cover((5, 15, Z), (12, 15, Z)), Cover::Light);
+        let light = chance(&w);
+        w.map.feature[beside] = Feature::built("shelf");
+        assert_eq!(w.cover((5, 15, Z), (12, 15, Z)), Cover::Medium);
+        let medium = chance(&w);
+        assert!(open > light && light > medium, "{} > {} > {}", open, light, medium);
         assert_eq!(w.cover((12, 25, Z), (12, 15, Z)), Cover::None, "no cover on the open side");
 
-        // From a level up, the wall only half covers, and height helps aim.
+        // From a level up, medium cover is only light, and height helps aim.
         let i = w.pawn_index(shooter).unwrap();
         w.pawns[i].pos.2 = Z + 1;
         w.pawns[i].z = (Z + 1) as f32;
-        assert_eq!(w.cover((5, 15, Z + 1), (12, 15, Z)), Cover::Half);
-        assert!(chance(&w) > full);
+        assert_eq!(w.cover((5, 15, Z + 1), (12, 15, Z)), Cover::Light);
+        assert!(chance(&w) > medium);
+
+        // Heavy cover (a wall) blocks the view: no shot at all.
+        w.pawns[i].pos.2 = Z;
+        w.pawns[i].z = Z as f32;
+        w.map.feature[beside] = Feature::built("wall");
+        assert_eq!(w.cover_at((11, 15, Z)), Cover::Heavy);
+        assert!(!battle_sight(&w, (5, 15, Z), (12, 15, Z)), "nobody shoots through a wall");
     }
 
     #[test]
@@ -1760,19 +1764,14 @@ mod tests {
     }
 
     #[test]
-    fn leaning_out_past_the_end_of_a_wall() {
+    fn heavy_cover_cannot_be_peeked_past() {
         let mut w = world(20, 12, 19);
         for y in 3..=5 {
             let i = w.map.idx((6, y, Z));
             w.map.feature[i] = Feature::built("wall");
         }
-        assert!(!clear_line(&w.map, (5, 5, Z), (12, 4, Z)), "straight on, the wall is in the way");
-        assert!(battle_sight(&w, (5, 5, Z), (12, 4, Z)), "but leaning out past its end, you see them");
-        // In the open, nobody leans: a lone post blocks a shot straight past it.
-        let mut w = world(20, 12, 19);
-        let i = w.map.idx((9, 5, Z));
-        w.map.feature[i] = Feature::built("wall");
-        assert!(!battle_sight(&w, (5, 5, Z), (13, 5, Z)), "the post hides them");
+        assert!(!battle_sight(&w, (5, 5, Z), (12, 4, Z)), "no leaning out past a wall");
+        assert!(battle_sight(&w, (5, 6, Z), (12, 4, Z)), "step out past its end to see them");
     }
 
     #[test]

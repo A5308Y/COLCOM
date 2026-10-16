@@ -238,6 +238,16 @@ pub struct ItemDef {
     pub look: Vec<Part>,
 }
 
+/// How much cover something gives in battle (like MENACE's light, medium
+/// and heavy cover). Heavy cover blocks the view completely.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, PartialOrd, Ord, Deserialize)]
+pub enum CoverKind {
+    None,
+    Light,
+    Medium,
+    Heavy,
+}
+
 /// Behaviour of a buildable that the game handles in code.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Deserialize)]
 pub enum Special {
@@ -300,6 +310,10 @@ fn construction_skill() -> Skill {
 pub struct BuildDef {
     pub id: String,
     pub name: String,
+    /// Cover it gives in battle; if not given: heavy if it blocks the view,
+    /// medium if it can't be walked through, else light.
+    #[serde(default)]
+    pub cover: Option<CoverKind>,
     /// Toolbar menu it's listed under.
     pub category: String,
     /// Toolbar shortcut.
@@ -428,6 +442,10 @@ pub struct PlantDef {
     pub id: String,
     pub name: String,
     pub passable: bool,
+    /// Cover it gives in battle; if not given: medium if it can't be walked
+    /// through (trees), else none.
+    #[serde(default)]
+    pub cover: Option<CoverKind>,
     /// Seconds of daylight from sown to grown.
     #[serde(default)]
     pub grow_time: f32,

@@ -569,9 +569,14 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
     if keys.just_pressed(KeyCode::Tab) && !battle {
         sim.cycle_speed();
     }
+    // Esc: close a window, or put the tool down, or let go of the selection.
     if keys.just_pressed(KeyCode::Escape) {
-        ui.show_help = false;
-        ui.show_work = false;
+        if ui.show_help || ui.show_work {
+            ui.show_help = false;
+            ui.show_work = false;
+        } else if ui.tool == Tool::Select {
+            ui.select(None);
+        }
     }
     if shift && keys.just_pressed(KeyCode::KeyR) {
         ui.hide_roofs = !ui.hide_roofs;
@@ -692,12 +697,20 @@ fn mouse(
             return;
         }
         let ids = ui.selected_pawns();
-        let (Some(&first), Some(Hover { stand: t, .. })) = (ids.first(), hover) else { return };
+        let (Some(&first), Some(Hover { stand: t, .. })) = (ids.first(), hover) else {
+            ui.select(None);
+            return;
+        };
         // A weapon or piece of clothing: the first selected colonist equips it.
         let m = &sim.world.map;
         let gear = m.items[m.idx(t)].is_some_and(|s| s.kind.def().weapon.is_some() || s.kind.def().apparel.is_some());
-        if gear && sim.world.pawn(first).is_some_and(|p| p.is_colonist()) && sim.world.order_equip(first, t) {
-            sounds.play("ui_place", None);
+        if gear && sim.world.pawn(first).is_some_and(|p| p.is_colonist()) {
+            if sim.world.order_equip(first, t) {
+                sounds.play("ui_place", None);
+            }
+        } else {
+            // Right-click anywhere else lets go of the selection.
+            ui.select(None);
         }
     }
 }

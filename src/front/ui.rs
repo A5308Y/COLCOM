@@ -122,8 +122,12 @@ fn draw_ui(
     match st.selected {
         Some(Selection::Pawn(id)) => pawn_inspector(&ctx, &mut sim, &mut st, id, left),
         Some(Selection::Tile(t)) => {
-            if tile_inspector(&ctx, &mut sim, t, left) {
+            let (changed, open) = tile_inspector(&ctx, &mut sim, t, left);
+            if changed {
                 sounds.play("ui_click", None);
+            }
+            if !open {
+                st.select(None);
             }
         }
         None => {}
@@ -378,8 +382,10 @@ fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32,
     }
     let mut actions = Vec::new();
     let title = if p.is_colonist() { p.name.clone() } else { format!("{} (raider)", p.name) };
+    let mut open = true;
     egui::Window::new(RichText::new(title).strong())
         .id(egui::Id::new("inspector"))
+        .open(&mut open)
         .anchor(Align2::LEFT_TOP, [left + 8.0, 92.0])
         .collapsible(false)
         .resizable(false)
@@ -411,6 +417,9 @@ fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32,
         });
     if !actions.is_empty() {
         squads_ui::apply(&mut sim.world, id, actions);
+    }
+    if !open {
+        st.select(None);
     }
 }
 
@@ -528,13 +537,16 @@ fn health_tab(ui: &mut egui::Ui, p: &Pawn) {
 type Action = Box<dyn FnOnce(&mut SimWorld)>;
 
 /// Returns whether anything was changed in it.
-fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) -> bool {
+/// The cell inspector; returns whether something was changed, and whether it's still open.
+fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) -> (bool, bool) {
     let mut actions: Vec<Action> = Vec::new();
     let w = &sim.world;
     let m = &w.map;
     let i = m.idx(t);
+    let mut open = true;
     egui::Window::new(RichText::new(format!("Cell {}, {}  level {}", t.0, t.1, t.2)).strong())
         .id(egui::Id::new("inspector"))
+        .open(&mut open)
         .anchor(Align2::LEFT_TOP, [left + 8.0, 92.0])
         .collapsible(false)
         .resizable(false)
@@ -600,7 +612,7 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) -> bool
     for act in actions {
         act(&mut sim.world);
     }
-    changed
+    (changed, open)
 }
 
 fn stockpile_settings(ui: &mut egui::Ui, w: &SimWorld, id: u16, actions: &mut Vec<Action>) {

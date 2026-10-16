@@ -184,6 +184,19 @@ real play.
 
 ## Notes
 
+- Cover tiers (2026-10-16), like MENACE: `defs::CoverKind` None / Light / Medium / Heavy
+  (`battle::Cover`), set per buildable and plant with `cover` in `defs.ron`. Defaults: heavy if it
+  blocks sight, medium if it can't be walked through, else light; plants medium if impassable.
+  Rock and soil are heavy. Hit factor: light ×0.8, medium ×0.6, heavy ×0.45 (only for shots that get
+  past it at an angle). From above, cover counts one step less. Heavy cover blocks the view: there's
+  no peeking any more (`battle_sight` is just `clear_line`). Markers on the hovered cell are drawn
+  at three heights.
+- The battle camera eases to a unit once, as its turn starts, and stops as soon as the player moves
+  the camera (keys, right or middle drag, wheel). It used to keep pulling back during every move.
+  The acting unit is put in the inspector once per turn, not every frame.
+- Deselecting: Esc (after closing an open window, with the Select tool), a right click on nothing
+  to equip (also in battle), or the inspector's close button.
+
 - Battle additions (2026-10-16):
   - **Suppression:** counted per attack (+15 for coming under attack, +10 per hit), not per shot.
     With rifles firing twice it pinned squads nearly every round, leaving 60 AP and so one attack.

@@ -43,6 +43,8 @@ struct BattleView {
     /// The unit the camera last went to, and seconds left to keep easing there.
     followed: Option<usize>,
     follow: f32,
+    /// The acting unit last put in the inspector.
+    inspected: Option<usize>,
 }
 
 /// Bold lines for what matters in a battle: the edges of where the acting
@@ -178,6 +180,7 @@ fn battle_input(
     mut ui: ResMut<UiState>,
     mut view: ResMut<BattleView>,
     mut sounds: ResMut<SoundQueue>,
+    drag: Res<super::camera::DragTracker>,
     time: Res<Time>,
 ) {
     if let Some((_, left)) = &mut view.message {
@@ -189,6 +192,10 @@ fn battle_input(
     let Some(b) = &sim.world.battle else { return };
     let over_ui = egui_input.wants_any_pointer_input() || ui.over_dock(&window);
     let typing = egui_input.wants_any_keyboard_input();
+    // A right click (not a camera drag) lets go of the selection.
+    if buttons.just_released(MouseButton::Right) && drag.right_moved <= 4.0 && !over_ui {
+        ui.select(None);
+    }
     let mut orders = Vec::new();
     if !typing && keys.just_pressed(KeyCode::Space) && my_unit(b).is_some() {
         orders.push(BattleOrder::End);
@@ -236,17 +243,40 @@ fn battle_input(
 }
 
 /// Ease the camera to the unit whose turn it is, and keep up with it while it walks.
-fn follow_action(sim: Res<Sim>, mut view: ResMut<BattleView>, mut rig: ResMut<CameraRig>, time: Res<Time>) {
+/// Ease the camera once to a unit as its turn starts. Moving the camera
+/// yourself (keys, dragging, the wheel) takes over straight away.
+#[allow(clippy::too_many_arguments)]
+fn follow_action(
+    sim: Res<Sim>,
+    keys: Res<ButtonInput<KeyCode>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    scroll: Res<bevy::input::mouse::AccumulatedMouseScroll>,
+    mut view: ResMut<BattleView>,
+    mut rig: ResMut<CameraRig>,
+    time: Res<Time>,
+) {
     let Some(b) = &sim.world.battle else {
         view.followed = None;
         return;
     };
     if b.active != view.followed {
         view.followed = b.active;
-        view.follow = 1.0;
+        view.follow = 0.8;
     }
-    if !b.moving.is_empty() {
-        view.follow = view.follow.max(0.3);
+    let camera_keys = [
+        KeyCode::KeyW,
+        KeyCode::KeyA,
+        KeyCode::KeyS,
+        KeyCode::KeyD,
+        KeyCode::KeyQ,
+        KeyCode::KeyE,
+        KeyCode::ArrowUp,
+        KeyCode::ArrowDown,
+        KeyCode::ArrowLeft,
+        KeyCode::ArrowRight,
+    ];
+    if keys.any_pressed(camera_keys) || buttons.any_pressed([MouseButton::Right, MouseButton::Middle]) || scroll.delta != Vec2::ZERO {
+        view.follow = 0.0;
     }
     if view.follow <= 0.0 {
         return;
@@ -338,8 +368,9 @@ fn draw_battle(sim: Res<Sim>, ui: Res<UiState>, area: Res<ReachArea>, mut gizmos
             let Some(c) = m.at(h.stand.0 as i32 + dx, h.stand.1 as i32 + dy, h.stand.2 as i32) else { continue };
             let height = match w.cover_at(c) {
                 Cover::None => continue,
-                Cover::Half => 0.35,
-                Cover::Full => 0.75,
+                Cover::Light => 0.25,
+                Cover::Medium => 0.5,
+                Cover::Heavy => 0.8,
             };
             let edge = tile_center(h.stand) + Vec3::new(dx as f32 * 0.42, 0.05, dy as f32 * 0.42);
             let side = Vec3::new(dy as f32, 0.0, dx as f32) * 0.25;
@@ -416,7 +447,7 @@ fn battle_panels(
     mut contexts: EguiContexts,
     mut sim: ResMut<Sim>,
     mut ui: ResMut<UiState>,
-    view: Res<BattleView>,
+    mut view: ResMut<BattleView>,
     area: Res<ReachArea>,
     mut sounds: ResMut<SoundQueue>,
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
@@ -698,10 +729,13 @@ fn battle_panels(
             Err(_) => sounds.play("ui_click", None),
         }
     }
-    // Keep the inspector on whoever is acting.
+    // Show the acting unit in the inspector when its turn starts (it can be
+    // let go of after that).
     if let Some(b) = &sim.world.battle {
-        if let Some(lead) = my_unit(b).and_then(|u| b.units[u].members.first().copied()) {
-            if !matches!(ui.selected, Some(Selection::Pawn(id)) if b.unit_of(id) == b.unit_of(lead)) {
+        let acting = my_unit(b);
+        if acting != view.inspected {
+            view.inspected = acting;
+            if let Some(lead) = acting.and_then(|u| b.units[u].members.first().copied()) {
                 ui.select(Some(Selection::Pawn(lead)));
             }
         }

@@ -180,8 +180,9 @@ impl World {
                     r <= weapon.range && battle_sight(self, c, e.pos)
                 });
                 let cover = match self.cover(near.pos, c) {
-                    Cover::Full => 1.0,
-                    Cover::Half => 0.5,
+                    Cover::Heavy => 1.0,
+                    Cover::Medium => 0.7,
+                    Cover::Light => 0.4,
                     Cover::None => 0.0,
                 };
                 score += match (can_shoot, attack_after) {

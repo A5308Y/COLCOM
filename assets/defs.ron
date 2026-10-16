@@ -342,9 +342,13 @@
     // structure drops `drops`, or half its cost if not given. `look: Block`
     // means it is drawn as a solid block with the terrain (walls); its parts
     // only matter otherwise.
+    // `cover` in battle: None, Light, Medium or Heavy (heavy blocks the view;
+    // default: Heavy if it blocks sight, Medium if it can't be walked through,
+    // else Light).
     builds: [
         (
             id: "wall",
+            cover: Some(Heavy),
             category: "Structure",
             name: "Wall",
             key: Some("6"),
@@ -358,6 +362,7 @@
         ),
         (
             id: "door",
+            cover: Some(Heavy),
             category: "Structure",
             name: "Door",
             key: Some("7"),
@@ -378,6 +383,7 @@
         ),
         (
             id: "bed",
+            cover: Some(Light),
             category: "Furniture",
             beauty: 1.0,
             name: "Bed",
@@ -409,6 +415,7 @@
         ),
         (
             id: "stairs",
+            cover: Some(None),
             category: "Structure",
             name: "Stairs",
             key: Some("="),
@@ -427,6 +434,7 @@
         ),
         (
             id: "lamp",
+            cover: Some(None),
             category: "Light",
             beauty: 1.0,
             name: "Lamp",
@@ -443,6 +451,7 @@
         ),
         (
             id: "stone_door",
+            cover: Some(Heavy),
             name: "Stone door",
             category: "Structure",
             cost: ("stone_blocks", 4),
@@ -462,6 +471,7 @@
         ),
         (
             id: "window",
+            cover: Some(Medium),
             name: "Window",
             category: "Structure",
             key: Some("O"),
@@ -483,6 +493,7 @@
         ),
         (
             id: "fence",
+            cover: Some(Light),
             name: "Fence",
             category: "Structure",
             key: Some("G"),
@@ -503,6 +514,7 @@
         ),
         (
             id: "table",
+            cover: Some(Light),
             name: "Table",
             category: "Furniture",
             key: Some("Y"),
@@ -521,6 +533,7 @@
         ),
         (
             id: "chair",
+            cover: Some(Light),
             name: "Chair",
             category: "Furniture",
             key: Some("R"),
@@ -540,6 +553,7 @@
         ),
         (
             id: "shelf",
+            cover: Some(Medium),
             name: "Shelf",
             category: "Furniture",
             key: Some("X"),
@@ -558,6 +572,7 @@
         ),
         (
             id: "torch",
+            cover: Some(None),
             name: "Torch",
             category: "Light",
             key: Some("Z"),
@@ -575,6 +590,7 @@
         // Workbenches: recipes below name them. Colonists work them from beside.
         (
             id: "stove",
+            cover: Some(Medium),
             category: "Production",
             name: "Stove",
             key: Some("V"),
@@ -591,6 +607,7 @@
         ),
         (
             id: "sawbench",
+            cover: Some(Light),
             category: "Production",
             name: "Sawing bench",
             key: Some("J"),
@@ -609,6 +626,7 @@
         ),
         (
             id: "stonecutter",
+            cover: Some(Medium),
             category: "Production",
             name: "Stonecutter's table",
             key: Some("T"),
@@ -625,6 +643,7 @@
         ),
         (
             id: "smelter",
+            cover: Some(Medium),
             category: "Production",
             name: "Smelter",
             key: Some("M"),
@@ -639,6 +658,7 @@
         ),
         (
             id: "smithy",
+            cover: Some(Medium),
             category: "Production",
             name: "Smithy",
             cost: ("stone_blocks", 15),
@@ -653,6 +673,7 @@
         ),
         (
             id: "crafting_bench",
+            cover: Some(Light),
             category: "Production",
             name: "Crafting bench",
             key: Some("U"),
@@ -679,10 +700,12 @@
     // on cells designated `desig` (or automatically if there is none), with
     // `sound` while working and `done_sound` at the end.
     // Looks: `stages` by growth, each with variants picked at random per cell,
-    // scaled by a random factor in `scale`.
+    // scaled by a random factor in `scale`. `cover` in battle: None, Light,
+    // Medium or Heavy (default: Medium if it can't be walked through, else None).
     plants: [
         (
             id: "tree",
+            cover: Some(Medium),
             name: "Tree",
             passable: false,
             wild: Some((density: 0.11, regrow: 0.6)),
@@ -730,6 +753,7 @@
         ),
         (
             id: "berry_bush",
+            cover: Some(Light),
             name: "Berry bush",
             passable: false,
             wild: Some((density: 0.025, regrow: 0.4)),
