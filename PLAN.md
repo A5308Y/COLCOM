@@ -184,6 +184,19 @@ real play.
 
 ## Notes
 
+- Battle additions (2026-10-16):
+  - **Suppression:** counted per attack (+15 for coming under attack, +10 per hit), not per shot.
+    With rifles firing twice it pinned squads nearly every round, leaving 60 AP and so one attack.
+    The panel says "pinned down: N AP this round".
+  - **Hit chance from a cell:** `hit_chance_from` / `can_attack_from`. While a destination is hovered,
+    each enemy group's label shows the chance from there ("no AP left" if the move uses the attack's
+    AP; "out of reach from there").
+  - **Deploying:** squads only (`BattleOrder::Deploy`, `Unit::deployed`, `AP_DEPLOY` 30 each way).
+    The squad goes down on one knee: its shots ×1.25, shots at it ×0.8, and it can't move until it
+    stands up. It stays deployed across rounds. It kneels (crouch clip) and fires without standing.
+    The movement area hides while deployed. The AI deploys a squad that's staying put to fire at the
+    start of its activation, and stands up to move or flee.
+
 - Battle line of sight (2026-10-16): `battle_sight` used to ignore every cell next to either end (to
   allow leaning out), which let people shoot through a wall they both stood against. It also sampled
   points a third of a cell apart, so lines grazing a corner were blocked. Now:

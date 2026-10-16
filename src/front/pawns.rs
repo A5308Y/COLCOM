@@ -442,8 +442,10 @@ fn sync_pawns(
         let armed = !lying
             && w.battle.as_ref().is_some_and(|b| b.unit_of(p.id).is_some_and(|u| !b.units[u].passive));
 
-        // An attack starts the weapon's cooldown: play the shot or blow.
-        if p.cooldown > v.last_cooldown + 0.05 && !lying {
+        // An attack starts the weapon's cooldown: play the shot or blow
+        // (a deployed squad fires from the knee, so it stays down).
+        let deployed = w.battle.as_ref().is_some_and(|b| b.unit_of(p.id).is_some_and(|u| b.units[u].deployed));
+        if p.cooldown > v.last_cooldown + 0.05 && !lying && !deployed {
             let anim = characters::attack_anim(p);
             v.action = Some((anim, library.duration(anim), true));
         }

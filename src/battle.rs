@@ -22,6 +22,14 @@ pub const AP_MAX: i32 = 100;
 pub const AP_MOVE: i32 = 10;
 pub const AP_ATTACK: i32 = 40;
 pub const AP_HUNKER: i32 = 20;
+/// Deploying a squad (down on one knee) and standing it up again.
+pub const AP_DEPLOY: i32 = 30;
+/// A deployed squad aims better, and is harder to hit.
+const DEPLOYED_AIM: f32 = 1.25;
+const DEPLOYED_TARGET: f32 = 0.8;
+/// Suppression from being attacked, and from each hit.
+const SUPPRESS_ATTACK: f32 = 15.0;
+const SUPPRESS_HIT: f32 = 10.0;
 /// Game seconds that pass per round (for bleeding, healing and hunger).
 pub const TURN_SECS: f32 = 6.0;
 /// Cells a squad member covers per round on the way to their leader (as
@@ -87,6 +95,9 @@ pub struct Unit {
     pub acted: bool,
     pub moved: bool,
     pub hunkered: bool,
+    /// A squad down on one knee: better aim, harder to hit, can't move.
+    #[serde(default)]
+    pub deployed: bool,
     pub suppression: f32,
     pub morale: f32,
     /// Civilians: never act, but can be attacked.
@@ -105,6 +116,7 @@ impl Unit {
             acted: false,
             moved: false,
             hunkered: false,
+            deployed: false,
             suppression: 0.0,
             morale,
             passive: false,
@@ -237,11 +249,15 @@ pub enum BattleOrder {
     Attack(usize),
     /// Take cover for the rest of the round (ends the activation).
     Hunker,
+    /// A squad goes down on one knee, or stands up again (`AP_DEPLOY` each way).
+    Deploy,
     End,
 }
 
-fn dist(a: &Pawn, b: &Pawn) -> f32 {
-    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
+/// Straight-line distance between two cells.
+fn cell_dist(a: Pos, b: Pos) -> f32 {
+    let d = |p: usize, q: usize| p as f32 - q as f32;
+    (d(a.0, b.0).powi(2) + d(a.1, b.1).powi(2) + d(a.2, b.2).powi(2)).sqrt()
 }
 
 fn place(p: &mut Pawn, c: Pos) {
@@ -585,6 +601,19 @@ impl World {
                 self.end_activation();
                 Ok(())
             }
+            BattleOrder::Deploy => {
+                let unit = &self.battle.as_ref().unwrap().units[u];
+                if !unit.led {
+                    return Err("only squads deploy".into());
+                }
+                if ap < AP_DEPLOY {
+                    return Err("not enough action points".into());
+                }
+                let b = self.battle.as_mut().unwrap();
+                b.units[u].deployed = !b.units[u].deployed;
+                b.units[u].ap -= AP_DEPLOY;
+                Ok(())
+            }
             BattleOrder::Hunker => {
                 if ap < AP_HUNKER {
                     return Err("not enough action points".into());
@@ -596,6 +625,9 @@ impl World {
                 Ok(())
             }
             BattleOrder::Move(to) => {
+                if self.battle.as_ref().unwrap().units[u].deployed {
+                    return Err(format!("deployed: stand up first ({} AP)", AP_DEPLOY));
+                }
                 let cost = self.move_cost(u, to)?;
                 if cost > ap {
                     return Err("too far for the action points left".into());
@@ -673,11 +705,16 @@ impl World {
 
     /// In reach: within range and in sight for guns, next to them for blows.
     pub fn can_attack(&self, a: &Pawn, o: &Pawn) -> bool {
+        self.can_attack_from(a, a.pos, o)
+    }
+
+    /// Whether `a` could reach `o` if standing at `from`.
+    pub fn can_attack_from(&self, a: &Pawn, from: Pos, o: &Pawn) -> bool {
         let w = a.attack();
         if w.ranged {
-            dist(a, o) <= w.range && battle_sight(self, a.pos, o.pos)
+            cell_dist(from, o.pos) <= w.range && battle_sight(self, from, o.pos)
         } else {
-            adjacent(a.pos, o.pos) && a.pos.2 == o.pos.2
+            adjacent(from, o.pos) && from.2 == o.pos.2
         }
     }
 
@@ -710,6 +747,8 @@ impl World {
         let b = self.battle.as_mut().unwrap();
         b.strikes = strikes;
         b.quiet_rounds = 0;
+        // Coming under attack keeps heads down, however many shots it is.
+        b.units[t].suppression += SUPPRESS_ATTACK;
         Ok(())
     }
 
@@ -738,7 +777,9 @@ impl World {
         let target_id = self.pawns[ti].id;
         if let Some(b) = self.battle.as_mut() {
             if let Some(tu) = b.unit_of(target_id) {
-                b.units[tu].suppression += if hit { 15.0 } else { 8.0 };
+                if hit {
+                    b.units[tu].suppression += SUPPRESS_HIT;
+                }
             }
         }
         if hit {
@@ -775,17 +816,22 @@ impl World {
 
     /// Chance that `a`'s shot or blow hits `o`.
     pub fn hit_chance(&self, a: &Pawn, o: &Pawn) -> f32 {
+        self.hit_chance_from(a, a.pos, o)
+    }
+
+    /// Chance that `a`'s shot or blow hits `o` if `a` stood at `from`.
+    pub fn hit_chance_from(&self, a: &Pawn, from: Pos, o: &Pawn) -> f32 {
         let w = a.attack();
         let skill = if w.ranged { Skill::Shooting } else { Skill::Melee };
         let level = a.skill(skill) as f32;
-        let d = dist(a, o);
+        let d = cell_dist(from, o.pos);
         let mut c = if w.ranged { 0.55 + level * 0.025 - d * 0.025 } else { 0.6 + level * 0.02 };
         let caps = &a.health.caps;
         c *= (0.4 + 0.6 * caps.sight.min(1.0)) * (0.5 + 0.5 * caps.manipulation.min(1.0));
         let b = self.battle.as_ref();
         let unit = |id: u32| b.and_then(|b| b.unit_of(id).map(|u| &b.units[u]));
         if w.ranged {
-            c *= match self.cover(a.pos, o.pos) {
+            c *= match self.cover(from, o.pos) {
                 Cover::None => 1.0,
                 Cover::Half => 0.7,
                 Cover::Full => 0.45,
@@ -793,7 +839,13 @@ impl World {
             if unit(o.id).is_some_and(|u| u.hunkered) {
                 c *= 0.75;
             }
-            if a.pos.2 > o.pos.2 {
+            if unit(o.id).is_some_and(|u| u.deployed) {
+                c *= DEPLOYED_TARGET;
+            }
+            if unit(a.id).is_some_and(|u| u.deployed) {
+                c *= DEPLOYED_AIM;
+            }
+            if from.2 > o.pos.2 {
                 c *= 1.15;
             }
         }
@@ -1746,6 +1798,88 @@ mod tests {
         }
         assert!(!clear_line(&w.map, (5, 4, Z), (8, 4, Z + 1)), "the slab is in the way");
         assert!(clear_line(&w.map, (3, 4, Z), (6, 4, Z + 1)), "someone at the roof's edge can be seen");
+    }
+
+    #[test]
+    fn squads_deploy_on_one_knee() {
+        let mut w = world(40, 20, 22);
+        let leader = colonist(&mut w, (5, 10, Z));
+        let member = colonist(&mut w, (5, 11, Z));
+        let lone = colonist(&mut w, (5, 15, Z));
+        w.set_role(leader, Role::Leader).unwrap();
+        w.set_role(member, Role::Member(leader)).unwrap();
+        for id in [leader, member] {
+            let i = w.pawn_index(id).unwrap();
+            w.pawns[i].weapon = Some(item("rifle"));
+        }
+        fight(&mut w, 1, (16, 10, Z));
+        let r = raiders(&w)[0];
+        let ri = w.pawn_index(r).unwrap();
+        w.pawns[ri].weapon = Some(item("rifle"));
+        let u = battle(&w).unit_of(leader).unwrap();
+        let ours = |w: &World| w.hit_chance(w.pawn(leader).unwrap(), w.pawn(r).unwrap());
+        let theirs = |w: &World| w.hit_chance(w.pawn(r).unwrap(), w.pawn(leader).unwrap());
+        let (aim, exposed) = (ours(&w), theirs(&w));
+
+        let lu = battle(&w).unit_of(lone).unwrap();
+        w.battle_order(BattleOrder::Activate(lu)).unwrap();
+        assert!(w.battle_order(BattleOrder::Deploy).is_err(), "only squads deploy");
+        w.battle_order(BattleOrder::End).unwrap();
+        // The raider's turn.
+        let ru = battle(&w).unit_of(r).unwrap();
+        w.do_order(BattleOrder::Activate(ru)).unwrap();
+        w.do_order(BattleOrder::End).unwrap();
+
+        w.battle_order(BattleOrder::Activate(u)).unwrap();
+        w.battle_order(BattleOrder::Deploy).unwrap();
+        assert!(battle(&w).units[u].deployed);
+        assert_eq!(battle(&w).units[u].ap, AP_MAX - AP_DEPLOY);
+        assert!(ours(&w) > aim, "better aim deployed");
+        assert!(theirs(&w) < exposed, "harder to hit");
+        assert!(w.battle_order(BattleOrder::Move((6, 12, Z))).is_err(), "deployed: stand up first");
+        w.battle_order(BattleOrder::Deploy).unwrap();
+        assert!(!battle(&w).units[u].deployed);
+        assert_eq!(battle(&w).units[u].ap, AP_MAX - 2 * AP_DEPLOY, "standing up costs too");
+        assert!(w.battle_order(BattleOrder::Deploy).is_ok(), "30 AP left is enough");
+        assert!(w.battle_order(BattleOrder::Deploy).is_err(), "but not again");
+    }
+
+    #[test]
+    fn one_attack_does_not_pin_a_unit() {
+        let mut w = world(40, 20, 23);
+        let id = colonist(&mut w, (5, 10, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].weapon = Some(item("rifle"));
+        w.pawns[i].skills[Skill::Shooting as usize] = 20;
+        fight(&mut w, 1, (12, 10, Z));
+        let u = battle(&w).unit_of(id).unwrap();
+        let t = battle(&w).units.iter().position(|u| u.side == Faction::Raider).unwrap();
+        w.battle_order(BattleOrder::Activate(u)).unwrap();
+        w.battle_order(BattleOrder::Attack(t)).unwrap();
+        for _ in 0..(3.0 / TICK) as usize {
+            w.tick(TICK);
+        }
+        if let Some(b) = &w.battle {
+            assert!(!b.units[t].pinned(), "one volley doesn't pin: {}", b.units[t].suppression);
+        }
+    }
+
+    #[test]
+    fn hit_chances_can_be_previewed_from_another_cell() {
+        let mut w = world(40, 20, 24);
+        let id = colonist(&mut w, (5, 10, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].weapon = Some(item("rifle"));
+        fight(&mut w, 1, (30, 10, Z));
+        let r = raiders(&w)[0];
+        let dest = (16, 10, Z);
+        let (a, o) = (w.pawn(id).unwrap(), w.pawn(r).unwrap());
+        assert!(!w.can_attack(a, o), "out of reach from here");
+        assert!(w.can_attack_from(a, dest, o), "but not from there");
+        let preview = w.hit_chance_from(a, dest, o);
+        place(&mut w.pawns[i], dest);
+        let actual = w.hit_chance(w.pawn(id).unwrap(), w.pawn(r).unwrap());
+        assert!((preview - actual).abs() < 1e-6, "{} == {}", preview, actual);
     }
 
     #[test]

@@ -461,9 +461,10 @@ pub const RUN_STRIDE: f32 = 1.6;
 pub fn activity(p: &Pawn, w: &SimWorld, armed: bool) -> Anim {
     let m = &w.map;
     let arrived = p.path.is_empty();
-    // In a battle: crouched behind cover when hunkered (civilians always are).
+    // In a battle: crouched behind cover when hunkered (civilians always are),
+    // down on one knee when deployed.
     if let Some(b) = &w.battle {
-        if b.unit_of(p.id).is_some_and(|u| b.units[u].hunkered) {
+        if b.unit_of(p.id).is_some_and(|u| b.units[u].hunkered || b.units[u].deployed) {
             return Anim::Crouch;
         }
     }

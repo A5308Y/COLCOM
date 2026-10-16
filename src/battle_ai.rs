@@ -1,7 +1,7 @@
 //! The battle AI: plays the raiders (and, in tests, the colony). One step
 //! at a time, so its moves and attacks play out like the player's.
 
-use crate::battle::{battle_sight, BattleOrder, Cover, AP_ATTACK, AP_HUNKER, AP_MOVE};
+use crate::battle::{battle_sight, BattleOrder, Cover, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MOVE};
 use crate::map::Pos;
 use crate::pathing::bfs;
 use crate::pawn::Faction;
@@ -95,18 +95,29 @@ impl World {
         let unit = &b.units[u];
         if unit.broken() {
             return match unit.side {
-                Faction::Raider if !unit.moved => self.flee_order(u),
+                // To run, a deployed squad has to stand up first.
+                Faction::Raider if unit.deployed && unit.ap >= AP_DEPLOY + AP_MOVE => BattleOrder::Deploy,
+                Faction::Raider if !unit.moved && !unit.deployed => self.flee_order(u),
                 _ if unit.ap >= AP_HUNKER => BattleOrder::Hunker,
                 _ => BattleOrder::End,
             };
         }
         let attack = self.best_attack(u).filter(|_| unit.ap >= AP_ATTACK);
         if let Some((t, score)) = attack {
-            if score >= GOOD_ODDS || unit.moved {
+            // A squad staying put to fire goes down on one knee first (a fresh activation only).
+            let staying = score >= GOOD_ODDS && !unit.moved && unit.ap == unit.ap_start;
+            if unit.led && !unit.deployed && staying && unit.ap >= AP_DEPLOY + AP_ATTACK {
+                return BattleOrder::Deploy;
+            }
+            if score >= GOOD_ODDS || unit.moved || unit.deployed {
                 return BattleOrder::Attack(t);
             }
         }
-        if !unit.moved && unit.ap >= AP_MOVE {
+        // To move, a deployed squad stands up first.
+        if unit.deployed && !unit.moved && unit.ap >= AP_DEPLOY + 2 * AP_MOVE && self.best_spot(u).is_some() {
+            return BattleOrder::Deploy;
+        }
+        if !unit.moved && !unit.deployed && unit.ap >= AP_MOVE {
             if let Some(to) = self.best_spot(u) {
                 return BattleOrder::Move(to);
             }

@@ -16,7 +16,7 @@ use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 use bevy_egui::egui::{self, Align2, Color32, ProgressBar, RichText};
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
-use my_world::battle::{Battle, BattleOrder, Cover, AP_ATTACK, AP_HUNKER, AP_MAX, AP_MOVE};
+use my_world::battle::{Battle, BattleOrder, Cover, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MAX, AP_MOVE};
 use my_world::map::{Pos, DIRS};
 use my_world::pathing::bfs;
 use my_world::pawn::Faction;
@@ -88,7 +88,8 @@ fn update_reach(mut commands: Commands, sim: Res<Sim>, ui: Res<UiState>, mut are
     let w = &sim.world;
     let m = &w.map;
     let key = w.battle.as_ref().and_then(|b| {
-        let u = my_unit(b).filter(|_| !b.busy())?;
+        // A deployed squad can't move: no area.
+        let u = my_unit(b).filter(|&u| !b.busy() && !b.units[u].deployed)?;
         let lead = w.pawn(*b.units[u].members.first()?)?;
         Some((u, lead.pos, b.units[u].ap, ui.top_level(m), ui.roof_version))
     });
@@ -386,6 +387,19 @@ fn cursor(
 }
 
 /// Best chance anyone in unit `u` has against pawn `target`, if anyone can reach it.
+/// Best chance anyone in unit `u` would have against pawn `target` from cell `from`.
+fn best_chance_from(w: &SimWorld, u: usize, from: Pos, target: u32) -> Option<f32> {
+    let b = w.battle.as_ref()?;
+    let target_pawn = w.pawn(target)?;
+    b.units[u]
+        .members
+        .iter()
+        .filter_map(|&a| w.pawn(a))
+        .filter(|a| w.can_attack_from(a, from, target_pawn))
+        .map(|a| w.hit_chance_from(a, from, target_pawn))
+        .reduce(f32::max)
+}
+
 fn best_chance(w: &SimWorld, u: usize, target: u32) -> Option<f32> {
     let b = w.battle.as_ref()?;
     let t = b.unit_of(target)?;
@@ -518,7 +532,13 @@ fn battle_panels(
                 painter.text(pos, Align2::CENTER_BOTTOM, text, font, color);
             }
         }
-        // One label per enemy unit (its square): the best chance against anyone in it.
+        // One label per enemy unit (its square): the best chance against anyone
+        // in it, from where the unit stands or, while a destination is
+        // hovered, from there.
+        let preview = ui
+            .hover
+            .filter(|h| hovered_enemy(w, b, h.stand).is_none())
+            .and_then(|h| Some((h.stand, *area.cost.get(&h.stand)?)));
         for unit in b.units.iter().filter(|t| t.side != Faction::Colony) {
             let Some(p) = unit.members.first().and_then(|&id| w.pawn(id)) else { continue };
             if !ui.shows_at(&w.map, p.x, p.y, p.z) {
@@ -526,10 +546,23 @@ fn battle_panels(
             }
             // Above the squad's status row.
             let Ok(at) = cam.world_to_viewport(gt, tile_point(p.x, p.y, p.z) + Vec3::Y * 1.8) else { continue };
-            let best = unit.members.iter().filter_map(|&id| best_chance(w, u, id)).reduce(f32::max);
-            let (text, color) = match best {
-                Some(c) => (format!("{:.0}%", c * 100.0), Color32::from_rgb(255, 225, 120)),
-                None => ("out of reach".to_string(), Color32::from_gray(170)),
+            let (text, color) = match preview {
+                Some((dest, cost)) => {
+                    let best = unit.members.iter().filter_map(|&id| best_chance_from(w, u, dest, id)).reduce(f32::max);
+                    let can_fire = b.units[u].ap - cost >= AP_ATTACK;
+                    match best {
+                        Some(c) if can_fire => (format!("from there: {:.0}%", c * 100.0), Color32::from_rgb(150, 210, 255)),
+                        Some(c) => (format!("from there: {:.0}% (no AP left)", c * 100.0), Color32::from_rgb(140, 160, 185)),
+                        None => ("out of reach from there".to_string(), Color32::from_gray(160)),
+                    }
+                }
+                None => {
+                    let best = unit.members.iter().filter_map(|&id| best_chance(w, u, id)).reduce(f32::max);
+                    match best {
+                        Some(c) => (format!("{:.0}%", c * 100.0), Color32::from_rgb(255, 225, 120)),
+                        None => ("out of reach".to_string(), Color32::from_gray(170)),
+                    }
+                }
             };
             let pos = egui::pos2(at.x, at.y);
             let font = egui::FontId::proportional(14.0);
@@ -563,11 +596,16 @@ fn battle_panels(
                         .fill(Color32::from_rgb(90, 160, 230)),
                 );
                 let mut tags = Vec::new();
-                if unit.pinned() {
-                    tags.push("pinned down");
+                if unit.ap_start < AP_MAX {
+                    tags.push(format!("pinned down: {} AP this round", unit.ap_start));
+                } else if unit.pinned() {
+                    tags.push("under heavy fire".to_string());
+                }
+                if unit.deployed {
+                    tags.push("deployed: better aim, harder to hit, can't move".to_string());
                 }
                 if unit.broken() {
-                    tags.push("shaken");
+                    tags.push("shaken".to_string());
                 }
                 if !tags.is_empty() {
                     panel.label(RichText::new(tags.join(", ")).color(Color32::from_rgb(255, 160, 100)));
@@ -592,6 +630,16 @@ fn battle_panels(
                     }
                 }
                 panel.horizontal(|row| {
+                    if unit.led {
+                        let (label, hint) = if unit.deployed {
+                            (format!("Stand up ({} AP)", AP_DEPLOY), "Back on their feet, so the squad can move")
+                        } else {
+                            (format!("Deploy ({} AP)", AP_DEPLOY), "Down on one knee: better aim, harder to hit; can't move until standing up")
+                        };
+                        if row.add_enabled(unit.ap >= AP_DEPLOY, egui::Button::new(label)).on_hover_text(hint).clicked() {
+                            orders.push(BattleOrder::Deploy);
+                        }
+                    }
                     if row.add_enabled(unit.ap >= AP_HUNKER, egui::Button::new("Hunker down")).on_hover_text("Better cover until the next round; ends the turn").clicked() {
                         orders.push(BattleOrder::Hunker);
                     }
