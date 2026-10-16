@@ -5,7 +5,8 @@ A small RimWorld-style colony sim in Rust, shown in 3D with [Bevy](https://bevy.
 ## Run
 
 ```sh
-cargo run --release            # first build takes several minutes (Bevy)
+cargo run --release            # first build takes several minutes (Bevy); continues the last game
+cargo run --release -- --new   # a new colony instead of continuing
 cargo run --features dev       # faster rebuilds while developing (dynamic linking)
 cargo run --release -- --scenario battle   # start in a prepared battle (Shift+N restarts it)
 cargo test                     # simulation tests + a headless run of the whole app

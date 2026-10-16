@@ -17,6 +17,8 @@ use std::f32::consts::FRAC_PI_2;
 use std::sync::LazyLock;
 
 pub const SAVE_PATH: &str = "savegame.json";
+/// Written when the game is closed (the manual save above stays as it was).
+pub const AUTOSAVE_PATH: &str = "autosave.json";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
@@ -349,6 +351,7 @@ impl Plugin for InputPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(UiState::new())
             .add_systems(PreUpdate, update_roof_cut)
+            .add_systems(Last, autosave_on_exit)
             .add_systems(
                 Update,
                 (
@@ -484,17 +487,56 @@ pub fn save(sim: &mut Sim) {
     sim.world.push_log(msg);
 }
 
+/// The newer of the manual save and the autosave from exiting, loaded, with
+/// a description of which it was. `Ok(None)` if there's no save at all.
+pub fn read_newest_save() -> Result<Option<(SimWorld, String)>, String> {
+    let Some(path) = newer_file(std::path::Path::new(SAVE_PATH), std::path::Path::new(AUTOSAVE_PATH)) else {
+        return Ok(None);
+    };
+    let world = std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|s| SimWorld::load_json(&s))?;
+    let which = if path.as_path() == std::path::Path::new(AUTOSAVE_PATH) { "the autosave from exiting" } else { "the save" };
+    Ok(Some((world, format!("{} ({})", which, path.display()))))
+}
+
+/// Load the newer of the manual save and the autosave from exiting.
 pub fn load(sim: &mut Sim, ui: &mut UiState) {
-    let loaded = std::fs::read_to_string(SAVE_PATH)
-        .map_err(|e| e.to_string())
-        .and_then(|s| SimWorld::load_json(&s));
-    match loaded {
-        Ok(w) => {
+    match read_newest_save() {
+        Ok(Some((w, which))) => {
             sim.replace(w);
             ui.select(None);
-            sim.world.push_log("Game loaded.".into());
+            sim.world.push_log(format!("Loaded {}.", which));
         }
+        Ok(None) => sim.world.push_log("There's no saved game yet.".into()),
         Err(e) => sim.world.push_log(format!("Loading failed: {}", e)),
+    }
+}
+
+/// Whichever of the two files exists and was written last.
+fn newer_file(a: &std::path::Path, b: &std::path::Path) -> Option<std::path::PathBuf> {
+    let modified = |p: &std::path::Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    match (modified(a), modified(b)) {
+        (Some(x), Some(y)) => Some(if y > x { b } else { a }.to_path_buf()),
+        (Some(_), None) => Some(a.to_path_buf()),
+        (None, Some(_)) => Some(b.to_path_buf()),
+        (None, None) => None,
+    }
+}
+
+/// Save to `AUTOSAVE_PATH` when the window is closed or the app quits (once).
+fn autosave_on_exit(
+    sim: Res<Sim>,
+    mut closing: MessageReader<bevy::window::WindowCloseRequested>,
+    mut exiting: MessageReader<AppExit>,
+    mut done: Local<bool>,
+) {
+    let leaving = closing.read().count() + exiting.read().count() > 0;
+    if !leaving || *done {
+        return;
+    }
+    *done = true;
+    match sim.world.save_json().and_then(|json| std::fs::write(AUTOSAVE_PATH, json).map_err(|e| e.to_string())) {
+        Ok(()) => info!("Saved the game to {} on exit.", AUTOSAVE_PATH),
+        Err(e) => error!("Saving on exit failed: {}", e),
     }
 }
 
@@ -839,6 +881,20 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loading_picks_the_newer_save() {
+        let dir = std::env::temp_dir().join(format!("my-world-saves-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, b) = (dir.join("save.json"), dir.join("auto.json"));
+        assert_eq!(newer_file(&a, &b), None);
+        std::fs::write(&a, "a").unwrap();
+        assert_eq!(newer_file(&a, &b), Some(a.clone()));
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&b, "b").unwrap();
+        assert_eq!(newer_file(&a, &b), Some(b.clone()), "the autosave is newer");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn selecting_several_colonists() {

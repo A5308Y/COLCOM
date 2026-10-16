@@ -184,6 +184,13 @@ real play.
 
 ## Notes
 
+- Autosave: closing the window or quitting writes `autosave.json` (`input::autosave_on_exit`, in
+  `Last`, on `WindowCloseRequested` or `AppExit`, once). The manual save (K, `savegame.json`) is left
+  alone. L loads whichever of the two is newer and says which. Both files are gitignored.
+  Starting the game continues from the newer save too (`sim::start_world`). `--new` or a scenario
+  starts fresh, and tests always do. A save that can't be loaded gives a new colony, with the
+  reason in the log.
+
 - "End all turns" (battle panel): `World::end_colony_turns` sets `Battle::colony_passes`, so each of
   the colony's remaining units ends its turn as it comes up (the raiders still alternate). It
   resets each round. Clicking a unit's square again cycles the selection through its roster (the

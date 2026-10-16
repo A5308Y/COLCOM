@@ -72,6 +72,23 @@ fn start_world(scenario: &mut Option<String>) -> SimWorld {
         eprintln!("No scenario called '{}' (there are: {}); starting a new colony.", name, known.join(", "));
         *scenario = None;
     }
+    // Carry on from the last game, unless asked for a new one (`--new`).
+    // Tests always start fresh, whatever saves lie around.
+    let fresh = cfg!(test) || std::env::args().any(|a| a == "--new");
+    if !fresh {
+        match super::input::read_newest_save() {
+            Ok(Some((mut w, which))) => {
+                w.push_log(format!("Continuing from {}.", which));
+                return w;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                let mut w = SimWorld::new(seed());
+                w.push_log(format!("Couldn't continue the last game ({}); this is a new colony.", e));
+                return w;
+            }
+        }
+    }
     SimWorld::new(seed())
 }
 
