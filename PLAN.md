@@ -184,6 +184,16 @@ real play.
 
 ## Notes
 
+- Battle line of sight (2026-10-16): `battle_sight` used to ignore every cell next to either end (to
+  allow leaning out), which let people shoot through a wall they both stood against. It also sampled
+  points a third of a cell apart, so lines grazing a corner were blocked. Now:
+  - **The line:** `clear_line` traces every column of cells the line crosses at chest height. Rock,
+    walls and doors block it, and so does a built floor where the line passes from one level to
+    another. A corner blocks only if both cells beside it do.
+  - **Leaning out:** a unit with cover next to it may see, and be seen, from the open cells beside
+    it (`peek_spots`), so it can shoot past a wall's end or round a corner, never through a wall
+    between the two.
+
 - Battle fixes (2026-10-16):
   - **Targets:** clicking and hovering prefer someone still in a unit (`battle_ui::fighter_at`), so
     the downed lying on a cell don't block attacks on the living there.

@@ -1109,29 +1109,98 @@ impl World {
     }
 }
 
-/// Line of sight for battles: like `pathing::line_of_sight`, but cover right
-/// next to either end doesn't block it (you lean out to shoot, and cover
-/// protects without hiding you completely).
+/// Line of sight for battles. A unit with cover beside it may lean out: it
+/// sees from its own cell or an open cell next to it, and is seen there too.
+/// So you can shoot past the end of a wall or round a corner, but never
+/// through a wall that stands between you.
 pub fn battle_sight(w: &World, a: Pos, b: Pos) -> bool {
     let m = &w.map;
-    let from = [a.0 as f32 + 0.5, a.1 as f32 + 0.5, a.2 as f32 + 0.6];
-    let to = [b.0 as f32 + 0.5, b.1 as f32 + 0.5, b.2 as f32 + 0.6];
-    let span = (0..3).map(|k| (to[k] - from[k]).abs()).fold(0.0, f32::max);
-    let steps = (span * 3.0).ceil() as usize;
-    let near = |p: Pos, e: Pos| p.2 == e.2 && p.0.abs_diff(e.0) <= 1 && p.1.abs_diff(e.1) <= 1;
-    for s in 1..steps {
-        let t = s as f32 / steps as f32;
-        let c: Vec<f32> = (0..3).map(|k| from[k] + (to[k] - from[k]) * t).collect();
-        let p = (c[0].floor() as usize, c[1].floor() as usize, c[2].floor() as usize);
-        if near(p, a) || near(p, b) {
-            continue;
-        }
-        let i = m.idx(p);
-        if m.block[i].solid() || m.feature[i].blocks_sight() {
-            return false;
+    let from = peek_spots(w, a);
+    let to = peek_spots(w, b);
+    from.iter().any(|&f| to.iter().any(|&t| clear_line(m, f, t)))
+}
+
+/// Where someone at `c` can look (and be seen) from: their cell and, if
+/// they have cover beside them, the open cells next to it on their level.
+fn peek_spots(w: &World, c: Pos) -> Vec<Pos> {
+    let m = &w.map;
+    let mut spots = vec![c];
+    let beside = |dx: i32, dy: i32| m.at(c.0 as i32 + dx, c.1 as i32 + dy, c.2 as i32);
+    let in_cover = crate::map::DIRS.iter().any(|&(dx, dy)| beside(dx, dy).is_some_and(|n| w.cover_at(n) != Cover::None));
+    if in_cover {
+        for (dx, dy) in crate::map::DIRS {
+            if let Some(n) = beside(dx, dy).filter(|&n| see_through(m, n)) {
+                spots.push(n);
+            }
         }
     }
-    true
+    spots
+}
+
+/// Air that doesn't block the view: no rock, soil, wall or door.
+fn see_through(m: &crate::map::Map, c: Pos) -> bool {
+    let i = m.idx(c);
+    !m.block[i].solid() && !m.feature[i].blocks_sight()
+}
+
+/// A straight line at chest height from the middle of cell `a` to the
+/// middle of cell `b`, through every column of cells it crosses. Rock,
+/// soil, walls and doors block it (the two ends' own cells aren't checked),
+/// and so does a built floor wherever the line passes through it from one
+/// level to another. Squeezing past a corner is blocked only if both cells
+/// beside the corner block.
+fn clear_line(m: &crate::map::Map, a: Pos, b: Pos) -> bool {
+    let (x0, y0, x1, y1) = (a.0 as f32 + 0.5, a.1 as f32 + 0.5, b.0 as f32 + 0.5, b.1 as f32 + 0.5);
+    let (z0, z1) = (a.2 as f32 + 0.6, b.2 as f32 + 0.6);
+    let (dx, dy) = (x1 - x0, y1 - y0);
+    let (sx, sy) = (dx.signum() as i32, dy.signum() as i32);
+    // Line parameter t (0..1) at the next border in x and in y, and per cell.
+    let border = |c: usize, s: i32, o: f32, d: f32| if s == 0 { f32::MAX } else { ((c as i32 + (s > 0) as i32) as f32 - o) / d };
+    let (mut tx, mut ty) = (border(a.0, sx, x0, dx), border(a.1, sy, y0, dy));
+    let (stepx, stepy) = (if sx == 0 { f32::MAX } else { 1.0 / dx.abs() }, if sy == 0 { f32::MAX } else { 1.0 / dy.abs() });
+    let height = |t: f32| z0 + (z1 - z0) * t;
+    // Is the line blocked in column (x, y) between t0 and t1?
+    let blocked = |x: i32, y: i32, t0: f32, t1: f32| -> bool {
+        let (h0, h1) = (height(t0), height(t1));
+        let (lo, hi) = (h0.min(h1).floor() as i32, h0.max(h1).floor() as i32);
+        for z in lo..=hi {
+            let Some(c) = m.at(x, y, z) else { continue };
+            if z > lo && m.floor[m.idx(c)] {
+                return true;
+            }
+            if c != a && c != b && !see_through(m, c) {
+                return true;
+            }
+        }
+        false
+    };
+    let (mut cx, mut cy, mut t) = (a.0 as i32, a.1 as i32, 0.0);
+    let target = (b.0 as i32, b.1 as i32);
+    for _ in 0..1000 {
+        let exit = tx.min(ty).min(1.0);
+        if blocked(cx, cy, t, exit) {
+            return false;
+        }
+        if (cx, cy) == target {
+            return true;
+        }
+        if (tx - ty).abs() < 1e-5 {
+            // Through a corner: the cells either side only touch the line.
+            if blocked(cx + sx, cy, tx, tx) && blocked(cx, cy + sy, tx, tx) {
+                return false;
+            }
+            (cx, cy, t) = (cx + sx, cy + sy, tx);
+            tx += stepx;
+            ty += stepy;
+        } else if tx < ty {
+            (cx, t) = (cx + sx, tx);
+            tx += stepx;
+        } else {
+            (cy, t) = (cy + sy, ty);
+            ty += stepy;
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -1611,6 +1680,72 @@ mod tests {
         let unit = &battle(&w).units[t];
         assert_eq!(unit.members, vec![leader]);
         assert_eq!(unit.roster.len(), 3, "the fallen are still on the roster");
+    }
+
+    #[test]
+    fn walls_between_you_block_the_view() {
+        let mut w = world(20, 11, 18);
+        // A long wall: two people pressed against it from either side can't see each other.
+        for y in 0..11 {
+            let i = w.map.idx((6, y, Z));
+            w.map.feature[i] = Feature::built("wall");
+        }
+        assert!(!battle_sight(&w, (5, 5, Z), (7, 5, Z)), "not through the wall");
+        assert!(!battle_sight(&w, (2, 5, Z), (12, 8, Z)));
+
+        // Inside a walled house, from right outside it.
+        let mut w = world(20, 20, 18);
+        for y in 5..=9 {
+            for x in 5..=9 {
+                if x == 5 || x == 9 || y == 5 || y == 9 {
+                    let i = w.map.idx((x, y, Z));
+                    w.map.feature[i] = Feature::built("wall");
+                }
+            }
+        }
+        assert!(!battle_sight(&w, (4, 7, Z), (6, 7, Z)), "not into the house");
+        assert!(!battle_sight(&w, (12, 7, Z), (8, 7, Z)));
+    }
+
+    #[test]
+    fn leaning_out_past_the_end_of_a_wall() {
+        let mut w = world(20, 12, 19);
+        for y in 3..=5 {
+            let i = w.map.idx((6, y, Z));
+            w.map.feature[i] = Feature::built("wall");
+        }
+        assert!(!clear_line(&w.map, (5, 5, Z), (12, 4, Z)), "straight on, the wall is in the way");
+        assert!(battle_sight(&w, (5, 5, Z), (12, 4, Z)), "but leaning out past its end, you see them");
+        // In the open, nobody leans: a lone post blocks a shot straight past it.
+        let mut w = world(20, 12, 19);
+        let i = w.map.idx((9, 5, Z));
+        w.map.feature[i] = Feature::built("wall");
+        assert!(!battle_sight(&w, (5, 5, Z), (13, 5, Z)), "the post hides them");
+    }
+
+    #[test]
+    fn corners_only_block_when_both_sides_do() {
+        let mut w = world(12, 12, 20);
+        let wall = |w: &mut World, x: usize, y: usize| {
+            let i = w.map.idx((x, y, Z));
+            w.map.feature[i] = Feature::built("wall");
+        };
+        wall(&mut w, 6, 5);
+        assert!(clear_line(&w.map, (5, 5, Z), (8, 8, Z)), "grazing one corner is fine");
+        wall(&mut w, 5, 6);
+        assert!(!clear_line(&w.map, (5, 5, Z), (8, 8, Z)), "between two corners is not");
+    }
+
+    #[test]
+    fn floors_block_the_view_between_levels() {
+        let mut w = world(16, 8, 21);
+        // A roof (floor on the level above) from x = 6 to 9.
+        for x in 6..=9 {
+            let i = w.map.idx((x, 4, Z + 1));
+            w.map.set_floor(i, true);
+        }
+        assert!(!clear_line(&w.map, (5, 4, Z), (8, 4, Z + 1)), "the slab is in the way");
+        assert!(clear_line(&w.map, (3, 4, Z), (6, 4, Z + 1)), "someone at the roof's edge can be seen");
     }
 
     #[test]
