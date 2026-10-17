@@ -258,6 +258,10 @@ impl World {
         if !self.map.zone.iter().any(|z| z.stockpile().is_some()) {
             out.push(("No stockpile zone".into(), false));
         }
+        let gaps = self.map.roof_gaps.len();
+        if gaps > 0 {
+            out.push((format!("Roof can't reach {} cell(s): build a wall within 3", gaps), false));
+        }
         let idle = colonists
             .iter()
             .filter(|p| p.active() && matches!(p.job, None | Some(Job::Wander { .. })))
@@ -1314,6 +1318,18 @@ mod tests {
         assert!(marked.contains(&(5, 7)) && marked.contains(&(10, 7)) && marked.contains(&(4, 4)));
         assert_eq!(marked.len(), 9 * 7 - 4);
         assert!(!w.map.roofed((5, 5, Z)), "with holes in its roof it's no room");
+        // The player is told where.
+        let mut gaps: Vec<Pos> = w.map.roof_gaps.iter().map(|&i| w.map.pos(i)).collect();
+        gaps.sort();
+        assert_eq!(gaps, (6..=9).map(|x| (x, 7, Z + 1)).collect::<Vec<_>>());
+        assert!(w.alerts().iter().any(|(a, _)| a.starts_with("Roof can't reach 4 cell")), "{:?}", w.alerts());
+        // A wall in the middle holds it all up.
+        let pillar = w.map.idx((8, 6, Z));
+        w.map.set_feature(pillar, Feature::built("wall"));
+        w.map.recompute_rooms();
+        w.mark_roofs();
+        assert!(w.map.roof_gaps.is_empty());
+        assert!(!w.alerts().iter().any(|(a, _)| a.starts_with("Roof can't reach")));
     }
 
     #[test]

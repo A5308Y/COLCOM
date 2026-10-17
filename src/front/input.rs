@@ -834,6 +834,19 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
         }
     }
 
+    // Where a room's roof can't reach (no wall near enough): a red cross at the top of the walls.
+    for &i in &m.roof_gaps {
+        let p = m.pos(i);
+        if p.2 > ui.top_at(m, p.0, p.1) {
+            continue;
+        }
+        let red = Color::srgb(1.0, 0.25, 0.2);
+        floor_outline(&mut gizmos, p, 0.03, red);
+        let (x, y, z) = (p.0 as f32, p.2 as f32 * LEVEL_H + 0.03, p.1 as f32);
+        gizmos.line(Vec3::new(x + 0.2, y, z + 0.2), Vec3::new(x + 0.8, y, z + 0.8), red);
+        gizmos.line(Vec3::new(x + 0.8, y, z + 0.2), Vec3::new(x + 0.2, y, z + 0.8), red);
+    }
+
     // A faint grid around the cursor on the viewed level, to aim at cells in the air.
     if let (Some(level), Some(h)) = (ui.view_level, ui.hover) {
         let c = Vec3::new(h.stand.0 as f32 + 0.5, level as f32 * LEVEL_H + 0.02, h.stand.1 as f32 + 0.5);

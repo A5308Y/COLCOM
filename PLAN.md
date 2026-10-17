@@ -409,6 +409,9 @@ real play.
   with the usual blueprint jobs. A floor ordered over a roof replaces it. A deconstructed roof is marked
   again while the room stays closed (a "no roof" area could come later). Roofs aren't in the build menu,
   can't be ordered or cancelled, and their blueprints show no delivery count.
+  - Where a room wants a roof that nothing would hold up, `recompute_rooms` lists the cell in
+    `Map::roof_gaps`: drawn as red crosses at the wall tops, explained in the cell inspector (on the
+    room's floor too), and counted in an alert, so the player knows where a wall is missing.
   - Drawn by `src/front/roofs.rs` as one hipped mesh, rebuilt when `Map::roof_changes` (roofs built or
     removed, rooms recomputed), the layer view or the roof cut change. Heights come from each point's
     distance to the edge on a half-cell grid (`half_steps`, 0.45 levels per cell, at most 1.3), so
@@ -416,6 +419,10 @@ real play.
     The roof also covers the tops of the walls around it, and eaves overhang 0.3 and drop 0.12. Each
     triangle is drawn from below as well, darker.
   - The battle arena's house has a roof.
+
+- The colonist bar is a vertical list down the left (right of the build menu) of same-sized cards
+  (`ui::CARD`): name, mood, and the status cut to one line (all of it on hover); it scrolls if it
+  doesn't fit. The colonist and cell inspectors open to its right (`COLONIST_LIST_W`).
 
 - Beds can be given to a colonist (2026-10-17): click a bed, pick who sleeps there in the inspector
   ("Nobody (first come)" frees it). `World::assign_bed` moves `Pawn::bed`: the new owner's old bed is

@@ -52,8 +52,8 @@ const HELP_REST: [&str; 37] = [
     "Lamps light up rooms and caves - nights are dark.",
     "",
     "A room needs walls and a roof. Enclose an area with walls and doors and it gets a roof by itself:",
-    "      builders put it up with wood. A roof needs a wall within 3 cells, like floors. Sleeping in a",
-    "      roofed bedroom makes colonists happier.",
+    "      builders put it up with wood. A roof needs a wall within 3 cells, like floors: red crosses mark",
+    "      where it can't reach. Sleeping in a roofed bedroom makes colonists happier.",
     "Mining also digs soil. Dig straight down to sink a shaft; put stairs in it.",
     "Anything left with nothing underneath falls - more than one level hurts.",
     "Wounds bleed and can get infected. Doctors (see P) rescue downed colonists to a bed",
@@ -360,9 +360,19 @@ fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
         });
 }
 
+/// Inside size of a card in the colonist list: the same for everyone, whatever they're doing.
+const CARD: egui::Vec2 = egui::vec2(150.0, 46.0);
+const CARD_MARGIN: f32 = 6.0;
+/// Width the colonist list takes from the left edge (after the build menu);
+/// the inspectors open to its right.
+const COLONIST_LIST_W: f32 = 8.0 + CARD.x + 2.0 * CARD_MARGIN + 4.0;
+
 fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, left: f32) {
+    // Leave room for the HUD at the bottom; scroll if there are more.
+    let room = (ctx.viewport_rect().height() - 90.0).max(CARD.y * 2.0);
     egui::Area::new(egui::Id::new("colonists")).anchor(Align2::LEFT_TOP, [left + 8.0, 8.0]).show(ctx, |ui| {
-        ui.horizontal(|ui| {
+        egui::ScrollArea::vertical().max_height(room).show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 4.0;
             for p in sim.world.pawns.iter().filter(|p| p.is_colonist()) {
                 let selected = st.is_selected(p.id);
                 let trouble = p.downed || p.hunger <= 0.0 || p.break_timer > 0.0 || p.health.bleed_rate() > 0.0;
@@ -377,15 +387,19 @@ fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, left: f32) {
                 };
                 let resp = egui::Frame::window(&ctx.global_style())
                     .stroke(stroke)
-                    .inner_margin(6.0)
+                    .inner_margin(CARD_MARGIN)
                     .show(ui, |ui| {
-                        ui.set_width(118.0);
+                        ui.set_min_size(CARD);
+                        ui.set_max_size(CARD);
+                        ui.spacing_mut().item_spacing.y = 3.0;
                         ui.horizontal(|ui| {
                             portrait(ui, &pawn_look(p), 18.0);
-                            ui.label(RichText::new(&p.name).strong());
+                            ui.add(egui::Label::new(RichText::new(&p.name).strong()).truncate());
                         });
-                        ui.add(ProgressBar::new(p.mood / 100.0).desired_width(112.0).desired_height(6.0).fill(mood_color(p.mood)));
-                        ui.label(RichText::new(p.status()).small());
+                        ui.add(ProgressBar::new(p.mood / 100.0).desired_width(CARD.x).desired_height(6.0).fill(mood_color(p.mood)));
+                        // One line, cut short with an ellipsis; the whole text on hover.
+                        let status = p.status();
+                        ui.add(egui::Label::new(RichText::new(&status).small()).truncate()).on_hover_text(&status);
                     })
                     .response
                     .interact(egui::Sense::click());
@@ -428,7 +442,7 @@ fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32,
     egui::Window::new(RichText::new(title).strong())
         .id(egui::Id::new("inspector"))
         .open(&mut open)
-        .anchor(Align2::LEFT_TOP, [left + 8.0, 92.0])
+        .anchor(Align2::LEFT_TOP, [left + COLONIST_LIST_W + 8.0, 8.0])
         .collapsible(false)
         .resizable(false)
         .default_width(340.0)
@@ -589,7 +603,7 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) -> (boo
     egui::Window::new(RichText::new(format!("Cell {}, {}  level {}", t.0, t.1, t.2)).strong())
         .id(egui::Id::new("inspector"))
         .open(&mut open)
-        .anchor(Align2::LEFT_TOP, [left + 8.0, 92.0])
+        .anchor(Align2::LEFT_TOP, [left + COLONIST_LIST_W + 8.0, 8.0])
         .collapsible(false)
         .resizable(false)
         .show(ctx, |ui| {
@@ -611,6 +625,12 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) -> (boo
             }
             if m.roof[i] {
                 ui.label("Roof");
+            }
+            // Here or overhead: a room wants a roof, but nothing would hold it up.
+            let above = m.above(t).map(|a| m.idx(a));
+            if m.roof_gaps.contains(&i) || above.is_some_and(|a| m.roof_gaps.contains(&a)) {
+                let why = "No roof can reach here: it needs a wall within 3 cells, so the room isn't closed.";
+                ui.label(RichText::new(why).color(Color32::from_rgb(255, 140, 100)));
             }
             if m.covered(t) && !m.roofed(t) {
                 ui.label("Covered overhead");

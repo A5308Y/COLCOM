@@ -241,6 +241,10 @@ pub struct Map {
     /// areas not yet covered (see `recompute_rooms`).
     #[serde(skip)]
     pub roof_wanted: Vec<usize>,
+    /// Cells where a room wants a roof but none would be held up (no wall
+    /// within `SUPPORT_RANGE`), so the room can't be closed. Found with `roof_wanted`.
+    #[serde(skip)]
+    pub roof_gaps: Vec<usize>,
     /// Bumped whenever a roof is built or removed, or rooms are recomputed (the
     /// walls a roof reaches over may have changed), so the front end knows to redraw.
     #[serde(skip)]
@@ -270,6 +274,7 @@ impl Map {
             room_sizes: Vec::new(),
             rooms_dirty: true,
             roof_wanted: Vec::new(),
+            roof_gaps: Vec::new(),
             roof_changes: 0,
             support_dirty: false,
         };
@@ -633,6 +638,7 @@ impl Map {
         self.room = vec![0; n];
         self.room_sizes = vec![0];
         self.roof_wanted.clear();
+        self.roof_gaps.clear();
         let mut wanted = vec![false; n];
         let room_open = |m: &Map, i: usize| m.block[i] == Block::Air && !m.feature[i].blocks_room();
         let mut seen = vec![false; n];
@@ -673,9 +679,14 @@ impl Map {
                     let ai = self.idx(a);
                     let free = matches!(self.feature[ai], Feature::None) || self.roof_blueprint(ai);
                     let open = self.block[ai] == Block::Air && !self.floor[ai] && !self.roof[ai];
-                    if free && open && !self.covered(p) && self.floor_supported(a) {
+                    if !(free && open) || self.covered(p) {
+                        continue;
+                    }
+                    if self.floor_supported(a) {
                         wanted[ai] = true;
                         self.roof_wanted.push(ai);
+                    } else {
+                        self.roof_gaps.push(ai);
                     }
                 }
             }
