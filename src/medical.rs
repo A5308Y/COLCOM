@@ -38,7 +38,7 @@ impl World {
         let df = bfs(&self.map, from);
         df.order
             .iter()
-            .find(|&&i| self.res_item[i] == 0 && self.map.items[i].is_some_and(|s| is(defs(), s.kind)))
+            .find(|&&i| self.item_free(i) && self.map.items[i].is_some_and(|s| is(defs(), s.kind)))
             .map(|&i| self.map.pos(i))
     }
 
@@ -47,7 +47,7 @@ impl World {
         let df = bfs(&self.map, from);
         let mut raw = None;
         for &i in &df.order {
-            let Some(s) = self.map.items[i].filter(|s| self.res_item[i] == 0 && defs().is_food(s.kind)) else { continue };
+            let Some(s) = self.map.items[i].filter(|s| self.item_free(i) && defs().is_food(s.kind)) else { continue };
             if !s.kind.def().raw {
                 return Some(self.map.pos(i));
             }

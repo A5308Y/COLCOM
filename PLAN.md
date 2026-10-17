@@ -514,6 +514,12 @@ real play.
 - Refused items (2026-10-17): things in a stockpile (or on a shelf) that no longer takes them were only moved
   if another stockpile took them. Now, if none does, haulers carry them out to open ground within 10 cells
   outside any zone with nothing built on it (`dump_spot`), where they're left.
+- Starving colonies (2026-10-17, found in a save: 182 raw food on one shelf, cooks idle, colonists at 0):
+  item reservations were per cell, so one colonist fetching from a big stack hid it from everyone; now a
+  stack of more than one stays available (`World::item_free`) for eating, medicine and ingredients.
+  Crafters with a bill fetch its missing ingredients themselves (before, only haulers did, so a busy
+  colony never cooked), which also lets the stove's bill be prioritized from the right-click menu
+  ("... (bringing raw food first)"). Sleepers wake, and colonists in a mental break eat, below 10 hunger.
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 

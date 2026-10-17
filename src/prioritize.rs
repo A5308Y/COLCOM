@@ -96,7 +96,18 @@ impl World {
         match job {
             Job::Equip { from, .. } => format!("Equip {}", item(from).to_lowercase()),
             Job::Work { task: Task::Sow(kind), .. } => format!("Prioritize planting {}", kind.def().name.to_lowercase()),
+            Job::Work { target, task: Task::Craft } => match self.bench_at(target).and_then(|b| b.current) {
+                Some(r) => format!("Prioritize {} at {}", r.def().name.to_lowercase(), thing(target)),
+                None => format!("Prioritize crafting at {}", thing(target)),
+            },
             Job::Work { target, task } => format!("Prioritize {} {}", task.verb(), thing(target)),
+            // Ingredients for a bill: the bill is what's being prioritized.
+            Job::Haul { from, to, deliver: true, .. } if matches!(at(to), Feature::Built { .. }) => {
+                match self.bench_at(to).and_then(|b| b.current) {
+                    Some(r) => format!("Prioritize {} at {} (bringing {} first)", r.def().name.to_lowercase(), thing(to), item(from)),
+                    None => format!("Prioritize delivering {} to {}", item(from), thing(to)),
+                }
+            }
             Job::Haul { from, to, deliver: true, .. } => format!("Prioritize delivering {} to {}", item(from), thing(to)),
             Job::Haul { from, .. } => format!("Prioritize hauling {}", item(from)),
             Job::Tend { patient, .. } => format!("Prioritize tending {}", who(patient)),

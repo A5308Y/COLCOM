@@ -58,8 +58,9 @@ furniture, light, production), searchable, with costs (red if the colony is shor
 
 ### Systems
 
-- **Production:** click a workbench to give it bills ("make 5", "make until you have 20", "forever").
-  Haulers bring the ingredients, colonists with Cook or Craft work make it, and products get hauled to
+- **Production:** click a workbench to give it bills ("make 5", "make until you have 20", "forever"). The
+  colonist doing a bill fetches what it lacks (haulers help too); right-click a bench with a colonist
+  selected to have them do its bill now. Colonists with Cook or Craft work make it, and products get hauled to
   stockpiles. Chains: crops → meals (stove); wood → planks; stone → blocks; healroot → herbal medicine;
   cotton → cloth → clothes; iron ore (veins in the rock, more of it deeper down) → steel (smelter) →
   knives, pistols, rifles and steel armour (smithy). Colonists pick up better weapons and apparel by

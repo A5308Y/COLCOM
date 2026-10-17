@@ -738,6 +738,65 @@ mod tests {
     }
 
     #[test]
+    fn cooks_fetch_their_own_ingredients() {
+        let mut w = test_world(20, 20);
+        let cook = colonist(&mut w, (2, 2, Z));
+        // Nobody hauls: only cooking is switched on.
+        let i = w.pawn_index(cook).unwrap();
+        w.pawns[i].priorities = [0; crate::pawn::WorkType::ALL.len()];
+        w.pawns[i].priorities[crate::pawn::WorkType::Cooking as usize] = 1;
+        let stove = (10, 10, Z);
+        place_bench(&mut w, "stove", stove);
+        place_bench(&mut w, "shelf", (16, 16, Z));
+        w.sync_containers();
+        let on_shelf = w.map.idx((16, 16, Z));
+        w.map.items[on_shelf] = Some(Stack { kind: item("raw_food"), count: 30 });
+        w.add_bill(stove, RecipeId::named("cook_meal"), BillMode::Count(3));
+        // The stove offers the bill to be prioritized, ingredients and all.
+        let options = w.job_options(cook, stove);
+        assert!(options.iter().any(|(l, _)| l == "Prioritize cook simple meal at Stove (bringing raw food first)"), "{:?}", options);
+        run(&mut w, 120.0);
+        assert_eq!(w.map.count_items(item("meal")), 3, "fetched the raw food and cooked");
+    }
+
+    #[test]
+    fn a_big_stack_feeds_everyone_at_once() {
+        let mut w = test_world(20, 20);
+        let ids: Vec<u32> = (0..4).map(|k| colonist(&mut w, (2 + k, 2, Z))).collect();
+        for &id in &ids {
+            let i = w.pawn_index(id).unwrap();
+            w.pawns[i].hunger = 10.0;
+            w.pawns[i].priorities = [0; crate::pawn::WorkType::ALL.len()];
+        }
+        place_bench(&mut w, "shelf", (12, 12, Z));
+        w.sync_containers();
+        let on_shelf = w.map.idx((12, 12, Z));
+        w.map.items[on_shelf] = Some(Stack { kind: item("raw_food"), count: 100 });
+        run(&mut w, 4.0);
+        let eating = ids.iter().filter(|&&id| matches!(w.pawn(id).unwrap().job, Some(Job::Eat { .. }))).count();
+        assert_eq!(eating, 4, "all of them go for the one stack");
+        run(&mut w, 40.0);
+        assert!(ids.iter().all(|&id| w.pawn(id).unwrap().hunger > 30.0), "and all of them ate");
+    }
+
+    #[test]
+    fn the_starving_wake_up_or_snap_out_to_eat() {
+        let mut w = test_world(16, 16);
+        let (sleeper, dazed) = (colonist(&mut w, (2, 2, Z)), colonist(&mut w, (4, 2, Z)));
+        w.map.drop_item((8, 8, Z), Stack { kind: item("raw_food"), count: 10 });
+        let (a, b) = (w.pawn_index(sleeper).unwrap(), w.pawn_index(dazed).unwrap());
+        w.pawns[a].rest = 10.0;
+        w.pawns[a].job = Some(Job::Sleep { bed: None });
+        w.pawns[b].break_timer = 200.0;
+        for i in [a, b] {
+            w.pawns[i].hunger = 5.0;
+        }
+        run(&mut w, 30.0);
+        assert!(w.pawn(sleeper).unwrap().hunger > 30.0, "woke up to eat");
+        assert!(w.pawn(dazed).unwrap().hunger > 30.0, "ate, even in a daze");
+    }
+
+    #[test]
     fn refused_items_are_cleared_out() {
         // Another stockpile takes them: they go there.
         let mut w = test_world(20, 20);

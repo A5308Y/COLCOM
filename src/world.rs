@@ -598,6 +598,10 @@ impl World {
 
     fn colonist_think(&mut self, p: &mut Pawn, dt: f32) {
         if p.break_timer > 0.0 {
+            // In a daze, but not so far gone as to starve.
+            if p.hunger < 10.0 && !matches!(p.job, Some(Job::Eat { .. })) && self.try_eat(p) {
+                return;
+            }
             if p.job.is_none() {
                 self.start_wander(p, 10);
             }
@@ -621,6 +625,10 @@ impl World {
                 self.start_job(p, Job::Sleep { bed });
                 return;
             }
+        }
+        // Sleepers wake up to eat when they'd otherwise starve.
+        if matches!(p.job, Some(Job::Sleep { .. })) && p.hunger < 10.0 && self.try_eat(p) {
+            return;
         }
         let tending_self = matches!(p.job, Some(Job::Tend { patient, .. }) if patient == p.id);
         let resting = matches!(p.job, Some(Job::Patient { .. }));

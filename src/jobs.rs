@@ -116,7 +116,7 @@ impl World {
             let Some(d) = df.dist(pos) else { continue };
             if let Some(s) = m.items[i] {
                 let k = s.kind.index();
-                if self.res_item[i] == 0 && nearest_item[k].map_or(true, |(bd, _)| d < bd) {
+                if self.item_free(i) && nearest_item[k].map_or(true, |(bd, _)| d < bd) {
                     nearest_item[k] = Some((d, pos));
                 }
             }
@@ -270,9 +270,17 @@ impl World {
                     return None;
                 }
                 let bench = self.bench_at(pos)?;
-                if bench.ready() && bench.current.is_some_and(|r| r.def().work == wt) {
+                if !bench.current.is_some_and(|r| r.def().work == wt) {
+                    return None;
+                }
+                if bench.ready() {
                     return work(Task::Craft);
                 }
+                // Crafters fetch what the bill still lacks themselves (haulers help too).
+                let need = bench.need()?;
+                let (_, d) = df.approach(m, pos, true)?;
+                let (di, from) = nearest_item[need.kind.index()]?;
+                return Some((d + di, Job::Haul { from, to: pos, deliver: true, picked: false }));
             }
         }
         None
@@ -619,6 +627,13 @@ impl World {
     /// The nearest blueprint within reach of `from` still needing `kind`.
     fn next_delivery(&self, from: Pos, kind: ItemId, me: u32) -> Option<Pos> {
         self.nearby_blueprints(from, kind, me).first().map(|b| b.0)
+    }
+
+    /// Whether the stack in cell `i` can be taken from: nobody has claimed
+    /// it, or there's more than one, so others can share it (whoever comes
+    /// too late just looks again).
+    pub(crate) fn item_free(&self, i: usize) -> bool {
+        self.res_item[i] == 0 || self.map.items[i].is_some_and(|s| s.count > 1)
     }
 
     /// Someone (alive, not buried) is in cell `p`.
