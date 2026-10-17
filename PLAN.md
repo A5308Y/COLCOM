@@ -475,6 +475,11 @@ real play.
   1.2); sleeping there gives `Memory::SleptOnSpot` (-2, vs -5 on the ground) instead of a bedroom memory; it
   heals like lying anywhere (`in_bed` for healing needs `proper_bed`), but tending counts it as a bed and
   rescuers carry the downed to it. It counts towards no room theme and spoils none (`RoomDef::allows`).
+- Fuller hauling trips (2026-10-17, `jobs.rs`): hauling to a stockpile takes as much as fits in the target
+  cell (`room_for`, up to a stack), then picks up more of the same item lying within `NEARBY_STEPS` (8) that
+  belongs there more than where it lies (`gather_next`, walking to each before setting off). Deliveries take
+  enough for the blueprint plus the free blueprints within 8 steps needing the same material
+  (`delivery_load`, up to a stack), then carry the rest on to the next one (`next_delivery`).
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 

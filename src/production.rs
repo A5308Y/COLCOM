@@ -693,6 +693,50 @@ mod tests {
         assert!(w.pawn(id).unwrap().memories.iter().any(|m| m.kind == Memory::AteWithoutTable));
     }
 
+    /// Run for `secs`, returning the most anyone carried at once.
+    fn most_carried(w: &mut World, secs: f32) -> u32 {
+        let mut most = 0;
+        for _ in 0..(secs / TICK) as usize {
+            w.tick(TICK);
+            most = most.max(w.pawns.iter().filter_map(|p| p.carrying).map(|c| c.count).max().unwrap_or(0));
+        }
+        most
+    }
+
+    #[test]
+    fn haulers_gather_nearby_piles_into_one_load() {
+        let mut w = test_world(24, 24);
+        colonist(&mut w, (2, 2, Z));
+        assert!(w.apply_order((20, 20, Z), Order::Stockpile));
+        // Five chopped trees' worth, a few cells apart.
+        for (x, y) in [(4, 4), (6, 4), (5, 6), (7, 7), (3, 7)] {
+            w.map.drop_item((x, y, Z), Stack { kind: item("wood"), count: 10 });
+        }
+        let most = most_carried(&mut w, 90.0);
+        assert!(most >= 40, "picked up the piles together: at most {} at once", most);
+        let stored = w.map.items[w.map.idx((20, 20, Z))].map_or(0, |s| s.count);
+        assert_eq!(stored, 50, "all of it in the stockpile");
+    }
+
+    #[test]
+    fn haulers_supply_several_blueprints_per_trip() {
+        let mut w = test_world(30, 16);
+        let id = colonist(&mut w, (2, 8, Z));
+        // A row of six walls (4 stone each), the stone far away.
+        let wall = crate::defs::BuildId::named("wall");
+        for x in 20..26 {
+            assert!(w.apply_order((x, 8, Z), Order::Build(wall)));
+        }
+        w.map.drop_item((2, 2, Z), Stack { kind: item("stone"), count: 30 });
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].priorities[crate::pawn::WorkType::Construction as usize] = 1;
+        let most = most_carried(&mut w, 120.0);
+        assert!(most >= 20, "stone for several walls at once: at most {}", most);
+        let built = (20..26).filter(|&x| w.map.feature[w.map.idx((x, 8, Z))] == Feature::built("wall")).count();
+        assert_eq!(built, 6, "all walls up");
+        assert_eq!(w.map.count_items(item("stone")), 6, "the rest left at the pile");
+    }
+
     #[test]
     fn shelves_hold_more() {
         let mut w = test_world(16, 16);

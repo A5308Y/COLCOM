@@ -9,6 +9,9 @@ use crate::world::{Step, World};
 
 /// Base seconds to mine out one cell.
 const MINE_TIME: f32 = 5.0;
+/// Haulers pick up more of the same item lying within this many steps, and
+/// deliver to other blueprints within this many steps on the same trip.
+const NEARBY_STEPS: i32 = 8;
 /// Deconstructing takes this share of the building's work time.
 const DECONSTRUCT_SHARE: f32 = 0.5;
 
@@ -495,6 +498,75 @@ impl World {
     }
 
     /// Materials a blueprint or workbench still needs.
+    /// How many of `kind` fit in stockpile cell `to` (at most a stack).
+    fn room_for(&self, to: Pos, kind: ItemId) -> u32 {
+        let i = self.map.idx(to);
+        let have = self.map.items[i].map_or(0, |s| if s.kind == kind { s.count } else { self.map.capacity(i) });
+        self.map.capacity(i).saturating_sub(have).min(STACK_MAX)
+    }
+
+    /// The nearest free stack of `kind` within `NEARBY_STEPS` of `from` that
+    /// belongs in stockpile cell `to` more than where it is, if `room` is left.
+    fn gather_next(&self, from: Pos, kind: ItemId, to: Pos, room: u32) -> Option<Pos> {
+        if room == 0 {
+            return None;
+        }
+        let ti = self.map.idx(to);
+        let target = self.storage_priority(ti, kind).unwrap_or(0);
+        let df = bfs(&self.map, from);
+        df.order
+            .iter()
+            .take_while(|&&i| df.dist_i(i).is_some_and(|d| d <= NEARBY_STEPS))
+            .find(|&&i| {
+                i != ti
+                    && self.res_item[i] == 0
+                    && self.map.items[i].is_some_and(|s| s.kind == kind)
+                    && self.storage_priority(i, kind).unwrap_or(0) < target
+            })
+            .map(|&i| self.map.pos(i))
+    }
+
+    /// Blueprints within `NEARBY_STEPS` of `from` that need `kind`, nearest
+    /// first, with how many; only free ones (or `me`'s).
+    fn nearby_blueprints(&self, from: Pos, kind: ItemId, me: u32) -> Vec<(Pos, u32)> {
+        let df = bfs(&self.map, from);
+        let m = &self.map;
+        // Blueprints aren't walked onto, so look at the cells beside reachable ones too.
+        let mut found: Vec<(i32, Pos, u32)> = Vec::new();
+        for &i in df.order.iter().take_while(|&&i| df.dist_i(i).is_some_and(|d| d <= NEARBY_STEPS)) {
+            let d = df.dist_i(i).unwrap_or(0);
+            for c in std::iter::once(m.pos(i)).chain(m.neighbors(m.pos(i))) {
+                let ci = m.idx(c);
+                if !matches!(m.feature[ci], Feature::Blueprint { .. }) || found.iter().any(|f| f.1 == c) {
+                    continue;
+                }
+                if self.res_target[ci] != 0 && self.res_target[ci] != me {
+                    continue;
+                }
+                if let Some(need) = self.delivery_need(c).filter(|n| n.kind == kind) {
+                    found.push((d, c, need.count));
+                }
+            }
+        }
+        found.sort_by_key(|f| f.0);
+        found.into_iter().map(|(_, c, n)| (c, n)).collect()
+    }
+
+    /// How many to pick up for blueprint `to` (needing `need`): enough for it
+    /// and the free ones nearby needing the same, up to a stack.
+    fn delivery_load(&self, to: Pos, need: Stack, me: u32) -> u32 {
+        if !matches!(self.map.feature[self.map.idx(to)], Feature::Blueprint { .. }) {
+            return need.count;
+        }
+        let others: u32 = self.nearby_blueprints(to, need.kind, me).iter().filter(|b| b.0 != to).map(|b| b.1).sum();
+        (need.count + others).min(STACK_MAX).max(need.count)
+    }
+
+    /// The nearest blueprint within reach of `from` still needing `kind`.
+    fn next_delivery(&self, from: Pos, kind: ItemId, me: u32) -> Option<Pos> {
+        self.nearby_blueprints(from, kind, me).first().map(|b| b.0)
+    }
+
     fn delivery_need(&self, at: Pos) -> Option<Stack> {
         match self.map.feature[self.map.idx(at)] {
             Feature::Blueprint { .. } if self.move_to(at).is_some() => None,
@@ -514,29 +586,46 @@ impl World {
                 Step::Unreachable => self.end_job(p),
                 Step::Arrived => {
                     let fi = self.map.idx(from);
-                    let Some(kind) = self.map.items[fi].map(|s| s.kind) else {
-                        self.end_job(p);
+                    self.res_item[fi] = 0;
+                    let carried = p.carrying.map_or(0, |c| c.count);
+                    let here = self.map.items[fi].map(|s| s.kind);
+                    // Gone, or not what's already in hand: carry on with what we have.
+                    let Some(kind) = here.filter(|&k| p.carrying.is_none_or(|c| c.kind == k)) else {
+                        if carried > 0 {
+                            p.job = Some(Job::Haul { from, to, deliver, picked: true });
+                        } else {
+                            self.end_job(p);
+                        }
                         return;
                     };
-                    let want = if deliver {
+                    // How much to end up with: for this blueprint and others nearby, or what fits where it goes.
+                    let load = if deliver {
                         match self.delivery_need(to) {
-                            Some(need) if need.kind == kind => need.count,
+                            Some(need) if need.kind == kind => self.delivery_load(to, need, p.id),
                             _ => {
                                 self.end_job(p);
                                 return;
                             }
                         }
                     } else {
-                        STACK_MAX
+                        self.room_for(to, kind)
                     };
-                    match self.map.take_item(fi, kind, want) {
-                        Some(stack) => {
-                            p.carrying = Some(stack);
-                            self.res_item[fi] = 0;
-                            p.job = Some(Job::Haul { from, to, deliver, picked: true });
-                        }
-                        None => self.end_job(p),
+                    let taken = self.map.take_item(fi, kind, load.saturating_sub(carried)).map_or(0, |s| s.count);
+                    let total = carried + taken;
+                    if total == 0 {
+                        self.end_job(p);
+                        return;
                     }
+                    p.carrying = Some(Stack { kind, count: total });
+                    // More of the same lying nearby, while there's room for it.
+                    let more = if deliver { None } else { self.gather_next(p.pos, kind, to, load - total) };
+                    p.job = Some(match more {
+                        Some(next) => {
+                            self.res_item[self.map.idx(next)] = p.id;
+                            Job::Haul { from: next, to, deliver, picked: false }
+                        }
+                        None => Job::Haul { from, to, deliver, picked: true },
+                    });
                 }
             }
             return;
@@ -576,6 +665,15 @@ impl World {
                     put
                 };
                 p.carrying = (carry.count > used).then(|| Stack { kind: carry.kind, count: carry.count - used });
+                // The rest to the next blueprint nearby that needs it.
+                if let Some(next) = p.carrying.filter(|_| deliver).and_then(|c| self.next_delivery(p.pos, c.kind, p.id)) {
+                    if self.res_target[ti] == p.id {
+                        self.res_target[ti] = 0;
+                    }
+                    self.res_target[self.map.idx(next)] = p.id;
+                    p.job = Some(Job::Haul { from: to, to: next, deliver: true, picked: true });
+                    return;
+                }
                 // Drops any leftovers where we stand.
                 self.end_job(p);
             }

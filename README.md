@@ -89,8 +89,9 @@ furniture, light, production), searchable, with costs (red if the colony is shor
   more. Colonists pick meals first.
 
 - **Items and hauling:** chopping, mining, foraging and harvesting drop items on the map. Haulers carry
-  them to stockpiles, and builders carry materials to blueprints. Reservations stop two colonists from
-  grabbing the same thing.
+  them to stockpiles (picking up nearby piles of the same thing on the way, up to 50), and builders carry
+  materials to blueprints (enough for the ones nearby too, dropping them off one after another).
+  Reservations stop two colonists from grabbing the same thing.
 - **Work priorities and skills:** each colonist has 1–4 (or off) per work type. Skills make work faster
   and improve with practice.
 - **Needs:** hunger (eat food from the ground or stockpiles) and rest (sleep in a bed, or on the ground if
