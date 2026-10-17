@@ -484,6 +484,11 @@ fn game_menu(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut Cam
                 });
             }
             ui.separator();
+            if difficulty_ui(ui, sim) {
+                // Out of the way of the raiders' demand.
+                st.show_menu = false;
+            }
+            ui.separator();
             ui.label(RichText::new("Sound").strong());
             audio::settings_ui(ui, audio);
         });
@@ -491,6 +496,31 @@ fn game_menu(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut Cam
         st.show_menu = false;
         st.confirm_new = false;
     }
+}
+
+/// Raids on or off, how big, and a raid on demand (for testing). Returns
+/// whether a raid was called in.
+fn difficulty_ui(ui: &mut egui::Ui, sim: &mut Sim) -> bool {
+    let w = &mut sim.world;
+    ui.label(RichText::new("Difficulty").strong());
+    ui.checkbox(&mut w.difficulty.raids, "Raids").on_hover_text("Off: no raiders come (the rest of the game goes on).");
+    ui.add_enabled_ui(w.difficulty.raids, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Raid size");
+            ui.add(egui::Slider::new(&mut w.difficulty.raid_size, my_world::story::RAID_SIZES).step_by(0.25).suffix("×"));
+        });
+        let hours = ((w.story.next_raid - w.time).max(0.0) / DAY_LEN * 24.0).round();
+        let text = format!("The next raid would be {} raiders, in about {} h.", w.raid_size(), hours);
+        ui.label(RichText::new(text).small().weak());
+    });
+    let busy = w.parley.is_some() || w.battle.is_some();
+    let raided = ui
+        .add_enabled(!busy, egui::Button::new("Raid now"))
+        .on_hover_text("Raiders arrive straight away (for testing).")
+        .clicked()
+        && w.raid_now();
+    ui.label(RichText::new("Saved with the game; a new game keeps them.").small().weak());
+    raided
 }
 
 fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {

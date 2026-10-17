@@ -11,7 +11,7 @@ use super::sim::Sim;
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
-use my_world::defs::{defs, BuildLook};
+use my_world::defs::{defs, BuildLook, Wallpaper};
 use my_world::map::{Block, Map, Pos, Zone};
 
 const CHUNK: usize = 16;
@@ -320,6 +320,42 @@ impl MeshBuf {
         self.quad(c, Vec3::new(dx as f32, 0.0, dz as f32), color);
     }
 
+    /// A wall's face on the cell edge in direction (dx, dz) papered with
+    /// `paper`: 8 squares across and 8 up, the bottom row a skirting board.
+    /// The pattern runs on along the wall from cell to cell.
+    #[allow(clippy::too_many_arguments)]
+    fn papered(&mut self, x: f32, z: f32, dx: i32, dz: i32, lo: f32, hi: f32, paper: &Wallpaper) {
+        const N: i64 = 8;
+        let (ax, az, bx, bz) = match (dx, dz) {
+            (1, 0) => (x + 1.0, z, x + 1.0, z + 1.0),
+            (-1, 0) => (x, z, x, z + 1.0),
+            (0, 1) => (x, z + 1.0, x + 1.0, z + 1.0),
+            _ => (x, z, x + 1.0, z),
+        };
+        // Along the wall: z for faces looking along x, else x.
+        let along = if dx != 0 { z } else { x } as i64;
+        let (base, accent) = (Rgb(paper.base.0, paper.base.1, paper.base.2), Rgb(paper.accent.0, paper.accent.1, paper.accent.2));
+        let normal = Vec3::new(dx as f32, 0.0, dz as f32);
+        for k in 0..N {
+            let (t0, t1) = (k as f32 / N as f32, (k + 1) as f32 / N as f32);
+            let (x0, z0) = (ax + (bx - ax) * t0, az + (bz - az) * t0);
+            let (x1, z1) = (ax + (bx - ax) * t1, az + (bz - az) * t1);
+            for j in 0..N {
+                let (y0, y1) = (lo + (hi - lo) * j as f32 / N as f32, lo + (hi - lo) * (j + 1) as f32 / N as f32);
+                let u = along * N + k;
+                let color = if j == 0 {
+                    accent.shade(0.7)
+                } else if paper.pattern.accent(u, j) {
+                    accent
+                } else {
+                    base.shade(paper.pattern.tone(u, j))
+                };
+                let c = [Vec3::new(x0, y0, z0), Vec3::new(x1, y0, z1), Vec3::new(x1, y1, z1), Vec3::new(x0, y1, z0)];
+                self.quad(c, normal, color);
+            }
+        }
+    }
+
     fn into_mesh(self) -> Mesh {
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, self.pos);
@@ -471,8 +507,18 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: Cut) -> (Mesh, Option<Mesh>) 
                 }
                 for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
                     let beside = look_off(xi + dx, yi + dz, zi);
-                    if !beside.is_some_and(|l| l.covers(-dx, -dz)) {
-                        b.side(fx, fz, dx, dz, lo, hi, face);
+                    if beside.is_some_and(|l| l.covers(-dx, -dz)) {
+                        continue;
+                    }
+                    // A wall facing into a themed room is papered on that side.
+                    let paper = (look == Look3::Wall)
+                        .then(|| m.at(xi + dx, yi + dz, zi))
+                        .flatten()
+                        .and_then(|q| cut.kind(m, m.idx(q)))
+                        .and_then(|k| defs().rooms[k].wallpaper.as_ref());
+                    match paper {
+                        Some(paper) => b.papered(fx, fz, dx, dz, lo, hi, paper),
+                        None => b.side(fx, fz, dx, dz, lo, hi, face),
                     }
                 }
             }
@@ -539,5 +585,57 @@ fn opening(
     }
     if below_open {
         b.flat(x, z, lo, Vec3::NEG_Y, WALL_FACE.shade(0.7));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use my_world::map::{Feature, FLAT_Z as Z};
+
+    #[test]
+    fn themed_rooms_are_papered() {
+        // A roofed 3×3 room (walls around 2..=6).
+        let mut m = Map::flat(10, 10);
+        for y in 2..=6 {
+            for x in 2..=6 {
+                if x == 2 || x == 6 || y == 2 || y == 6 {
+                    let i = m.idx((x, y, Z));
+                    m.set_feature(i, Feature::built(if (x, y) == (2, 4) { "door" } else { "wall" }));
+                }
+                let i = m.idx((x, y, Z + 1));
+                m.set_roof(i, true);
+            }
+        }
+        m.recompute_rooms();
+        let colors = |kinds: &[u8]| {
+            let cut = Cut { level: Z, columns: &[], kinds };
+            let (mesh, _) = build_chunk(&m, 0, 0, cut);
+            let Some(bevy::mesh::VertexAttributeValues::Float32x4(c)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR) else {
+                panic!("vertex colours")
+            };
+            c.clone()
+        };
+        let room = m.room[m.idx((4, 4, Z))] as usize;
+        let k = defs().rooms.iter().position(|r| r.id == "workshop").unwrap();
+        let mut kinds = vec![0u8; room + 1];
+        let plain = colors(&kinds);
+        kinds[room] = k as u8 + 1;
+        let papered = colors(&kinds);
+        assert!(papered.len() > plain.len(), "the inside faces are made of many squares");
+        let paper = defs().rooms[k].wallpaper.as_ref().unwrap();
+        let accent = Rgb(paper.accent.0, paper.accent.1, paper.accent.2).vertex();
+        assert!(papered.iter().any(|c| c == &accent), "in its colours");
+        assert!(!plain.iter().any(|c| c == &accent));
+    }
+
+    #[test]
+    fn every_pattern_shows_both_colours() {
+        use my_world::defs::Pattern::*;
+        for p in [Stripes, Checks, Dots, Tiles, Bricks, Planks, Diamonds] {
+            let squares: Vec<bool> = (0..16).flat_map(|u| (1..8).map(move |v| p.accent(u, v))).collect();
+            assert!(squares.contains(&true) && squares.contains(&false), "{:?}", p);
+        }
+        assert!(defs().rooms.iter().all(|r| r.wallpaper.is_some()), "every theme has one");
     }
 }

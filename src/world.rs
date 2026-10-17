@@ -87,6 +87,9 @@ pub struct World {
     pub next_id: u32,
     pub log: Vec<String>,
     pub story: Storyteller,
+    /// Raids on or off, and how big (see `story.rs`).
+    #[serde(default)]
+    pub difficulty: crate::story::Difficulty,
     pub effects: Vec<Effect>,
     pub colonist_names_used: usize,
     pub regrow_timer: f32,
@@ -163,6 +166,7 @@ impl World {
             next_id: 1,
             log: Vec::new(),
             story: Storyteller::new(),
+            difficulty: Default::default(),
             effects: Vec::new(),
             colonist_names_used: 0,
             regrow_timer: 4.0,

@@ -80,7 +80,8 @@ furniture, light, production), searchable, with costs (red if the colony is shor
   build menu's Orders), then click where it should go. A builder packs it up and sets it down there at no
   cost; a workbench keeps its bills and a bed its owner. Cancel (or the inspector) calls a move off.
 - **Themed rooms:** a room with everything a theme needs becomes a hospital, surgery room, bedroom,
-  barracks, kitchen, smithy or workshop: its floor changes and its name shows over it. The **Rooms** button lists what each needs;
+  barracks, kitchen, smithy or workshop: its floor changes, its walls get a wallpaper to match (tiles,
+  stripes, dots, checks, bricks, planks) and its name shows over it. The **Rooms** button lists what each needs;
   clicking a cell in a room shows a checklist towards every theme (themes are defined in
   `assets/defs.ron`). Themes pay off: bedrooms and barracks rest better and cheer sleepers up; kitchens,
   smithies and workshops work faster at their benches, and may turn out a spare product or teach faster.
@@ -129,7 +130,8 @@ furniture, light, production), searchable, with costs (red if the colony is shor
   (shown with a wooden floor). Sleeping in a bed in a room gives a mood bonus.
 - **Mood:** built from needs and memories (see the inspector). Low mood can cause mental breaks.
 - **Storyteller:** raids that grow with colony wealth and age, wanderers who join, cargo pods (sometimes
-  medicine), flu outbreaks and crop blight.
+  medicine), flu outbreaks and crop blight. **Difficulty** (in the Menu, Esc): switch raids off, scale their
+  size (×0.25 to ×3), or call one in now for testing; saved with the game.
 - **Combat:** drafted colonists shoot raiders in range with line of sight. Wounds land on body parts (see
   Health). Hurt raiders flee, and downed ones die if left lying. In battles nobody walks through an
   enemy: units go round them, or can't get past.

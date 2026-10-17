@@ -571,7 +571,9 @@ fn autosave_on_exit(
 
 /// A new colony, or the scenario again if the game started in one.
 pub fn new_colony(sim: &mut Sim, ui: &mut UiState, rig: &mut CameraRig) {
-    let world = sim.fresh_world();
+    let mut world = sim.fresh_world();
+    // The difficulty carries over to the new game.
+    world.difficulty = sim.world.difficulty.clone();
     sim.replace(world);
     ui.select(None);
     rig.focus = colony_center(sim);

@@ -582,6 +582,63 @@ pub struct RoomDef {
     /// What being this kind of room does.
     #[serde(default)]
     pub effects: RoomEffects,
+    /// The inside of its walls.
+    #[serde(default)]
+    pub wallpaper: Option<Wallpaper>,
+}
+
+/// A simple repeating pattern in two colours (sRGB) on a room's walls.
+#[derive(Debug, Deserialize)]
+pub struct Wallpaper {
+    pub pattern: Pattern,
+    pub base: (f32, f32, f32),
+    pub accent: (f32, f32, f32),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub enum Pattern {
+    /// Just the base colour (and the skirting board).
+    Plain,
+    /// Thin upright stripes.
+    Stripes,
+    /// A chequerboard of small squares.
+    Checks,
+    /// Dots in offset rows.
+    Dots,
+    /// Square tiles with grout lines.
+    Tiles,
+    /// Bricks with mortar.
+    Bricks,
+    /// Upright wooden planks, every other one darker.
+    Planks,
+    /// A diamond lattice.
+    Diamonds,
+}
+
+impl Pattern {
+    /// Whether wallpaper square (`u` along the wall, `v` up from the floor,
+    /// 8 to a cell) is in the accent colour.
+    pub fn accent(self, u: i64, v: i64) -> bool {
+        match self {
+            Pattern::Plain => false,
+            Pattern::Stripes => u.rem_euclid(4) == 0,
+            Pattern::Checks => (u.div_euclid(2) + v.div_euclid(2)).rem_euclid(2) == 1,
+            Pattern::Dots => (u + 2 * v.div_euclid(4).rem_euclid(2)).rem_euclid(4) == 2 && v.rem_euclid(4) == 2,
+            Pattern::Tiles => u.rem_euclid(4) == 0 || v.rem_euclid(4) == 0,
+            Pattern::Bricks => v.rem_euclid(3) == 0 || (u + 3 * v.div_euclid(3).rem_euclid(2)).rem_euclid(6) == 0,
+            Pattern::Planks => u.rem_euclid(4) == 0,
+            Pattern::Diamonds => (u.rem_euclid(6) - 3).abs() + (v.rem_euclid(6) - 3).abs() == 3,
+        }
+    }
+
+    /// Brightness of the base colour there: planks and bricks vary a little.
+    pub fn tone(self, u: i64, v: i64) -> f32 {
+        match self {
+            Pattern::Planks => [1.0, 0.9][u.div_euclid(4).rem_euclid(2) as usize],
+            Pattern::Bricks => [1.0, 0.93, 0.97][(u.div_euclid(6) + v.div_euclid(3)).rem_euclid(3) as usize],
+            _ => 1.0,
+        }
+    }
 }
 
 /// What a themed room does for the colonists who sleep or work in it.

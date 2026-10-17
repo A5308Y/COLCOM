@@ -10,6 +10,27 @@ const RAIDER_NAMES: [&str; 12] = [
     "Grim", "Vex", "Rook", "Slag", "Mox", "Brakk", "Skarn", "Jag", "Tusk", "Rend", "Krill", "Nox",
 ];
 
+/// Largest raid at size ×1 (bigger sizes raise it in proportion).
+const MAX_RAID: usize = 8;
+/// Range of the raid size multiplier.
+pub const RAID_SIZES: std::ops::RangeInclusive<f32> = 0.25..=3.0;
+
+/// Settings for testing and challenge, saved with the game.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Difficulty {
+    /// Raiders come at all (off: their timer runs on, but nobody comes).
+    pub raids: bool,
+    /// How many come, as a multiple of the usual (`RAID_SIZES`).
+    pub raid_size: f32,
+}
+
+impl Default for Difficulty {
+    fn default() -> Self {
+        Difficulty { raids: true, raid_size: 1.0 }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Storyteller {
     pub next_raid: f32,
@@ -40,7 +61,9 @@ impl World {
         }
         if self.time >= self.story.next_raid {
             self.story.next_raid = self.time + self.rng.range_f32(1.5, 3.0) * DAY_LEN;
-            self.spawn_raid();
+            if self.difficulty.raids {
+                self.spawn_raid();
+            }
         }
         if self.time >= self.story.next_event {
             self.story.next_event = self.time + self.rng.range_f32(0.7, 1.5) * DAY_LEN;
@@ -57,8 +80,26 @@ impl World {
 
     /// Raiders arrive at the edge of the map and make their demand (see
     /// `battle.rs`): pay, or fight.
+    /// How many raiders the next raid brings: more as the colony grows older
+    /// and richer, scaled by the difficulty's raid size.
+    pub fn raid_size(&self) -> usize {
+        let usual = (1 + self.day() as usize / 3 + self.wealth() as usize / 800).min(MAX_RAID) as f32;
+        let scale = self.difficulty.raid_size.clamp(*RAID_SIZES.start(), *RAID_SIZES.end());
+        let most = (MAX_RAID as f32 * scale.max(1.0)).round();
+        (usual * scale).round().clamp(1.0, most) as usize
+    }
+
+    /// A raid now (unless one is under way already). Returns whether one came.
+    pub fn raid_now(&mut self) -> bool {
+        if self.parley.is_some() || self.battle.is_some() || self.colony_lost() {
+            return false;
+        }
+        self.spawn_raid();
+        true
+    }
+
     pub fn spawn_raid(&mut self) {
-        let size = (1 + self.day() as usize / 3 + self.wealth() as usize / 800).min(8);
+        let size = self.raid_size();
         let Some(entry) = self.random_edge_tile() else { return };
         self.story.raids += 1;
         self.open_parley(size, entry);
@@ -158,5 +199,67 @@ impl World {
         self.map.drop_item((x, y, z), Stack { kind, count });
         self.sound("pods", Some((x, y, z)));
         self.push_log(format!("Cargo pods crashed nearby: {} {}.", count, kind.name().to_lowercase()));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::{Map, FLAT_Z as Z};
+    use crate::rng::Rng;
+    use crate::TICK;
+
+    fn test_world() -> World {
+        let mut w = World::with_map(Map::flat(24, 24), Rng::new(6));
+        w.spawn_colonist((5, 5, Z));
+        w.story.next_event = f32::MAX;
+        w.regrow_timer = f32::MAX;
+        w
+    }
+
+    #[test]
+    fn raids_can_be_switched_off() {
+        let mut w = test_world();
+        w.difficulty.raids = false;
+        w.story.next_raid = 1.0;
+        for _ in 0..(3.0 / TICK) as usize {
+            w.tick(TICK);
+        }
+        assert!(w.parley.is_none() && w.battle.is_none(), "nobody came");
+        assert!(w.story.next_raid > w.time, "the timer runs on");
+        // Switched back on, the next one comes as planned.
+        w.difficulty.raids = true;
+        w.story.next_raid = w.time + 1.0;
+        for _ in 0..(3.0 / TICK) as usize {
+            w.tick(TICK);
+        }
+        assert!(w.parley.is_some(), "raiders at the door");
+    }
+
+    #[test]
+    fn raid_size_scales_with_the_slider() {
+        let mut w = test_world();
+        w.time = 12.0 * DAY_LEN; // day 13: usually 5 raiders
+        let usual = w.raid_size();
+        assert_eq!(usual, 5);
+        w.difficulty.raid_size = 2.0;
+        assert_eq!(w.raid_size(), 10, "twice as many, past the usual cap of 8");
+        w.difficulty.raid_size = 0.25;
+        assert_eq!(w.raid_size(), 1, "at least one");
+        w.time = 100.0 * DAY_LEN;
+        w.difficulty.raid_size = 3.0;
+        assert_eq!(w.raid_size(), 24, "capped at 3 × 8");
+    }
+
+    #[test]
+    fn raids_come_on_demand_and_settings_are_saved() {
+        let mut w = test_world();
+        w.difficulty = Difficulty { raids: false, raid_size: 1.5 };
+        assert!(w.raid_now(), "even with raids off");
+        let size = w.parley.as_ref().unwrap().raiders();
+        assert_eq!(size, w.raid_size());
+        assert!(!w.raid_now(), "one at a time");
+        let loaded = crate::save::from_json(&crate::save::to_json(&w).unwrap()).unwrap();
+        assert_eq!(loaded.difficulty, w.difficulty);
     }
 }

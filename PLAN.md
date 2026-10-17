@@ -490,6 +490,14 @@ real play.
   (`pathing::bfs_avoiding`) that can't enter cells where an active enemy of `side` stands. Move costs, the AI
   (`best_spot`, `flee_order`), the reach area and path preview use it, and `start_move` plans each walker's
   path with it (so `go_to` follows it). Allies can still pass each other.
+- Wallpaper (2026-10-17): `RoomDef::wallpaper` (`pattern`: Plain, Stripes, Checks, Dots, Tiles, Bricks, Planks,
+  Diamonds; `base` and `accent` sRGB). The terrain mesher papers each wall face looking into a themed room
+  (`MeshBuf::papered`): 8×8 vertex-coloured squares per cell (`Pattern::accent`, `Pattern::tone`), continuing
+  along the wall, the bottom row a darker skirting board. Window walls stay plain.
+- Difficulty (2026-10-17, `story.rs`): `World::difficulty` (`Difficulty { raids, raid_size }`, saved, carried over
+  to a new game). With raids off the raid timer runs on but nobody comes. `raid_size()` scales the usual size
+  (1 + day/3 + wealth/800, up to 8) by `raid_size` (0.25–3, at least 1, up to 8 × the multiplier when above 1).
+  `raid_now` calls one in (not during another). The Menu has a Difficulty section with all three.
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 

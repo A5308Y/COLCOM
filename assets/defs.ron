@@ -1036,6 +1036,8 @@
     // `heal` multiplies how fast patients in its beds heal, `tend` adds to
     // the quality of tending them, `surgery` to the chance operations go well.
     // Rooms with any of these are for the sick: patients look for their beds first.
+    // `wallpaper`: the inside of its walls, a `pattern` (Plain, Stripes, Checks,
+    // Dots, Tiles, Bricks, Planks or Diamonds) in a `base` and an `accent` colour.
     rooms: [
         (id: "hospital", name: "Hospital", floor: (0.72, 0.84, 0.86), checker: true, about: "Where the sick and wounded get better.",
             needs: [
@@ -1045,6 +1047,7 @@
                 (things: ["lamp"], min: 1),
             ],
             effects: (heal: 1.4, tend: 0.1),
+            wallpaper: Some((pattern: Stripes, base: (0.78, 0.9, 0.86), accent: (0.96, 0.98, 0.97))),
         ),
         (id: "surgery", name: "Surgery room", floor: (0.86, 0.9, 0.92), checker: true, about: "Operations: fitting prosthetic limbs.",
             needs: [
@@ -1053,6 +1056,7 @@
                 (things: ["lamp"], min: 1),
             ],
             effects: (tend: 0.2, surgery: 0.25),
+            wallpaper: Some((pattern: Tiles, base: (0.95, 0.97, 0.98), accent: (0.62, 0.72, 0.8))),
         ),
         (id: "bedroom", name: "Bedroom", floor: (0.62, 0.36, 0.34), about: "A room of one's own.",
             needs: [
@@ -1062,6 +1066,7 @@
                 (things: ["dresser"], min: 1),
             ],
             effects: (rest: 1.25, thought: Some(("Slept in a bedroom of their own", 4.0))),
+            wallpaper: Some((pattern: Dots, base: (0.78, 0.6, 0.62), accent: (0.95, 0.88, 0.8))),
         ),
         (id: "barracks", name: "Barracks", floor: (0.5, 0.52, 0.38), about: "Beds for many, and a table to sit at.",
             needs: [
@@ -1071,6 +1076,7 @@
                 (things: ["window"], min: 2),
             ],
             effects: (rest: 1.1, thought: Some(("Slept in the barracks with friends", 2.0))),
+            wallpaper: Some((pattern: Stripes, base: (0.56, 0.6, 0.43), accent: (0.4, 0.44, 0.3))),
         ),
         (id: "kitchen", name: "Kitchen", floor: (0.86, 0.82, 0.7), checker: true, about: "Where meals are cooked and stored.",
             needs: [
@@ -1081,6 +1087,7 @@
                 (things: ["table"], min: 1),
             ],
             effects: (work: 1.25, extra: 0.15),
+            wallpaper: Some((pattern: Checks, base: (0.95, 0.92, 0.82), accent: (0.45, 0.6, 0.78))),
         ),
         (id: "smithy", name: "Smithy", floor: (0.5, 0.48, 0.47), checker: true, about: "Hot work: smelting and forging.",
             needs: [
@@ -1089,6 +1096,7 @@
                 (things: ["window"], min: 2),
             ],
             effects: (work: 1.3, extra: 0.1),
+            wallpaper: Some((pattern: Bricks, base: (0.55, 0.3, 0.24), accent: (0.42, 0.4, 0.38))),
         ),
         (id: "workshop", name: "Workshop", floor: (0.5, 0.36, 0.22), about: "Sawing, cutting stone and crafting.",
             needs: [
@@ -1096,6 +1104,7 @@
                 (things: ["table"], min: 1),
             ],
             effects: (work: 1.2, learn: 1.5),
+            wallpaper: Some((pattern: Planks, base: (0.66, 0.48, 0.3), accent: (0.44, 0.31, 0.19))),
         ),
     ],
 
