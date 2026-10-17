@@ -766,6 +766,8 @@ impl World {
 
     /// Walk towards `goal` (or next to it if `adjacent`), planning a path as needed.
     pub(crate) fn go_to(&self, p: &mut Pawn, goal: Pos, adjacent: bool, dt: f32) -> Step {
+        // What can't be stepped onto (a shelf) is reached from beside it.
+        let adjacent = adjacent || p.pos != goal && self.map.storage_furniture(self.map.idx(goal));
         if p.path_goal != Some(goal) {
             p.path.clear();
             p.path_goal = Some(goal);

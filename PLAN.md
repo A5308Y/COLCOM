@@ -506,6 +506,14 @@ real play.
 - Vegetation cap (2026-10-17): wild plants regrow (one try every 4 s) only while their kind covers less than
   its `wild.density` share of the columns topped by soil (`World::wild_cap`, counted from the terrain, so
   plants on it don't shrink it), so a long game stays about as wooded as a new map.
+- Shelves block the way (2026-10-17): `shelf` is not passable (storage may now be impassable; seats still
+  must be passable). `bfs` reaches storage furniture beside a reached cell one step further but never
+  through it (`Map::reach_neighbors`; `bfs_avoiding`, for battles, doesn't); `DistField::approach` never
+  picks one to stand on and treats one as a target to reach from beside; `go_to` does the same. Shelves
+  still take items (`Map::can_accept`).
+- Refused items (2026-10-17): things in a stockpile (or on a shelf) that no longer takes them were only moved
+  if another stockpile took them. Now, if none does, haulers carry them out to open ground within 10 cells
+  outside any zone with nothing built on it (`dump_spot`), where they're left.
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 

@@ -738,6 +738,59 @@ mod tests {
     }
 
     #[test]
+    fn refused_items_are_cleared_out() {
+        // Another stockpile takes them: they go there.
+        let mut w = test_world(20, 20);
+        colonist(&mut w, (2, 2, Z));
+        assert!(w.apply_order((5, 5, Z), Order::Stockpile));
+        assert!(w.apply_order((15, 15, Z), Order::Stockpile));
+        w.map.drop_item((5, 5, Z), Stack { kind: item("wood"), count: 20 });
+        let a = w.map.zone[w.map.idx((5, 5, Z))].stockpile().unwrap();
+        w.set_stockpile_allows(a, item("wood"), false);
+        run(&mut w, 60.0);
+        assert_eq!(w.map.items[w.map.idx((15, 15, Z))].map(|s| s.count), Some(20), "to the stockpile that takes it");
+
+        // Nothing takes them: out onto open ground beside it, and left there.
+        let mut w = test_world(20, 20);
+        colonist(&mut w, (2, 2, Z));
+        for x in 5..8 {
+            assert!(w.apply_order((x, 5, Z), Order::Stockpile));
+        }
+        place_bench(&mut w, "shelf", (10, 10, Z));
+        w.sync_containers();
+        w.map.drop_item((6, 5, Z), Stack { kind: item("wood"), count: 20 });
+        let on_shelf = w.map.idx((10, 10, Z));
+        w.map.items[on_shelf] = Some(Stack { kind: item("stone"), count: 30 });
+        let a = w.map.zone[w.map.idx((5, 5, Z))].stockpile().unwrap();
+        let shelf = w.map.zone[w.map.idx((10, 10, Z))].stockpile().unwrap();
+        w.set_stockpile_allows(a, item("wood"), false);
+        w.set_stockpile_allows(a, item("stone"), false);
+        w.set_stockpile_allows(shelf, item("stone"), false);
+        w.set_stockpile_allows(shelf, item("wood"), false);
+        run(&mut w, 90.0);
+        let stored = |w: &World, kind| (0..w.map.len()).filter(|&i| w.map.zone[i].stockpile().is_some()).filter_map(|i| w.map.items[i]).filter(|s| s.kind == kind).map(|s| s.count).sum::<u32>();
+        assert_eq!(stored(&w, item("wood")), 0, "the wood is out of the stockpile");
+        assert_eq!(stored(&w, item("stone")), 0, "the stone is off the shelf");
+        assert_eq!(w.map.count_items(item("wood")), 20, "none lost");
+        assert_eq!(w.map.count_items(item("stone")), 30);
+    }
+
+    #[test]
+    fn shelves_block_the_way() {
+        let mut w = test_world(16, 16);
+        // A row of shelves across the map, with one gap at y = 14.
+        for y in 0..16 {
+            if y != 14 {
+                place_bench(&mut w, "shelf", (8, y, Z));
+            }
+        }
+        let df = crate::pathing::bfs(&w.map, (2, 2, Z));
+        assert_eq!(df.dist((12, 2, Z)), Some(10 + 2 * 12), "round by the gap, not through");
+        assert!(df.dist((8, 2, Z)).is_some(), "but the shelves can be reached");
+        assert_eq!(df.approach(&w.map, (8, 2, Z), false).map(|a| a.0), Some((7, 2, Z)), "from beside");
+    }
+
+    #[test]
     fn shelves_hold_more() {
         let mut w = test_world(16, 16);
         colonist(&mut w, (2, 2, Z));
@@ -767,7 +820,11 @@ mod tests {
         // The one apart takes no wood, so it all goes on the pair.
         w.set_stockpile_allows(id(&w, 10), item("wood"), false);
         w.map.drop_item((12, 12, Z), Stack { kind: item("wood"), count: 200 });
-        run(&mut w, 300.0);
+        // Stocked from beside: nobody steps onto a shelf.
+        for _ in 0..(300.0 / TICK) as usize {
+            w.tick(TICK);
+            assert!(w.pawns.iter().all(|p| ![5, 6, 10].contains(&p.pos.0) || p.pos.1 != 5), "on a shelf");
+        }
         let on = |w: &World, x: usize| w.map.items[w.map.idx((x, 5, Z))].map_or(0, |s| s.count);
         assert_eq!((on(&w, 5) + on(&w, 6), on(&w, 10)), (200, 0));
         assert!(on(&w, 5).max(on(&w, 6)) > crate::map::STACK_MAX, "they hold more than the ground");

@@ -914,8 +914,8 @@ impl Defs {
             if d.storage.as_ref().is_some_and(|s| s.stack_limit < crate::map::STACK_MAX) {
                 return Err(format!("{}: storage must hold at least {}", d.id, crate::map::STACK_MAX));
             }
-            if (d.storage.is_some() || d.special == Special::Seat) && !d.passable {
-                return Err(format!("{}: storage and seats must be passable", d.id));
+            if d.special == Special::Seat && !d.passable {
+                return Err(format!("{}: seats must be passable", d.id));
             }
             if d.parts().iter().any(|p| p.link.is_some_and(|l| l > 3)) {
                 return Err(format!("{}: link must be 0 to 3", d.id));

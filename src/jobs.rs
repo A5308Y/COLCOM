@@ -203,8 +203,11 @@ impl World {
                     // (and only to better ones if it's already stored).
                     let here = self.storage_priority(i, s.kind).unwrap_or(0) as usize;
                     let d = df.dist(pos)?;
-                    let to = (here + 1..=4).rev().find_map(|prio| nearest_cell[s.kind.index()][prio]);
-                    return to.map(|(_, to)| (d, Job::Haul { from: pos, to, deliver: false, picked: false }));
+                    let to = (here + 1..=4).rev().find_map(|prio| nearest_cell[s.kind.index()][prio]).map(|(_, to)| to);
+                    // Refused where it's stored, and no stockpile takes it: out onto open ground.
+                    let refused = m.zone[i].stockpile().is_some() && here == 0;
+                    let to = to.or_else(|| refused.then(|| self.dump_spot(pos, s.kind, df)).flatten());
+                    return to.map(|to| (d, Job::Haul { from: pos, to, deliver: false, picked: false }));
                 }
                 // Ingredients to a workbench.
                 if self.res_target[i] != 0 && !forced || !matches!(m.feature[i], Feature::Built { .. }) {
@@ -524,6 +527,31 @@ impl World {
     }
 
     /// Materials a blueprint or workbench still needs.
+    /// Open ground near `from` (within 10 cells, nearest ring first) outside
+    /// any zone, with nothing built on it, that the hauler can reach (`df`)
+    /// and a stack of `kind` can go on: where things a stockpile refuses are
+    /// cleared out to when no other stockpile takes them.
+    fn dump_spot(&self, from: Pos, kind: ItemId, df: &DistField) -> Option<Pos> {
+        let m = &self.map;
+        let ok = |p: Pos| {
+            let i = m.idx(p);
+            m.zone[i] == Zone::None
+                && m.feature[i] == Feature::None
+                && self.res_cell[i] == 0
+                && m.items[i].is_none_or(|s| s.kind == kind)
+                && m.can_accept(i, kind)
+                && df.dist(p).is_some()
+        };
+        let (x, y, z) = (from.0 as i32, from.1 as i32, from.2 as i32);
+        (1..=10).find_map(|r: i32| {
+            (-r..=r)
+                .flat_map(|dy| (-r..=r).map(move |dx| (dx, dy)))
+                .filter(|&(dx, dy)| dx.abs().max(dy.abs()) == r)
+                .flat_map(|(dx, dy)| (-1..=1).filter_map(move |dz| m.at(x + dx, y + dy, z + dz)))
+                .find(|&p| ok(p))
+        })
+    }
+
     /// How many of `kind` fit in stockpile cell `to` (at most a stack).
     fn room_for(&self, to: Pos, kind: ItemId) -> u32 {
         let i = self.map.idx(to);
@@ -670,7 +698,9 @@ impl World {
         let still_wanted = if deliver {
             self.delivery_need(to).map_or(false, |n| n.kind == carry.kind)
         } else {
-            self.storage_priority(ti, carry.kind).is_some() && self.map.can_accept(ti, carry.kind)
+            // A stockpile that takes it, or open ground it's being cleared out onto.
+            let dump = self.map.zone[ti] == Zone::None && self.map.feature[ti] == Feature::None;
+            (self.storage_priority(ti, carry.kind).is_some() || dump) && self.map.can_accept(ti, carry.kind)
         };
         if !still_wanted {
             self.end_job(p);

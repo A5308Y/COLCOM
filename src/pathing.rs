@@ -17,13 +17,20 @@ pub struct DistField {
 
 /// BFS over walkable cells. The start cell is always included, even if it
 /// can't be stood on (e.g. a pawn where a wall was just built).
+///
+/// Shelves (and other storage nobody walks onto) beside reached cells are
+/// reached too, one step further, but nothing is reached through them.
 pub fn bfs(map: &Map, start: Pos) -> DistField {
-    bfs_avoiding(map, start, |_| false)
+    search(map, start, |_| false, true)
 }
 
 /// BFS that doesn't go through cells (by index) that are `blocked`, such as
-/// enemies' cells in a battle.
+/// enemies' cells in a battle; only cells that can be stood on.
 pub fn bfs_avoiding(map: &Map, start: Pos, blocked: impl Fn(usize) -> bool) -> DistField {
+    search(map, start, blocked, false)
+}
+
+fn search(map: &Map, start: Pos, blocked: impl Fn(usize) -> bool, shelves: bool) -> DistField {
     let n = map.len();
     let mut steps = vec![0u32; n];
     let mut parent = vec![0u32; n];
@@ -43,6 +50,15 @@ pub fn bfs_avoiding(map: &Map, start: Pos, blocked: impl Fn(usize) -> bool) -> D
                 parent[ni] = pi as u32;
                 order.push(ni);
                 q.push_back(nb);
+            }
+        }
+        // Reached from here, but a dead end: not queued.
+        for nb in map.reach_neighbors(p).filter(|_| shelves) {
+            let ni = map.idx(nb);
+            if steps[ni] == 0 {
+                steps[ni] = d + 1;
+                parent[ni] = pi as u32;
+                order.push(ni);
             }
         }
     }
@@ -72,9 +88,12 @@ impl DistField {
     /// Closest cell from which `target` can be reached: the target itself, or
     /// (if `adjacent`) a neighbouring cell up to one level above or below.
     pub fn approach(&self, map: &Map, target: Pos, adjacent: bool) -> Option<(Pos, i32)> {
-        let mut best = self.dist(target).map(|d| (target, d));
+        // Shelves are reached, but not stood on (unless that's where we already are).
+        let stand = |p: Pos| !map.storage_furniture(map.idx(p)) || self.dist(p) == Some(0);
+        let adjacent = adjacent || !stand(target);
+        let mut best = self.dist(target).filter(|_| !adjacent || stand(target)).map(|d| (target, d));
         if adjacent {
-            for nb in map.around(target) {
+            for nb in map.around(target).filter(|&nb| stand(nb)) {
                 if let Some(d) = self.dist(nb) {
                     if best.map_or(true, |(_, bd)| d < bd) {
                         best = Some((nb, d));

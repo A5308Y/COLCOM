@@ -365,6 +365,18 @@ impl Map {
     }
 
     /// Where a pawn standing at `p` can get to in one step.
+    /// Storage furniture nobody walks onto (shelves): worked from beside.
+    pub fn storage_furniture(&self, i: usize) -> bool {
+        self.feature[i].structure().is_some_and(|d| d.storage.is_some() && !d.passable)
+    }
+
+    /// Shelves and the like beside `p` (same level), reached from `p` without stepping on them.
+    pub fn reach_neighbors(&self, p: Pos) -> impl Iterator<Item = Pos> + '_ {
+        DIRS.into_iter()
+            .filter_map(move |(dx, dy)| self.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32))
+            .filter(move |&q| self.storage_furniture(self.idx(q)))
+    }
+
     pub fn walk_neighbors(&self, p: Pos) -> impl Iterator<Item = Pos> + '_ {
         let flat = DIRS.into_iter().filter_map(move |(dx, dy)| self.step(p, dx, dy));
         // Stairs lead straight up from their cell, and down into it.
@@ -614,7 +626,7 @@ impl Map {
 
     /// Whether `kind` can be put down in cell `i`.
     pub fn can_accept(&self, i: usize, kind: ItemId) -> bool {
-        self.standable(self.pos(i))
+        (self.standable(self.pos(i)) || self.storage_furniture(i))
             && !matches!(self.feature[i], Feature::Blueprint { .. })
             && self.items[i].map_or(true, |s| s.kind == kind && s.count < self.capacity(i))
     }

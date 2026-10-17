@@ -72,7 +72,7 @@ furniture, light, production), searchable, with costs (red if the colony is shor
   day, night and caves. Sounds are placed in the world: quieter further from the camera's focus and when
   zoomed out, panned left and right. The **Sound** button opens volume sliders.
 - **Furniture and rooms:** tables and chairs (colonists eat sitting at a table, and dislike eating
-  without one), shelves (four stacks per cell), windows, fences that join up, flickering torches, stone
+  without one), shelves (four stacks per cell; nobody walks through them, they're stocked from beside), windows, fences that join up, flickering torches, stone
   doors. Each room has a quality from its size, the beauty of its furniture, doors and windows, its
   cleanliness (blood, clutter) and light; sleeping and eating in better rooms lifts mood more. Click a
   cell in a room to see the breakdown.
@@ -92,8 +92,9 @@ furniture, light, production), searchable, with costs (red if the colony is shor
 
 - **Items and hauling:** chopping, mining, foraging and harvesting drop items on the map. Haulers carry
   them to stockpiles (picking up nearby piles of the same thing on the way, up to 50), and builders carry
-  materials to blueprints (enough for the ones nearby too, dropping them off one after another).
-  Reservations stop two colonists from grabbing the same thing.
+  materials to blueprints (enough for the ones nearby too, dropping them off one after another). Things a
+  stockpile or shelf no longer takes go to one that does, or out onto open ground nearby. Reservations
+  stop two colonists from grabbing the same thing.
 - **Work priorities and skills:** each colonist has 1–4 (or off) per work type. Skills make work faster
   and improve with practice.
 - **Needs:** hunger (eat food from the ground or stockpiles) and rest (sleep in a bed, or on the ground if
