@@ -420,6 +420,19 @@ real play.
     triangle is drawn from below as well, darker.
   - The battle arena's house has a roof.
 
+- Squads fight one way (2026-10-17): everyone in a squad, the leader too, is ranged or melee
+  (`squads::fights_at_range`: the loadout weapon, else the one carried; bare hands are melee). Joining a
+  squad of the other kind and a member's loadout switching kind are refused; a leader switching kind
+  drops the members who no longer fit. At battle start everyone gears up first, and a member armed the
+  other way (gun not in storage, picked up a club) fights alone that battle. Raider squads are armed
+  alike (`Pawn::raider_weapon` with a kind).
+- Battle readability (2026-10-17): every unit (lone fighters and raiders too) has a plate: state chips
+  (PINNED, SHAKEN / FLEEING, HUNKERED, DEPLOYED, SHELTERING), name, health per member with a red dot when
+  bleeding, and morale and suppression bars with a tick at `BROKEN` / `PINNED`. Changes pop up and rise
+  ("+25 suppression", "-20 morale", "PINNED!", "SHAKEN!", "RALLIES"; quick hits add up), from
+  `BattleView::last`. The panel shows labelled bars and chips with explanations on hover, for the acting
+  unit and the hovered enemy, and states in the unit list.
+
 - The colonist bar is a vertical list down the left (right of the build menu) of same-sized cards
   (`ui::CARD`): name, mood, and the status cut to one line (all of it on hover); it scrolls if it
   doesn't fit. The colonist and cell inspectors open to its right (`COLONIST_LIST_W`).

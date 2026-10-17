@@ -8,7 +8,7 @@ use my_world::defs::{ItemId, Slot};
 use my_world::map::Zone;
 use my_world::pawn::{Pawn, Role};
 use my_world::battle::CELLS_PER_ROUND;
-use my_world::squads::SQUAD_MAX;
+use my_world::squads::{fights_at_range, style_name, SQUAD_MAX};
 use my_world::world::World as SimWorld;
 
 
@@ -71,8 +71,18 @@ pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction
             egui::ComboBox::from_id_salt(("squad", p.id)).selected_text(current).show_ui(ui, |ui| {
                 for l in leaders {
                     let size = 1 + w.squad_members(l.id).len();
-                    let text = format!("{}'s squad ({}/{})", l.name, size, SQUAD_MAX);
-                    if ui.selectable_label(p.role == Role::Member(l.id), text).clicked() {
+                    let style = style_name(fights_at_range(l));
+                    let text = format!("{}'s {} squad ({}/{})", l.name, style, size, SQUAD_MAX);
+                    // Only squads that fight the way they do.
+                    let fits = fights_at_range(l) == fights_at_range(p);
+                    let item = ui.add_enabled(fits, egui::Button::selectable(p.role == Role::Member(l.id), text));
+                    let item = item.on_disabled_hover_text(format!(
+                        "{} fights {}: give them a {} weapon in the loadout first",
+                        p.name,
+                        style_name(fights_at_range(p)),
+                        style
+                    ));
+                    if item.clicked() {
                         role = Role::Member(l.id);
                     }
                 }
@@ -86,7 +96,7 @@ pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction
         let members: Vec<String> =
             w.squad_members(p.id).iter().filter_map(|&m| w.pawn(m).map(|m| m.name.clone())).collect();
         let text = if members.is_empty() { "No one in the squad yet".to_string() } else { members.join(", ") };
-        ui.label(RichText::new(format!("Squad: {}", text)).weak());
+        ui.label(RichText::new(format!("{} squad: {}", capitalised(style_name(fights_at_range(p))), text)).weak());
         if p.poor_quarters {
             let text = "Wants a decent bedroom of their own. Click a bed to give it to them.";
             ui.label(RichText::new(text).color(Color32::from_rgb(255, 140, 100)));
@@ -96,6 +106,13 @@ pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction
     ui.separator();
     ui.label(RichText::new("Combat loadout").strong());
     ui.label(RichText::new("Put on from storage when a battle starts, taken off afterwards.").small().weak());
+    let style = style_name(fights_at_range(p));
+    let rule = match p.role {
+        Role::Member(_) => format!("Fights {}, like the whole squad: the weapon must stay {}.", style, style),
+        Role::Leader => format!("Fights {}. A weapon of the other kind makes it a squad of that kind.", style),
+        _ => format!("Fights {}.", style),
+    };
+    ui.label(RichText::new(rule).small().weak());
     let weapon = p.loadout.iter().copied().find(|k| k.def().weapon.is_some());
     let worn = |slot: Slot| p.loadout.iter().copied().find(|k| k.def().apparel.as_ref().is_some_and(|a| a.slot == slot));
     let mut change: Option<(Option<Slot>, Option<ItemId>)> = None;
@@ -136,9 +153,18 @@ pub fn apply(w: &mut SimWorld, id: u32, actions: Vec<CombatAction>) {
                     w.push_log(format!("Can't do that: {}.", e));
                 }
             }
-            CombatAction::Loadout(items) => w.set_loadout(id, &items),
+            CombatAction::Loadout(items) => {
+                if let Err(e) = w.set_loadout(id, &items) {
+                    w.push_log(format!("Can't do that: {}.", e));
+                }
+            }
         }
     }
+}
+
+fn capitalised(s: &str) -> String {
+    let mut c = s.chars();
+    c.next().map_or(String::new(), |f| f.to_uppercase().collect::<String>() + c.as_str())
 }
 
 /// Roughly how many rounds a member needs to reach their leader.
@@ -171,7 +197,8 @@ pub fn squads_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
             for l in leaders {
                 let members: Vec<&&Pawn> = colonists.iter().filter(|p| p.role == Role::Member(l.id)).collect();
                 ui.horizontal(|ui| {
-                    name(ui, l, format!(" ({}/{})", 1 + members.len(), SQUAD_MAX), &mut select);
+                    let style = style_name(fights_at_range(l));
+                    name(ui, l, format!(" ({}, {}/{})", style, 1 + members.len(), SQUAD_MAX), &mut select);
                     if l.poor_quarters {
                         ui.label(RichText::new("wants a decent bedroom").small().color(Color32::from_rgb(255, 140, 100)));
                     }
@@ -184,6 +211,11 @@ pub fn squads_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
                             r => format!(" - about {} round{} away", r, if r == 1 { "" } else { "s" }),
                         };
                         name(ui, m, away, &mut select);
+                        // Picked up a weapon of the other kind (and has none in the loadout).
+                        if fights_at_range(m) != fights_at_range(l) {
+                            let text = format!("armed {}: fights alone", style_name(fights_at_range(m)));
+                            ui.label(RichText::new(text).small().color(Color32::from_rgb(255, 140, 100)));
+                        }
                     });
                 }
             }

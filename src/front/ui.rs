@@ -31,7 +31,7 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 37] = [
+const HELP_REST: [&str; 40] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -62,7 +62,10 @@ const HELP_REST: [&str; 37] = [
     "      Squads: in a colonist's Combat tab make them a leader, put others in their squad, set loadouts;",
     "      mark civilians and paint a safe zone. Far-away squad members join their leader a few rounds in.",
     "      Leaders want a decent bedroom of their own: click a bed to choose who sleeps in it.",
+    "      A squad is all ranged or all melee (by the loadout weapon, or the one they carry).",
     "      In battle: click your unit (or Tab), click a cell to move, an enemy to attack; Space ends its turn.",
+    "      Over each unit: health per member, then morale and suppression (the tick is where it breaks or",
+    "      gets pinned). Hover the bars in the battle panel to see what they do.",
     "",
     "Camera: WASD/arrows pan, Q/E rotate, wheel zooms, right-drag orbits, middle-drag pans.",
     "Space: pause   1-4: speed (1x, 2x, 5x, 10x)   P: work priorities   I: resources   C: center camera",

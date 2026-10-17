@@ -1,6 +1,8 @@
 //! Squads, roles and combat loadouts, set up during normal play for the
 //! turn-based battles (`battle.rs`). A squad is a leader and the colonists
-//! whose role is `Member(leader)`; they fight as one unit.
+//! whose role is `Member(leader)`; they fight as one unit. A squad is either
+//! a ranged or a melee squad: everyone in it, the leader too, fights the
+//! same way (`fights_at_range`), whatever weapon exactly.
 
 use crate::defs::{ItemId, Slot};
 use crate::pawn::{Pawn, Role};
@@ -18,6 +20,22 @@ fn loadout_slot(kind: ItemId) -> Option<Option<Slot>> {
         (Some(_), _) => Some(None),
         (None, Some(a)) => Some(Some(a.slot)),
         _ => None,
+    }
+}
+
+/// Whether colonist `p` fights at range in battle: with the weapon in their
+/// loadout, or else the one they carry. Bare hands are melee.
+pub fn fights_at_range(p: &Pawn) -> bool {
+    let weapon = p.loadout.iter().copied().find(|k| k.def().weapon.is_some()).or(p.weapon);
+    weapon.and_then(|k| k.def().weapon.as_ref()).is_some_and(|w| w.ranged())
+}
+
+/// "ranged" or "melee".
+pub fn style_name(ranged: bool) -> &'static str {
+    if ranged {
+        "ranged"
+    } else {
+        "melee"
     }
 }
 
@@ -42,6 +60,16 @@ impl World {
             if p.role != role && 1 + self.squad_members(leader).len() >= SQUAD_MAX {
                 return Err(format!("{}'s squad is full ({} at most)", l.name, SQUAD_MAX));
             }
+            let (mine, theirs) = (fights_at_range(p), fights_at_range(l));
+            if mine != theirs {
+                return Err(format!(
+                    "{} fights {} and {}'s squad is a {} squad",
+                    p.name,
+                    style_name(mine),
+                    l.name,
+                    style_name(theirs)
+                ));
+            }
         }
         let was_leader = p.role == Role::Leader;
         let i = self.pawn_index(id).unwrap();
@@ -59,17 +87,43 @@ impl World {
     }
 
     /// Set colonist `id`'s combat loadout: weapons and apparel only, at most
-    /// one weapon and one piece per apparel slot (later ones win).
-    pub fn set_loadout(&mut self, id: u32, items: &[ItemId]) {
+    /// one weapon and one piece per apparel slot (later ones win). A squad
+    /// member can't take a weapon of the other kind than their squad's; a
+    /// leader can, and the members who no longer fit leave the squad.
+    pub fn set_loadout(&mut self, id: u32, items: &[ItemId]) -> Result<(), String> {
         let mut out: Vec<ItemId> = Vec::new();
         for &k in items {
             let Some(slot) = loadout_slot(k) else { continue };
             out.retain(|&o| loadout_slot(o) != Some(slot));
             out.push(k);
         }
-        if let Some(i) = self.pawn_index(id) {
-            self.pawns[i].loadout = out;
+        let i = self.pawn_index(id).ok_or("no such colonist")?;
+        let mut p = self.pawns[i].clone();
+        p.loadout = out;
+        let ranged = fights_at_range(&p);
+        if let Role::Member(l) = p.role {
+            if let Some(l) = self.pawn(l).filter(|l| fights_at_range(l) != ranged) {
+                return Err(format!("{}'s squad is a {} squad", l.name, style_name(!ranged)));
+            }
         }
+        let leader = p.role == Role::Leader;
+        self.pawns[i] = p;
+        if leader {
+            for m in self.squad_members(id) {
+                let mi = self.pawn_index(m).unwrap();
+                if fights_at_range(&self.pawns[mi]) != ranged {
+                    self.pawns[mi].role = Role::Fighter;
+                    let msg = format!(
+                        "{} left {}'s squad: it's a {} squad now.",
+                        self.pawns[mi].name,
+                        self.pawns[i].name,
+                        style_name(ranged)
+                    );
+                    self.push_log(msg);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Once a second: squads whose leader is gone break up, and leaders
@@ -230,11 +284,41 @@ mod tests {
         assert!(thoughts(&w).contains(&"No proper quarters for a leader"));
     }
 
+    fn arm(w: &mut World, id: u32, weapon: Option<&str>) {
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].weapon = weapon.map(ItemId::named);
+    }
+
+    #[test]
+    fn a_squad_is_ranged_or_melee() {
+        let (mut w, ids) = world();
+        arm(&mut w, ids[0], Some("rifle"));
+        arm(&mut w, ids[1], Some("pistol"));
+        arm(&mut w, ids[2], Some("knife"));
+        arm(&mut w, ids[3], None);
+        w.set_role(ids[0], Role::Leader).unwrap();
+        w.set_role(ids[1], Role::Member(ids[0])).expect("any gun goes in a ranged squad");
+        let err = w.set_role(ids[2], Role::Member(ids[0])).unwrap_err();
+        assert!(err.contains("ranged squad"), "{}", err);
+        assert!(w.set_role(ids[3], Role::Member(ids[0])).is_err(), "bare hands are melee");
+        // The loadout counts, not what they carry now.
+        w.set_loadout(ids[2], &[ItemId::named("rifle")]).unwrap();
+        w.set_role(ids[2], Role::Member(ids[0])).unwrap();
+        // Members can't switch kind...
+        assert!(w.set_loadout(ids[1], &[ItemId::named("club")]).is_err());
+        assert_eq!(w.pawn(ids[1]).unwrap().loadout, vec![], "unchanged");
+        // ...but leaders can, and those who don't fit leave.
+        w.set_loadout(ids[0], &[ItemId::named("club")]).unwrap();
+        assert!(w.squad_members(ids[0]).is_empty());
+        assert_eq!(w.pawn(ids[1]).unwrap().role, Role::Fighter);
+        w.set_role(ids[3], Role::Member(ids[0])).expect("now it's a melee squad");
+    }
+
     #[test]
     fn loadouts_hold_one_weapon_and_one_piece_per_slot() {
         let (mut w, ids) = world();
         let k = |s: &str| ItemId::named(s);
-        w.set_loadout(ids[0], &[k("rifle"), k("wood"), k("clothes"), k("club"), k("steel_armor")]);
+        w.set_loadout(ids[0], &[k("rifle"), k("wood"), k("clothes"), k("club"), k("steel_armor")]).unwrap();
         assert_eq!(w.pawn(ids[0]).unwrap().loadout, vec![k("clothes"), k("club"), k("steel_armor")]);
     }
 }

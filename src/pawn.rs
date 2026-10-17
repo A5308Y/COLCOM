@@ -430,19 +430,15 @@ impl Pawn {
         p
     }
 
+    /// A raider's weapon by the chances in `raider_weapons`, of one kind if
+    /// `ranged` says so (to arm a squad alike).
+    pub fn raider_weapon(rng: &mut Rng, ranged: Option<bool>) -> Option<ItemId> {
+        raider_weapon(rng, ranged)
+    }
+
     pub fn new_raider(id: u32, name: String, pos: Pos, rng: &mut Rng) -> Pawn {
         let mut p = Pawn::base(id, name, Faction::Raider, pos, rng);
-        let weapons = &defs().raider_weapons;
-        let total: f32 = weapons.iter().map(|w| w.1).sum();
-        let mut roll = rng.f32() * total;
-        p.weapon = None;
-        for (w, weight) in weapons {
-            p.weapon = Some(w.id());
-            if roll < *weight {
-                break;
-            }
-            roll -= weight;
-        }
+        p.weapon = raider_weapon(rng, None);
         p.skills[Skill::Shooting as usize] = 3 + rng.below(6) as u8;
         p.skills[Skill::Melee as usize] = 3 + rng.below(6) as u8;
         p.color = [0.85, 0.2, 0.2];
@@ -633,6 +629,22 @@ impl Pawn {
         self.apparel.retain(|&a| a != kind);
         self.apparel.len() != before
     }
+}
+
+
+/// See `Pawn::raider_weapon`.
+fn raider_weapon(rng: &mut Rng, ranged: Option<bool>) -> Option<ItemId> {
+    let fits = |k: ItemId| ranged.is_none_or(|r| k.def().weapon.as_ref().is_some_and(|w| w.ranged() == r));
+    let weapons: Vec<(ItemId, f32)> = defs().raider_weapons.iter().map(|(w, weight)| (w.id(), *weight)).filter(|w| fits(w.0)).collect();
+    let total: f32 = weapons.iter().map(|w| w.1).sum();
+    let mut roll = rng.f32() * total;
+    for &(w, weight) in &weapons {
+        if roll < weight {
+            return Some(w);
+        }
+        roll -= weight;
+    }
+    weapons.last().map(|w| w.0)
 }
 
 #[cfg(test)]

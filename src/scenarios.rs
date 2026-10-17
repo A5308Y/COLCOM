@@ -138,7 +138,7 @@ fn battle_arena() -> World {
     }
     colonist(&mut w, (14, 9), 8, 4, "rifle");
     let geared = colonist(&mut w, (14, 21), 6, 6, "knife");
-    w.set_loadout(geared, &[item("rifle"), item("steel_armor")]);
+    w.set_loadout(geared, &[item("rifle"), item("steel_armor")]).unwrap();
     let civilian = colonist(&mut w, (11, 19), 2, 2, "knife");
     w.set_role(civilian, Role::Civilian).unwrap();
 

@@ -16,7 +16,7 @@ use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 use bevy_egui::egui::{self, Align2, Color32, ProgressBar, RichText};
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
-use my_world::battle::{Battle, BattleOrder, Cover, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MAX, AP_MOVE};
+use my_world::battle::{Battle, BattleOrder, Cover, Unit, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MAX, AP_MOVE, BROKEN, PINNED};
 use my_world::map::{Pos, DIRS};
 use my_world::pathing::bfs;
 use my_world::pawn::Faction;
@@ -48,6 +48,184 @@ struct BattleView {
     /// The round last announced, and seconds the "Round N" banner still shows.
     announced: Option<u32>,
     banner: f32,
+    /// Each unit's morale, suppression, pinned and broken as last seen, to
+    /// notice changes.
+    last: Vec<(f32, f32, bool, bool)>,
+    /// Text rising over units for what just happened to them.
+    popups: Vec<Popup>,
+}
+
+/// "+25 suppression", "PINNED!" and the like, rising over a unit and fading.
+struct Popup {
+    unit: usize,
+    /// Changes of the same kind that come quickly add up in one popup.
+    kind: PopupKind,
+    amount: f32,
+    text: String,
+    color: Color32,
+    age: f32,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum PopupKind {
+    Suppression,
+    Morale,
+    State,
+}
+
+const POPUP_SECS: f32 = 2.2;
+const SUPPRESSION_COLOR: Color32 = Color32::from_rgb(255, 150, 50);
+const MORALE_LOSS_COLOR: Color32 = Color32::from_rgb(255, 90, 90);
+
+/// What state a unit is in, for chips on its plate and in the panel: label,
+/// colour, and what it means.
+fn unit_tags(unit: &Unit) -> Vec<(&'static str, Color32, &'static str)> {
+    let mut tags = Vec::new();
+    if unit.passive {
+        tags.push(("SHELTERING", Color32::from_rgb(120, 220, 140), "A civilian: never acts, but can be attacked"));
+    }
+    if unit.broken() {
+        tags.push(match unit.side {
+            Faction::Raider => ("FLEEING", Color32::from_rgb(255, 80, 80), "Morale below 25: running for the edge of the map"),
+            Faction::Colony => (
+                "SHAKEN",
+                Color32::from_rgb(255, 80, 80),
+                "Morale below 25: sits its turns out hunkered down until morale recovers (+5 a round while not pinned)",
+            ),
+        });
+    }
+    if unit.pinned() {
+        tags.push((
+            "PINNED",
+            SUPPRESSION_COLOR,
+            "Suppression 50 or more: only 60% of its AP next round, aim x0.7, and morale doesn't recover",
+        ));
+    }
+    if unit.hunkered && !unit.passive {
+        tags.push(("HUNKERED", Color32::from_rgb(120, 180, 255), "Keeping heads down: harder to hit (x0.75) until its next turn"));
+    }
+    if unit.deployed {
+        tags.push(("DEPLOYED", Color32::from_rgb(110, 220, 230), "Down on one knee: aim x1.25, harder to hit (x0.8), can't move"));
+    }
+    tags
+}
+
+fn morale_color(morale: f32) -> Color32 {
+    if morale < BROKEN {
+        Color32::from_rgb(230, 70, 60)
+    } else if morale < 50.0 {
+        Color32::from_rgb(230, 190, 60)
+    } else {
+        Color32::from_rgb(90, 200, 110)
+    }
+}
+
+const MORALE_HINT: &str = "How much fight is left in them. Each fallen member costs 20 (losing the leader 20 more); \
++5 every round while not pinned. Below 25 the unit breaks: colonists are shaken, raiders flee.";
+const SUPPRESSION_HINT: &str = "How hard they're being shot at: +15 per attack on them, +10 per hit; halves every round. \
+From 50 they're pinned: 60% AP next round, worse aim, and no morale recovery.";
+
+/// Morale and suppression bars with their thresholds, and the state chips, for the panel.
+fn unit_state(panel: &mut egui::Ui, unit: &Unit) {
+    let bar = |panel: &mut egui::Ui, value: f32, fill: Color32, text: String, hint: &str| {
+        panel
+            .add(ProgressBar::new((value / 100.0).clamp(0.0, 1.0)).text(text).fill(fill).desired_height(14.0))
+            .on_hover_text(hint);
+    };
+    let morale_text = if unit.broken() {
+        format!("Morale {:.0} - broken (below {:.0})", unit.morale, BROKEN)
+    } else {
+        format!("Morale {:.0} - breaks below {:.0}", unit.morale, BROKEN)
+    };
+    bar(panel, unit.morale, morale_color(unit.morale), morale_text, MORALE_HINT);
+    let supp_text = if unit.pinned() {
+        format!("Suppression {:.0} - pinned (from {:.0})", unit.suppression, PINNED)
+    } else {
+        format!("Suppression {:.0} - pinned from {:.0}", unit.suppression, PINNED)
+    };
+    bar(panel, unit.suppression, SUPPRESSION_COLOR, supp_text, SUPPRESSION_HINT);
+    let tags = unit_tags(unit);
+    if !tags.is_empty() {
+        panel.horizontal_wrapped(|row| {
+            for (label, color, hint) in tags {
+                chip(row, label, color).on_hover_text(hint);
+            }
+        });
+    }
+}
+
+/// A small coloured label with a frame.
+fn chip(ui: &mut egui::Ui, label: &str, color: Color32) -> egui::Response {
+    egui::Frame::new()
+        .stroke(egui::Stroke::new(1.0, color))
+        .corner_radius(3.0)
+        .inner_margin(egui::Margin::symmetric(4, 1))
+        .show(ui, |ui| ui.label(RichText::new(label).small().strong().color(color)))
+        .response
+        .interact(egui::Sense::hover())
+}
+
+/// Text with a dark shadow, for labels over the 3D view.
+fn shadow_text(painter: &egui::Painter, pos: egui::Pos2, align: Align2, text: &str, size: f32, color: Color32) {
+    let font = egui::FontId::proportional(size);
+    let shadow = Color32::from_black_alpha(((color.a() as f32 / 255.0) * 210.0) as u8);
+    painter.text(pos + egui::vec2(1.0, 1.0), align, text, font.clone(), shadow);
+    painter.text(pos, align, text, font, color);
+}
+
+/// Note what changed for each unit since the last frame as popups, and age them.
+fn update_popups(view: &mut BattleView, b: &Battle, dt: f32) {
+    if view.last.len() > b.units.len() {
+        view.last.clear();
+        view.popups.clear();
+    }
+    for p in view.popups.iter_mut() {
+        p.age += dt;
+    }
+    view.popups.retain(|p| p.age < POPUP_SECS);
+    for (u, unit) in b.units.iter().enumerate() {
+        let now = (unit.morale, unit.suppression, unit.pinned(), unit.broken());
+        let Some(&(morale, supp, pinned, broken)) = view.last.get(u) else {
+            view.last.push(now);
+            continue;
+        };
+        view.last[u] = now;
+        if unit.out() {
+            continue;
+        }
+        let mut add = |kind: PopupKind, amount: f32, color: Color32, text: String| {
+            // Hits in quick succession add up.
+            if let Some(p) = view.popups.iter_mut().find(|p| p.unit == u && p.kind == kind && kind != PopupKind::State && p.age < 0.8) {
+                p.amount += amount;
+                p.age = 0.0;
+                p.text = match kind {
+                    PopupKind::Suppression => format!("+{:.0} suppression", p.amount),
+                    _ => format!("-{:.0} morale", p.amount),
+                };
+                return;
+            }
+            view.popups.push(Popup { unit: u, kind, amount, text, color, age: 0.0 });
+        };
+        if unit.suppression > supp + 0.5 {
+            let n = unit.suppression - supp;
+            add(PopupKind::Suppression, n, SUPPRESSION_COLOR, format!("+{:.0} suppression", n));
+        }
+        if unit.morale < morale - 0.5 {
+            let n = morale - unit.morale;
+            add(PopupKind::Morale, n, MORALE_LOSS_COLOR, format!("-{:.0} morale", n));
+        }
+        if unit.pinned() && !pinned {
+            add(PopupKind::State, 0.0, SUPPRESSION_COLOR, "PINNED!".into());
+        } else if !unit.pinned() && pinned {
+            add(PopupKind::State, 0.0, Color32::from_rgb(180, 220, 180), "no longer pinned".into());
+        }
+        if unit.broken() && !broken {
+            let text = if unit.side == Faction::Raider { "FLEEING!" } else { "SHAKEN!" };
+            add(PopupKind::State, 0.0, Color32::from_rgb(255, 70, 70), text.into());
+        } else if !unit.broken() && broken {
+            add(PopupKind::State, 0.0, Color32::from_rgb(120, 230, 130), "RALLIES".into());
+        }
+    }
 }
 
 /// Bold lines for what matters in a battle: the edges of where the acting
@@ -473,6 +651,8 @@ fn battle_panels(
     let w = &sim.world;
     let Some(b) = &w.battle else {
         view.announced = None;
+        view.last.clear();
+        view.popups.clear();
         return Ok(());
     };
     let mut orders = Vec::new();
@@ -496,21 +676,24 @@ fn battle_panels(
         painter.text(at, Align2::CENTER_CENTER, text, big, fade(Color32::from_rgb(255, 235, 190)));
     }
 
-    // Each squad's state over its square: a bar per member (health while
-    // standing, dark red when downed, grey and crossed out when dead), the
-    // leader's outlined, and the squad's name.
+    // Each unit's plate over its square, from the top: state chips, its
+    // name, a bar per member (health while standing, dark red when downed,
+    // grey and crossed out when dead, a red dot when bleeding; the leader's
+    // outlined), then morale and suppression with a mark where they tip over.
+    update_popups(&mut view, b, time.delta_secs());
     {
         let (cam, gt) = *camera;
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("squad_status")));
-        for unit in b.units.iter().filter(|u| u.roster.len() > 1 && !u.out()) {
+        for (u, unit) in b.units.iter().enumerate().filter(|(_, u)| !u.out()) {
             let Some(lead) = unit.members.first().and_then(|&id| w.pawn(id)) else { continue };
             if !ui.shows_at(&w.map, lead.x, lead.y, lead.z) {
                 continue;
             }
             let Ok(p) = cam.world_to_viewport(gt, tile_point(lead.x, lead.y, lead.z) + Vec3::Y * 1.25) else { continue };
             let (bw, gap, bh) = (12.0, 3.0, 5.0);
-            let total = unit.roster.len() as f32 * (bw + gap) - gap;
-            let left = p.x - total / 2.0;
+            let pips = unit.roster.len() as f32 * (bw + gap) - gap;
+            let width = pips.max(48.0);
+            let left = p.x - pips / 2.0;
             for (k, &id) in unit.roster.iter().enumerate() {
                 let Some(m) = w.pawn(id) else { continue };
                 let x = left + k as f32 * (bw + gap);
@@ -534,16 +717,72 @@ fn battle_panels(
                     inner.set_width(bw * h.max(0.1));
                     painter.rect_filled(inner, 1.0, fill);
                 }
-                if unit.members.first() == Some(&id) {
+                if !m.dead && m.health.bleed_rate() > 0.0 {
+                    painter.circle_filled(egui::pos2(rect.center().x, rect.top() - 3.0), 2.0, Color32::from_rgb(230, 30, 30));
+                }
+                if unit.led && unit.members.first() == Some(&id) {
                     painter.rect_stroke(rect.expand(1.0), 1.0, egui::Stroke::new(1.0, Color32::WHITE), egui::StrokeKind::Outside);
                 }
             }
-            let color = if unit.side == Faction::Raider { Color32::from_rgb(255, 150, 130) } else { Color32::from_rgb(170, 210, 255) };
-            let text = format!("{} ({}/{})", lead.name, unit.members.len(), unit.roster.len());
-            let pos = egui::pos2(p.x, p.y - 2.0);
-            let font = egui::FontId::proportional(12.0);
-            painter.text(pos + egui::vec2(1.0, 1.0), Align2::CENTER_BOTTOM, &text, font.clone(), Color32::from_black_alpha(200));
-            painter.text(pos, Align2::CENTER_BOTTOM, text, font, color);
+            // Morale and suppression, with a tick at the threshold.
+            let bars_left = p.x - width / 2.0;
+            for (row, value, fill, mark) in [
+                (0, unit.morale, morale_color(unit.morale), BROKEN),
+                (1, unit.suppression, SUPPRESSION_COLOR, PINNED),
+            ] {
+                let y = p.y + bh + 3.0 + row as f32 * 5.0;
+                let rect = egui::Rect::from_min_size(egui::pos2(bars_left, y), egui::vec2(width, 3.0));
+                painter.rect_filled(rect.expand(1.0), 1.0, Color32::from_black_alpha(190));
+                let mut inner = rect;
+                inner.set_width(width * (value / 100.0).clamp(0.0, 1.0));
+                painter.rect_filled(inner, 0.0, fill);
+                let tx = bars_left + width * mark / 100.0;
+                painter.line_segment([egui::pos2(tx, y - 1.0), egui::pos2(tx, y + 4.0)], egui::Stroke::new(1.0, Color32::WHITE));
+            }
+            let color = match unit.side {
+                Faction::Raider => Color32::from_rgb(255, 150, 130),
+                _ if unit.passive => Color32::from_rgb(150, 230, 170),
+                _ => Color32::from_rgb(170, 210, 255),
+            };
+            let name = if unit.roster.len() > 1 {
+                format!("{} ({}/{})", lead.name, unit.members.len(), unit.roster.len())
+            } else {
+                lead.name.clone()
+            };
+            let mut top = p.y - 2.0;
+            shadow_text(&painter, egui::pos2(p.x, top), Align2::CENTER_BOTTOM, &name, 12.0, color);
+            top -= 15.0;
+            // State chips in a row above the name.
+            let tags = unit_tags(unit);
+            if !tags.is_empty() {
+                let font = egui::FontId::proportional(10.5);
+                let galleys: Vec<_> = tags
+                    .iter()
+                    .map(|(label, c, _)| (painter.layout_no_wrap(label.to_string(), font.clone(), *c), *c))
+                    .collect();
+                let total: f32 = galleys.iter().map(|(g, _)| g.size().x + 8.0).sum::<f32>() + 3.0 * (galleys.len() - 1) as f32;
+                let mut x = p.x - total / 2.0;
+                for (g, c) in galleys {
+                    let size = g.size() + egui::vec2(8.0, 2.0);
+                    let rect = egui::Rect::from_min_size(egui::pos2(x, top - size.y), size);
+                    painter.rect_filled(rect, 3.0, Color32::from_black_alpha(200));
+                    painter.rect_stroke(rect, 3.0, egui::Stroke::new(1.0, c), egui::StrokeKind::Inside);
+                    painter.galley(rect.min + egui::vec2(4.0, 1.0), g, c);
+                    x += size.x + 3.0;
+                }
+                top -= 18.0;
+            }
+            // What just happened to it, rising and fading.
+            let mine: Vec<&Popup> = view.popups.iter().filter(|q| q.unit == u).collect();
+            for (k, q) in mine.iter().enumerate() {
+                let t = q.age / POPUP_SECS;
+                let alpha = ((1.0 - t) * 3.0).min(1.0).min(q.age / 0.12).clamp(0.0, 1.0);
+                let c = q.color;
+                let c = Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (255.0 * alpha) as u8);
+                let y = top - 4.0 - k as f32 * 17.0 - t * 28.0;
+                let size = if q.kind == PopupKind::State { 17.0 } else { 14.0 };
+                shadow_text(&painter, egui::pos2(p.x, y), Align2::CENTER_BOTTOM, &q.text, size, c);
+            }
         }
     }
 
@@ -664,21 +903,11 @@ fn battle_panels(
                         .text(format!("{} action points", unit.ap))
                         .fill(Color32::from_rgb(90, 160, 230)),
                 );
-                let mut tags = Vec::new();
                 if unit.ap_start < AP_MAX {
-                    tags.push(format!("pinned down: {} AP this round", unit.ap_start));
-                } else if unit.pinned() {
-                    tags.push("under heavy fire".to_string());
+                    let text = format!("Pinned down: only {} AP this round", unit.ap_start);
+                    panel.label(RichText::new(text).color(SUPPRESSION_COLOR));
                 }
-                if unit.deployed {
-                    tags.push("deployed: better aim, harder to hit, can't move".to_string());
-                }
-                if unit.broken() {
-                    tags.push("shaken".to_string());
-                }
-                if !tags.is_empty() {
-                    panel.label(RichText::new(tags.join(", ")).color(Color32::from_rgb(255, 160, 100)));
-                }
+                unit_state(panel, unit);
                 panel.label(
                     RichText::new(format!(
                         "Click a cell to move ({} AP a step), an enemy to attack ({} AP).",
@@ -720,6 +949,13 @@ fn battle_panels(
             if let Some((msg, _)) = &view.message {
                 panel.label(RichText::new(msg).color(Color32::from_rgb(255, 170, 90)));
             }
+            // The enemy under the cursor.
+            if let Some(t) = ui.hover.and_then(|h| hovered_enemy(w, b, h.stand)) {
+                let enemy = &b.units[t];
+                panel.separator();
+                panel.label(RichText::new(format!("Enemy: {}", names(w, &enemy.members))).strong().color(Color32::from_rgb(255, 150, 130)));
+                unit_state(panel, enemy);
+            }
 
             panel.separator();
             panel.horizontal(|row| {
@@ -747,7 +983,9 @@ fn battle_panels(
                 } else {
                     String::new()
                 };
-                let text = format!("{}{} - {}", names(w, &unit.members), standing, status);
+                let state: Vec<String> = unit_tags(unit).iter().map(|t| t.0.to_lowercase()).collect();
+                let state = if state.is_empty() { String::new() } else { format!(" - {}", state.join(", ")) };
+                let text = format!("{}{} - {}{}", names(w, &unit.members), standing, status, state);
                 let ready = !unit.acted && b.side_to_act == Faction::Colony;
                 if panel.add_enabled(ready, egui::Button::new(text).small()).clicked() {
                     orders.push(BattleOrder::Activate(u));
@@ -845,5 +1083,37 @@ fn parley_dialog(ctx: &egui::Context, sim: &mut Sim, sounds: &mut SoundQueue) {
             sounds.play("ui_place", None);
         }
         None => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn changes_to_morale_and_suppression_pop_up() {
+        let mut w = my_world::scenarios::build("battle").expect("the battle scenario");
+        let mut view = BattleView::default();
+        update_popups(&mut view, w.battle.as_ref().unwrap(), 0.0);
+        assert!(view.popups.is_empty(), "nothing has happened yet");
+        let u = 0;
+        // An attack, then a hit right after: one popup adding up.
+        w.battle.as_mut().unwrap().units[u].suppression = 15.0;
+        update_popups(&mut view, w.battle.as_ref().unwrap(), 0.1);
+        w.battle.as_mut().unwrap().units[u].suppression = 25.0;
+        update_popups(&mut view, w.battle.as_ref().unwrap(), 0.1);
+        let texts: Vec<&str> = view.popups.iter().map(|p| p.text.as_str()).collect();
+        assert_eq!(texts, vec!["+25 suppression"]);
+        // Pinned, and losing heart.
+        let b = w.battle.as_mut().unwrap();
+        b.units[u].suppression = PINNED + 5.0;
+        b.units[u].morale = BROKEN - 5.0;
+        update_popups(&mut view, w.battle.as_ref().unwrap(), 0.1);
+        let texts: Vec<&str> = view.popups.iter().map(|p| p.text.as_str()).collect();
+        assert!(texts.contains(&"PINNED!") && texts.iter().any(|t| t.ends_with("morale")), "{:?}", texts);
+        assert!(texts.contains(&"FLEEING!") || texts.contains(&"SHAKEN!"), "{:?}", texts);
+        // They fade.
+        update_popups(&mut view, w.battle.as_ref().unwrap(), POPUP_SECS);
+        assert!(view.popups.is_empty());
     }
 }

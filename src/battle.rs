@@ -400,10 +400,19 @@ impl World {
         let spots: Vec<Pos> = df.order.iter().map(|&i| self.map.pos(i)).collect();
         for (k, &size) in parley.squads.iter().enumerate() {
             let Some(&at) = spots.get(k * 6).or(spots.last()) else { break };
-            let mut members = Vec::new();
+            let mut members: Vec<u32> = Vec::new();
             for _ in 0..size {
                 let name = crate::story::raider_name(&mut self.rng);
-                members.push(self.spawn_raider(name, at));
+                let id = self.spawn_raider(name, at);
+                // A squad fights one way: armed like the first of them.
+                if let Some(&first) = members.first() {
+                    let ranged = self.pawn(first).unwrap().attack().ranged;
+                    let i = self.pawn_index(id).unwrap();
+                    if self.pawns[i].attack().ranged != ranged {
+                        self.pawns[i].weapon = Pawn::raider_weapon(&mut self.rng, Some(ranged)).or(self.pawns[i].weapon);
+                    }
+                }
+                members.push(id);
             }
             if !members.is_empty() {
                 let led = members.len() > 1;
@@ -417,12 +426,35 @@ impl World {
             self.pawns.iter().filter(|p| ready(p)).map(|p| (p.id, p.role, p.pos)).collect();
         let leaders: Vec<(u32, Pos)> =
             colonists.iter().filter(|c| c.1 == Role::Leader).map(|c| (c.0, c.2)).collect();
-        let mut fighters = Vec::new();
+        // Battle gear first: it decides who fights at range.
+        for &(id, role, _) in &colonists {
+            if role != Role::Civilian {
+                self.gear_up(id);
+            }
+        }
+        let ranged = |w: &World, id: u32| w.pawn(id).is_some_and(|p| p.attack().ranged);
+        // Members armed the other way than their squad (say their gun wasn't
+        // in storage) fight alone this time.
+        let mut misfits = Vec::new();
         for &(leader, at) in &leaders {
             let df = bfs(&self.map, at);
             let mut members = vec![leader];
             for &(id, role, pos) in &colonists {
                 if role != Role::Member(leader) {
+                    continue;
+                }
+                if ranged(self, id) != ranged(self, leader) {
+                    let (p, l) = (self.pawn(id).unwrap(), self.pawn(leader).unwrap());
+                    let msg = format!(
+                        "{} has a {} weapon, but {}'s squad is a {} squad: they fight alone.",
+                        p.name,
+                        crate::squads::style_name(!ranged(self, leader)),
+                        l.name,
+                        crate::squads::style_name(ranged(self, leader))
+                    );
+                    b.events.push(msg.clone());
+                    self.push_log(msg);
+                    misfits.push(id);
                     continue;
                 }
                 let steps = df.dist(pos).map_or(pos.0.abs_diff(at.0) + pos.1.abs_diff(at.1), |d| d as usize);
@@ -435,9 +467,7 @@ impl World {
                     let rounds = steps.saturating_sub(WITH_LEADER).div_ceil(CELLS_PER_ROUND).max(1) as u32;
                     b.arrivals.push(Arrival { pawn: id, leader, rounds });
                 }
-                fighters.push(id);
             }
-            fighters.push(leader);
             let morale = self.unit_morale(&members) + 10.0;
             b.units.push(Unit::new(Faction::Colony, members, true, morale));
         }
@@ -445,13 +475,12 @@ impl World {
             let alone = match role {
                 Role::Fighter => true,
                 // A member whose leader can't fight fights alone.
-                Role::Member(l) => !leaders.iter().any(|&(lid, _)| lid == l),
+                Role::Member(l) => !leaders.iter().any(|&(lid, _)| lid == l) || misfits.contains(&id),
                 _ => false,
             };
             if alone {
                 let morale = self.unit_morale(&[id]);
                 b.units.push(Unit::new(Faction::Colony, vec![id], false, morale));
-                fighters.push(id);
             }
         }
         // Civilians run to the safe zone (if there is one) and keep their heads down.
@@ -471,9 +500,6 @@ impl World {
             u.passive = true;
             u.hunkered = true;
             b.units.push(u);
-        }
-        for id in fighters {
-            self.gear_up(id);
         }
         // Everyone runs while the battle lasts.
         for p in self.pawns.iter_mut() {
@@ -1310,6 +1336,34 @@ mod tests {
         w.start_battle(Parley { squads: vec![raiders], entry, demand: Vec::new() });
     }
 
+    #[test]
+    fn squads_fight_one_way() {
+        let mut w = world(30, 30, 4);
+        let (lead, mate, odd) = (colonist(&mut w, (5, 10, Z)), colonist(&mut w, (5, 11, Z)), colonist(&mut w, (6, 10, Z)));
+        for (id, gun) in [(lead, "rifle"), (mate, "pistol"), (odd, "pistol")] {
+            let i = w.pawn_index(id).unwrap();
+            w.pawns[i].weapon = Some(item(gun));
+        }
+        w.set_role(lead, Role::Leader).unwrap();
+        w.set_role(mate, Role::Member(lead)).unwrap();
+        w.set_role(odd, Role::Member(lead)).unwrap();
+        // Afterwards their gun goes, and they pick up a club.
+        let i = w.pawn_index(odd).unwrap();
+        w.pawns[i].weapon = Some(item("club"));
+        fight(&mut w, 8, (25, 25, Z));
+        let b = battle(&w);
+        let squad = &b.units[b.unit_of(lead).unwrap()];
+        assert_eq!(squad.members, vec![lead, mate]);
+        let alone = &b.units[b.unit_of(odd).unwrap()];
+        assert!(!alone.led && alone.members == vec![odd], "the clubber fights alone");
+        assert!(b.events.iter().any(|e| e.contains("fight alone")), "{:?}", b.events);
+        // Raider squads are armed alike too.
+        for u in b.units.iter().filter(|u| u.side == Faction::Raider) {
+            let kinds: Vec<bool> = u.members.iter().map(|&id| w.pawn(id).unwrap().attack().ranged).collect();
+            assert!(kinds.windows(2).all(|k| k[0] == k[1]), "{:?}", kinds);
+        }
+    }
+
     fn battle(w: &World) -> &Battle {
         w.battle.as_ref().expect("a battle is on")
     }
@@ -1411,7 +1465,7 @@ mod tests {
         w.pawns[i].weapon = None;
         w.map.drop_item((8, 8, Z), Stack { kind: item("steel_armor"), count: 1 });
         w.map.drop_item((9, 8, Z), Stack { kind: item("rifle"), count: 1 });
-        w.set_loadout(id, &[item("rifle"), item("steel_armor")]);
+        w.set_loadout(id, &[item("rifle"), item("steel_armor")]).unwrap();
         fight(&mut w, 1, (29, 10, Z));
         let p = w.pawn(id).unwrap();
         assert_eq!(p.weapon, Some(item("rifle")));
