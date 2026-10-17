@@ -414,6 +414,13 @@ real play.
     triangle is drawn from below as well, darker.
   - The battle arena's house has a roof.
 
+- Shelves (any buildable with `storage`) are storage by themselves (2026-10-17): `sync_containers`
+  (each colony second, on load, and when storage furniture is built or taken down) gives one standing
+  outside any stockpile a `Stockpile` of its own (`container: true`, "Shelf N", Preferred), shared with
+  the same furniture beside it, so clicking it shows the usual settings. Clear and safe zones skip
+  those cells, painted stockpiles don't join them, and when the shelf goes its storage goes and what no
+  longer fits the cell spills over. A shelf inside a painted stockpile uses that stockpile, as before.
+
 - Deconstruct (Orders menu, Backspace): marks structures, floors and roofs to be taken down by builders
   (Construction work and skill) in half their work time (at least 1 s), dropping `drops` (half the cost
   by default). Mine is for rock, ore and soil only now; old saves' Mine marks on structures and floors

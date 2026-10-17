@@ -337,6 +337,7 @@ impl World {
         self.colony_timer -= dt;
         if self.colony_timer <= 0.0 {
             self.colony_timer = 1.0;
+            self.sync_containers();
             self.update_production();
             self.update_room_stats();
             self.update_squads();
@@ -736,10 +737,11 @@ impl World {
             Order::Desig(Desig::Mine) => m.mineable(p),
             Order::Desig(Desig::Deconstruct) => m.deconstructable(p),
             Order::Desig(d) => f.harvest_desig() == Some(d),
-            Order::Zone(Zone::None) => m.zone[i] != Zone::None,
+            // A shelf's own storage goes only with the shelf.
+            Order::Zone(Zone::None) => m.zone[i] != Zone::None && !self.container_at(i),
             Order::Zone(Zone::Stockpile(_)) => false,
-            // Safe zones go indoors too, among the furniture.
-            Order::Zone(Zone::Safe) => m.standable(p) && m.zone[i] != Zone::Safe,
+            // Safe zones go indoors too, among the furniture (but not over shelves).
+            Order::Zone(Zone::Safe) => m.standable(p) && m.zone[i] != Zone::Safe && !self.container_at(i),
             Order::Zone(z) => m.standable(p) && (f == Feature::None || f.is_crop()) && m.zone[i] != z,
             Order::Stockpile => {
                 m.standable(p) && (f == Feature::None || f.is_crop()) && m.zone[i].stockpile().is_none()
@@ -883,6 +885,7 @@ impl World {
         let mut w = crate::save::from_json(s)?;
         w.map.recompute_rooms();
         w.mark_roofs();
+        w.sync_containers();
         w.update_room_stats();
         let n = w.map.len();
         if w.map.blood.len() != n {

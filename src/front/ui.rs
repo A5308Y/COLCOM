@@ -31,13 +31,14 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 35] = [
+const HELP_REST: [&str; 36] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
     "The build menu on the left lists everything (` hides it); hover an entry for details.",
     "Click a stockpile to set its priority and which items it takes; click a grow zone to pick its crop.",
-    "Shelves hold three stacks. Colonists eat at a table if there's a chair beside it, and hate eating without.",
+    "Shelves are storage by themselves and hold three stacks; click one to set what goes on it (shelves",
+    "      side by side share settings). Colonists eat at a table if there's a chair beside it, and hate eating without.",
     "Room quality (size, beauty of furniture, windows and doors, cleanliness, light) affects mood when",
     "      colonists sleep or eat there. Click a cell inside a room to see why it's good or bad.",
     "Raw food can cause food poisoning - cook meals at a stove. Mine iron ore deep in the rock,",

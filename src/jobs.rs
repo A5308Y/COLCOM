@@ -362,6 +362,9 @@ impl World {
                     self.map.set_feature(i, Feature::None);
                     self.sound("built", Some(target));
                     drop(&mut self.map, target, def.drops());
+                    if def.storage.is_some() {
+                        self.sync_containers();
+                    }
                 } else if self.map.floor[i] {
                     self.map.set_floor(i, false);
                     self.sound("built", Some(target));
@@ -402,6 +405,9 @@ impl World {
                     // Shove anything lying here out of the way.
                     if let Some(s) = self.map.items[i].take() {
                         self.map.drop_item(target, s);
+                    }
+                    if kind.def().storage.is_some() {
+                        self.sync_containers();
                     }
                 }
             }

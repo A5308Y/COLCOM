@@ -77,11 +77,15 @@ pub struct Stockpile {
     pub priority: u8,
     /// Item kinds it doesn't take.
     pub forbid: Vec<ItemId>,
+    /// The storage of shelves (storage furniture) standing outside any
+    /// stockpile, rather than a zone the player painted.
+    #[serde(default)]
+    pub container: bool,
 }
 
 impl Stockpile {
     pub fn new(number: usize) -> Stockpile {
-        Stockpile { name: format!("Stockpile {}", number), priority: 2, forbid: Vec::new() }
+        Stockpile { name: format!("Stockpile {}", number), priority: 2, forbid: Vec::new(), container: false }
     }
 
     pub fn accepts(&self, kind: ItemId) -> bool {
@@ -287,13 +291,70 @@ impl World {
     }
 
     /// Stockpile id for a new cell at `p`: a stockpile next to it on the same
-    /// level, or a new one.
+    /// level (not a shelf's own storage), or a new one.
     pub(crate) fn stockpile_for(&mut self, p: Pos) -> u16 {
-        let next = self.map.neighbors(p).find_map(|nb| self.map.zone[self.map.idx(nb)].stockpile());
+        let next = self.map.neighbors(p).find_map(|nb| {
+            let id = self.map.zone[self.map.idx(nb)].stockpile()?;
+            (!self.is_container(id)).then_some(id)
+        });
         next.unwrap_or_else(|| {
-            self.stockpiles.push(Stockpile::new(self.stockpiles.len() + 1));
+            let number = self.stockpiles.iter().filter(|s| !s.container).count() + 1;
+            self.stockpiles.push(Stockpile::new(number));
             (self.stockpiles.len() - 1) as u16
         })
+    }
+
+    /// Whether stockpile `id` is the storage of shelves rather than a painted zone.
+    pub fn is_container(&self, id: u16) -> bool {
+        self.stockpiles.get(id as usize).is_some_and(|s| s.container)
+    }
+
+    /// Whether cell `i` belongs to a shelf's own storage.
+    pub fn container_at(&self, i: usize) -> bool {
+        self.map.zone[i].stockpile().is_some_and(|id| self.is_container(id))
+    }
+
+    /// Storage furniture is storage by itself. One standing outside any
+    /// stockpile gets settings of its own, shared with the same furniture
+    /// beside it that has its own. Where the furniture is gone, its storage
+    /// goes too, and whatever no longer fits the cell spills over.
+    pub(crate) fn sync_containers(&mut self) {
+        for i in 0..self.map.len() {
+            // Most cells have neither furniture nor storage: skip them quickly.
+            let zoned = matches!(self.map.zone[i], Zone::Stockpile(_));
+            if !zoned && !matches!(self.map.feature[i], Feature::Built { .. }) {
+                continue;
+            }
+            let def = self.map.feature[i].structure();
+            let storage = def.is_some_and(|d| d.storage.is_some());
+            let p = self.map.pos(i);
+            if storage && self.map.zone[i].stockpile().is_none() {
+                let kind = self.map.feature[i].structure_id();
+                let next = self.map.neighbors(p).find_map(|nb| {
+                    let ni = self.map.idx(nb);
+                    let id = self.map.zone[ni].stockpile()?;
+                    (self.is_container(id) && self.map.feature[ni].structure_id() == kind).then_some(id)
+                });
+                let id = next.unwrap_or_else(|| {
+                    let name = def.map_or("Storage", |d| d.name.as_str());
+                    let number = self.stockpiles.iter().filter(|s| s.container && s.name.starts_with(name)).count() + 1;
+                    // Preferred, so things move onto shelves from plain stockpiles.
+                    let store = Stockpile { name: format!("{} {}", name, number), priority: 3, container: true, ..Stockpile::new(0) };
+                    self.stockpiles.push(store);
+                    (self.stockpiles.len() - 1) as u16
+                });
+                self.map.zone[i] = Zone::Stockpile(id);
+            } else if !storage && self.container_at(i) {
+                self.map.zone[i] = Zone::None;
+                if let Some(s) = self.map.items[i] {
+                    let over = s.count.saturating_sub(self.map.capacity(i));
+                    if over > 0 {
+                        self.map.items[i] = Some(Stack { kind: s.kind, count: s.count - over });
+                        self.map.drop_item(p, Stack { kind: s.kind, count: over });
+                    }
+                }
+            }
+        }
     }
 
     pub fn set_stockpile_priority(&mut self, id: u16, priority: u8) {
@@ -640,6 +701,52 @@ mod tests {
         w.map.drop_item((12, 12, Z), Stack { kind: item("wood"), count: 120 });
         run(&mut w, 240.0);
         assert_eq!(w.map.items[shelf].map(|s| s.count), Some(120), "all on the one shelf");
+    }
+
+    #[test]
+    fn shelves_are_storage_by_themselves() {
+        let mut w = test_world(16, 16);
+        colonist(&mut w, (2, 2, Z));
+        // Two side by side share their settings; one apart has its own.
+        for x in [5, 6, 10] {
+            place_bench(&mut w, "shelf", (x, 5, Z));
+        }
+        w.sync_containers();
+        let id = |w: &World, x: usize| w.map.zone[w.map.idx((x, 5, Z))].stockpile().unwrap();
+        assert_eq!(id(&w, 5), id(&w, 6));
+        assert_ne!(id(&w, 5), id(&w, 10));
+        assert!(w.is_container(id(&w, 5)));
+        assert_eq!(w.stockpiles[id(&w, 10) as usize].name, "Shelf 2");
+        // The one apart takes no wood, so it all goes on the pair.
+        w.set_stockpile_allows(id(&w, 10), item("wood"), false);
+        w.map.drop_item((12, 12, Z), Stack { kind: item("wood"), count: 200 });
+        run(&mut w, 300.0);
+        let on = |w: &World, x: usize| w.map.items[w.map.idx((x, 5, Z))].map_or(0, |s| s.count);
+        assert_eq!((on(&w, 5) + on(&w, 6), on(&w, 10)), (200, 0));
+        assert!(on(&w, 5).max(on(&w, 6)) > crate::map::STACK_MAX, "they hold more than the ground");
+    }
+
+    #[test]
+    fn a_shelfs_storage_goes_with_it() {
+        let mut w = test_world(16, 16);
+        place_bench(&mut w, "shelf", (5, 5, Z));
+        w.sync_containers();
+        let i = w.map.idx((5, 5, Z));
+        assert!(w.container_at(i));
+        assert!(!w.apply_order((5, 5, Z), Order::Zone(Zone::None)), "clearing zones leaves shelves be");
+        assert!(!w.apply_order((5, 5, Z), Order::Zone(Zone::Safe)));
+        // A stockpile painted beside it is a stockpile of its own.
+        assert!(w.apply_order((6, 5, Z), Order::Stockpile));
+        let beside = w.map.zone[w.map.idx((6, 5, Z))].stockpile().unwrap();
+        assert!(!w.is_container(beside));
+        assert_eq!(w.stockpiles[beside as usize].name, "Stockpile 1");
+        // Taken down: no more storage, and what doesn't fit on the ground spills over.
+        w.map.items[i] = Some(Stack { kind: item("wood"), count: 120 });
+        w.map.set_feature(i, Feature::None);
+        w.sync_containers();
+        assert_eq!(w.map.zone[i], Zone::None);
+        assert_eq!(w.map.items[i].map(|s| s.count), Some(crate::map::STACK_MAX));
+        assert_eq!(w.map.count_items(item("wood")), 120);
     }
 
     #[test]

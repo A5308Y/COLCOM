@@ -329,7 +329,7 @@ fn details(ui: &mut egui::Ui, e: &ToolEntry, def: Option<&BuildDef>, totals: &[u
         facts.push("Lights up its surroundings".into());
     }
     if let Some(s) = &d.storage {
-        facts.push(format!("Holds {} of an item (put it in a stockpile)", s.stack_limit));
+        facts.push(format!("Storage by itself: holds {} of an item; click it to choose what goes on it", s.stack_limit));
     }
     if d.beauty != 0.0 {
         facts.push(format!("Beauty {:+}", d.beauty));
