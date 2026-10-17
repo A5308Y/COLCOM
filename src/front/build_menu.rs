@@ -301,7 +301,11 @@ fn details(ui: &mut egui::Ui, e: &ToolEntry, def: Option<&BuildDef>, totals: &[u
     ));
     let mut facts: Vec<String> = Vec::new();
     match d.special {
-        Special::Floor => facts.push("A floor slab: build it in the air, held up by walls or ground within 3 cells".into()),
+        Special::Floor => {
+            facts.push("A floor slab for upper storeys: build it in the air, held up by walls or ground within 3 cells".into());
+            facts.push("Roofs come by themselves: builders put one over every room you enclose".into());
+        }
+        Special::Roof => facts.push("Put over enclosed rooms by themselves".into()),
         Special::Stairs => facts.push("Connects this level with the one above; walk on from the low end".into()),
         Special::Bed => facts.push("Colonists sleep and recover here".into()),
         Special::Door => facts.push("Lets colonists through but closes the room".into()),

@@ -182,7 +182,7 @@ mod tests {
             app.update();
         }
 
-        // Hidden roofs: a walled room with a built roof, seen into from above.
+        // Roofs: a walled room with a built roof, drawn as a roof, and hidden to see into it.
         let (room, z) = {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             let m = &mut sim.world.map;
@@ -202,14 +202,26 @@ mod tests {
                     let i = m.idx((x, y, z));
                     if x == cx || y == cy || x == cx + 4 || y == cy + 4 {
                         m.set_feature(i, my_world::map::Feature::built("wall"));
+                    } else {
+                        let above = m.idx((x, y, z + 1));
+                        m.set_roof(above, true);
                     }
-                    let above = m.idx((x, y, z + 1));
-                    m.set_floor(above, true);
                 }
             }
             m.recompute_rooms();
             ((cx + 2, cy + 2), z)
         };
+        let roof_meshes = |app: &mut App| app.world_mut().query::<(&front::RoofMesh, &Mesh3d)>().iter(app.world()).count();
+        for _ in 0..3 {
+            app.update();
+        }
+        assert_eq!(roof_meshes(&mut app), 1, "the roof is drawn");
+        app.world_mut().resource_mut::<front::UiState>().view_level = Some(z);
+        for _ in 0..3 {
+            app.update();
+        }
+        assert_eq!(roof_meshes(&mut app), 0, "the layer view below the roof hides it");
+        app.world_mut().resource_mut::<front::UiState>().view_level = None;
         app.world_mut().resource_mut::<front::UiState>().hide_roofs = true;
         for _ in 0..5 {
             app.update();
@@ -219,13 +231,15 @@ mod tests {
             let m = &app.world().resource::<front::Sim>().world.map;
             assert!(m.roofed((room.0, room.1, z)), "the test room is a room");
             assert_eq!(ui.top_at(m, room.0, room.1), z, "the roof over the room is hidden");
-            // Only columns under a built roof are cut (not caves or tunnels under rock).
+            // Only columns under a built roof or floor are cut (not caves or tunnels under rock).
             for (k, &c) in ui.roof_cut.iter().enumerate() {
                 if c != u8::MAX {
-                    assert!(m.floor[m.idx((k % m.w, k / m.w, c as usize + 1))], "cut under a built floor");
+                    let i = m.idx((k % m.w, k / m.w, c as usize + 1));
+                    assert!(m.roof[i] || m.floor[i], "cut under a built roof");
                 }
             }
         }
+        assert_eq!(roof_meshes(&mut app), 0, "no roofs drawn while they're hidden");
         app.world_mut().resource_mut::<front::UiState>().hide_roofs = false;
         for _ in 0..5 {
             app.update();
@@ -235,6 +249,7 @@ mod tests {
             let m = &app.world().resource::<front::Sim>().world.map;
             assert!(ui.top_at(m, room.0, room.1) > z, "roofs back");
         }
+        assert_eq!(roof_meshes(&mut app), 1, "and drawn again");
 
         // The inspector's bills, stockpile and grow zone panels.
         let (bench, stock, grow) = {
@@ -331,6 +346,8 @@ mod tests {
         for _ in 0..60 {
             app.update();
         }
+        let roofs = app.world_mut().query::<&front::RoofMesh>().iter(app.world()).count();
+        assert_eq!(roofs, 1, "the house's roof is drawn");
         let (leader, to) = {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             let w = &mut sim.world;

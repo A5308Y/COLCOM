@@ -331,7 +331,9 @@
 
     // Player-built structures, listed in the toolbar menu named by
     // `category`. `special` marks behaviour the game handles in code: `Floor`
-    // (a slab others stand on, built in the air), `Stairs` (connect a cell to
+    // (a slab others stand on, built in the air), `Roof` (never in the menu:
+    // put over enclosed rooms by themselves; the look is only its blueprint,
+    // the roof itself is drawn in code), `Stairs` (connect a cell to
     // the one above), `Bed` (sleep and recover), `Door` (swings open),
     // `Table` and `Seat` (colonists eat sitting at a table).
     // `beauty` counts towards the quality of the room it's in (or borders);
@@ -412,6 +414,19 @@
             special: Floor,
             look: Parts([
                 (shape: Cube, color: "wood_light", at: (0.0, 0.04, 0.0), size: (0.98, 0.08, 0.98)),
+            ]),
+        ),
+        (
+            id: "roof",
+            category: "Structure",
+            name: "Roof",
+            cost: ("wood", 1),
+            work_time: 1.5,
+            passable: true,
+            special: Roof,
+            drops: Some(("wood", 1)),
+            look: Parts([
+                (shape: Cube, color: "wood_light", at: (0.0, 0.03, 0.0), size: (0.98, 0.06, 0.98)),
             ]),
         ),
         (

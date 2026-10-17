@@ -68,9 +68,10 @@ fn battle_arena() -> World {
         for x in x0..=x1 {
             if x == x0 || x == x1 || y == y0 || y == y1 {
                 build_at(&mut w, x, y, "wall");
+            } else {
+                let roof = w.map.idx((x, y, Z + 1));
+                w.map.set_roof(roof, true);
             }
-            let roof = w.map.idx((x, y, Z + 1));
-            w.map.set_floor(roof, true);
         }
     }
     build_at(&mut w, x1, 14, "door");

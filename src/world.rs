@@ -327,6 +327,7 @@ impl World {
         self.time += dt;
         if self.map.rooms_dirty {
             self.map.recompute_rooms();
+            self.mark_roofs();
             self.update_room_stats();
         }
         if self.map.support_dirty {
@@ -748,9 +749,12 @@ impl World {
                 let replacing = matches!(f, Feature::Blueprint { kind: other, .. } if other != kind);
                 let empty = f == Feature::None || replacing;
                 match kind.def().special {
+                    // Over a roof too: the floor replaces it.
                     Special::Floor => {
                         empty && m.block[i] == Block::Air && !m.floor[i] && !m.on_ground(p) && m.floor_supported(p)
                     }
+                    // Roofs come by themselves (`mark_roofs`).
+                    Special::Roof => false,
                     Special::Stairs => {
                         m.standable(p) && empty && m.above(p).is_some_and(|a| m.block[m.idx(a)] == Block::Air)
                     }
@@ -764,7 +768,8 @@ impl World {
                     }
                 }
             }
-            Order::Cancel => m.desig[i].is_some() || matches!(f, Feature::Blueprint { .. }),
+            // Roof blueprints would only come back.
+            Order::Cancel => m.desig[i].is_some() || matches!(f, Feature::Blueprint { .. }) && !m.roof_blueprint(i),
         }
     }
 
@@ -785,7 +790,8 @@ impl World {
                 // Materials already delivered to a replaced blueprint are left for the haulers.
                 if let Feature::Blueprint { kind: old, delivered } = self.map.feature[i] {
                     if delivered > 0 {
-                        self.map.drop_item(p, Stack { kind: old.def().cost.item, count: delivered });
+                        let at = self.map.landing(p);
+                        self.map.drop_item(at, Stack { kind: old.def().cost.item, count: delivered });
                     }
                 }
                 self.map.feature[i] = Feature::Blueprint { kind, delivered: 0 };
@@ -795,12 +801,39 @@ impl World {
                 if let Feature::Blueprint { kind, delivered } = self.map.feature[i] {
                     self.map.feature[i] = Feature::None;
                     if delivered > 0 {
-                        self.map.drop_item(p, Stack { kind: kind.def().cost.item, count: delivered });
+                        let at = self.map.landing(p);
+                        self.map.drop_item(at, Stack { kind: kind.def().cost.item, count: delivered });
                     }
                 }
             }
         }
         true
+    }
+
+    /// Put roof blueprints where rooms want roofs (`Map::roof_wanted`), and
+    /// take away those no longer wanted (the room was opened up), dropping
+    /// what was delivered to them.
+    pub fn mark_roofs(&mut self) {
+        let Some(roof) = defs().roof() else { return };
+        let m = &mut self.map;
+        let mut wanted = vec![false; m.len()];
+        for &i in &m.roof_wanted {
+            wanted[i] = true;
+            if m.feature[i] == Feature::None {
+                m.feature[i] = Feature::Blueprint { kind: roof, delivered: 0 };
+            }
+        }
+        for (i, &keep) in wanted.iter().enumerate() {
+            if let Feature::Blueprint { kind, delivered } = m.feature[i] {
+                if kind == roof && !keep {
+                    m.feature[i] = Feature::None;
+                    if delivered > 0 {
+                        let at = m.landing(m.pos(i));
+                        m.drop_item(at, Stack { kind: kind.def().cost.item, count: delivered });
+                    }
+                }
+            }
+        }
     }
 
     /// Run `f` on a copy of pawn `id` with full access to the world.
@@ -849,6 +882,7 @@ impl World {
     pub fn load_json(s: &str) -> Result<World, String> {
         let mut w = crate::save::from_json(s)?;
         w.map.recompute_rooms();
+        w.mark_roofs();
         w.update_room_stats();
         let n = w.map.len();
         if w.map.blood.len() != n {
@@ -1189,19 +1223,10 @@ mod tests {
     }
 
     #[test]
-    fn colonists_roof_a_room_from_inside() {
+    fn colonists_floor_over_a_room_from_inside() {
         let mut w = test_world(16, 16);
         colonist(&mut w, (7, 7, Z));
-        for y in 5..=9 {
-            for x in 5..=9 {
-                if x == 5 || x == 9 || y == 5 || y == 9 {
-                    let i = w.map.idx((x, y, Z));
-                    w.map.set_feature(i, if (x, y) == (5, 7) { Feature::built("door") } else { Feature::built("wall") });
-                }
-            }
-        }
-        w.map.recompute_rooms();
-        assert!(!w.map.roofed((7, 7, Z)));
+        house(&mut w, 5, 5, 9, 9);
         let mut placed = 0;
         for y in 5..=9 {
             for x in 5..=9 {
@@ -1214,6 +1239,157 @@ mod tests {
         let built = (5..=9).flat_map(|y| (5..=9).map(move |x| (x, y))).filter(|&(x, y)| w.map.floor[w.map.idx((x, y, Z + 1))]).count();
         assert_eq!(built, 25, "all floors built");
         assert!(w.map.roofed((7, 7, Z)), "now it's a room");
+    }
+
+    /// Walls from (x0, y0) to (x1, y1) with a door in the west wall, rooms recomputed and roofs marked.
+    fn house(w: &mut World, x0: usize, y0: usize, x1: usize, y1: usize) {
+        let door = (x0, (y0 + y1) / 2);
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                if x == x0 || x == x1 || y == y0 || y == y1 {
+                    let i = w.map.idx((x, y, Z));
+                    w.map.set_feature(i, if (x, y) == door { Feature::built("door") } else { Feature::built("wall") });
+                }
+            }
+        }
+        w.map.recompute_rooms();
+        w.mark_roofs();
+    }
+
+    /// Cells at level `z` with a roof blueprint.
+    fn roof_blueprints(w: &World, z: usize) -> Vec<(usize, usize)> {
+        let m = &w.map;
+        (0..m.h).flat_map(|y| (0..m.w).map(move |x| (x, y))).filter(|&(x, y)| m.roof_blueprint(m.idx((x, y, z)))).collect()
+    }
+
+    #[test]
+    fn enclosed_rooms_get_roof_blueprints() {
+        let mut w = test_world(16, 16);
+        house(&mut w, 5, 5, 9, 9);
+        let marked = roof_blueprints(&w, Z + 1);
+        let inner: Vec<(usize, usize)> = (6..=8).flat_map(|y| (6..=8).map(move |x| (x, y))).collect();
+        assert_eq!(marked, inner, "over every inner cell, not over the walls or outside");
+        assert!(roof_blueprints(&w, Z + 2).is_empty(), "nothing over the roof");
+        // Natural hollows don't get roofs: a pit in a hill.
+        raise(&mut w, 0, 11, 4, 15, 1);
+        let pit = w.map.idx((2, 13, Z));
+        w.map.set_block(pit, Block::Air);
+        w.map.recompute_rooms();
+        w.mark_roofs();
+        assert_eq!(roof_blueprints(&w, Z + 1), inner, "no roof over the pit");
+    }
+
+    #[test]
+    fn colonists_build_the_roof() {
+        let mut w = test_world(16, 16);
+        colonist(&mut w, (2, 2, Z));
+        house(&mut w, 5, 5, 9, 9);
+        w.map.drop_item((2, 3, Z), Stack { kind: item("wood"), count: 20 });
+        run(&mut w, 240.0);
+        for y in 6..=8 {
+            for x in 6..=8 {
+                let i = w.map.idx((x, y, Z + 1));
+                assert!(w.map.roof[i], "roof over ({}, {})", x, y);
+                assert_eq!(w.map.feature[i], Feature::None);
+                assert!(!w.map.floor[i] && !w.map.standable((x, y, Z + 1)), "a roof isn't a floor");
+            }
+        }
+        assert!(w.map.roofed((7, 7, Z)), "now it's a room");
+        assert_eq!(w.map.count_items(item("wood")), 20 - 9);
+    }
+
+    #[test]
+    fn roofs_need_walls_nearby() {
+        let mut w = test_world(20, 20);
+        house(&mut w, 3, 3, 13, 11);
+        let marked = roof_blueprints(&w, Z + 1);
+        // The middle of the hall is more than three cells from any wall (the
+        // door at (3, 7) holds nothing up).
+        for x in 6..=9 {
+            assert!(!marked.contains(&(x, 7)), "{:?}", marked);
+        }
+        assert!(marked.contains(&(5, 7)) && marked.contains(&(10, 7)) && marked.contains(&(4, 4)));
+        assert_eq!(marked.len(), 9 * 7 - 4);
+        assert!(!w.map.roofed((5, 5, Z)), "with holes in its roof it's no room");
+    }
+
+    #[test]
+    fn opening_a_room_takes_its_roof_blueprints_away() {
+        let mut w = test_world(16, 16);
+        house(&mut w, 5, 5, 9, 9);
+        let corner = w.map.idx((6, 6, Z + 1));
+        w.map.feature[corner] = Feature::Blueprint { kind: defs().roof().unwrap(), delivered: 1 };
+        let gap = w.map.idx((9, 7, Z));
+        w.map.set_feature(gap, Feature::None);
+        w.map.recompute_rooms();
+        w.mark_roofs();
+        assert!(roof_blueprints(&w, Z + 1).is_empty());
+        assert_eq!(w.map.count_items(item("wood")), 1, "what was delivered is dropped");
+        assert!(w.map.items[w.map.idx((6, 6, Z))].is_some(), "into the room below");
+    }
+
+    #[test]
+    fn players_cant_order_roofs() {
+        let mut w = test_world(16, 16);
+        house(&mut w, 5, 5, 9, 9);
+        let roof = defs().roof().unwrap();
+        let i = w.map.idx((7, 7, Z + 1));
+        w.map.feature[i] = Feature::None;
+        assert!(!w.apply_order((7, 7, Z + 1), Order::Build(roof)));
+        assert!(!w.apply_order((12, 12, Z), Order::Build(roof)));
+        assert!(!w.apply_order((6, 6, Z + 1), Order::Cancel), "nor cancel them");
+    }
+
+    #[test]
+    fn floors_replace_roofs() {
+        let mut w = test_world(16, 16);
+        colonist(&mut w, (7, 7, Z));
+        house(&mut w, 5, 5, 9, 9);
+        for y in 6..=8 {
+            for x in 6..=8 {
+                let i = w.map.idx((x, y, Z + 1));
+                w.map.set_feature(i, Feature::None);
+                w.map.set_roof(i, true);
+            }
+        }
+        let floor = BuildId::named("floor");
+        assert!(w.apply_order((7, 7, Z + 1), Order::Build(floor)), "a floor can go over a roof");
+        w.map.drop_item((7, 7, Z), Stack { kind: item("wood"), count: 10 });
+        run(&mut w, 60.0);
+        let i = w.map.idx((7, 7, Z + 1));
+        assert!(w.map.floor[i] && !w.map.roof[i], "the floor took the roof's place");
+        assert!(w.map.roofed((7, 7, Z)), "still a room");
+        assert!(roof_blueprints(&w, Z + 2).is_empty(), "nothing over a half-floored attic");
+    }
+
+    #[test]
+    fn deconstructed_roofs_come_back() {
+        let mut w = test_world(16, 16);
+        colonist(&mut w, (7, 7, Z));
+        house(&mut w, 5, 5, 9, 9);
+        let i = w.map.idx((7, 7, Z + 1));
+        w.map.set_feature(i, Feature::None);
+        w.map.set_roof(i, true);
+        assert!(w.apply_order((7, 7, Z + 1), Order::Desig(Desig::Deconstruct)));
+        let pi = w.pawn_index(1).unwrap();
+        w.pawns[pi].priorities = [0; WorkType::ALL.len()];
+        w.pawns[pi].priorities[WorkType::Construction as usize] = 1;
+        run(&mut w, 10.0);
+        assert!(!w.map.roof[i], "taken down");
+        assert!(w.map.roof_blueprint(i), "and marked again, as the room is still closed");
+    }
+
+    #[test]
+    fn roofs_survive_saving() {
+        let mut w = test_world(16, 16);
+        house(&mut w, 5, 5, 9, 9);
+        let i = w.map.idx((7, 7, Z + 1));
+        w.map.set_feature(i, Feature::None);
+        w.map.set_roof(i, true);
+        let loaded = World::load_json(&w.save_json().unwrap()).unwrap();
+        assert!(loaded.map.roof[i]);
+        assert_eq!(loaded.map.roof, w.map.roof);
+        assert_eq!(roof_blueprints(&loaded, Z + 1).len(), 8);
     }
 
     #[test]
@@ -1303,6 +1479,9 @@ mod tests {
             let def = kind.def();
             let mut w = test_world(16, 16);
             colonist(&mut w, (2, 2, Z));
+            if def.special == Special::Roof {
+                continue; // rooms get them by themselves (`roofs_*` tests)
+            }
             let at = if def.special == Special::Floor {
                 // Floors go in the air, held up by rock nearby.
                 let rock = w.map.idx((8, 8, Z));

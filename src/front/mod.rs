@@ -11,6 +11,7 @@ mod look;
 mod overlay;
 mod pawns;
 mod props;
+mod roofs;
 mod scene;
 mod sim;
 mod squads_ui;
@@ -30,6 +31,8 @@ pub use camera::CameraRig;
 pub use sim::Sim;
 #[cfg(test)]
 pub use characters::Rig;
+#[cfg(test)]
+pub use roofs::RoofMesh;
 
 pub struct FrontPlugin;
 
@@ -41,6 +44,7 @@ impl Plugin for FrontPlugin {
             scene::ScenePlugin,
             terrain::TerrainPlugin,
             props::PropsPlugin,
+            roofs::RoofsPlugin,
             characters::CharactersPlugin,
             pawns::PawnsPlugin,
             battle_ui::BattleUiPlugin,

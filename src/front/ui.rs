@@ -13,7 +13,7 @@ use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, ProgressBar, RichText};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::health::HediffKind;
-use my_world::defs::{BuildId, ItemId, PlantId};
+use my_world::defs::{BuildId, ItemId, PlantId, Special};
 use my_world::map::{Block, Feature, Pos, Zone};
 use my_world::pawn::{Pawn, Skill, WorkType};
 use my_world::production::{BillMode, PRIORITY_NAMES};
@@ -31,7 +31,7 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 33] = [
+const HELP_REST: [&str; 35] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -44,13 +44,15 @@ const HELP_REST: [&str; 33] = [
     "      smelt it into steel and make weapons and armour at a smithy. Colonists pick up better gear;",
     "      select one and right-click a weapon or clothes to have them use it (and keep it).",
     "",
-    "Floors need a wall, stairs or ground below within 3 cells.",
+    "Floors are for upper storeys; they need a wall, stairs or ground below within 3 cells.",
     "      Use the layer view to place floors in mid-air: PageDown/PageUp (or [ and ]).",
-    "      Shift+R hides built roofs, to look into the top room of every building at once.",
+    "      Shift+R hides roofs, to look into the top room of every building at once.",
     "Stairs rise away from where you walk onto them; you can't walk across them.",
     "Lamps light up rooms and caves - nights are dark.",
     "",
-    "A room needs walls and a roof: build floors on top. Sleeping in a roofed bedroom makes colonists happier.",
+    "A room needs walls and a roof. Enclose an area with walls and doors and it gets a roof by itself:",
+    "      builders put it up with wood. A roof needs a wall within 3 cells, like floors. Sleeping in a",
+    "      roofed bedroom makes colonists happier.",
     "Mining also digs soil. Dig straight down to sink a shaft; put stairs in it.",
     "Anything left with nothing underneath falls - more than one level hurts.",
     "Wounds bleed and can get infected. Doctors (see P) rescue downed colonists to a bed",
@@ -67,9 +69,10 @@ const HELP_REST: [&str; 33] = [
     "H or Esc closes this help.",
 ];
 
-/// One line per buildable: shortcut, name and cost.
+/// One line per buildable the player can place: shortcut, name and cost.
 fn help_builds() -> Vec<String> {
     BuildId::all()
+        .filter(|kind| kind.def().special != Special::Roof)
         .map(|kind| {
             let def = kind.def();
             let key = def.key.as_deref().unwrap_or("").to_uppercase();
@@ -603,6 +606,9 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) -> (boo
             ui.label(what);
             if m.floor[i] {
                 ui.label("Built floor");
+            }
+            if m.roof[i] {
+                ui.label("Roof");
             }
             if m.covered(t) && !m.roofed(t) {
                 ui.label("Covered overhead");

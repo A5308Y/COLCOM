@@ -255,6 +255,9 @@ pub enum Special {
     None,
     /// A slab at the bottom of the cell (`Map::floor`), built in the air.
     Floor,
+    /// A roof over a room (`Map::roof`). Never placed by the player: enclosing
+    /// a room marks its roof (`World::mark_roofs`), and builders put it up.
+    Roof,
     /// Connects its cell with the one above.
     Stairs,
     /// Sleeping and recovering.
@@ -647,12 +650,15 @@ impl Defs {
             if d.parts().iter().any(|p| p.link.is_some_and(|l| l > 3)) {
                 return Err(format!("{}: link must be 0 to 3", d.id));
             }
-            if matches!(d.special, Special::Floor | Special::Stairs | Special::Bed | Special::Door) && !d.passable {
+            if matches!(d.special, Special::Floor | Special::Roof | Special::Stairs | Special::Bed | Special::Door) && !d.passable {
                 return Err(format!("{}: {:?} must be passable", d.id, d.special));
             }
         }
         if self.builds.iter().filter(|d| d.special == Special::Floor).count() > 1 {
             return Err("only one buildable can be the floor".into());
+        }
+        if self.builds.iter().filter(|d| d.special == Special::Roof).count() > 1 {
+            return Err("only one buildable can be the roof".into());
         }
         let mut wild = 0.0;
         for d in &self.plants {
@@ -710,6 +716,11 @@ impl Defs {
         self.builds.iter().position(|d| d.special == Special::Floor).map(|i| BuildId(i as u16))
     }
 
+    /// The buildable that makes roofs, if any.
+    pub fn roof(&self) -> Option<BuildId> {
+        self.builds.iter().position(|d| d.special == Special::Roof).map(|i| BuildId(i as u16))
+    }
+
     /// What grow zones are planted with.
     pub fn sown(&self) -> Option<PlantId> {
         self.plants.iter().position(|d| d.sow.is_some()).map(|i| PlantId(i as u16))
@@ -733,6 +744,7 @@ mod tests {
         let d = defs();
         assert!(!d.items.is_empty() && !d.builds.is_empty() && !d.plants.is_empty());
         assert!(d.floor().is_some());
+        assert!(d.roof().is_some(), "rooms get roofs");
         assert!(d.sown().is_some());
         assert!(ItemId::all().any(|i| d.is_food(i)), "something to eat");
         assert!(ItemId::all().any(|i| d.is_medicine(i)), "some medicine");

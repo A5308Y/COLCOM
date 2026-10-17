@@ -98,7 +98,11 @@ pub fn draw(
                     shadow_text(&painter, sp, Align2::CENTER_BOTTOM, &s.count.to_string(), 12.0, Color32::WHITE);
                 }
             }
+            // Roofs are many cheap cells: their counts would only clutter the view.
             if let Feature::Blueprint { kind, delivered } = m.feature[i] {
+                if m.roof_blueprint(i) {
+                    continue;
+                }
                 if let Some(sp) = to_screen(c + Vec3::Y * 0.9) {
                     let label = format!("{}/{}", delivered, kind.def().cost.count);
                     shadow_text(&painter, sp, Align2::CENTER_BOTTOM, &label, 12.0, Color32::from_rgb(170, 210, 255));

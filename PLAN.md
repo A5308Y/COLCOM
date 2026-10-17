@@ -10,7 +10,8 @@
 3. **Building upwards:** floors on upper levels must be held up by walls or ground within a few tiles.
    Collapses may come later.
 4. **Rooms and roofs:** a space enclosed by walls with something solid above counts as indoors.
-   Underground caves are rooms automatically and are dark.
+   Underground caves are rooms automatically and are dark. Enclosed rooms get hipped roofs by
+   themselves, which builders put up (see the roofs note below).
 5. **Layer view:** PageUp/PageDown picks the level being viewed and hides everything above it.
    Designations and building happen on the level being viewed.
 
@@ -378,7 +379,7 @@ real play.
   orders went with real-time combat (phase 12); equipping goes to the first selected.
 
 - Hide roofs (Shift+R or the HUD button; like Going Medieval's roof toggle): every column over a roofed
-  room whose ceiling is a built floor is cut off just above the topmost such room
+  room whose ceiling is a built roof or floor is cut off just above the topmost such room
   (`UiState::roof_cut`, recomputed each frame in `update_roof_cut`), so the top room of every building
   is visible at once. Rock over caves and tunnels stays. Terrain (`terrain::Cut`), props, items,
   pawns, labels, markers and picking all use `UiState::top_at` / `shows_at`; combined with the layer
@@ -395,7 +396,25 @@ real play.
   fields default when missing, so older saves still load. Not done yet: dropping or unequipping gear from
   the inspector.
 
-- Deconstruct (Orders menu, Backspace): marks structures and floors to be taken down by builders
+- Roofs (agreed 2026-10-17), separate from floors, which are only for upper storeys. `Map::roof` is a
+  flag on the cell above a room (where a floor would go), saved with `serde(default)` so older saves
+  load. Roofs close rooms (`covered`) but can't be stood on. The player never places them:
+  `recompute_rooms` also collects `roof_wanted` (over the uncovered cells of enclosed regions that built
+  walls or doors help enclose, held up like floors: a wall within 3 cells; regions with roofs in them
+  are attics and get none), and `World::mark_roofs` puts `roof` blueprints (`special: Roof`, 1 wood)
+  there after each room recompute and takes away ones no longer wanted. Builders put them up from below
+  with the usual blueprint jobs. A floor ordered over a roof replaces it. A deconstructed roof is marked
+  again while the room stays closed (a "no roof" area could come later). Roofs aren't in the build menu,
+  can't be ordered or cancelled, and their blueprints show no delivery count.
+  - Drawn by `src/front/roofs.rs` as one hipped mesh, rebuilt when `Map::roof_changes` (roofs built or
+    removed, rooms recomputed), the layer view or the roof cut change. Heights come from each point's
+    distance to the edge on a half-cell grid (`half_steps`, 0.45 levels per cell, at most 1.3), so
+    rectangles get ridges (odd widths too), squares pyramids, L-shapes valleys and big halls flat tops.
+    The roof also covers the tops of the walls around it, and eaves overhang 0.3 and drop 0.12. Each
+    triangle is drawn from below as well, darker.
+  - The battle arena's house has a roof.
+
+- Deconstruct (Orders menu, Backspace): marks structures, floors and roofs to be taken down by builders
   (Construction work and skill) in half their work time (at least 1 s), dropping `drops` (half the cost
   by default). Mine is for rock, ore and soil only now; old saves' Mine marks on structures and floors
   load as Deconstruct. Marked cells are outlined in red.

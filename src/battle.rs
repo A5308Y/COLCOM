@@ -1240,7 +1240,7 @@ fn clear_line(m: &crate::map::Map, a: Pos, b: Pos) -> bool {
         let (lo, hi) = (h0.min(h1).floor() as i32, h0.max(h1).floor() as i32);
         for z in lo..=hi {
             let Some(c) = m.at(x, y, z) else { continue };
-            if z > lo && m.floor[m.idx(c)] {
+            if z > lo && (m.floor[m.idx(c)] || m.roof[m.idx(c)]) {
                 return true;
             }
             if c != a && c != b && !see_through(m, c) {

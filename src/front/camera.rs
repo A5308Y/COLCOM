@@ -172,7 +172,7 @@ fn mouse_controls(
     }
 }
 
-/// The level just above the highest ground, water or built floor in a
+/// The level just above the highest ground, water, built floor or roof in a
 /// column (what the camera sees from above; walls don't count, so it
 /// doesn't bump over buildings).
 fn visible_top(m: &my_world::map::Map, x: usize, y: usize) -> usize {
@@ -182,7 +182,7 @@ fn visible_top(m: &my_world::map::Map, x: usize, y: usize) -> usize {
             let i = m.idx((x, y, z));
             if m.block[i] != my_world::map::Block::Air {
                 Some(z + 1)
-            } else if m.floor[i] {
+            } else if m.floor[i] || m.roof[i] {
                 Some(z)
             } else {
                 None

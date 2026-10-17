@@ -9,7 +9,7 @@ use super::{tile_center, tile_point};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::{egui_wants_any_keyboard_input, EguiWantsInput};
-use my_world::defs::{defs, BuildId};
+use my_world::defs::{defs, BuildId, Special};
 use my_world::map::{Block, Desig, Map, Pos, Zone};
 use my_world::pawn::Faction;
 use my_world::world::{Order, World as SimWorld};
@@ -64,7 +64,7 @@ pub static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(|| {
             "Bksp",
             KeyCode::Backspace,
             "Orders",
-            "Take down walls, furniture and floors. Builders do it and get back half the cost.",
+            "Take down walls, furniture, floors and roofs. Builders do it and get back half the cost.",
         ),
         fixed(Tool::Paint(Order::Desig(Desig::Forage)), "Forage", "3", KeyCode::Digit3, "Orders", "Mark berry bushes to be picked."),
         fixed(
@@ -96,7 +96,8 @@ pub static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(|| {
         hint: "Civilians shelter here when a battle starts. Raiders can still reach it.",
     });
     tools.push(fixed(Tool::Paint(Order::Zone(Zone::None)), "Clear zone", "9", KeyCode::Digit9, "Zones", "Remove stockpile, grow and safe zones."));
-    for kind in BuildId::all() {
+    // Roofs aren't placed by the player: rooms get them by themselves.
+    for kind in BuildId::all().filter(|k| k.def().special != Special::Roof) {
         let def = kind.def();
         let key = def.key.as_deref().and_then(|k| match parse_key(k) {
             Some(code) if !RESERVED.contains(&code) => Some((k.to_uppercase(), code)),
@@ -415,7 +416,8 @@ fn pick(m: &Map, ray: Ray3d, ui: &UiState) -> Option<Hover> {
         }
         let i = m.idx(cell);
         let in_slab = p.y - cell.2 as f32 * LEVEL_H < FLOOR_T * 2.0;
-        if m.floor[i] && in_slab {
+        // Roofs rise from the bottom of their cell, so they stop the ray anywhere in it.
+        if m.floor[i] && in_slab || m.roof[i] {
             return Some(Hover { solid: m.below(cell).unwrap_or(cell), stand: cell });
         }
         if stops_ray(m, cell) {
@@ -584,15 +586,19 @@ pub fn center_on_selection(sim: &Sim, ui: &UiState, rig: &mut CameraRig) {
 // ---------- systems ----------
 
 /// Where each column is cut off while roofs are hidden: just above the
-/// topmost room whose ceiling is a built floor. Rock over caves and tunnels
-/// stays.
+/// topmost room whose ceiling is a built roof or floor. Rock over caves and
+/// tunnels stays.
 fn update_roof_cut(sim: Res<Sim>, mut ui: ResMut<UiState>) {
     let m = &sim.world.map;
     let mut cut = vec![u8::MAX; m.w * m.h];
     if ui.hide_roofs {
         for y in 0..m.h {
             for x in 0..m.w {
-                if let Some(z) = (0..m.d - 1).rev().find(|&z| m.roofed((x, y, z)) && m.floor[m.idx((x, y, z + 1))]) {
+                let built = |z: usize| {
+                    let i = m.idx((x, y, z + 1));
+                    m.floor[i] || m.roof[i]
+                };
+                if let Some(z) = (0..m.d - 1).rev().find(|&z| m.roofed((x, y, z)) && built(z)) {
                     cut[y * m.w + x] = z as u8;
                 }
             }
@@ -932,7 +938,7 @@ mod tests {
         for (k, key) in keys.iter().enumerate() {
             assert!(!keys[k + 1..].contains(key), "{:?} used twice", key);
         }
-        for kind in BuildId::all() {
+        for kind in BuildId::all().filter(|k| k.def().special != Special::Roof) {
             let tool = TOOLS.iter().find(|t| t.tool == Tool::Paint(Order::Build(kind))).expect("in the build menu");
             assert_eq!(tool.key.is_some(), kind.def().key.is_some(), "{} shortcut", kind.def().id);
         }

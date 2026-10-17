@@ -225,6 +225,10 @@ pub struct Map {
     /// Blood stains, 0..1, fading over time.
     #[serde(default, with = "crate::save::rle")]
     pub blood: Vec<f32>,
+    /// Built roofs, in the cell above a room (where a floor would go). They
+    /// close the room but can't be stood on.
+    #[serde(default, with = "crate::save::rle")]
+    pub roof: Vec<bool>,
     /// Room id per cell; 0 means outdoors. Derived from walls and rock, so not saved.
     #[serde(skip)]
     pub room: Vec<u32>,
@@ -233,6 +237,14 @@ pub struct Map {
     pub room_sizes: Vec<usize>,
     #[serde(skip)]
     pub rooms_dirty: bool,
+    /// Cells that should get a roof, found with the rooms: above enclosed
+    /// areas not yet covered (see `recompute_rooms`).
+    #[serde(skip)]
+    pub roof_wanted: Vec<usize>,
+    /// Bumped whenever a roof is built or removed, or rooms are recomputed (the
+    /// walls a roof reaches over may have changed), so the front end knows to redraw.
+    #[serde(skip)]
+    pub roof_changes: u64,
     /// Something that held things up changed; check for falling.
     #[serde(skip)]
     pub support_dirty: bool,
@@ -253,9 +265,12 @@ impl Map {
             zone: vec![Zone::None; n],
             floor: vec![false; n],
             blood: vec![0.0; n],
+            roof: vec![false; n],
             room: Vec::new(),
             room_sizes: Vec::new(),
             rooms_dirty: true,
+            roof_wanted: Vec::new(),
+            roof_changes: 0,
             support_dirty: false,
         };
         m.recompute_rooms();
@@ -429,14 +444,15 @@ impl Map {
         self.block[self.idx(p)].solid()
     }
 
-    /// Something a Deconstruct order can take down: a structure or a floor.
+    /// Something a Deconstruct order can take down: a structure, a floor or a roof.
     pub fn deconstructable(&self, p: Pos) -> bool {
         let i = self.idx(p);
-        self.feature[i].structure().is_some() || self.floor[i]
+        self.feature[i].structure().is_some() || self.floor[i] || self.roof[i]
     }
 
-    /// Where a floor could be built: open air with nothing in it, not already
-    /// on the ground, and held up by something nearby.
+    /// Where a floor could be built: open air with nothing in it (or a roof,
+    /// which the floor replaces), not already on the ground, and held up by
+    /// something nearby.
     pub fn floor_buildable(&self, p: Pos) -> bool {
         let i = self.idx(p);
         self.block[i] == Block::Air
@@ -473,6 +489,19 @@ impl Map {
             self.support_dirty = true;
         }
         self.floor[i] = on;
+    }
+
+    pub fn set_roof(&mut self, i: usize, on: bool) {
+        if self.roof[i] != on {
+            self.rooms_dirty = true;
+            self.roof_changes += 1;
+        }
+        self.roof[i] = on;
+    }
+
+    /// A roof blueprint (put there by `World::mark_roofs`).
+    pub fn roof_blueprint(&self, i: usize) -> bool {
+        matches!(self.feature[i], Feature::Blueprint { kind, .. } if kind.def().special == Special::Roof)
     }
 
     /// Whether a floor at `p` would be held up: solid ground or a structure
@@ -522,11 +551,11 @@ impl Map {
         self.room.get(self.idx(p)).is_some_and(|&r| r != 0)
     }
 
-    /// Something overhead: rock, soil, a wall, or a floor on a level above.
+    /// Something overhead: rock, soil, a wall, or a floor or roof on a level above.
     pub fn covered(&self, p: Pos) -> bool {
         (p.2 + 1..self.d).any(|z| {
             let i = self.idx((p.0, p.1, z));
-            self.block[i].solid() || self.feature[i].blocks_room() || self.floor[i]
+            self.block[i].solid() || self.feature[i].blocks_room() || self.floor[i] || self.roof[i]
         })
     }
 
@@ -592,11 +621,19 @@ impl Map {
 
     /// Flood-fill each level's open cells, bounded by walls, doors and solid
     /// ground. An enclosed region that doesn't touch the map edge and is
-    /// covered everywhere (floors above, rock overhead) is a room.
+    /// covered everywhere (floors or roofs above, rock overhead) is a room.
+    ///
+    /// Also finds where roofs are wanted (`roof_wanted`): over the uncovered
+    /// cells of enclosed regions that built walls or doors help enclose
+    /// (natural hollows don't get roofs), where a roof would be held up.
+    /// Regions with a roof or roof blueprint in them are the space under a
+    /// lower room's roof, so they get none until floors replace it.
     pub fn recompute_rooms(&mut self) {
         let n = self.len();
         self.room = vec![0; n];
         self.room_sizes = vec![0];
+        self.roof_wanted.clear();
+        let mut wanted = vec![false; n];
         let room_open = |m: &Map, i: usize| m.block[i] == Block::Air && !m.feature[i].blocks_room();
         let mut seen = vec![false; n];
         for start in 0..n {
@@ -607,6 +644,7 @@ impl Map {
             let mut region = vec![start];
             let mut stack = vec![start];
             let mut touches_edge = false;
+            let mut built_walls = false;
             while let Some(i) = stack.pop() {
                 let p = self.pos(i);
                 if p.0 == 0 || p.1 == 0 || p.0 == self.w - 1 || p.1 == self.h - 1 {
@@ -618,11 +656,28 @@ impl Map {
                         seen[ni] = true;
                         stack.push(ni);
                         region.push(ni);
+                    } else if self.feature[ni].blocks_room() {
+                        built_walls = true;
                     }
                 }
             }
             if touches_edge || region.len() > MAX_ROOM {
                 continue;
+            }
+            // Levels are filled bottom up, so roofs wanted over lower regions are known here.
+            let attic = region.iter().any(|&i| self.roof[i] || self.roof_blueprint(i) || wanted[i]);
+            if built_walls && !attic {
+                for &i in &region {
+                    let p = self.pos(i);
+                    let Some(a) = self.above(p) else { continue };
+                    let ai = self.idx(a);
+                    let free = matches!(self.feature[ai], Feature::None) || self.roof_blueprint(ai);
+                    let open = self.block[ai] == Block::Air && !self.floor[ai] && !self.roof[ai];
+                    if free && open && !self.covered(p) && self.floor_supported(a) {
+                        wanted[ai] = true;
+                        self.roof_wanted.push(ai);
+                    }
+                }
             }
             if region.iter().all(|&i| self.covered(self.pos(i))) {
                 let id = self.room_sizes.len() as u32;
@@ -633,6 +688,7 @@ impl Map {
             }
         }
         self.rooms_dirty = false;
+        self.roof_changes += 1;
     }
 
     /// Hills from layered noise, rocky mountains, lakes in the low ground,

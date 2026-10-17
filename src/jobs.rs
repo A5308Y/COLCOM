@@ -302,7 +302,8 @@ impl World {
             Task::Deconstruct => {
                 let m = &self.map;
                 let i = m.idx(target);
-                let def = m.feature[i].structure().or_else(|| m.floor[i].then(|| defs().floor()).flatten().map(|f| f.def()))?;
+                let flat = if m.floor[i] { defs().floor() } else if m.roof[i] { defs().roof() } else { None };
+                let def = m.feature[i].structure().or_else(|| flat.map(|f| f.def()))?;
                 Some((Skill::Construction, (def.work_time * DECONSTRUCT_SHARE).max(1.0)))
             }
             Task::Craft => self.bench_at(target)?.current.map(|r| (r.def().skill, r.def().time)),
@@ -368,6 +369,14 @@ impl World {
                     if let Some(floor) = defs().floor() {
                         drop(&mut self.map, at, floor.def().drops());
                     }
+                } else if self.map.roof[i] {
+                    // Marked again if the room is still closed (`mark_roofs`).
+                    self.map.set_roof(i, false);
+                    self.sound("built", Some(target));
+                    let at = self.map.landing(target);
+                    if let Some(roof) = defs().roof() {
+                        drop(&mut self.map, at, roof.def().drops());
+                    }
                 }
             }
             Task::Craft => {}
@@ -376,7 +385,12 @@ impl World {
                     match kind.def().special {
                         Special::Floor => {
                             self.map.set_feature(i, Feature::None);
+                            self.map.set_roof(i, false);
                             self.map.set_floor(i, true);
+                        }
+                        Special::Roof => {
+                            self.map.set_feature(i, Feature::None);
+                            self.map.set_roof(i, true);
                         }
                         Special::Stairs => {
                             let dir = self.map.stairs_facing(target);

@@ -39,8 +39,12 @@ pub fn from_json(s: &str) -> Result<World, String> {
         None => return Err("this save is from an older version of My World".into()),
     }
     let mut save: SaveIn = serde_json::from_str(s).map_err(|e| format!("the save file is damaged ({})", e))?;
-    // Mine used to take down structures and floors too; that's Deconstruct now.
     let m = &mut save.world.map;
+    // Saves from before roofs have none.
+    if m.roof.len() != m.len() {
+        m.roof = vec![false; m.len()];
+    }
+    // Mine used to take down structures and floors too; that's Deconstruct now.
     for i in 0..m.len() {
         let p = m.pos(i);
         if m.desig[i] == Some(Desig::Mine) && !m.mineable(p) && m.deconstructable(p) {
