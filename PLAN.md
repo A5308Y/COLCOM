@@ -380,8 +380,9 @@ real play.
   inspector); use `selected_pawns` / `select_pawns` / `toggle_pawn` / `select`. Its drafted-group
   orders went with real-time combat (phase 12); equipping goes to the first selected.
 
-- Hide roofs (Shift+R or the HUD button; like Going Medieval's roof toggle): every column over a roofed
-  room whose ceiling is a built roof or floor is cut off just above the topmost such room
+- Hide roofs (Shift+R or the HUD button; like Going Medieval's roof toggle): every column is cut off
+  just under its topmost roof (built or blueprint, finished room or not), or above the topmost roofed
+  room whose ceiling is a built floor (`input::roof_cut`)
   (`UiState::roof_cut`, recomputed each frame in `update_roof_cut`), so the top room of every building
   is visible at once. Rock over caves and tunnels stays. Terrain (`terrain::Cut`), props, items,
   pawns, labels, markers and picking all use `UiState::top_at` / `shows_at`; combined with the layer

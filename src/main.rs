@@ -235,7 +235,7 @@ mod tests {
             for (k, &c) in ui.roof_cut.iter().enumerate() {
                 if c != u8::MAX {
                     let i = m.idx((k % m.w, k / m.w, c as usize + 1));
-                    assert!(m.roof[i] || m.floor[i], "cut under a built roof");
+                    assert!(m.roof[i] || m.roof_blueprint(i) || m.floor[i], "cut under a roof or floor");
                 }
             }
         }

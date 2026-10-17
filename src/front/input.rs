@@ -571,25 +571,29 @@ pub fn center_on_selection(sim: &Sim, ui: &UiState, rig: &mut CameraRig) {
 
 // ---------- systems ----------
 
-/// Where each column is cut off while roofs are hidden: just above the
-/// topmost room whose ceiling is a built roof or floor. Rock over caves and
-/// tunnels stays.
-fn update_roof_cut(sim: Res<Sim>, mut ui: ResMut<UiState>) {
-    let m = &sim.world.map;
+/// Where each column is cut off while roofs are hidden: just under the
+/// topmost roof (built or a blueprint, whether or not the room under it is
+/// finished), or above the topmost room whose ceiling is a built floor.
+/// Rock over caves and tunnels stays. One level per column, `u8::MAX` = none.
+fn roof_cut(m: &Map) -> Vec<u8> {
     let mut cut = vec![u8::MAX; m.w * m.h];
-    if ui.hide_roofs {
-        for y in 0..m.h {
-            for x in 0..m.w {
-                let built = |z: usize| {
-                    let i = m.idx((x, y, z + 1));
-                    m.floor[i] || m.roof[i]
-                };
-                if let Some(z) = (0..m.d - 1).rev().find(|&z| m.roofed((x, y, z)) && built(z)) {
-                    cut[y * m.w + x] = z as u8;
-                }
+    for y in 0..m.h {
+        for x in 0..m.w {
+            let ceiling = |z: usize| {
+                let i = m.idx((x, y, z + 1));
+                m.roof[i] || m.roof_blueprint(i) || m.roofed((x, y, z)) && m.floor[i]
+            };
+            if let Some(z) = (0..m.d - 1).rev().find(|&z| ceiling(z)) {
+                cut[y * m.w + x] = z as u8;
             }
         }
     }
+    cut
+}
+
+fn update_roof_cut(sim: Res<Sim>, mut ui: ResMut<UiState>) {
+    let m = &sim.world.map;
+    let cut = if ui.hide_roofs { roof_cut(m) } else { vec![u8::MAX; m.w * m.h] };
     if cut != ui.roof_cut {
         ui.roof_cut = cut;
         ui.roof_version += 1;
@@ -901,6 +905,37 @@ mod tests {
         std::fs::write(&b, "b").unwrap();
         assert_eq!(newer_file(&a, &b), Some(b.clone()), "the autosave is newer");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn hiding_roofs_hides_unfinished_ones_too() {
+        use my_world::map::{Feature, FLAT_Z as Z};
+        let mut m = Map::flat(12, 12);
+        // A walled room with a hole in its roof (so not a room yet) and a roof blueprint.
+        for y in 2..=6 {
+            for x in 2..=6 {
+                let (i, above) = (m.idx((x, y, Z)), m.idx((x, y, Z + 1)));
+                if x == 2 || y == 2 || x == 6 || y == 6 {
+                    m.set_feature(i, Feature::built("wall"));
+                } else if (x, y) == (4, 4) {
+                    m.feature[above] = Feature::Blueprint { kind: defs().roof().unwrap(), delivered: 0 };
+                } else if (x, y) != (3, 3) {
+                    m.set_roof(above, true);
+                }
+            }
+        }
+        // A floor out in the open: a platform, not a ceiling.
+        let platform = m.idx((9, 9, Z + 1));
+        m.set_floor(platform, true);
+        m.recompute_rooms();
+        assert!(!m.roofed((4, 4, Z)));
+        let cut = roof_cut(&m);
+        let at = |x: usize, y: usize| cut[y * m.w + x];
+        assert_eq!(at(5, 5), Z as u8, "under a built roof");
+        assert_eq!(at(4, 4), Z as u8, "under a roof blueprint");
+        assert_eq!(at(3, 3), u8::MAX, "nothing over the hole");
+        assert_eq!(at(9, 9), u8::MAX, "platforms stay");
+        assert_eq!(at(2, 2), u8::MAX, "walls stay");
     }
 
     #[test]
