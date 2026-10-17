@@ -43,10 +43,13 @@ pub const PINNED: f32 = 50.0;
 pub const BROKEN: f32 = 25.0;
 /// Largest raider squad.
 const RAIDER_SQUAD: usize = 4;
-/// An attack: seconds to take aim, between one member's shot and the next
-/// (longer for blows), and to let the last one sink in.
+/// An attack: seconds to take aim; a squad's shots go off together, spread
+/// over `VOLLEY_SPREAD` (so they overlap), a volley every `VOLLEY_GAP` (rifles
+/// fire two); blows come one after another, `MELEE_GAP` apart; then
+/// `AFTER_ATTACK` to let the last one sink in.
 const AIM_TIME: f32 = 0.6;
-const SHOT_GAP: f32 = 0.45;
+const VOLLEY_SPREAD: f32 = 0.15;
+const VOLLEY_GAP: f32 = 0.4;
 const MELEE_GAP: f32 = 0.8;
 const AFTER_ATTACK: f32 = 0.7;
 /// Rounds without an attack and without the sides getting any closer
@@ -801,7 +804,7 @@ impl World {
     }
 
     /// Line up an attack: each member who can reach someone in unit `t`
-    /// takes aim, then they fire (or strike) one after another.
+    /// takes aim, then they all fire at once (blows land one after another).
     fn attack_unit(&mut self, u: usize, t: usize) -> Result<(), String> {
         let options = self.attack_options(u, t);
         if options.is_empty() {
@@ -818,14 +821,23 @@ impl World {
         let mut strikes = Vec::new();
         let mut at = AIM_TIME;
         for round in 0..most {
+            // Shots this volley go off together; blows take turns.
+            let (mut blows, mut volley) = (0.0, false);
             for &(a, _) in shots.iter().filter(|s| s.1 > round) {
                 let Some(ai) = self.pawn_index(a) else { continue };
                 let Some(target) = self.pick_target(ai, t) else { continue };
-                strikes.push(Strike { attacker: a, target, unit: t, delay: at });
-                let melee = !self.pawns[ai].attack().ranged;
-                at += if melee { MELEE_GAP } else { SHOT_GAP };
+                let delay = if self.pawns[ai].attack().ranged {
+                    volley = true;
+                    at + self.rng.range_f32(0.0, VOLLEY_SPREAD)
+                } else {
+                    blows += MELEE_GAP;
+                    at + blows - MELEE_GAP
+                };
+                strikes.push(Strike { attacker: a, target, unit: t, delay });
             }
+            at += if volley { VOLLEY_GAP.max(blows) } else { blows };
         }
+        strikes.sort_by(|a, b| a.delay.total_cmp(&b.delay));
         let b = self.battle.as_mut().unwrap();
         b.strikes = strikes;
         b.quiet_rounds = 0;
@@ -1746,7 +1758,8 @@ mod tests {
             w.pawns[i].skills[Skill::Shooting as usize] = 15;
             w.pawns[i].weapon = Some(item("rifle"));
         }
-        fight(&mut w, 1, (30, 12, Z));
+        // Out of range at first, so it takes a few rounds.
+        fight(&mut w, 1, (39, 12, Z));
         let r = raiders(&w)[0];
         let ri = w.pawn_index(r).unwrap();
         w.pawns[ri].weapon = Some(item("knife"));
@@ -1838,7 +1851,7 @@ mod tests {
     }
 
     #[test]
-    fn attacks_play_out_one_shot_after_another() {
+    fn attacks_play_out_in_volleys() {
         let mut w = world(40, 20, 15);
         let leader = colonist(&mut w, (5, 10, Z));
         let member = colonist(&mut w, (5, 11, Z));
@@ -1855,10 +1868,16 @@ mod tests {
         w.battle_order(BattleOrder::Attack(raider)).unwrap();
         let strikes = battle(&w).strikes.clone();
         assert_eq!(strikes.len(), 4, "rifles fire twice each");
-        let order: Vec<u32> = strikes.iter().map(|s| s.attacker).collect();
-        assert_eq!(order, vec![leader, member, leader, member], "everyone's first shot, then the second");
-        assert!(strikes.windows(2).all(|p| p[1].delay > p[0].delay), "one after the other");
-        assert_eq!(w.aim_target(leader), Some(strikes[0].target), "aiming first");
+        let (first, second) = strikes.split_at(2);
+        let mut volley: Vec<u32> = first.iter().map(|s| s.attacker).collect();
+        volley.sort();
+        let mut both = vec![leader, member];
+        both.sort();
+        assert_eq!(volley, both, "everyone's first shot, then the second");
+        assert!(first[1].delay - first[0].delay <= VOLLEY_SPREAD, "together: {:?}", first);
+        assert!(second[0].delay - first[1].delay >= VOLLEY_GAP - VOLLEY_SPREAD, "then the next volley: {:?}", strikes);
+        let leaders = strikes.iter().find(|s| s.attacker == leader).unwrap();
+        assert_eq!(w.aim_target(leader), Some(leaders.target), "aiming first");
         assert!(w.battle_order(BattleOrder::End).is_err(), "busy while the attack plays out");
         let shots = |w: &mut World| w.take_sounds().iter().filter(|s| s.name == "rifle").count();
         shots(&mut w);
@@ -1866,18 +1885,18 @@ mod tests {
             w.tick(TICK);
         }
         assert_eq!(shots(&mut w), 0, "still taking aim");
+        // Shots heard per tick.
         let mut fired = Vec::new();
-        for k in 0..(3.0 / TICK) as usize {
+        for _ in 0..(3.0 / TICK) as usize {
             if w.battle.is_none() {
                 break;
             }
             w.tick(TICK);
-            if shots(&mut w) > 0 {
-                fired.push(k);
-            }
+            fired.push(shots(&mut w));
         }
-        assert!(!fired.is_empty(), "shots were fired");
-        assert!(fired.len() < 2 || fired[1] - fired[0] >= 10, "not at the same moment: {:?}", fired);
+        let start = fired.iter().position(|&n| n > 0).expect("shots were fired");
+        let first: usize = fired[start..(start + 6).min(fired.len())].iter().sum();
+        assert_eq!(first, 2, "both first shots within a fifth of a second: {:?}", fired);
         assert!(w.battle.as_ref().is_none_or(|b| b.strikes.is_empty() && !b.busy()), "and it's over");
     }
 
