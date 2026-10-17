@@ -37,7 +37,7 @@ const HELP_REST: [&str; 37] = [
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
     "The build menu on the left lists everything (` hides it); hover an entry for details.",
     "Click a stockpile to set its priority and which items it takes; click a grow zone to pick its crop.",
-    "Shelves are storage by themselves and hold three stacks; click one to set what goes on it (shelves",
+    "Shelves are storage by themselves and hold four stacks; click one to set what goes on it (shelves",
     "      side by side share settings). Colonists eat at a table if there's a chair beside it, and hate eating without.",
     "Room quality (size, beauty of furniture, windows and doors, cleanliness, light) affects mood when",
     "      colonists sleep or eat there. Click a cell inside a room to see why it's good or bad.",

@@ -573,7 +573,7 @@
             cost: ("planks", 6),
             work_time: 3.0,
             passable: true,
-            storage: Some((stack_limit: 150, height: 0.62)),
+            storage: Some((stack_limit: 200, height: 0.62)),
             look: Parts([
                 (shape: Cube, color: "wood", at: (-0.44, 0.35, -0.3), size: (0.06, 0.7, 0.06)),
                 (shape: Cube, color: "wood", at: (0.44, 0.35, -0.3), size: (0.06, 0.7, 0.06)),

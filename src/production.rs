@@ -697,7 +697,7 @@ mod tests {
         assert!(w.apply_order((5, 5, Z), Order::Stockpile));
         place_bench(&mut w, "shelf", (5, 5, Z));
         let shelf = w.map.idx((5, 5, Z));
-        assert_eq!(w.map.capacity(shelf), 150);
+        assert_eq!(w.map.capacity(shelf), 4 * crate::map::STACK_MAX);
         w.map.drop_item((12, 12, Z), Stack { kind: item("wood"), count: 120 });
         run(&mut w, 240.0);
         assert_eq!(w.map.items[shelf].map(|s| s.count), Some(120), "all on the one shelf");
