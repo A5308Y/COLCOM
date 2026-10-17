@@ -46,6 +46,7 @@ furniture, light, production), searchable, with costs (red if the colony is shor
 | Left drag with walls | Wall in a rectangle: only its outline (`Shift` fills it) |
 | `F` | Draft the selected colonist (or everyone if nothing is selected) |
 | Right click | With a drafted colonist: move there, or attack the clicked raider |
+| Left click while a unit walks (battle) | Hurry the walk along: 5x until it arrives |
 | `WASD` / arrows, middle-drag | Pan the camera |
 | `Q` / `E`, right-drag | Rotate and tilt the camera |
 | Mouse wheel | Zoom |

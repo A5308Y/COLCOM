@@ -52,6 +52,8 @@ const AFTER_ATTACK: f32 = 0.7;
 /// Rounds without an attack and without the sides getting any closer
 /// after which the raiders give up.
 pub const STALEMATE: u32 = 10;
+/// How many times faster a walk plays out once the player hurries it (clicks again).
+pub const HURRY: u32 = 5;
 /// What a raid demands per raider, in item value.
 pub const DEMAND_PER_RAIDER: f32 = 40.0;
 
@@ -233,6 +235,9 @@ pub struct Battle {
     /// The attack playing out: shots and blows still to come.
     #[serde(default)]
     pub strikes: Vec<Strike>,
+    /// The walk under way plays out `HURRY` times faster (until it ends).
+    #[serde(default)]
+    pub hurry: bool,
 }
 
 impl Battle {
@@ -377,6 +382,7 @@ impl World {
             active: None,
             busy: 0.0,
             moving: Vec::new(),
+            hurry: false,
             demand: parley.demand.clone(),
             auto_colony: false,
             events: Vec::new(),
@@ -724,7 +730,21 @@ impl World {
     fn start_move(&mut self, u: usize, to: Pos) {
         let members = self.battle.as_ref().unwrap().units[u].members.clone();
         let moving = members.iter().map(|&pawn| Mover { pawn, goal: to }).collect();
-        self.battle.as_mut().unwrap().moving = moving;
+        let b = self.battle.as_mut().unwrap();
+        b.moving = moving;
+        b.hurry = false;
+    }
+
+    /// Play the walk under way (anyone's) `HURRY` times faster until it ends.
+    /// Returns false if nobody is walking.
+    pub fn hurry_move(&mut self) -> bool {
+        match self.battle.as_mut() {
+            Some(b) if !b.moving.is_empty() => {
+                b.hurry = true;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// The cell unit `u` holds (its leader's).
@@ -1156,6 +1176,8 @@ impl World {
         }
         if !b.moving.is_empty() {
             let moving = b.moving.clone();
+            // Hurried: several ordinary steps per tick, so it's just the same walk, faster.
+            let steps = if b.hurry { HURRY } else { 1 };
             // Everyone keeps to the pace of the slowest, so the squad stays together.
             let pace = moving.iter().filter_map(|m| self.pawn(m.pawn)).map(|p| p.move_speed()).fold(f32::MAX, f32::min);
             let mut still = Vec::new();
@@ -1163,13 +1185,16 @@ impl World {
                 let Some(i) = self.pawn_index(m.pawn) else { continue };
                 let mut p = self.pawns[i].clone();
                 let step = dt * pace / p.move_speed().max(0.01);
-                if matches!(self.go_to(&mut p, m.goal, false, step), Step::Moving) {
+                let walking = (0..steps).all(|_| matches!(self.go_to(&mut p, m.goal, false, step), Step::Moving));
+                if walking {
                     still.push(m);
                 }
                 self.pawns[i] = p;
             }
             let done = still.is_empty();
-            self.battle.as_mut().unwrap().moving = still;
+            let b = self.battle.as_mut().unwrap();
+            b.moving = still;
+            b.hurry &= !done;
             if done {
                 self.escape_at_edges();
                 self.refresh_units();
@@ -1568,6 +1593,35 @@ mod tests {
         let raider = battle(&w).units.iter().position(|u| u.side == Faction::Raider).unwrap();
         assert!(w.battle_order(BattleOrder::Attack(raider)).is_err(), "AP left, but 25 cells is out of range");
         assert!(w.battle_order(BattleOrder::Activate(raider)).is_err());
+    }
+
+    #[test]
+    fn clicking_again_hurries_a_walk() {
+        // Ticks for a lone colonist to walk 8 cells, hurried or not.
+        let walk = |hurry: bool| {
+            let mut w = world(40, 20, 5);
+            let id = colonist(&mut w, (5, 10, Z));
+            fight(&mut w, 1, (39, 10, Z));
+            let u = battle(&w).unit_of(id).unwrap();
+            assert!(!w.hurry_move(), "nobody walking yet");
+            w.battle_order(BattleOrder::Activate(u)).unwrap();
+            w.battle_order(BattleOrder::Move((13, 10, Z))).unwrap();
+            if hurry {
+                w.tick(TICK);
+                assert!(w.hurry_move());
+            }
+            let mut ticks = 0;
+            while !battle(&w).moving.is_empty() {
+                w.tick(TICK);
+                ticks += 1;
+                assert!(ticks < 10_000, "never arrived");
+            }
+            assert_eq!(w.pawn(id).unwrap().pos, (13, 10, Z));
+            assert!(!battle(&w).hurry, "only until the walk ends");
+            ticks
+        };
+        let (slow, fast) = (walk(false), walk(true));
+        assert!(fast * 4 < slow && fast * 6 > slow, "{} ticks hurried vs {}", fast, slow);
     }
 
     #[test]

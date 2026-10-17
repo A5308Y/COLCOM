@@ -392,6 +392,12 @@ fn battle_input(
         };
         orders.extend(next.map(BattleOrder::Activate));
     }
+    // Clicking while someone walks hurries the walk along instead.
+    let walking = !b.moving.is_empty();
+    if walking && buttons.just_pressed(MouseButton::Left) && !over_ui {
+        sim.world.hurry_move();
+        return;
+    }
     if buttons.just_pressed(MouseButton::Left) && !over_ui {
         if let Some(h) = ui.hover {
             let w = &sim.world;
@@ -894,6 +900,9 @@ fn battle_panels(
                 RichText::new("Your turn").color(Color32::from_rgb(140, 200, 255))
             };
             panel.label(turn);
+            if !b.moving.is_empty() && !b.hurry {
+                panel.label(RichText::new("Click to hurry the walk along (5x).").small().weak());
+            }
             if let Some(u) = my_unit(b) {
                 let unit = &b.units[u];
                 panel.separator();
