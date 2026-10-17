@@ -51,6 +51,8 @@ struct PawnVis {
     carry: Entity,
     /// Weapon the hand part was last set up for (`Some(None)`: unarmed).
     weapon_kind: Option<Option<ItemId>>,
+    /// What's worn that the figure and character were last dressed for.
+    dressed: Option<(Vec<ItemId>, bool)>,
     carry_kind: Option<ItemId>,
     dead: bool,
     yaw: f32,
@@ -171,6 +173,7 @@ fn spawn_pawn(
         weapon,
         carry,
         weapon_kind: None,
+        dressed: None,
         carry_kind: None,
         dead: false,
         yaw: 0.0,
@@ -339,6 +342,25 @@ fn sync_pawns(
                     *vis = if show { Visibility::Inherited } else { Visibility::Hidden };
                 }
             }
+        }
+
+        // Armour and the like change how the outfit looks (on the figure, and the character once it's ready).
+        let wearing = (p.apparel.clone(), rig_ready);
+        if !p.dead && v.dressed.as_ref() != Some(&wearing) {
+            let worn = worn_look(p);
+            if let Some(mut mat) = materials.get_mut(&v.own[0]) {
+                let (color, metallic, roughness) = match worn {
+                    Some((c, metal, rough)) => (c.mix(pawn_look(p).clothes, 0.2), metal, rough),
+                    None => (pawn_look(p).clothes, 0.0, 0.9),
+                };
+                mat.base_color = color.color();
+                mat.metallic = metallic;
+                mat.perceptual_roughness = roughness;
+            }
+            if let Some((r, ..)) = rig.as_mut().filter(|_| rig_ready) {
+                characters::dress(r, worn, &mut materials);
+            }
+            v.dressed = Some(wearing);
         }
 
         if p.dead && !v.dead {

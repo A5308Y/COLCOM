@@ -199,6 +199,27 @@ pub struct ApparelDef {
     pub armor: f32,
     /// Mood while worn.
     pub mood: f32,
+    /// How the wearer's outfit looks with it on (none: as it is).
+    #[serde(default)]
+    pub worn: Option<WornLook>,
+}
+
+/// The outfit's look while a piece of apparel is worn: steel armour turns it
+/// to grey metal.
+#[derive(Clone, Debug, Deserialize)]
+pub struct WornLook {
+    /// Palette colour it takes on.
+    pub color: String,
+    /// 0 cloth .. 1 metal.
+    #[serde(default)]
+    pub metallic: f32,
+    /// 0 polished .. 1 matt.
+    #[serde(default = "matt")]
+    pub roughness: f32,
+}
+
+fn matt() -> f32 {
+    0.9
 }
 
 /// A replacement for a lost limb, fitted by a doctor at an operating table.
@@ -872,6 +893,11 @@ impl Defs {
             }
             if d.category.is_empty() {
                 return Err(format!("{}: needs a category", d.id));
+            }
+            if let Some(w) = d.apparel.as_ref().and_then(|a| a.worn.as_ref()) {
+                if !self.palette.contains_key(&w.color) {
+                    return Err(format!("{}: no colour \"{}\" in the palette", d.id, w.color));
+                }
             }
             if d.prosthetic.as_ref().is_some_and(|p| p.fits.is_empty() || !(p.efficiency > 0.0 && p.efficiency <= 1.0)) {
                 return Err(format!("{}: a prosthetic fits some parts, with efficiency above 0 and up to 1", d.id));

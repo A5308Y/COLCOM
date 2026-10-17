@@ -525,6 +525,10 @@ real play.
   not saved); each gets an urgent alert, and climbs out (`way_out`: nearest standable cell beyond the
   furniture from which the edge can be reached, as a `Goto`). Their paths may cross `Map::climbable`
   furniture (built, blocking, not a wall or door; `pathing::bfs_climbing`) at `CLIMB_PACE` (30%).
+- Armour shows (2026-10-17): `ApparelDef::worn` (`WornLook { color, metallic, roughness }`) restyles the
+  wearer's outfit materials: steel armour turns them to shiny steel, with a fifth of the pawn's own colour.
+  `look::worn_look` picks the outermost such apparel; `characters::dress` restyles the character's outfit
+  materials (`Rig::outfit_mats`), `pawns.rs` the figure's clothes, whenever what's worn changes.
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 

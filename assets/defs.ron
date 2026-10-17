@@ -57,7 +57,8 @@
     // (hunger restored per unit); `raw` food upsets colonists and may give
     // food poisoning (`poison`: chance per unit eaten). `medicine`: how much
     // it improves tending (1 = full medicine). `pods`: amounts arriving in
-    // cargo pods. `weapon` and `apparel` items are picked up and used by
+    // cargo pods (an `apparel`'s `worn` look restyles the wearer's outfit:
+    // palette `color`, `metallic`, `roughness`). `weapon` and `apparel` items are picked up and used by
     // colonists; `held` is how a weapon looks in hand, `shots` how many shots it
     // fires per attack in a battle (1 if not given). `value`: worth of one,
     // for what raiders demand and take. A `prosthetic` replaces a lost body
@@ -340,7 +341,8 @@
             name: "Steel armour",
             category: "Apparel",
             color: "steel",
-            apparel: Some((slot: Outer, armor: 0.35, mood: 0.0)),
+            // Worn, it turns the outfit to plate steel.
+            apparel: Some((slot: Outer, armor: 0.35, mood: 0.0, worn: Some((color: "steel", metallic: 0.85, roughness: 0.35)))),
             look: [
                 (shape: Cube, color: "steel", at: (0.0, 0.12, 0.0), size: (0.42, 0.24, 0.26)),
                 (shape: Cube, color: "iron", at: (0.0, 0.25, 0.0), size: (0.2, 0.04, 0.2)),

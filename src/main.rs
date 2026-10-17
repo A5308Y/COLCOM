@@ -166,9 +166,18 @@ mod tests {
         {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             let w = &mut sim.world;
-            let p = w.pawn(ids[0]).unwrap().pos;
-            let at = (p.0 + 1, p.1, p.2);
-            w.map.drop_item(at, my_world::map::Stack { kind: my_world::defs::ItemId::named("rifle"), count: 1 });
+            // Up and about (the app runs on real time, so they may be in any state).
+            let i = w.pawn_index(ids[0]).unwrap();
+            w.pawns[i].break_timer = 0.0;
+            let p = w.pawns[i].pos;
+            let rifle = my_world::defs::ItemId::named("rifle");
+            w.map.drop_item(p, my_world::map::Stack { kind: rifle, count: 1 });
+            // Where it landed (beside them if their own cell was taken).
+            let at = (0..w.map.len())
+                .filter(|&k| w.map.items[k].is_some_and(|s| s.kind == rifle))
+                .map(|k| w.map.pos(k))
+                .min_by_key(|c| c.0.abs_diff(p.0) + c.1.abs_diff(p.1) + c.2.abs_diff(p.2))
+                .unwrap();
             let options: Vec<_> = w.job_options(ids[0], at).into_iter().map(|(l, j)| (l, at, j)).collect();
             assert!(!options.is_empty(), "something to do there");
             app.world_mut().resource_mut::<front::UiState>().job_menu = Some(front::JobMenu { pawn: ids[0], options, at: None });

@@ -161,6 +161,8 @@ pub struct Rig {
     variant: bool,
     /// This character's own materials and their living colour, for greying on death.
     own: Vec<(Handle<StandardMaterial>, Color)>,
+    /// The outfit's materials, with their own metallic and roughness, for what's worn on top.
+    outfit_mats: Vec<(Handle<StandardMaterial>, f32, f32)>,
     /// The animation graph is attached.
     animated: bool,
     playing: Option<Anim>,
@@ -277,6 +279,7 @@ pub fn spawn_rig(commands: &mut Commands, assets: &AssetServer, p: &Pawn, parent
         hair: look.hair.color(),
         variant: !raider && h(4) < 0.5,
         own: Vec::new(),
+        outfit_mats: Vec::new(),
         animated: false,
         playing: None,
     });
@@ -332,6 +335,10 @@ fn rig_part(
             continue;
         };
         let name = name.0.as_str();
+        let outfit = !(name.starts_with("MI_Eyes")
+            || name.starts_with("MI_Hair")
+            || name.starts_with("MI_Superhero")
+            || name.starts_with("MI_Regular"));
         let tint = if name.starts_with("MI_Eyes") {
             rig.eyes.push((e, mat.0.clone()));
             continue;
@@ -349,8 +356,12 @@ fn rig_part(
         if rig.variant && name.starts_with("MI_Peasant") {
             own.base_color_texture = Some(library.peasant_2.clone());
         }
+        let (metallic, roughness) = (own.metallic, own.perceptual_roughness);
         let handle = materials.add(own);
         rig.own.push((handle.clone(), tint));
+        if outfit {
+            rig.outfit_mats.push((handle.clone(), metallic, roughness));
+        }
         commands.entity(e).insert(MeshMaterial3d(handle));
     }
 }
@@ -368,6 +379,29 @@ pub fn prepare(commands: &mut Commands, library: &CharacterLibrary, rig_entity: 
 }
 
 /// Grey a dead pawn's character, or restore its colours.
+/// Show what's worn over the outfit (`look::worn_look`: colour, metallic,
+/// roughness), or the outfit as it is. A little of the pawn's own colour shows through.
+pub fn dress(rig: &mut Rig, worn: Option<(Rgb, f32, f32)>, materials: &mut Assets<StandardMaterial>) {
+    let clothes = rig.clothes;
+    for (handle, metallic, roughness) in &rig.outfit_mats {
+        let Some(mut m) = materials.get_mut(handle) else { continue };
+        let (color, metallic, roughness) = match worn {
+            Some((c, metal, rough)) => {
+                let own = clothes.to_srgba();
+                (c.mix(Rgb(own.red, own.green, own.blue), 0.2).color(), metal, rough)
+            }
+            None => (clothes, *metallic, *roughness),
+        };
+        m.base_color = color;
+        m.metallic = metallic;
+        m.perceptual_roughness = roughness;
+        // Greyed from this colour on death.
+        if let Some(own) = rig.own.iter_mut().find(|o| o.0 == *handle) {
+            own.1 = color;
+        }
+    }
+}
+
 pub fn set_dead(rig: &Rig, dead: bool, materials: &mut Assets<StandardMaterial>) {
     for (handle, color) in &rig.own {
         if let Some(mut m) = materials.get_mut(handle) {
