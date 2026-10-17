@@ -270,7 +270,7 @@ mod tests {
         assert!(closed > 0.0 && closed < 60.0, "collapsed to a strip ({} wide)", closed);
         app.world_mut().resource_mut::<front::UiState>().show_build = true;
         app.world_mut().resource_mut::<front::UiState>().show_resources = true;
-        app.world_mut().resource_mut::<front::UiState>().show_sound = true;
+        app.world_mut().resource_mut::<front::UiState>().show_menu = true;
         for t in [bench, stock, grow] {
             app.world_mut().resource_mut::<front::UiState>().selected = Some(front::Selection::Tile(t));
             for _ in 0..5 {

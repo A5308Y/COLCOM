@@ -62,7 +62,7 @@ const HELP_REST: [&str; 33] = [
     "",
     "Camera: WASD/arrows pan, Q/E rotate, wheel zooms, right-drag orbits, middle-drag pans.",
     "Space: pause   Tab: speed   P: work priorities   I: resources   C: center camera",
-    "K: save   L: load   Shift+N: new colony",
+    "Esc: menu (save, load, new game, sound)   K: save   L: load   Shift+N: new colony",
     "",
     "H or Esc closes this help.",
 ];
@@ -141,13 +141,8 @@ fn draw_ui(
     if st.show_squads {
         squads_ui::squads_window(&ctx, &sim, &mut st);
     }
-    if st.show_sound {
-        egui::Window::new("Sound")
-            .open(&mut st.show_sound)
-            .anchor(Align2::RIGHT_BOTTOM, [-8.0, -8.0])
-            .collapsible(false)
-            .resizable(false)
-            .show(&ctx, |ui| audio::settings_ui(ui, &mut audio));
+    if st.show_menu {
+        game_menu(&ctx, &mut sim, &mut st, &mut rig, &mut audio);
     }
     if st.show_help {
         egui::Window::new("Help").open(&mut st.show_help).collapsible(false).resizable(false).anchor(
@@ -250,9 +245,6 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                     st.hide_roofs = !st.hide_roofs;
                 }
                 ui.separator();
-                if ui.add(egui::Button::new("Sound").selected(st.show_sound)).clicked() {
-                    st.show_sound = !st.show_sound;
-                }
                 if ui.add(egui::Button::new("Squads").selected(st.show_squads)).clicked() {
                     st.show_squads = !st.show_squads;
                 }
@@ -268,11 +260,9 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 if ui.button("Center (C)").clicked() {
                     input::center_on_selection(sim, st, rig);
                 }
-                if ui.button("Save (K)").clicked() {
-                    input::save(sim);
-                }
-                if ui.button("Load (L)").clicked() {
-                    input::load(sim, st);
+                if ui.add(egui::Button::new("Menu (Esc)").selected(st.show_menu)).clicked() {
+                    st.show_menu = !st.show_menu;
+                    st.confirm_new = false;
                 }
             });
             ui.add_space(2.0);
@@ -285,6 +275,53 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
 }
 
 /// What the colony has, by category, leaving out what it has none of.
+/// The game menu: save, load, a new game (asked twice) and the sound settings.
+fn game_menu(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig, audio: &mut AudioSettings) {
+    let mut open = true;
+    egui::Window::new(RichText::new("Menu").strong())
+        .open(&mut open)
+        .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if ui.button("Save (K)").clicked() {
+                    input::save(sim);
+                }
+                if ui.button("Load (L)").clicked() {
+                    input::load(sim, st);
+                    st.show_menu = false;
+                }
+                let new = if sim.scenario.is_some() { "Restart scenario" } else { "New game" };
+                if ui.add(egui::Button::new(new).selected(st.confirm_new)).clicked() {
+                    st.confirm_new = !st.confirm_new;
+                }
+            });
+            ui.label(RichText::new("Load picks the newer of your save and the autosave from quitting.").small().weak());
+            if st.confirm_new {
+                ui.separator();
+                ui.label(RichText::new("Start over? The current game is lost unless you saved it.").color(Color32::from_rgb(255, 180, 110)));
+                ui.horizontal(|ui| {
+                    if ui.button("Yes, start over").clicked() {
+                        input::new_colony(sim, st, rig);
+                        st.confirm_new = false;
+                        st.show_menu = false;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        st.confirm_new = false;
+                    }
+                });
+            }
+            ui.separator();
+            ui.label(RichText::new("Sound").strong());
+            audio::settings_ui(ui, audio);
+        });
+    if !open {
+        st.show_menu = false;
+        st.confirm_new = false;
+    }
+}
+
 fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
     let totals = sim.world.item_totals();
     let mut categories: Vec<&str> = Vec::new();

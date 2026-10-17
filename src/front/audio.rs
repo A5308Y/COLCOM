@@ -335,7 +335,7 @@ fn ui_sounds(ui: Res<UiState>, mut queue: ResMut<SoundQueue>, mut last: Local<Op
         ui.show_help,
         ui.show_build,
         ui.show_resources,
-        ui.show_sound,
+        ui.show_menu,
         ui.show_squads,
         ui.inspector_tab == InspectorTab::Health,
         ui.inspector_tab == InspectorTab::Combat,

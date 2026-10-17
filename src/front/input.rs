@@ -248,7 +248,10 @@ pub struct UiState {
     /// The window listing what the colony has.
     pub show_resources: bool,
     /// The sound settings window.
-    pub show_sound: bool,
+    /// The game menu: save, load, new game, sound settings.
+    pub show_menu: bool,
+    /// Asking whether to really start a new game.
+    pub confirm_new: bool,
     /// Width of the docked build menu last frame (in logical pixels).
     pub dock_width: f32,
 }
@@ -282,7 +285,8 @@ impl UiState {
             build_filter: String::new(),
             dock_width: 0.0,
             show_resources: false,
-            show_sound: false,
+            show_menu: false,
+            confirm_new: false,
         }
     }
 
@@ -611,13 +615,20 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
     if keys.just_pressed(KeyCode::Tab) && !battle {
         sim.cycle_speed();
     }
-    // Esc: close a window, or put the tool down, or let go of the selection.
+    // Esc, one step at a time: close a window, put the tool down (below),
+    // let go of the selection, open the menu.
     if keys.just_pressed(KeyCode::Escape) {
-        if ui.show_help || ui.show_work {
+        if ui.show_help || ui.show_work || ui.show_menu {
             ui.show_help = false;
             ui.show_work = false;
+            ui.show_menu = false;
+            ui.confirm_new = false;
         } else if ui.tool == Tool::Select {
-            ui.select(None);
+            if ui.selected.is_some() {
+                ui.select(None);
+            } else {
+                ui.show_menu = true;
+            }
         }
     }
     if shift && keys.just_pressed(KeyCode::KeyR) {

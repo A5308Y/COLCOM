@@ -184,6 +184,10 @@ real play.
 
 ## Notes
 
+- Game menu (`ui::game_menu`; the bar's "Menu (Esc)" button replaces Sound, Save and Load): Save,
+  Load, New game (or Restart scenario) with a confirmation, and the sound sliders. Esc goes one
+  step at a time: close a window, put the tool down, deselect, open the menu.
+
 - Autosave: closing the window or quitting writes `autosave.json` (`input::autosave_on_exit`, in
   `Last`, on `WindowCloseRequested` or `AppExit`, once). The manual save (K, `savegame.json`) is left
   alone. L loads whichever of the two is newer and says which. Both files are gitignored.
