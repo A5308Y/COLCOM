@@ -256,7 +256,7 @@ impl World {
         if (food as usize) < colonists.len() * 4 {
             out.push((format!("Low food ({} left)", food), false));
         }
-        let beds = self.map.feature.iter().filter(|f| f.is_bed()).count();
+        let beds = self.map.feature.iter().filter(|f| f.is_bed() && !f.structure().is_some_and(|d| d.medical)).count();
         if beds < colonists.len() {
             out.push((format!("Need beds ({}/{})", beds, colonists.len()), false));
         }
@@ -510,7 +510,10 @@ impl World {
 
     pub(crate) fn update_health(&mut self, p: &mut Pawn, dt: f32) {
         let lying = p.lying();
-        let ctx = TickCtx { in_bed: lying && self.in_bed(p), resting: lying, fed: !p.is_colonist() || p.hunger > 0.0 };
+        let in_bed = lying && self.in_bed(p);
+        // A hospital bed heals faster.
+        let care = if in_bed { self.room_effects(p.pos).map_or(1.0, |(_, e)| e.heal) } else { 1.0 };
+        let ctx = TickCtx { in_bed, resting: lying, fed: !p.is_colonist() || p.hunger > 0.0, care };
         let events = p.health.tick(dt, ctx, &mut self.rng);
         p.health.recompute();
         for e in events {
@@ -609,7 +612,7 @@ impl World {
             }
             if !resting {
                 self.end_job(p);
-                let bed = self.find_bed(p);
+                let bed = self.find_patient_bed(p);
                 self.start_job(p, Job::Patient { bed });
                 return;
             }
@@ -623,6 +626,11 @@ impl World {
         if p.rest < 30.0 || (self.is_night() && p.rest < 75.0) {
             let bed = self.find_bed(p);
             self.start_job(p, Job::Sleep { bed });
+            return;
+        }
+        // A lost limb, a prosthetic for it and a doctor: onto the operating table.
+        if let Some(table) = self.operation_table(p) {
+            self.start_job(p, Job::Operation { table });
             return;
         }
         if let Some(job) = self.find_work(p) {
@@ -667,7 +675,14 @@ impl World {
                 let i = self.map.idx(from);
                 self.res_item[i] = id;
             }
-            Job::Sleep { bed: Some(b) } | Job::Patient { bed: Some(b) } => p.bed = Some(b),
+            Job::Sleep { bed: Some(b) } => p.bed = Some(b),
+            // Hospital beds and operating tables stay nobody's.
+            Job::Patient { bed: Some(b) } if !self.care_bed(b) => p.bed = Some(b),
+            Job::Surgery { patient, prosthetic, .. } => {
+                let i = self.map.idx(prosthetic);
+                self.res_item[i] = id;
+                self.res_patient.push((patient, id));
+            }
             Job::Tend { patient, medicine, .. } => {
                 if let Some(m) = medicine {
                     let i = self.map.idx(m);
@@ -679,7 +694,8 @@ impl World {
             }
             Job::Rescue { patient, bed, .. } => {
                 self.res_patient.push((patient, id));
-                if let Some(pi) = self.pawn_index(patient) {
+                let care = self.care_bed(bed);
+                if let Some(pi) = self.pawn_index(patient).filter(|_| !care) {
                     self.pawns[pi].bed = Some(bed);
                 }
             }

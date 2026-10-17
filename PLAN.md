@@ -446,6 +446,18 @@ real play.
   zones can't be painted there and nothing is sown there. Stairs get no roof over them (`recompute_rooms`
   skips them and counts them as covered, so the room is still a room), and stairs built under a finished
   roof take that roof cell down.
+- Hospital, surgery room and prosthetics (2026-10-17, `src/surgery.rs`): new furniture `medical_cabinet` and
+  `operating_table` (a bed with `medical: true`). Room themes `hospital` (beds, cabinet, 2 windows, lamp:
+  `heal` 1.4, `tend` +0.1) and `surgery` (operating table, cabinet, lamp: `tend` +0.2, `surgery` +0.25),
+  tried before the others. Care beds (operating tables, beds in rooms whose effects are `medical()`) are
+  never claimed or slept in; `find_patient_bed` picks hospital beds, then the patient's own bed, then an
+  operating table. `TickCtx::care` carries the hospital's `heal` into healing. Prosthetics are items with
+  `prosthetic: (fits, efficiency)` made at the smithy; `HediffKind::Prosthetic` on the part where a loss
+  begins (`Health::lost_parts`) replaces it and everything on it (`fit_prosthetic`), scaling its
+  efficiency. A colonist with a fitting prosthetic around, a free operating table and another doctor takes
+  `Job::Operation` (lies on the table, gives up after 90 s without a doctor); doctors take `Job::Surgery`
+  after rescues, tending and feeding. Success: `surgery_chance` (0.55 + 0.025 per Medicine level, times
+  hands and sight, plus the room's `surgery`, 5–98%); failure ruins the prosthetic and cuts the part above.
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 

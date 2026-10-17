@@ -246,7 +246,7 @@ mod tests {
         place(&mut w, (6, 6, Z), "bed");
         place(&mut w, (8, 6, Z), "dresser");
         let st = w.room_at((7, 7, Z)).unwrap();
-        let bedroom = &defs().rooms[0];
+        let bedroom = defs().rooms.iter().find(|r| r.id == "bedroom").unwrap();
         let p = st.progress(bedroom);
         assert_eq!(p.score(), (3, 4), "bed, door (in the wall) and dresser; no window yet");
         assert!(!p.needs[1].1);

@@ -77,11 +77,13 @@ furniture, light, production), searchable, with costs (red if the colony is shor
 - **Moving furniture:** click a piece of furniture and press **Move** (or use *Move furniture* in the
   build menu's Orders), then click where it should go. A builder packs it up and sets it down there at no
   cost; a workbench keeps its bills and a bed its owner. Cancel (or the inspector) calls a move off.
-- **Themed rooms:** a room with everything a theme needs becomes a bedroom, barracks, kitchen, smithy or
-  workshop: its floor changes and its name shows over it. The **Rooms** button lists what each needs;
+- **Themed rooms:** a room with everything a theme needs becomes a hospital, surgery room, bedroom,
+  barracks, kitchen, smithy or workshop: its floor changes and its name shows over it. The **Rooms** button lists what each needs;
   clicking a cell in a room shows a checklist towards every theme (themes are defined in
   `assets/defs.ron`). Themes pay off: bedrooms and barracks rest better and cheer sleepers up; kitchens,
   smithies and workshops work faster at their benches, and may turn out a spare product or teach faster.
+  Hospitals (beds, a medical cabinet, two windows, a lamp) heal patients faster and improve tending;
+  surgery rooms (an operating table, a medical cabinet, a lamp) make operations safer.
 - **Food:** raw food can cause food poisoning and upsets colonists; cooked meals are better and fill
   more. Colonists pick meals first.
 
@@ -102,7 +104,12 @@ furniture, light, production), searchable, with costs (red if the colony is shor
 - **Doctors and medicine:** colonists with the Doctor work type rescue downed colonists to a bed, tend
   wounds and diseases (quality depends on Medicine skill, medicine and bed rest), and feed bedridden
   patients. Wounded or sick colonists go to bed on their own. A lone doctor tends their own wounds. Click a
-  colonist and open the **Health** tab for the full picture.
+  colonist and open the **Health** tab for the full picture. Patients take hospital beds first; nobody
+  claims a hospital bed or sleeps on an operating table.
+- **Prosthetics:** a smithy makes prosthetic arms and legs. A colonist who lost a limb lies down on an
+  operating table when one fits and a doctor is free; the doctor fits it (75% as good as the real thing).
+  It can go wrong (more likely with a poor doctor, less in a surgery room): the prosthetic is ruined and
+  the patient wounded.
 - **Terrain:** the world is a 3D grid of soil, rock and water, 16 levels deep, with rolling hills, lakes and
   rocky mountains. Pawns walk up and down one-level slopes of natural ground but can't climb cliffs,
   walls or floors. Mining digs tunnels into rock and shafts down through soil.

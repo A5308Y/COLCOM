@@ -706,6 +706,7 @@ fn health_tab(ui: &mut egui::Ui, p: &Pawn) {
                 (String::new(), if d.bleed() > 0.0 { Color32::from_rgb(255, 80, 70) } else { Color32::GRAY })
             }
             HediffKind::FoodPoisoning => (format!(" {:.0}%", d.severity * 100.0), Color32::from_rgb(240, 220, 90)),
+            HediffKind::Prosthetic { .. } => (String::new(), Color32::from_rgb(150, 190, 230)),
             HediffKind::Infection { immunity } | HediffKind::Flu { immunity } => (
                 format!(" {:.0}% (immunity {:.0}%)", d.severity * 100.0, immunity * 100.0),
                 Color32::from_rgb(240, 220, 90),
@@ -809,7 +810,15 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32, move_fr
             if let Some(kind) = m.feature[i].structure_id().filter(|k| !k.def().recipes.is_empty()) {
                 bills(ui, w, t, kind, &mut actions);
             }
-            if m.feature[i].is_bed() {
+            if w.care_bed(t) {
+                ui.separator();
+                let text = if w.medical_bed(t) {
+                    "For operations and patients: nobody sleeps here."
+                } else {
+                    "A hospital bed: kept for patients, nobody's own."
+                };
+                ui.label(RichText::new(text).weak());
+            } else if m.feature[i].is_bed() {
                 bed_owner(ui, w, t, &mut actions);
             }
             furniture_move(ui, w, t, move_from, &mut actions);

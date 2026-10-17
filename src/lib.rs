@@ -20,6 +20,7 @@ pub mod save;
 pub mod scenarios;
 pub mod squads;
 pub mod story;
+pub mod surgery;
 pub mod world;
 
 /// Game seconds in one in-game day.

@@ -255,6 +255,8 @@ impl World {
             Job::Feed { patient, food, picked } => self.run_feed(p, patient, food, picked, dt),
             Job::Equip { from, chosen } => self.run_equip(p, from, chosen, dt),
             Job::Bury { corpse, grave, carrying } => self.run_bury(p, corpse, grave, carrying, dt),
+            Job::Operation { table } => self.run_operation(p, table, dt),
+            Job::Surgery { patient, prosthetic, picked } => self.run_surgery(p, patient, prosthetic, picked, dt),
         }
     }
 
@@ -672,10 +674,11 @@ impl World {
             .find(|&s| self.is_seat(s) && !taken(s))
     }
 
-    /// The pawn's own bed, or the nearest unclaimed one.
+    /// The pawn's own bed, or the nearest unclaimed one (not an operating
+    /// table, nor a hospital bed: those are kept for patients).
     pub(crate) fn find_bed(&self, p: &Pawn) -> Option<Pos> {
         if let Some(b) = p.bed {
-            if self.map.feature[self.map.idx(b)].is_bed() {
+            if self.map.feature[self.map.idx(b)].is_bed() && !self.medical_bed(b) {
                 return Some(b);
             }
         }
@@ -683,6 +686,7 @@ impl World {
         let df = bfs(&self.map, p.pos);
         df.order.iter().map(|&i| self.map.pos(i)).find(|&pos| {
             self.map.feature[self.map.idx(pos)].is_bed()
+                && !self.care_bed(pos)
                 && !self.pawns.iter().any(|o| o.id != p.id && !o.dead && o.bed == Some(pos))
         })
     }

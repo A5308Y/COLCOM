@@ -206,6 +206,8 @@ pub enum HediffKind {
     Flu { immunity: f32 },
     /// From bad food: miserable for a while, then gone. Severity 1 → 0.
     FoodPoisoning,
+    /// A fitted replacement for a lost part (and everything on it).
+    Prosthetic { efficiency: f32 },
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -267,12 +269,13 @@ impl Hediff {
             HediffKind::Infection { .. } => self.severity * 0.3,
             HediffKind::Flu { .. } => 0.05 + self.severity * 0.1,
             HediffKind::FoodPoisoning => 0.2 * self.severity,
+            HediffKind::Prosthetic { .. } => 0.0,
         }
     }
 
     pub fn needs_tending(&self) -> bool {
         match self.kind {
-            HediffKind::Injury { permanent: true, .. } | HediffKind::FoodPoisoning => false,
+            HediffKind::Injury { permanent: true, .. } | HediffKind::FoodPoisoning | HediffKind::Prosthetic { .. } => false,
             _ => self.tend.is_none(),
         }
     }
@@ -285,6 +288,7 @@ impl Hediff {
             HediffKind::Infection { .. } => "Infection".into(),
             HediffKind::Flu { .. } => "Flu".into(),
             HediffKind::FoodPoisoning => "Food poisoning".into(),
+            HediffKind::Prosthetic { efficiency } => format!("Prosthetic ({:.0}%)", efficiency * 100.0),
         }
     }
 }
@@ -331,6 +335,8 @@ pub struct TickCtx {
     pub in_bed: bool,
     pub resting: bool,
     pub fed: bool,
+    /// Wounds heal this much faster (a hospital bed).
+    pub care: f32,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -397,7 +403,41 @@ impl Health {
     }
 
     pub fn efficiency(&self, part: Part) -> f32 {
-        self.part_hp(part) / part.def().max_hp
+        self.part_hp(part) / part.def().max_hp * self.prosthetic_efficiency(part)
+    }
+
+    /// How well a prosthetic on `part` (or a part it sits on) works; 1 without one.
+    fn prosthetic_efficiency(&self, part: Part) -> f32 {
+        self.hediffs
+            .iter()
+            .find_map(|h| match h.kind {
+                HediffKind::Prosthetic { efficiency } if h.part.is_some_and(|p| part.is_within(p)) => Some(efficiency),
+                _ => None,
+            })
+            .unwrap_or(1.0)
+    }
+
+    /// Lost parts a prosthetic could replace: each where the loss begins
+    /// (a lost arm, not also its hand).
+    pub fn lost_parts(&self) -> Vec<Part> {
+        self.hediffs
+            .iter()
+            .filter(|h| h.kind == HediffKind::Missing)
+            .filter_map(|h| h.part)
+            .filter(|p| !p.def().parent.is_some_and(|parent| self.is_missing(parent)))
+            .collect()
+    }
+
+    /// Replace the lost `part` (and everything on it) with a prosthetic.
+    /// Returns false if it isn't lost.
+    pub fn fit_prosthetic(&mut self, part: Part, efficiency: f32) -> bool {
+        if !self.lost_parts().contains(&part) {
+            return false;
+        }
+        self.hediffs.retain(|h| !h.part.is_some_and(|p| p.is_within(part)));
+        self.hediffs.push(Hediff::new(HediffKind::Prosthetic { efficiency }, Some(part), 0.0));
+        self.recompute();
+        true
     }
 
     /// Overall condition 0..1, for health bars.
@@ -661,7 +701,7 @@ impl Health {
             self.malnutrition += 0.6 * days;
         }
         let nourished = if self.malnutrition > 0.3 { 0.6 } else { 1.0 };
-        let heal = nourished * if ctx.in_bed { 1.6 } else if ctx.resting { 1.2 } else { 1.0 };
+        let heal = nourished * ctx.care * if ctx.in_bed { 1.6 } else if ctx.resting { 1.2 } else { 1.0 };
         let immunity_gain = nourished * if ctx.in_bed { 1.2 } else { 1.0 };
 
         let mut infections: Vec<Part> = Vec::new();
@@ -773,7 +813,7 @@ mod tests {
         }
     }
 
-    const AWAKE: TickCtx = TickCtx { in_bed: false, resting: false, fed: true };
+    const AWAKE: TickCtx = TickCtx { in_bed: false, resting: false, fed: true, care: 1.0 };
 
     #[test]
     fn healthy_body_has_full_capacities() {
@@ -869,7 +909,7 @@ mod tests {
         let mut rng = Rng::new(9);
         let mut h = Health::new();
         h.add_flu();
-        let ctx = TickCtx { in_bed: true, resting: true, fed: true };
+        let ctx = TickCtx { in_bed: true, resting: true, fed: true, care: 1.0 };
         for _ in 0..12 {
             h.tend(0.8, 1);
             run(&mut h, DISEASE_TEND_TIME, ctx, &mut rng);
@@ -885,7 +925,7 @@ mod tests {
     fn starving_leads_to_malnutrition() {
         let mut rng = Rng::new(1);
         let mut h = Health::new();
-        let hungry = TickCtx { in_bed: false, resting: false, fed: false };
+        let hungry = TickCtx { in_bed: false, resting: false, fed: false, care: 1.0 };
         run(&mut h, DAY_LEN, hungry, &mut rng);
         assert!(h.malnutrition > 0.5);
         assert!(h.caps.consciousness < 1.0);

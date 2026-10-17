@@ -201,6 +201,15 @@ pub struct ApparelDef {
     pub mood: f32,
 }
 
+/// A replacement for a lost limb, fitted by a doctor at an operating table.
+#[derive(Clone, Debug, Deserialize)]
+pub struct ProstheticDef {
+    /// The body parts it can replace (with everything on them).
+    pub fits: Vec<crate::health::Part>,
+    /// How well it works, 0..1 (a healthy part is 1).
+    pub efficiency: f32,
+}
+
 impl ApparelDef {
     /// To compare apparel for the same slot.
     pub fn score(&self) -> f32 {
@@ -238,6 +247,8 @@ pub struct ItemDef {
     pub weapon: Option<WeaponDef>,
     #[serde(default)]
     pub apparel: Option<ApparelDef>,
+    #[serde(default)]
+    pub prosthetic: Option<ProstheticDef>,
     pub look: Vec<Part>,
 }
 
@@ -347,6 +358,10 @@ pub struct BuildDef {
     pub holds_floors: bool,
     #[serde(default)]
     pub special: Special,
+    /// A bed only for treating patients (an operating table): nobody owns
+    /// it or sleeps in it.
+    #[serde(default)]
+    pub medical: bool,
     /// Dropped when it is removed; half the cost if not given.
     #[serde(default)]
     drops: Option<Amount>,
@@ -553,11 +568,17 @@ pub struct RoomEffects {
     pub learn: f32,
     /// Chance of one more of each product when a recipe is done here.
     pub extra: f32,
+    /// Wounds of patients lying in its beds heal faster (multiplier).
+    pub heal: f32,
+    /// Added to the quality of tending a patient lying in its beds.
+    pub tend: f32,
+    /// Added to the chance that an operation here goes well.
+    pub surgery: f32,
 }
 
 impl Default for RoomEffects {
     fn default() -> Self {
-        RoomEffects { rest: 1.0, thought: None, work: 1.0, learn: 1.0, extra: 0.0 }
+        RoomEffects { rest: 1.0, thought: None, work: 1.0, learn: 1.0, extra: 0.0, heal: 1.0, tend: 0.0, surgery: 0.0 }
     }
 }
 
@@ -581,7 +602,21 @@ impl RoomEffects {
         if self.extra > 0.0 {
             out.push(format!("{}% chance of a spare product", (self.extra * 100.0).round() as i32));
         }
+        if self.heal != 1.0 {
+            out.push(format!("Patients in its beds heal {}% faster", pct(self.heal)));
+        }
+        if self.tend > 0.0 {
+            out.push(format!("Tending patients in its beds +{}% quality", (self.tend * 100.0).round() as i32));
+        }
+        if self.surgery > 0.0 {
+            out.push(format!("Operations +{}% likelier to go well", (self.surgery * 100.0).round() as i32));
+        }
         out
+    }
+
+    /// A room for the sick: patients look for its beds first.
+    pub fn medical(&self) -> bool {
+        self.heal > 1.0 || self.tend > 0.0 || self.surgery > 0.0
     }
 }
 
@@ -697,8 +732,8 @@ impl Defs {
                 }
             }
             let e = &room.effects;
-            if e.rest <= 0.0 || e.work <= 0.0 || e.learn <= 0.0 || !(0.0..=1.0).contains(&e.extra) {
-                return Err(format!("room {}: rest, work and learn must be above 0, extra 0..1", room.id));
+            if e.rest <= 0.0 || e.work <= 0.0 || e.learn <= 0.0 || e.heal <= 0.0 || !(0.0..=1.0).contains(&e.extra) {
+                return Err(format!("room {}: rest, work, learn and heal must be above 0, extra 0..1", room.id));
             }
         }
         Ok(())
@@ -750,6 +785,9 @@ impl Defs {
             if d.category.is_empty() {
                 return Err(format!("{}: needs a category", d.id));
             }
+            if d.prosthetic.as_ref().is_some_and(|p| p.fits.is_empty() || !(p.efficiency > 0.0 && p.efficiency <= 1.0)) {
+                return Err(format!("{}: a prosthetic fits some parts, with efficiency above 0 and up to 1", d.id));
+            }
             if let Some(w) = &d.weapon {
                 if w.range <= 0.0 || w.cooldown <= 0.0 || w.damage.0 <= 0.0 || w.damage.0 > w.damage.1 {
                     return Err(format!("{}: weapon needs range, cooldown and 0 < min <= max damage", d.id));
@@ -761,6 +799,9 @@ impl Defs {
             }
         }
         for d in &self.builds {
+            if d.medical && d.special != Special::Bed {
+                return Err(format!("{}: only beds can be medical", d.id));
+            }
             if d.cost.count == 0 || d.work_time <= 0.0 {
                 return Err(format!("{}: needs a cost and work time", d.id));
             }
@@ -869,6 +910,10 @@ impl Defs {
 
     pub fn is_medicine(&self, item: ItemId) -> bool {
         self.items[item.0 as usize].medicine > 0.0
+    }
+
+    pub fn is_prosthetic(&self, item: ItemId) -> bool {
+        self.items[item.0 as usize].prosthetic.is_some()
     }
 }
 

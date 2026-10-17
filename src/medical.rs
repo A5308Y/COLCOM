@@ -92,7 +92,7 @@ impl World {
                 continue;
             }
             let Some((_, d)) = df.approach(&self.map, o.pos, true) else { continue };
-            let rescue_bed = if o.downed && !self.in_bed(o) { self.find_bed(o) } else { None };
+            let rescue_bed = if o.downed && !self.in_bed(o) { self.find_patient_bed(o) } else { None };
             // Medical work outranks other work of the same priority.
             let candidate = if let Some(bed) = rescue_bed {
                 Some((d - 3000, Job::Rescue { patient: o.id, bed, carrying: false }))
@@ -109,7 +109,8 @@ impl World {
                 }
             }
         }
-        best
+        // Operations come after rescuing, tending and feeding.
+        best.or_else(|| self.surgery_candidate(p, df))
     }
 
     /// `medicine` is the potency of the medicine used (0 = none).
@@ -221,7 +222,9 @@ impl World {
         if has_med {
             p.carrying = None;
         }
-        let quality = self.tend_quality(p, potency, self_tend, in_bed);
+        // A hospital or surgery room helps too.
+        let room = if in_bed { self.room_effects(ppos).map_or(0.0, |(_, e)| e.tend) } else { 0.0 };
+        let quality = (self.tend_quality(p, potency, self_tend, in_bed) + room).min(1.0);
         let who = match target {
             Some(pi) => {
                 let o = &mut self.pawns[pi];

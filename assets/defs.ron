@@ -60,7 +60,9 @@
     // cargo pods. `weapon` and `apparel` items are picked up and used by
     // colonists; `held` is how a weapon looks in hand, `shots` how many shots it
     // fires per attack in a battle (1 if not given). `value`: worth of one,
-    // for what raiders demand and take.
+    // for what raiders demand and take. A `prosthetic` replaces a lost body
+    // part it `fits` (and everything on it), working at `efficiency`; doctors
+    // fit it at an operating table.
     items: [
         (
             id: "wood",
@@ -232,6 +234,32 @@
                 (shape: Cube, color: "white", at: (0.0, 0.1, 0.0), size: (0.4, 0.2, 0.3)),
                 (shape: Cube, color: "berry", at: (0.0, 0.205, 0.0), size: (0.08, 0.02, 0.22)),
                 (shape: Cube, color: "berry", at: (0.0, 0.205, 0.0), size: (0.24, 0.02, 0.08)),
+            ],
+        ),
+        (
+            id: "prosthetic_arm",
+            value: 60.0,
+            name: "Prosthetic arm",
+            category: "Medicine",
+            color: "steel",
+            prosthetic: Some((fits: [LeftShoulder, LeftArm, LeftHand, RightShoulder, RightArm, RightHand], efficiency: 0.75)),
+            look: [
+                (shape: Cylinder, color: "steel", at: (0.0, 0.05, -0.05), size: (0.1, 0.5, 0.1), turn: (90.0, 0.0, 0.0)),
+                (shape: Cube, color: "wood", at: (0.0, 0.06, 0.24), size: (0.16, 0.1, 0.12)),
+                (shape: Cube, color: "cloth", at: (0.0, 0.06, -0.26), size: (0.14, 0.12, 0.1)),
+            ],
+        ),
+        (
+            id: "prosthetic_leg",
+            value: 60.0,
+            name: "Prosthetic leg",
+            category: "Medicine",
+            color: "steel",
+            prosthetic: Some((fits: [LeftLeg, LeftFoot, RightLeg, RightFoot], efficiency: 0.75)),
+            look: [
+                (shape: Cylinder, color: "steel", at: (0.0, 0.06, 0.0), size: (0.11, 0.6, 0.11), turn: (90.0, 0.0, 0.0)),
+                (shape: Cube, color: "wood", at: (0.0, 0.05, 0.3), size: (0.16, 0.1, 0.18)),
+                (shape: Cube, color: "cloth", at: (0.0, 0.08, -0.3), size: (0.18, 0.14, 0.12)),
             ],
         ),
         (
@@ -628,6 +656,39 @@
             ]),
         ),
         (
+            id: "medical_cabinet",
+            cover: Some(Medium),
+            name: "Medical cabinet",
+            category: "Furniture",
+            cost: ("steel", 4),
+            work_time: 4.0,
+            passable: false,
+            beauty: 0.5,
+            look: Parts([
+                (shape: Cube, color: "white", at: (0.0, 0.45, 0.15), size: (0.7, 0.9, 0.4)),
+                (shape: Cube, color: "steel", at: (0.0, 0.45, -0.06), size: (0.66, 0.84, 0.02)),
+                (shape: Cube, color: "berry", at: (0.0, 0.6, -0.075), size: (0.06, 0.2, 0.01)),
+                (shape: Cube, color: "berry", at: (0.0, 0.6, -0.075), size: (0.2, 0.06, 0.01)),
+            ]),
+        ),
+        (
+            id: "operating_table",
+            cover: Some(Light),
+            name: "Operating table",
+            category: "Furniture",
+            cost: ("steel", 8),
+            work_time: 6.0,
+            passable: true,
+            special: Bed,
+            medical: true,
+            look: Parts([
+                (shape: Cube, color: "steel", at: (0.0, 0.2, 0.0), size: (0.12, 0.4, 0.5)),
+                (shape: Cube, color: "steel", at: (0.0, 0.42, 0.0), size: (0.78, 0.06, 0.92)),
+                (shape: Cube, color: "sheet", at: (0.0, 0.46, 0.0), size: (0.72, 0.03, 0.86)),
+                (shape: Cube, color: "pillow", at: (0.0, 0.49, -0.32), size: (0.4, 0.04, 0.16)),
+            ]),
+        ),
+        (
             id: "torch",
             cover: Some(None),
             name: "Torch",
@@ -953,7 +1014,27 @@
     // `thought` is what sleepers think of it (text, mood), `work` and `learn`
     // multiply work speed and skill learned at its workbenches, and `extra`
     // is the chance of one more of each product when a recipe is done there.
+    // `heal` multiplies how fast patients in its beds heal, `tend` adds to
+    // the quality of tending them, `surgery` to the chance operations go well.
+    // Rooms with any of these are for the sick: patients look for their beds first.
     rooms: [
+        (id: "hospital", name: "Hospital", floor: (0.72, 0.84, 0.86), checker: true, about: "Where the sick and wounded get better.",
+            needs: [
+                (things: ["bed"], min: 1),
+                (things: ["medical_cabinet"], min: 1),
+                (things: ["window"], min: 2),
+                (things: ["lamp"], min: 1),
+            ],
+            effects: (heal: 1.4, tend: 0.1),
+        ),
+        (id: "surgery", name: "Surgery room", floor: (0.86, 0.9, 0.92), checker: true, about: "Operations: fitting prosthetic limbs.",
+            needs: [
+                (things: ["operating_table"], min: 1),
+                (things: ["medical_cabinet"], min: 1),
+                (things: ["lamp"], min: 1),
+            ],
+            effects: (tend: 0.2, surgery: 0.25),
+        ),
         (id: "bedroom", name: "Bedroom", floor: (0.62, 0.36, 0.34), about: "A room of one's own.",
             needs: [
                 (things: ["bed"], min: 1, max: Some(1)),
@@ -1027,5 +1108,9 @@
             ingredients: [("cotton", 4)], products: [("cloth", 3)]),
         (id: "make_clothes", name: "Make simple clothes", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 8.0,
             ingredients: [("cloth", 5)], products: [("clothes", 1)]),
+        (id: "make_prosthetic_arm", name: "Make prosthetic arm", bench: "smithy", work: Crafting, skill: Crafting, time: 12.0,
+            ingredients: [("steel", 6), ("planks", 2), ("cloth", 2)], products: [("prosthetic_arm", 1)], sound: Some("anvil")),
+        (id: "make_prosthetic_leg", name: "Make prosthetic leg", bench: "smithy", work: Crafting, skill: Crafting, time: 12.0,
+            ingredients: [("steel", 6), ("planks", 2), ("cloth", 2)], products: [("prosthetic_leg", 1)], sound: Some("anvil")),
     ],
 )

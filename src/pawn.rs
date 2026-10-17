@@ -182,6 +182,10 @@ pub enum Job {
     },
     /// Carry a dead colonist to an empty grave and bury them.
     Bury { corpse: u32, grave: Pos, carrying: bool },
+    /// Lie on an operating table and wait to be fitted with a prosthetic.
+    Operation { table: Pos },
+    /// Fetch a prosthetic and fit it to a patient on an operating table.
+    Surgery { patient: u32, prosthetic: Pos, picked: bool },
 }
 
 impl Job {
@@ -200,6 +204,8 @@ impl Job {
             Job::Feed { .. } => "feeding a patient",
             Job::Equip { .. } => "equipping",
             Job::Bury { .. } => "burying the dead",
+            Job::Operation { .. } => "waiting for an operation",
+            Job::Surgery { .. } => "operating",
         }
     }
 }

@@ -1,0 +1,388 @@
+//! Hospitals and surgery. Beds in rooms for the sick (a hospital, a surgery
+//! room: `RoomEffects::medical`) and operating tables (`BuildDef::medical`)
+//! are care beds: patients look for them first, and nobody claims them as
+//! their own bed. An operating table isn't slept in at all.
+//!
+//! Prosthetics: a colonist who has lost a limb, with a prosthetic that fits
+//! lying around and a doctor free, lies down on an operating table
+//! (`Job::Operation`). A doctor fetches the prosthetic and fits it
+//! (`Job::Surgery`); it may go wrong, ruining the prosthetic and wounding
+//! the patient. Better doctors and surgery rooms make that rarer.
+
+use crate::defs::{Defs, ItemId};
+use crate::health::{DamageKind, Part};
+use crate::map::Pos;
+use crate::pathing::{bfs, DistField};
+use crate::pawn::{Job, Pawn, Skill};
+use crate::world::{Step, World};
+
+/// Seconds of work for an operation at speed 1.0.
+const SURGERY_TIME: f32 = 10.0;
+/// Seconds a patient waits on the table for a doctor before giving up.
+const OPERATION_WAIT: f32 = 90.0;
+/// Damage done by an operation that goes wrong.
+const BOTCHED_WOUND: f32 = 8.0;
+
+impl World {
+    /// An operating table (or other bed only for the sick) at `b`.
+    pub fn medical_bed(&self, b: Pos) -> bool {
+        self.map.feature[self.map.idx(b)].structure().is_some_and(|d| d.medical)
+    }
+
+    /// A bed for patients first: an operating table, or a bed in a hospital.
+    pub fn care_bed(&self, b: Pos) -> bool {
+        self.map.feature[self.map.idx(b)].is_bed()
+            && (self.medical_bed(b) || self.room_effects(b).is_some_and(|(_, e)| e.medical()))
+    }
+
+    /// Someone other than `me` owns the bed at `b`, lies in it, or is on their way to it.
+    fn bed_taken(&self, b: Pos, me: u32) -> bool {
+        self.pawns.iter().any(|o| {
+            o.id != me
+                && !o.dead
+                && (o.bed == Some(b)
+                    || o.pos == b && o.lying()
+                    || matches!(o.job, Some(Job::Patient { bed: Some(t) } | Job::Operation { table: t }) if t == b))
+        })
+    }
+
+    /// Where patient `p` should lie: the nearest free hospital bed, else
+    /// their own (or any free) bed, and an operating table only if there's
+    /// nothing else (they're kept for operations).
+    pub(crate) fn find_patient_bed(&self, p: &Pawn) -> Option<Pos> {
+        let df = bfs(&self.map, p.pos);
+        let free = |pos: Pos| self.care_bed(pos) && !self.bed_taken(pos, p.id);
+        let cells = || df.order.iter().map(|&i| self.map.pos(i));
+        cells()
+            .find(|&b| free(b) && !self.medical_bed(b))
+            .or_else(|| self.find_bed(p))
+            .or_else(|| cells().find(|&b| free(b)))
+    }
+
+    /// Whether a prosthetic of `kind` could replace one of `p`'s lost parts (which, if so).
+    fn fits(p: &Pawn, kind: ItemId) -> Option<Part> {
+        let fits = &kind.def().prosthetic.as_ref()?.fits;
+        p.health.lost_parts().into_iter().find(|part| fits.contains(part))
+    }
+
+    /// The nearest free prosthetic that fits `p`, by distance field `df`.
+    fn nearest_prosthetic(&self, p: &Pawn, df: &DistField) -> Option<Pos> {
+        df.order
+            .iter()
+            .find(|&&i| self.res_item[i] == 0 && self.map.items[i].is_some_and(|s| Self::fits(p, s.kind).is_some()))
+            .map(|&i| self.map.pos(i))
+    }
+
+    /// A free operating table for colonist `p` to lie on for a prosthetic,
+    /// if one fits a part they lost and there's a doctor to fit it.
+    pub(crate) fn operation_table(&self, p: &Pawn) -> Option<Pos> {
+        if !p.is_colonist() || p.health.lost_parts().is_empty() || !self.other_doctor_available(p.id) {
+            return None;
+        }
+        let df = bfs(&self.map, p.pos);
+        self.nearest_prosthetic(p, &df)?;
+        df.order.iter().map(|&i| self.map.pos(i)).find(|&t| self.medical_bed(t) && !self.bed_taken(t, p.id))
+    }
+
+    /// The patient: lie on the table and wait for the doctor.
+    pub(crate) fn run_operation(&mut self, p: &mut Pawn, table: Pos, dt: f32) {
+        let waiting_for = self.pawns.iter().any(|o| matches!(o.job, Some(Job::Surgery { patient, .. }) if patient == p.id));
+        if !self.medical_bed(table) || p.health.lost_parts().is_empty() {
+            self.end_job(p);
+            return;
+        }
+        match self.go_to(p, table, false, dt) {
+            Step::Moving => return,
+            Step::Unreachable => {
+                self.end_job(p);
+                return;
+            }
+            Step::Arrived => {}
+        }
+        p.resting = true;
+        // Give up if no doctor comes (but not while one is on the way).
+        if !waiting_for {
+            p.job_progress += dt / OPERATION_WAIT;
+            if p.job_progress >= 1.0 {
+                self.end_job(p);
+            }
+        }
+    }
+
+    /// For doctor `p`: someone lying on an operating table for a
+    /// prosthetic, with one to fit (nearest first).
+    pub(crate) fn surgery_candidate(&self, p: &Pawn, df: &DistField) -> Option<(i32, Job)> {
+        self.pawns
+            .iter()
+            .filter(|o| o.id != p.id && !o.dead && !self.patient_reserved(o.id))
+            .filter(|o| matches!(o.job, Some(Job::Operation { table }) if o.pos == table && o.lying()))
+            .filter_map(|o| {
+                let (_, d) = df.approach(&self.map, o.pos, true)?;
+                let prosthetic = self.nearest_prosthetic(o, df)?;
+                Some((d - 500, Job::Surgery { patient: o.id, prosthetic, picked: false }))
+            })
+            .min_by_key(|c| c.0)
+    }
+
+    /// The doctor: fetch the prosthetic, then fit it.
+    pub(crate) fn run_surgery(&mut self, p: &mut Pawn, patient: u32, prosthetic: Pos, picked: bool, dt: f32) {
+        let Some(pi) = self.pawn_index(patient) else {
+            self.end_job(p);
+            return;
+        };
+        let o = &self.pawns[pi];
+        let table = match o.job {
+            Some(Job::Operation { table }) if !o.dead => table,
+            _ => {
+                self.end_job(p);
+                return;
+            }
+        };
+        if !picked {
+            match self.go_to(p, prosthetic, false, dt) {
+                Step::Moving => {}
+                Step::Unreachable => self.end_job(p),
+                Step::Arrived => {
+                    let i = self.map.idx(prosthetic);
+                    p.carrying = self.take_one(i, Defs::is_prosthetic);
+                    self.res_item[i] = 0;
+                    if p.carrying.is_some_and(|s| Self::fits(&self.pawns[pi], s.kind).is_some()) {
+                        p.job = Some(Job::Surgery { patient, prosthetic, picked: true });
+                    } else {
+                        self.end_job(p);
+                    }
+                }
+            }
+            return;
+        }
+        match self.go_to(p, table, true, dt) {
+            Step::Moving => return,
+            Step::Unreachable => {
+                self.end_job(p);
+                return;
+            }
+            Step::Arrived => {}
+        }
+        if self.pawns[pi].pos != table {
+            // Wait for the patient to lie down.
+            return;
+        }
+        p.job_progress += dt * p.work_speed(Skill::Medicine) / SURGERY_TIME;
+        if p.learn(Skill::Medicine, dt) {
+            let msg = format!("{} reached Medicine level {}.", p.name, p.skill(Skill::Medicine));
+            self.push_log(msg);
+        }
+        if p.job_progress < 1.0 {
+            return;
+        }
+        let Some(item) = p.carrying.take() else {
+            self.end_job(p);
+            return;
+        };
+        let chance = self.surgery_chance(p, table);
+        let ok = self.rng.chance(chance);
+        let name = item.kind.name().to_lowercase();
+        let (rng, o) = (&mut self.rng, &mut self.pawns[pi]);
+        let Some(part) = Self::fits(o, item.kind) else {
+            // Nothing to fit it to any more: put it back down.
+            p.carrying = Some(item);
+            self.end_job(p);
+            return;
+        };
+        let msg = if ok {
+            let efficiency = item.kind.def().prosthetic.as_ref().map_or(1.0, |d| d.efficiency);
+            o.health.fit_prosthetic(part, efficiency);
+            format!("{} fitted {} with a {}.", p.name, o.name, name)
+        } else {
+            let wound = part.def().parent.unwrap_or(Part::Torso);
+            o.health.injure(wound, BOTCHED_WOUND, DamageKind::Cut, rng);
+            o.health.recompute();
+            format!("{} botched the operation on {}: the {} is ruined.", p.name, o.name, name)
+        };
+        // The patient gets up (or stays in bed for the new wound).
+        o.job = None;
+        o.resting = false;
+        o.job_progress = 0.0;
+        self.push_log(msg);
+        self.end_job(p);
+    }
+
+    /// Chance that doctor `p` fits a prosthetic well at `table`.
+    pub fn surgery_chance(&self, p: &Pawn, table: Pos) -> f32 {
+        let caps = &p.health.caps;
+        let skill = p.skill(Skill::Medicine) as f32;
+        let hands = caps.manipulation.min(1.0) * (0.6 + 0.4 * caps.sight.min(1.0));
+        let room = self.room_effects(table).map_or(0.0, |(_, e)| e.surgery);
+        ((0.55 + 0.025 * skill) * hands + room).clamp(0.05, 0.98)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::{Feature, Map, Stack, FLAT_Z as Z};
+    use crate::pawn::WorkType;
+    use crate::rng::Rng;
+    use crate::TICK;
+
+    fn test_world() -> World {
+        let mut w = World::with_map(Map::flat(20, 20), Rng::new(9));
+        w.story.next_raid = f32::MAX;
+        w.story.next_event = f32::MAX;
+        w.regrow_timer = f32::MAX;
+        w
+    }
+
+    fn colonist(w: &mut World, at: Pos) -> u32 {
+        let id = w.spawn_colonist(at);
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].hunger = 100.0;
+        w.pawns[i].rest = 100.0;
+        w.pawns[i].mood = 60.0;
+        id
+    }
+
+    fn put(w: &mut World, at: Pos, id: &str) {
+        let i = w.map.idx(at);
+        w.map.set_feature(i, Feature::built(id));
+    }
+
+    fn run(w: &mut World, secs: f32) {
+        for _ in 0..(secs / TICK) as usize {
+            w.tick(TICK);
+        }
+    }
+
+    /// Patient `id` lost their left leg a while ago (the stump has healed).
+    fn lose_leg(w: &mut World, id: u32) {
+        let i = w.pawn_index(id).unwrap();
+        let mut rng = Rng::new(1);
+        let h = &mut w.pawns[i].health;
+        while !h.is_missing(Part::LeftLeg) {
+            h.injure(Part::LeftLeg, 50.0, DamageKind::Cut, &mut rng);
+        }
+        h.hediffs.retain(|d| d.kind == crate::health::HediffKind::Missing);
+        h.recompute();
+    }
+
+    #[test]
+    fn a_doctor_fits_a_prosthetic_leg() {
+        let mut w = test_world();
+        let doctor = colonist(&mut w, (3, 3, Z));
+        let patient = colonist(&mut w, (5, 3, Z));
+        // Only the doctor doctors, and is good at it.
+        let (d, pt) = (w.pawn_index(doctor).unwrap(), w.pawn_index(patient).unwrap());
+        w.pawns[d].skills[Skill::Medicine as usize] = 15;
+        w.pawns[pt].priorities[WorkType::Doctor as usize] = 0;
+        lose_leg(&mut w, patient);
+        let walk = w.pawn(patient).unwrap().health.caps.moving;
+        put(&mut w, (10, 10, Z), "operating_table");
+        w.map.drop_item((8, 3, Z), Stack { kind: ItemId::named("prosthetic_leg"), count: 1 });
+        let mut done = false;
+        for _ in 0..120 {
+            run(&mut w, 1.0);
+            if !w.pawn(patient).unwrap().health.is_missing(Part::LeftLeg) {
+                done = true;
+                break;
+            }
+            // A botched try ruins the prosthetic: give them another.
+            if w.map.count_items(ItemId::named("prosthetic_leg")) == 0 && w.pawns.iter().all(|p| p.carrying.is_none()) {
+                w.map.drop_item((8, 3, Z), Stack { kind: ItemId::named("prosthetic_leg"), count: 1 });
+            }
+        }
+        assert!(done, "fitted in time");
+        let p = w.pawn(patient).unwrap();
+        assert!(p.health.caps.moving > walk + 0.2, "walks better: {} vs {}", p.health.caps.moving, walk);
+        assert!(p.health.efficiency(Part::LeftFoot) > 0.5, "the foot comes with it");
+        assert!(w.log.iter().any(|l| l.contains("fitted")), "{:?}", w.log);
+    }
+
+    #[test]
+    fn nobody_sleeps_on_an_operating_table() {
+        let mut w = test_world();
+        let id = colonist(&mut w, (3, 3, Z));
+        put(&mut w, (6, 6, Z), "operating_table");
+        assert!(w.find_bed(w.pawn(id).unwrap()).is_none(), "not a bed to sleep in");
+        assert_eq!(w.find_patient_bed(w.pawn(id).unwrap()), Some((6, 6, Z)), "patients may lie on it, if nothing else");
+        put(&mut w, (9, 9, Z), "bed");
+        assert_eq!(w.find_patient_bed(w.pawn(id).unwrap()), Some((9, 9, Z)), "an ordinary bed first");
+    }
+
+    /// A roofed room inside walls (5..=9) with a door, and `things` in it.
+    fn room(w: &mut World, things: &[((usize, usize), &str)]) {
+        for y in 5..=9 {
+            for x in 5..=9 {
+                if x == 5 || x == 9 || y == 5 || y == 9 {
+                    put(w, (x, y, Z), if (x, y) == (5, 7) { "door" } else { "wall" });
+                }
+                let i = w.map.idx((x, y, Z + 1));
+                w.map.set_roof(i, true);
+            }
+        }
+        for &((x, y), id) in things {
+            put(w, (x, y, Z), id);
+        }
+        w.map.recompute_rooms();
+        w.update_room_stats();
+    }
+
+    #[test]
+    fn hospitals_keep_their_beds_for_patients_and_heal_faster() {
+        let mut w = test_world();
+        let id = colonist(&mut w, (2, 2, Z));
+        put(&mut w, (2, 12, Z), "bed");
+        let hospital = [((6, 6), "bed"), ((8, 6), "bed"), ((6, 8), "medical_cabinet"), ((8, 8), "lamp"), ((7, 5), "window"), ((7, 9), "window")];
+        room(&mut w, &hospital);
+        assert_eq!(w.room_at((7, 7, Z)).and_then(|r| r.kind_name()), Some("Hospital"));
+        let p = w.pawn(id).unwrap();
+        assert_eq!(w.find_bed(p), Some((2, 12, Z)), "nobody sleeps in a hospital bed");
+        let bed = w.find_patient_bed(p).unwrap();
+        assert!(w.room_at(bed).is_some_and(|r| r.kind_name() == Some("Hospital")), "patients go to hospital");
+
+        // The same tended wound, lying a while in each bed.
+        let heal_in = |w: &mut World, at: Pos| {
+            let i = w.pawn_index(id).unwrap();
+            let p = &mut w.pawns[i];
+            p.pos = at;
+            p.resting = true;
+            p.health = crate::health::Health::new();
+            p.health.injure(Part::LeftArm, 10.0, DamageKind::Bruise, &mut Rng::new(3));
+            p.health.tend(0.5, 3);
+            let mut p = w.pawns[i].clone();
+            for _ in 0..30 {
+                w.update_health(&mut p, 1.0);
+            }
+            p.health.part_hp(Part::LeftArm)
+        };
+        let ordinary = heal_in(&mut w, (2, 12, Z));
+        let hospital = heal_in(&mut w, bed);
+        assert!(hospital > ordinary, "{} vs {}", hospital, ordinary);
+    }
+
+    #[test]
+    fn surgery_rooms_make_operations_safer() {
+        let mut w = test_world();
+        let id = colonist(&mut w, (3, 3, Z));
+        // A roofed room with a door, lamp, cabinet and an operating table.
+        for y in 5..=9 {
+            for x in 5..=9 {
+                if x == 5 || x == 9 || y == 5 || y == 9 {
+                    put(&mut w, (x, y, Z), if (x, y) == (5, 7) { "door" } else { "wall" });
+                }
+                let i = w.map.idx((x, y, Z + 1));
+                w.map.set_roof(i, true);
+            }
+        }
+        put(&mut w, (7, 7, Z), "operating_table");
+        w.map.recompute_rooms();
+        w.update_room_stats();
+        let doctor = w.pawn(id).unwrap().clone();
+        let plain = w.surgery_chance(&doctor, (7, 7, Z));
+        put(&mut w, (6, 6, Z), "lamp");
+        put(&mut w, (8, 6, Z), "medical_cabinet");
+        w.update_room_stats();
+        assert_eq!(w.room_at((7, 7, Z)).and_then(|r| r.kind_name()), Some("Surgery room"));
+        assert!(w.surgery_chance(&doctor, (7, 7, Z)) > plain + 0.2);
+        assert!(w.care_bed((7, 7, Z)));
+    }
+}
