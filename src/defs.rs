@@ -534,6 +534,55 @@ pub struct RoomDef {
     /// Floor laid out in tiles.
     #[serde(default)]
     pub checker: bool,
+    /// What being this kind of room does.
+    #[serde(default)]
+    pub effects: RoomEffects,
+}
+
+/// What a themed room does for the colonists who sleep or work in it.
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct RoomEffects {
+    /// Rest gained per second in a bed here (multiplier).
+    pub rest: f32,
+    /// What colonists think after sleeping in a bed here, and its mood.
+    pub thought: Option<(String, f32)>,
+    /// Work speed at workbenches here (multiplier).
+    pub work: f32,
+    /// Skill learned working at benches here (multiplier).
+    pub learn: f32,
+    /// Chance of one more of each product when a recipe is done here.
+    pub extra: f32,
+}
+
+impl Default for RoomEffects {
+    fn default() -> Self {
+        RoomEffects { rest: 1.0, thought: None, work: 1.0, learn: 1.0, extra: 0.0 }
+    }
+}
+
+impl RoomEffects {
+    /// One line per effect, for the UI: "Rest 25% faster".
+    pub fn lines(&self) -> Vec<String> {
+        let pct = |m: f32| ((m - 1.0) * 100.0).round() as i32;
+        let mut out = Vec::new();
+        if self.rest != 1.0 {
+            out.push(format!("Rest {}% faster in its beds", pct(self.rest)));
+        }
+        if let Some((text, mood)) = &self.thought {
+            out.push(format!("\"{}\": mood {:+}", text, mood));
+        }
+        if self.work != 1.0 {
+            out.push(format!("Work at its benches {}% faster", pct(self.work)));
+        }
+        if self.learn != 1.0 {
+            out.push(format!("Skills learned {}% faster at its benches", pct(self.learn)));
+        }
+        if self.extra > 0.0 {
+            out.push(format!("{}% chance of a spare product", (self.extra * 100.0).round() as i32));
+        }
+        out
+    }
 }
 
 /// At least `min` (and at most `max`) of any of `things` in a themed room.
@@ -646,6 +695,10 @@ impl Defs {
                 if need.things.is_empty() || need.max.is_some_and(|m| m < need.min.max(1)) {
                     return Err(format!("room {}: each need wants things, and max at least min (and 1)", room.id));
                 }
+            }
+            let e = &room.effects;
+            if e.rest <= 0.0 || e.work <= 0.0 || e.learn <= 0.0 || !(0.0..=1.0).contains(&e.extra) {
+                return Err(format!("room {}: rest, work and learn must be above 0, extra 0..1", room.id));
             }
         }
         Ok(())

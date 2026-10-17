@@ -428,7 +428,12 @@ real play.
   passed to the mesher through `terrain::Cut::kinds`) and the name over the room (`overlay.rs`). Guided:
   the cell inspector lists every theme with a checklist (closest first, the closest unfinished open), and
   the Rooms window (HUD) shows what each needs and lists the colony's rooms to jump to. New furniture:
-  dresser. Themes have no effect on mood or work yet.
+  dresser.
+- Room benefits (2026-10-17): each theme has `effects` in `defs.ron` (`RoomEffects`): `rest` (rest gained
+  in its beds), `thought` (a `Memory::RoomThought` after sleeping there), `work` and `learn` (speed and
+  skill gained crafting at its benches), `extra` (chance of a spare of each product). Bedroom: rest +25%,
+  +4 mood; barracks: rest +10%, +2 mood; kitchen: work +25%, 15% spare meals; smithy: work +30%, 10% spare;
+  workshop: work +20%, learning +50%. Listed in the inspector and the Rooms window.
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 

@@ -4,9 +4,11 @@
 //! Themed rooms: a room that has what one of the room kinds in the
 //! definitions needs (`defs().rooms`) is that kind of room: a bedroom, a
 //! kitchen, a workshop. `RoomStats::kind` says which, and `progress` how far
-//! a room is from each kind.
+//! a room is from each kind. Each kind has `effects`: faster rest and a
+//! good thought for sleepers, faster work, learning and spare products at
+//! its workbenches.
 
-use crate::defs::{defs, BuildId, RoomDef};
+use crate::defs::{defs, BuildId, RoomDef, RoomEffects};
 use crate::map::Pos;
 use crate::world::World;
 use std::collections::HashSet;
@@ -129,6 +131,12 @@ impl World {
         self.room_stats.get(r)
     }
 
+    /// The themed room at `p` (index into `defs().rooms`) and what it does.
+    pub fn room_effects(&self, p: Pos) -> Option<(usize, &'static RoomEffects)> {
+        let k = self.room_at(p)?.kind?;
+        Some((k, &defs().rooms[k].effects))
+    }
+
     /// Recount every room (one pass over the map).
     pub(crate) fn update_room_stats(&mut self) {
         let m = &self.map;
@@ -186,6 +194,7 @@ impl World {
 mod tests {
     use super::*;
     use crate::map::{Feature, Map, FLAT_Z as Z};
+    use crate::pawn::{Job, Memory, Pawn};
     use crate::rng::Rng;
 
     /// A roofed 3×3 room (walls around 5..=9) with a door.
@@ -280,6 +289,52 @@ mod tests {
                 }
             }
             assert_eq!(w.room_at((7, 7, Z)).and_then(|r| r.kind), Some(k), "{}", room.id);
+        }
+    }
+
+    /// Rest gained in one second asleep in the bed at `bed`, and the memories after a full sleep.
+    fn sleep_in(w: &mut World, bed: Pos) -> (f32, Vec<Memory>) {
+        let mut p = Pawn::new_colonist(1, "Test".into(), bed, &mut Rng::new(2));
+        p.rest = 10.0;
+        p.job = Some(Job::Sleep { bed: Some(bed) });
+        w.run_job(&mut p, 1.0);
+        let gained = p.rest - 10.0;
+        p.rest = 99.99;
+        w.run_job(&mut p, 1.0);
+        (gained, p.memories.iter().map(|m| m.kind).collect())
+    }
+
+    #[test]
+    fn bedrooms_rest_better_and_please_sleepers() {
+        let mut w = room_world();
+        place(&mut w, (6, 6, Z), "bed");
+        let (plain, memories) = sleep_in(&mut w, (6, 6, Z));
+        assert!(!memories.iter().any(|m| matches!(m, Memory::RoomThought(_))));
+        place(&mut w, (8, 6, Z), "dresser");
+        place(&mut w, (7, 5, Z), "window");
+        assert_eq!(w.room_at((7, 7, Z)).unwrap().kind_name(), Some("Bedroom"));
+        let (themed, memories) = sleep_in(&mut w, (6, 6, Z));
+        assert!((themed - plain * 1.25).abs() < 1e-4, "{} vs {}", themed, plain);
+        let thought = memories.iter().find(|m| matches!(m, Memory::RoomThought(_))).expect("a room thought");
+        assert!(thought.mood() > 0.0);
+        assert_eq!(thought.label(), "Slept in a bedroom of their own");
+    }
+
+    #[test]
+    fn workbenches_in_a_themed_room_get_its_effects() {
+        let mut w = room_world();
+        place(&mut w, (6, 6, Z), "sawbench");
+        assert!(w.room_effects((6, 6, Z)).is_none(), "no table yet");
+        place(&mut w, (8, 8, Z), "table");
+        let (k, e) = w.room_effects((6, 6, Z)).expect("a workshop");
+        assert_eq!(defs().rooms[k].id, "workshop");
+        assert!(e.work > 1.0 && e.learn > 1.0);
+    }
+
+    #[test]
+    fn every_room_kind_does_something() {
+        for room in &defs().rooms {
+            assert!(!room.effects.lines().is_empty(), "{}", room.id);
         }
     }
 

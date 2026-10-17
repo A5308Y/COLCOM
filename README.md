@@ -75,7 +75,8 @@ furniture, light, production), searchable, with costs (red if the colony is shor
 - **Themed rooms:** a room with everything a theme needs becomes a bedroom, barracks, kitchen, smithy or
   workshop: its floor changes and its name shows over it. The **Rooms** button lists what each needs;
   clicking a cell in a room shows a checklist towards every theme (themes are defined in
-  `assets/defs.ron`).
+  `assets/defs.ron`). Themes pay off: bedrooms and barracks rest better and cheer sleepers up; kitchens,
+  smithies and workshops work faster at their benches, and may turn out a spare product or teach faster.
 - **Food:** raw food can cause food poisoning and upsets colonists; cooked meals are better and fill
   more. Colonists pick meals first.
 

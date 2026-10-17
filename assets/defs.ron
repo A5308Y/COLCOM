@@ -949,6 +949,10 @@
     // for the rooms they border. A room can't be a kind while it has a bed or
     // workbench that kind doesn't ask for. The first kind that fits wins.
     // `floor` tints the room's floor (sRGB); `checker` lays it out in tiles.
+    // `effects` (all optional): `rest` multiplies rest gained in its beds,
+    // `thought` is what sleepers think of it (text, mood), `work` and `learn`
+    // multiply work speed and skill learned at its workbenches, and `extra`
+    // is the chance of one more of each product when a recipe is done there.
     rooms: [
         (id: "bedroom", name: "Bedroom", floor: (0.62, 0.36, 0.34), about: "A room of one's own.",
             needs: [
@@ -956,14 +960,18 @@
                 (things: ["window"], min: 1),
                 (things: ["door", "stone_door"], min: 1),
                 (things: ["dresser"], min: 1),
-            ]),
+            ],
+            effects: (rest: 1.25, thought: Some(("Slept in a bedroom of their own", 4.0))),
+        ),
         (id: "barracks", name: "Barracks", floor: (0.5, 0.52, 0.38), about: "Beds for many, and a table to sit at.",
             needs: [
                 (things: ["bed"], min: 1),
                 (things: ["table"], min: 1),
                 (things: ["chair"], min: 3),
                 (things: ["window"], min: 2),
-            ]),
+            ],
+            effects: (rest: 1.1, thought: Some(("Slept in the barracks with friends", 2.0))),
+        ),
         (id: "kitchen", name: "Kitchen", floor: (0.86, 0.82, 0.7), checker: true, about: "Where meals are cooked and stored.",
             needs: [
                 (things: ["stove"], min: 1),
@@ -971,18 +979,24 @@
                 (things: ["shelf"], min: 2),
                 (things: ["chair"], min: 1),
                 (things: ["table"], min: 1),
-            ]),
+            ],
+            effects: (work: 1.25, extra: 0.15),
+        ),
         (id: "smithy", name: "Smithy", floor: (0.5, 0.48, 0.47), checker: true, about: "Hot work: smelting and forging.",
             needs: [
                 (things: ["smithy"], min: 1),
                 (things: ["smelter"], min: 1),
                 (things: ["window"], min: 2),
-            ]),
+            ],
+            effects: (work: 1.3, extra: 0.1),
+        ),
         (id: "workshop", name: "Workshop", floor: (0.5, 0.36, 0.22), about: "Sawing, cutting stone and crafting.",
             needs: [
                 (things: ["sawbench", "stonecutter", "crafting_bench"], min: 1),
                 (things: ["table"], min: 1),
-            ]),
+            ],
+            effects: (work: 1.2, learn: 1.5),
+        ),
     ],
 
     // Made at workbenches from `ingredients` (delivered by haulers) into

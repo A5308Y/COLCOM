@@ -206,6 +206,14 @@ fn room_color(room: &RoomDef) -> Color32 {
 
 const MET: Color32 = Color32::from_rgb(120, 220, 120);
 const UNMET: Color32 = Color32::from_rgb(255, 140, 100);
+const PERK: Color32 = Color32::from_rgb(150, 200, 150);
+
+/// What a themed room does, one muted line each.
+fn room_perks(ui: &mut egui::Ui, room: &RoomDef, indent: &str) {
+    for line in room.effects.lines() {
+        ui.label(RichText::new(format!("{}+ {}", indent, line)).color(PERK));
+    }
+}
 
 /// The room's theme if it has one, and a checklist towards each kind of
 /// themed room, closest first (the closest unfinished one open).
@@ -214,6 +222,7 @@ fn room_themes(ui: &mut egui::Ui, r: &RoomStats) {
     if let Some(k) = r.kind {
         ui.label(RichText::new(&rooms[k].name).strong().size(16.0).color(room_color(&rooms[k])));
         ui.label(RichText::new(&rooms[k].about).weak());
+        room_perks(ui, &rooms[k], "");
     }
     let mut order: Vec<(usize, Progress)> = rooms.iter().enumerate().map(|(k, room)| (k, r.progress(room))).collect();
     // Closest first: the most needs met, as a share.
@@ -264,6 +273,7 @@ fn rooms_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState, rig: &mut Came
             for need in &room.needs {
                 ui.label(format!("  - {}: {}", need.things_text(), need.count_text()));
             }
+            room_perks(ui, room, "  ");
             ui.horizontal_wrapped(|ui| {
                 if mine.is_empty() {
                     ui.label(RichText::new("You have none yet.").small().weak());

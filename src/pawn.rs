@@ -216,6 +216,8 @@ pub enum Memory {
     AteWithoutTable,
     WonBattle,
     LostBattle,
+    /// Slept in a themed room (index into `defs().rooms`) that has a thought.
+    RoomThought(u8),
 }
 
 impl Memory {
@@ -244,6 +246,7 @@ impl Memory {
             Memory::AteWithoutTable => "Ate without a table",
             Memory::WonBattle => "Won a battle",
             Memory::LostBattle => "Lost a battle",
+            Memory::RoomThought(k) => room_thought(k).map_or("Slept in a themed room", |t| t.0.as_str()),
         }
     }
 
@@ -260,6 +263,7 @@ impl Memory {
             Memory::AteWithoutTable => -3.0,
             Memory::WonBattle => 6.0,
             Memory::LostBattle => -10.0,
+            Memory::RoomThought(k) => room_thought(k).map_or(0.0, |t| t.1),
         }
     }
 
@@ -276,6 +280,10 @@ impl Memory {
     fn same_kind(self, other: Memory) -> bool {
         std::mem::discriminant(&self) == std::mem::discriminant(&other)
     }
+}
+
+fn room_thought(k: u8) -> Option<&'static (String, f32)> {
+    defs().rooms.get(k as usize)?.effects.thought.as_ref()
 }
 
 /// Walking pace in cells per second (a cell is about 1.8 m: a brisk walk).

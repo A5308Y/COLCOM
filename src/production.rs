@@ -274,8 +274,11 @@ impl World {
                 }
             }
         }
+        // A themed room may give a spare of each product.
+        let extra = self.room_effects(pos).map_or(0.0, |(_, e)| e.extra);
+        let spare = (extra > 0.0 && self.rng.chance(extra)) as u32;
         for a in &r.def().products {
-            self.map.drop_item(pos, Stack { kind: a.item, count: a.count });
+            self.map.drop_item(pos, Stack { kind: a.item, count: a.count + spare });
         }
         self.choose_recipes();
         Some(r)

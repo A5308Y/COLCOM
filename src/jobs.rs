@@ -262,8 +262,13 @@ impl World {
                     self.end_job(p);
                     return;
                 };
-                p.job_progress += dt * p.work_speed(skill) / time;
-                if p.learn(skill, dt) {
+                // A themed room speeds work and learning at its workbenches.
+                let (work, learn) = match task {
+                    Task::Craft => self.room_effects(target).map_or((1.0, 1.0), |(_, e)| (e.work, e.learn)),
+                    _ => (1.0, 1.0),
+                };
+                p.job_progress += dt * work * p.work_speed(skill) / time;
+                if p.learn(skill, dt * learn) {
                     let msg = format!("{} reached {} level {}.", p.name, skill.name(), p.skill(skill));
                     self.sound("level_up", None);
                     self.push_log(msg);
@@ -570,7 +575,8 @@ impl World {
             }
         }
         p.sleeping = true;
-        let rate = if bed.is_some() { 1.2 } else { 0.8 };
+        let themed = bed.and_then(|b| self.room_effects(b));
+        let rate = if bed.is_some() { 1.2 * themed.map_or(1.0, |(_, e)| e.rest) } else { 0.8 };
         p.rest = (p.rest + rate * dt).min(100.0);
         if p.rest >= 100.0 {
             let memory = match bed {
@@ -579,6 +585,9 @@ impl World {
                 None => Memory::SleptOnGround,
             };
             p.add_memory(memory);
+            if let Some((k, _)) = themed.filter(|(_, e)| e.thought.is_some()) {
+                p.add_memory(Memory::RoomThought(k as u8));
+            }
             self.end_job(p);
         }
     }
