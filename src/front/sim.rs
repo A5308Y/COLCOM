@@ -117,9 +117,16 @@ fn step_simulation(time: Res<Time>, mut sim: ResMut<Sim>) {
     sim.acc += time.delta_secs().min(0.25) * sim.rate() as f32;
     let mut steps = 0;
     while sim.acc >= TICK && steps < 40 {
+        let fighting = sim.world.battle.is_some();
         sim.world.tick(TICK);
         sim.acc -= TICK;
         steps += 1;
+        // After a battle the colony carries on at 1x, whatever speed it had before.
+        if fighting && sim.world.battle.is_none() {
+            sim.speed = 1;
+            sim.acc = 0.0;
+            break;
+        }
     }
     if steps == 40 {
         sim.acc = 0.0;

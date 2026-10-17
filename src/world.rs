@@ -117,8 +117,14 @@ impl World {
         let (cx, cy) = (MAP_W / 2, MAP_H / 2);
         // The landing zone is flat, so one level works for all of it.
         let z = w.map.surface(cx, cy).unwrap_or(1);
+        // Each lands with a different weapon (`start_weapons`).
+        let weapons: Vec<_> = defs().start_weapons.iter().map(|r| r.id()).collect();
         for k in 0..3 {
-            w.spawn_colonist((cx - 1 + k, cy, z));
+            let id = w.spawn_colonist((cx - 1 + k, cy, z));
+            if !weapons.is_empty() {
+                let i = w.pawn_index(id).unwrap();
+                w.pawns[i].weapon = Some(weapons[k % weapons.len()]);
+            }
         }
         let mut stockpile = Vec::new();
         w.stockpiles.push(Stockpile::new(1));
@@ -1394,6 +1400,14 @@ mod tests {
             w.sound("thud", None);
         }
         assert_eq!(w.sounds.len(), MAX_SOUNDS);
+    }
+
+    #[test]
+    fn the_first_colonists_land_with_different_weapons() {
+        let w = World::new(7);
+        let mut weapons: Vec<&str> = w.pawns.iter().filter(|p| p.is_colonist()).filter_map(|p| p.weapon).map(|k| k.def().id.as_str()).collect();
+        weapons.sort();
+        assert_eq!(weapons, vec!["knife", "pistol", "rifle"]);
     }
 
     #[test]

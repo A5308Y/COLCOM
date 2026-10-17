@@ -396,7 +396,7 @@ impl Pawn {
             skills: [0; Skill::ALL.len()],
             xp: [0.0; Skill::ALL.len()],
             priorities: [3; WorkType::ALL.len()],
-            weapon: defs().start_weapon.as_ref().map(|w| w.id()),
+            weapon: defs().start_weapons.first().map(|w| w.id()),
             apparel: Vec::new(),
             chosen: Vec::new(),
             cooldown: 0.0,

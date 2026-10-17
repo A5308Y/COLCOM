@@ -495,8 +495,10 @@ pub struct Defs {
     pub clear: BTreeMap<String, (f32, f32, f32, f32)>,
     pub items: Vec<ItemDef>,
     pub start_items: Vec<Amount>,
+    /// Weapons the first colonists land with, one each in turn (the first
+    /// is also what new colonists get by default; wanderers get one at random).
     #[serde(default)]
-    pub start_weapon: Option<Ref<ItemId>>,
+    pub start_weapons: Vec<Ref<ItemId>>,
     /// Weapons raiders carry, with relative chances.
     #[serde(default)]
     pub raider_weapons: Vec<(Ref<ItemId>, f32)>,
@@ -534,8 +536,8 @@ impl Defs {
         for a in self.start_items.iter_mut() {
             resolve(a, "start_items")?;
         }
-        if let Some(r) = self.start_weapon.as_mut() {
-            resolve_ref(r, "start_weapon")?;
+        for r in self.start_weapons.iter_mut() {
+            resolve_ref(r, "start_weapons")?;
         }
         for (r, _) in self.raider_weapons.iter_mut() {
             resolve_ref(r, "raider_weapons")?;
@@ -694,7 +696,7 @@ impl Defs {
                 return Err(format!("{}: a workbench can't be a block", r.id));
             }
         }
-        let weapons = self.start_weapon.iter().chain(self.raider_weapons.iter().map(|w| &w.0));
+        let weapons = self.start_weapons.iter().chain(self.raider_weapons.iter().map(|w| &w.0));
         for w in weapons {
             if self.items[w.id().index()].weapon.is_none() {
                 return Err(format!("\"{}\" is not a weapon", w.name));

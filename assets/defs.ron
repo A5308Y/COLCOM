@@ -320,8 +320,9 @@
 
     // What the colonists land with, dropped in their stockpile.
     start_items: [("wood", 80), ("planks", 30), ("meal", 20), ("raw_food", 20), ("medicine", 8)],
-    // Colonists land armed with this.
-    start_weapon: Some("rifle"),
+    // The first colonists land armed with these, one each in turn; wanderers
+    // who join later bring one of them at random.
+    start_weapons: ["rifle", "pistol", "knife"],
     // Raiders carry one of these (relative chances).
     raider_weapons: [("pistol", 2.0), ("club", 1.0), ("knife", 1.0)],
     // What mining one cell of rock or ore yields (soil yields nothing).

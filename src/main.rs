@@ -176,6 +176,7 @@ mod tests {
             app.update();
         }
         assert!(app.world().resource::<front::Sim>().world.battle.is_none(), "the battle ends");
+        assert_eq!(app.world().resource::<front::Sim>().speed, 1, "back to 1x after the battle");
         app.world_mut().resource_mut::<front::Sim>().speed = 1;
         for _ in 0..10 {
             app.update();

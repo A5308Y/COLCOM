@@ -95,6 +95,13 @@ impl World {
     fn wanderer_joins(&mut self) {
         let Some(pos) = self.random_edge_tile() else { return };
         let id = self.spawn_colonist(pos);
+        // They bring one of the starting weapons, at random.
+        let weapons = &crate::defs::defs().start_weapons;
+        if !weapons.is_empty() {
+            let w = weapons[self.rng.below(weapons.len())].id();
+            let i = self.pawn_index(id).unwrap();
+            self.pawns[i].weapon = Some(w);
+        }
         let name = self.pawn(id).map(|p| p.name.clone()).unwrap_or_default();
         self.push_log(format!("{} wandered in and asked to join the colony.", name));
         self.sound("joined", None);
