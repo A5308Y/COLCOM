@@ -6,18 +6,18 @@ use super::audio::{self, AudioSettings, SoundQueue};
 use super::build_menu;
 use super::input::{self, InspectorTab, Selection, UiState};
 use super::squads_ui;
-use super::look::{pawn_look, Look};
+use super::look::{pawn_look, Look, Rgb};
 use super::overlay;
 use super::sim::Sim;
 use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, ProgressBar, RichText};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::health::HediffKind;
-use my_world::defs::{BuildId, ItemId, PlantId, Special};
+use my_world::defs::{defs, BuildId, ItemId, PlantId, RoomDef, Special};
 use my_world::map::{Block, Feature, Pos, Zone};
 use my_world::pawn::{Pawn, Role, Skill, WorkType};
 use my_world::production::{BillMode, PRIORITY_NAMES};
-use my_world::rooms::TIERS;
+use my_world::rooms::{Progress, RoomStats, TIERS};
 use my_world::world::World as SimWorld;
 use my_world::DAY_LEN;
 
@@ -27,11 +27,11 @@ const HELP_ORDERS: [&str; 7] = [
     "Orders (build menu, left): mark trees to chop, rock and soil to mine, berry bushes to forage;",
     "      Backspace: deconstruct. Cancel takes designations and blueprints away.",
     "Zones: paint stockpile zones (items get hauled there) and grow zones (crops); Clear zone removes them.",
-    "      Left-drag to paint a rectangle. Right-click goes back to Select.",
+    "      Left-drag to paint a rectangle. Right-click (anywhere) goes back to Select.",
     "",
 ];
 
-const HELP_REST: [&str; 41] = [
+const HELP_REST: [&str; 43] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -39,6 +39,8 @@ const HELP_REST: [&str; 41] = [
     "Click a stockpile to set its priority and which items it takes; click a grow zone to pick its crop.",
     "Shelves are storage by themselves and hold four stacks; click one to set what goes on it (shelves",
     "      side by side share settings). Colonists eat at a table if there's a chair beside it, and hate eating without.",
+    "Themed rooms (Rooms button): furnish a room with what a theme needs - bedroom, barracks, kitchen,",
+    "      smithy, workshop - and its floor and name show it. Click a cell in a room for a checklist.",
     "Room quality (size, beauty of furniture, windows and doors, cleanliness, light) affects mood when",
     "      colonists sleep or eat there. Click a cell inside a room to see why it's good or bad.",
     "Raw food can cause food poisoning - cook meals at a stove. Mine iron ore deep in the rock,",
@@ -125,6 +127,7 @@ fn draw_ui(
         }
     }
 
+    tool_at_cursor(&ctx, &st);
     hud(&ctx, &mut sim, &mut st, &mut rig, left);
     colonist_bar(&ctx, &sim, &mut st, left);
     alerts(&ctx, &sim);
@@ -149,6 +152,9 @@ fn draw_ui(
     }
     if st.show_squads {
         squads_ui::squads_window(&ctx, &sim, &mut st);
+    }
+    if st.show_rooms {
+        rooms_window(&ctx, &sim, &mut st, &mut rig);
     }
     if st.show_menu {
         game_menu(&ctx, &mut sim, &mut st, &mut rig, &mut audio);
@@ -175,6 +181,106 @@ fn draw_ui(
         });
     }
     Ok(())
+}
+
+/// With a tool in hand, its name by the cursor, so it's clear clicks give
+/// orders rather than inspect.
+fn tool_at_cursor(ctx: &egui::Context, st: &UiState) {
+    let input::Tool::Paint(_) = st.tool else { return };
+    let Some(at) = ctx.pointer_hover_pos() else { return };
+    let name = input::TOOLS.iter().find(|e| e.tool == st.tool).map_or("Tool", |e| e.name.as_str());
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("tool_at_cursor")));
+    let pos = at + egui::vec2(16.0, 14.0);
+    let font = egui::FontId::proportional(13.0);
+    let text = format!("{}  (right-click: stop)", name);
+    let galley = painter.layout_no_wrap(text, font, Color32::from_rgb(255, 225, 140));
+    let rect = egui::Rect::from_min_size(pos, galley.size() + egui::vec2(10.0, 4.0));
+    painter.rect_filled(rect, 3.0, Color32::from_black_alpha(190));
+    painter.galley(pos + egui::vec2(5.0, 2.0), galley, Color32::WHITE);
+}
+
+fn room_color(room: &RoomDef) -> Color32 {
+    let (r, g, b) = room.floor;
+    Rgb(r, g, b).egui().lerp_to_gamma(Color32::WHITE, 0.45)
+}
+
+const MET: Color32 = Color32::from_rgb(120, 220, 120);
+const UNMET: Color32 = Color32::from_rgb(255, 140, 100);
+
+/// The room's theme if it has one, and a checklist towards each kind of
+/// themed room, closest first (the closest unfinished one open).
+fn room_themes(ui: &mut egui::Ui, r: &RoomStats) {
+    let rooms = &defs().rooms;
+    if let Some(k) = r.kind {
+        ui.label(RichText::new(&rooms[k].name).strong().size(16.0).color(room_color(&rooms[k])));
+        ui.label(RichText::new(&rooms[k].about).weak());
+    }
+    let mut order: Vec<(usize, Progress)> = rooms.iter().enumerate().map(|(k, room)| (k, r.progress(room))).collect();
+    // Closest first: the most needs met, as a share.
+    order.sort_by(|a, b| {
+        let share = |p: &Progress| {
+            let (m, n) = p.score();
+            m as f32 / n.max(1) as f32
+        };
+        share(&b.1).total_cmp(&share(&a.1))
+    });
+    let open = order.iter().find(|(k, p)| Some(*k) != r.kind && !p.done()).map(|(k, _)| *k);
+    ui.label(RichText::new("Room themes").strong());
+    for (k, p) in order {
+        let room = &rooms[k];
+        let (met, of) = p.score();
+        let status = if p.done() { "all there".to_string() } else { format!("{}/{}", met, of) };
+        let header = RichText::new(format!("{} ({})", room.name, status)).color(room_color(room));
+        egui::CollapsingHeader::new(header).id_salt(("theme", k)).default_open(Some(k) == open).show(ui, |ui| {
+            for (need, &(have, ok)) in room.needs.iter().zip(&p.needs) {
+                let line = format!("• {}: {} (needs {})", need.things_text(), have, need.count_text());
+                ui.label(RichText::new(line).color(if ok { MET } else { UNMET }));
+            }
+            for &u in &p.unwanted {
+                ui.label(RichText::new(format!("• Not in a {}: {}", room.name.to_lowercase(), u.name())).color(UNMET));
+            }
+        });
+    }
+    ui.label(RichText::new("Doors and windows in its walls count. See Rooms for all themes.").small().weak());
+}
+
+/// Every kind of themed room with what it needs, and the colony's rooms of each kind.
+fn rooms_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState, rig: &mut CameraRig) {
+    let w = &sim.world;
+    let mut open = st.show_rooms;
+    let mut go = None;
+    egui::Window::new("Rooms").open(&mut open).anchor(Align2::RIGHT_TOP, [-8.0, 92.0]).collapsible(false).resizable(false).show(ctx, |ui| {
+        ui.set_max_width(360.0);
+        ui.label("Enclose an area with walls, doors and a roof to make a room. Furnish it with everything a theme \
+                  needs and it becomes that kind of room: its floor changes and its name shows over it.");
+        ui.label(RichText::new("Doors and windows in the walls count. Beds and workbenches the theme doesn't ask for spoil it.").small().weak());
+        for (k, room) in defs().rooms.iter().enumerate() {
+            ui.separator();
+            let mine: Vec<&RoomStats> = w.room_stats.iter().filter(|r| r.kind == Some(k)).collect();
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(&room.name).strong().color(room_color(room)));
+                ui.label(RichText::new(&room.about).weak());
+            });
+            for need in &room.needs {
+                ui.label(format!("  - {}: {}", need.things_text(), need.count_text()));
+            }
+            ui.horizontal_wrapped(|ui| {
+                if mine.is_empty() {
+                    ui.label(RichText::new("You have none yet.").small().weak());
+                }
+                for (n, r) in mine.iter().enumerate() {
+                    if ui.small_button(format!("{} {}", room.name, n + 1)).on_hover_text("Show it").clicked() {
+                        go = Some((r.centre.0.round() as usize, r.centre.1.round() as usize, r.level));
+                    }
+                }
+            });
+        }
+    });
+    st.show_rooms = open;
+    if let Some(t) = go {
+        st.select(Some(Selection::Tile(t)));
+        input::center_on_selection(sim, st, rig);
+    }
 }
 
 fn mood_color(mood: f32) -> Color32 {
@@ -256,6 +362,10 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 ui.separator();
                 if ui.add(egui::Button::new("Squads").selected(st.show_squads)).clicked() {
                     st.show_squads = !st.show_squads;
+                }
+                let rooms = egui::Button::new("Rooms").selected(st.show_rooms);
+                if ui.add(rooms).on_hover_text("Themed rooms: what each needs, and yours").clicked() {
+                    st.show_rooms = !st.show_rooms;
                 }
                 if ui.add(egui::Button::new("Resources (I)").selected(st.show_resources)).clicked() {
                     st.show_resources = !st.show_resources;
@@ -658,6 +768,7 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) -> (boo
                         r.light_points()
                     );
                     ui.label(RichText::new(parts).weak());
+                    room_themes(ui, r);
                 }
                 None if m.roofed(t) => {
                     ui.label("Indoors");
@@ -909,3 +1020,4 @@ fn work_panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState) {
             });
         });
 }
+

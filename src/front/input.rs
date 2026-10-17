@@ -219,6 +219,8 @@ pub struct UiState {
     pub inspector_tab: InspectorTab,
     /// The Squads overview window.
     pub show_squads: bool,
+    /// The themed rooms window.
+    pub show_rooms: bool,
     /// Layer view: hide everything above this level (None = show all).
     pub view_level: Option<usize>,
     /// Hide built roofs: each column over a roofed room is cut off above
@@ -228,6 +230,8 @@ pub struct UiState {
     pub roof_cut: Vec<u8>,
     /// Bumped whenever `roof_cut` changes, for things that cache visibility.
     pub roof_version: u64,
+    /// The last right press put a tool down (so its release doesn't also deselect).
+    pub dropped_tool: bool,
     /// The build menu docked on the left.
     pub show_build: bool,
     /// Search text in the build menu.
@@ -264,10 +268,12 @@ impl UiState {
             show_help: false,
             inspector_tab: InspectorTab::Overview,
             show_squads: false,
+            show_rooms: false,
             view_level: None,
             hide_roofs: false,
             roof_cut: Vec::new(),
             roof_version: 0,
+            dropped_tool: false,
             show_build: true,
             build_filter: String::new(),
             dock_width: 0.0,
@@ -742,13 +748,19 @@ fn mouse(
         }
     }
 
-    // A right *click* (not a camera drag): back to Select, or equip something.
-    if buttons.just_released(MouseButton::Right) && drag.right_moved <= 4.0 && !over_ui {
+    // Any right press puts a tool down (back to Select), over the map or a
+    // panel, click or camera drag alike.
+    if buttons.just_pressed(MouseButton::Right) {
         if let Tool::Paint(_) = ui.tool {
             ui.tool = Tool::Select;
             ui.drag_start = None;
+            ui.dropped_tool = true;
             return;
         }
+        ui.dropped_tool = false;
+    }
+    // A right *click* (not a camera drag) in Select: equip something, or let go of the selection.
+    if buttons.just_released(MouseButton::Right) && drag.right_moved <= 4.0 && !over_ui && !ui.dropped_tool {
         let ids = ui.selected_pawns();
         let (Some(&first), Some(Hover { stand: t, .. })) = (ids.first(), hover) else {
             ui.select(None);

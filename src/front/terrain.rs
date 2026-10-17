@@ -11,7 +11,7 @@ use super::sim::Sim;
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
-use my_world::defs::BuildLook;
+use my_world::defs::{defs, BuildLook};
 use my_world::map::{Block, Map, Pos, Zone};
 
 const CHUNK: usize = 16;
@@ -37,14 +37,23 @@ enum Look3 {
 
 /// What's hidden: everything above `level` (layer view), and in columns
 /// over roofed rooms everything above `columns` (hidden roofs, `u8::MAX` = none).
+/// Also each room's themed kind (by room id: 0 = none, else index + 1 into
+/// `defs().rooms`), which colours its floor.
 #[derive(Clone, Copy)]
 struct Cut<'a> {
     level: usize,
     columns: &'a [u8],
+    kinds: &'a [u8],
 }
 
 impl Cut<'_> {
-    const NONE: Cut<'static> = Cut { level: usize::MAX, columns: &[] };
+    const NONE: Cut<'static> = Cut { level: usize::MAX, columns: &[], kinds: &[] };
+
+    /// The themed kind of the room cell `i` is in, if any.
+    fn kind(&self, m: &Map, i: usize) -> Option<usize> {
+        let r = *m.room.get(i)? as usize;
+        self.kinds.get(r).filter(|&&k| k > 0).map(|&k| k as usize - 1)
+    }
 
     /// Highest level shown in column (x, y).
     fn top(&self, m: &Map, x: usize, y: usize) -> usize {
@@ -157,7 +166,8 @@ fn update_chunks(
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let m = &sim.world.map;
-    let cut = Cut { level: ui.top_level(m), columns: &ui.roof_cut };
+    let kinds: Vec<u8> = sim.world.room_stats.iter().map(|r| r.kind.map_or(0, |k| k as u8 + 1)).collect();
+    let cut = Cut { level: ui.top_level(m), columns: &ui.roof_cut, kinds: &kinds };
     let chunks = chunks.into_inner();
     let (cols, rows) = (m.w.div_ceil(CHUNK), m.h.div_ceil(CHUNK));
     if chunks.generation != sim.generation || chunks.cols != cols || chunks.rows != rows {
@@ -252,6 +262,7 @@ fn signature(m: &Map, cx: usize, cy: usize, cut: Cut) -> u64 {
                     mix(m.floor[i] as u8);
                     mix(zone_code(m.zone[i]));
                     mix(m.room.get(i).is_some_and(|&r| r != 0) as u8);
+                    mix(cut.kind(m, i).map_or(0, |k| k as u8 + 1));
                     mix(blood_level(m, i));
                 }
             }
@@ -319,8 +330,17 @@ impl MeshBuf {
     }
 }
 
+/// Floor colour of a themed room: its tint, in tiles if it's laid out so.
+fn themed_floor(kind: usize, x: usize, y: usize, z: usize) -> Rgb {
+    let room = &defs().rooms[kind];
+    let (r, g, b) = room.floor;
+    let jitter = hash(x as i32, y as i32 + 57 * z as i32, 13);
+    let tile = if room.checker && (x + y) % 2 == 1 { 0.86 } else { 1.0 };
+    Rgb(r, g, b).shade((0.94 + jitter * 0.08) * tile)
+}
+
 /// Colour of the top of solid ground, from what's on it (zones, floors, blood).
-fn ground_color(m: &Map, solid: Pos, look: Look3) -> Rgb {
+fn ground_color(m: &Map, solid: Pos, look: Look3, cut: Cut) -> Rgb {
     let (x, y, z) = solid;
     let (xi, yi) = (x as i32, y as i32);
     let above = m.above(solid).map(|a| m.idx(a));
@@ -332,6 +352,8 @@ fn ground_color(m: &Map, solid: Pos, look: Look3) -> Rgb {
         Rgb(0.62, 0.56, 0.4).shade(0.9 + jitter * 0.12)
     } else if zone.crop().is_some() {
         SOIL.shade(0.92 + jitter * 0.12)
+    } else if let Some(k) = above.and_then(|a| cut.kind(m, a)) {
+        themed_floor(k, x, y, z + 1)
     } else if indoors {
         FLOOR.shade(0.94 + jitter * 0.1)
     } else if matches!(look, Look3::Rock | Look3::Ore) {
@@ -355,10 +377,13 @@ fn ground_color(m: &Map, solid: Pos, look: Look3) -> Rgb {
     c
 }
 
-/// Built floors: planks with whatever zone or blood is on them.
-fn floor_color(m: &Map, p: Pos) -> Rgb {
+/// Built floors: planks (or a themed room's floor) with whatever zone or blood is on them.
+fn floor_color(m: &Map, p: Pos, cut: Cut) -> Rgb {
     let i = m.idx(p);
-    let mut c = FLOOR.shade(0.9 + hash(p.0 as i32, p.1 as i32 + 57 * p.2 as i32, 9) * 0.1);
+    let mut c = match cut.kind(m, i) {
+        Some(k) => themed_floor(k, p.0, p.1, p.2),
+        None => FLOOR.shade(0.9 + hash(p.0 as i32, p.1 as i32 + 57 * p.2 as i32, 9) * 0.1),
+    };
     match m.zone[i] {
         Zone::Stockpile(_) => c = c.mix(STOCKPILE, 0.22),
         Zone::Grow(_) => c = c.mix(SOIL, 0.5),
@@ -390,7 +415,7 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: Cut) -> (Mesh, Option<Mesh>) 
                 if look == Look3::Open {
                     if floor_shown(p) {
                         let top = lo + FLOOR_T;
-                        b.flat(fx, fz, top, Vec3::Y, floor_color(m, p));
+                        b.flat(fx, fz, top, Vec3::Y, floor_color(m, p, cut));
                         b.flat(fx, fz, lo, Vec3::NEG_Y, FLOOR.shade(0.6));
                         for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
                             let edge = m.at(xi + dx, yi + dz, zi).is_none_or(|q| !floor_shown(q));
@@ -428,14 +453,14 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: Cut) -> (Mesh, Option<Mesh>) 
                 }
                 let tone = 0.95 + hash(xi, yi + 31 * zi, 31) * 0.08;
                 let (top, face) = match look {
-                    Look3::Rock => (ground_color(m, p, look), ROCK_FACE.shade(tone)),
+                    Look3::Rock => (ground_color(m, p, look, cut), ROCK_FACE.shade(tone)),
                     // Rust-coloured streaks in the rock.
                     Look3::Ore => {
                         let fleck = hash(xi * 3 + 1, yi * 5 + zi, 41);
-                        (ground_color(m, p, look).mix(ORE, 0.35), ROCK_FACE.mix(ORE, 0.45 + 0.3 * fleck).shade(tone))
+                        (ground_color(m, p, look, cut).mix(ORE, 0.35), ROCK_FACE.mix(ORE, 0.45 + 0.3 * fleck).shade(tone))
                     }
                     Look3::Wall => (WALL_TOP, WALL_FACE),
-                    _ => (ground_color(m, p, look), SOIL.shade(0.78 * tone)),
+                    _ => (ground_color(m, p, look, cut), SOIL.shade(0.78 * tone)),
                 };
                 if !above.is_some_and(|a| a.opaque()) {
                     b.flat(fx, fz, hi, Vec3::Y, if sliced { top.shade(0.55) } else { top });

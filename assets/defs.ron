@@ -610,6 +610,24 @@
             ]),
         ),
         (
+            id: "dresser",
+            cover: Some(Medium),
+            name: "Dresser",
+            category: "Furniture",
+            cost: ("planks", 5),
+            work_time: 3.0,
+            passable: false,
+            beauty: 1.0,
+            look: Parts([
+                (shape: Cube, color: "wood", at: (0.0, 0.33, 0.12), size: (0.8, 0.62, 0.5)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.66, 0.12), size: (0.84, 0.04, 0.54)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.46, -0.14), size: (0.72, 0.16, 0.02)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.24, -0.14), size: (0.72, 0.16, 0.02)),
+                (shape: Cube, color: "steel", at: (0.0, 0.46, -0.16), size: (0.12, 0.03, 0.02)),
+                (shape: Cube, color: "steel", at: (0.0, 0.24, -0.16), size: (0.12, 0.03, 0.02)),
+            ]),
+        ),
+        (
             id: "torch",
             cover: Some(None),
             name: "Torch",
@@ -923,6 +941,48 @@
                 ]]),
             ],
         ),
+    ],
+
+    // Themed rooms. An enclosed, roofed room that has everything in `needs`
+    // is that kind of room: each need is one of `things` (buildables), at
+    // least `min` of them and at most `max` if given. Doors and windows count
+    // for the rooms they border. A room can't be a kind while it has a bed or
+    // workbench that kind doesn't ask for. The first kind that fits wins.
+    // `floor` tints the room's floor (sRGB); `checker` lays it out in tiles.
+    rooms: [
+        (id: "bedroom", name: "Bedroom", floor: (0.62, 0.36, 0.34), about: "A room of one's own.",
+            needs: [
+                (things: ["bed"], min: 1, max: Some(1)),
+                (things: ["window"], min: 1),
+                (things: ["door", "stone_door"], min: 1),
+                (things: ["dresser"], min: 1),
+            ]),
+        (id: "barracks", name: "Barracks", floor: (0.5, 0.52, 0.38), about: "Beds for many, and a table to sit at.",
+            needs: [
+                (things: ["bed"], min: 1),
+                (things: ["table"], min: 1),
+                (things: ["chair"], min: 3),
+                (things: ["window"], min: 2),
+            ]),
+        (id: "kitchen", name: "Kitchen", floor: (0.86, 0.82, 0.7), checker: true, about: "Where meals are cooked and stored.",
+            needs: [
+                (things: ["stove"], min: 1),
+                (things: ["window"], min: 1),
+                (things: ["shelf"], min: 2),
+                (things: ["chair"], min: 1),
+                (things: ["table"], min: 1),
+            ]),
+        (id: "smithy", name: "Smithy", floor: (0.5, 0.48, 0.47), checker: true, about: "Hot work: smelting and forging.",
+            needs: [
+                (things: ["smithy"], min: 1),
+                (things: ["smelter"], min: 1),
+                (things: ["window"], min: 2),
+            ]),
+        (id: "workshop", name: "Workshop", floor: (0.5, 0.36, 0.22), about: "Sawing, cutting stone and crafting.",
+            needs: [
+                (things: ["sawbench", "stonecutter", "crafting_bench"], min: 1),
+                (things: ["table"], min: 1),
+            ]),
     ],
 
     // Made at workbenches from `ingredients` (delivered by haulers) into

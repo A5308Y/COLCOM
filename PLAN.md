@@ -420,6 +420,18 @@ real play.
     triangle is drawn from below as well, darker.
   - The battle arena's house has a roof.
 
+- Themed rooms (2026-10-17, like ONI / Mind over Magic): `defs.ron` `rooms` lists kinds (bedroom,
+  barracks, kitchen, smithy, workshop) with `needs` (any of some buildables, `min`, optional `max`) and a
+  floor look (`floor` tint, `checker` tiles). `update_room_stats` counts every buildable in a room and in
+  its walls (`RoomStats::counts`); the first kind whose needs are met, with no bed or workbench it doesn't
+  ask for (`RoomDef::allows`), is the room's `kind`. Drawn: the floor tint in the terrain (room kinds are
+  passed to the mesher through `terrain::Cut::kinds`) and the name over the room (`overlay.rs`). Guided:
+  the cell inspector lists every theme with a checklist (closest first, the closest unfinished open), and
+  the Rooms window (HUD) shows what each needs and lists the colony's rooms to jump to. New furniture:
+  dresser. Themes have no effect on mood or work yet.
+- Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
+  its name follows the cursor.
+
 - Graves (2026-10-17, `src/graves.rs`): a `grave` buildable (`special: Grave`, 2 wood for the marker,
   8 s of digging) goes only on natural soil. Haulers carry a dead colonist to an empty grave
   (`Job::Bury`, corpse reserved in `res_patient`, grave in `res_target`); the colonist stays in the pawn

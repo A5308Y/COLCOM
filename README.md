@@ -72,6 +72,10 @@ furniture, light, production), searchable, with costs (red if the colony is shor
   doors. Each room has a quality from its size, the beauty of its furniture, doors and windows, its
   cleanliness (blood, clutter) and light; sleeping and eating in better rooms lifts mood more. Click a
   cell in a room to see the breakdown.
+- **Themed rooms:** a room with everything a theme needs becomes a bedroom, barracks, kitchen, smithy or
+  workshop: its floor changes and its name shows over it. The **Rooms** button lists what each needs;
+  clicking a cell in a room shows a checklist towards every theme (themes are defined in
+  `assets/defs.ron`).
 - **Food:** raw food can cause food poisoning and upsets colonists; cooked meals are better and fill
   more. Colonists pick meals first.
 

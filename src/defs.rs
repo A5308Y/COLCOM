@@ -516,6 +516,70 @@ pub struct Defs {
     pub plants: Vec<PlantDef>,
     #[serde(default)]
     pub recipes: Vec<RecipeDef>,
+    /// Themed rooms, in the order they're tried (see `rooms.rs`).
+    #[serde(default)]
+    pub rooms: Vec<RoomDef>,
+}
+
+/// A kind of themed room: what it needs, and how its floor looks.
+#[derive(Debug, Deserialize)]
+pub struct RoomDef {
+    pub id: String,
+    pub name: String,
+    /// One line on what it's for.
+    pub about: String,
+    pub needs: Vec<RoomNeed>,
+    /// Floor tint (sRGB).
+    pub floor: (f32, f32, f32),
+    /// Floor laid out in tiles.
+    #[serde(default)]
+    pub checker: bool,
+}
+
+/// At least `min` (and at most `max`) of any of `things` in a themed room.
+#[derive(Debug, Deserialize)]
+pub struct RoomNeed {
+    pub things: Vec<Ref<BuildId>>,
+    pub min: u32,
+    #[serde(default)]
+    pub max: Option<u32>,
+}
+
+impl RoomNeed {
+    pub fn includes(&self, kind: BuildId) -> bool {
+        self.things.iter().any(|t| t.id() == kind)
+    }
+
+    /// What it asks for: "Shelf", "Sawing bench, Stonecutter or Crafting bench".
+    pub fn things_text(&self) -> String {
+        let names: Vec<&str> = self.things.iter().map(|t| t.id().name()).collect();
+        match names.len() {
+            1 => names[0].to_string(),
+            n => format!("{} or {}", names[..n - 1].join(", "), names[n - 1]),
+        }
+    }
+
+    /// How many: "exactly 1", "2 or more", "1 to 3".
+    pub fn count_text(&self) -> String {
+        match self.max {
+            Some(m) if m == self.min => format!("exactly {}", m),
+            Some(m) => format!("{} to {}", self.min, m),
+            None => format!("{} or more", self.min),
+        }
+    }
+
+    pub fn met(&self, have: u32) -> bool {
+        have >= self.min && self.max.is_none_or(|m| have <= m)
+    }
+}
+
+impl RoomDef {
+    /// Whether a bed or workbench of `kind` may be in this kind of room.
+    pub fn allows(&self, kind: BuildId) -> bool {
+        let d = kind.def();
+        let restricted = d.special == Special::Bed || !d.recipes.is_empty();
+        !restricted || self.needs.iter().any(|n| n.includes(kind))
+    }
 }
 
 impl Defs {
@@ -570,6 +634,19 @@ impl Defs {
             };
             r.bench.id = Some(BuildId(b as u16));
             self.builds[b].recipes.push(RecipeId(k as u16));
+        }
+        for room in self.rooms.iter_mut() {
+            for need in room.needs.iter_mut() {
+                for t in need.things.iter_mut() {
+                    let Some(b) = self.builds.iter().position(|b| b.id == t.name) else {
+                        return Err(format!("room {}: no buildable \"{}\"", room.id, t.name));
+                    };
+                    t.id = Some(BuildId(b as u16));
+                }
+                if need.things.is_empty() || need.max.is_some_and(|m| m < need.min.max(1)) {
+                    return Err(format!("room {}: each need wants things, and max at least min (and 1)", room.id));
+                }
+            }
         }
         Ok(())
     }

@@ -252,6 +252,7 @@ mod tests {
         assert_eq!(roof_meshes(&mut app), 1, "and drawn again");
 
         // The inspector's bills, stockpile, grow zone and bed panels.
+        let room_z = z;
         let (bench, stock, grow, bed, grave) = {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             let w = &mut sim.world;
@@ -287,6 +288,12 @@ mod tests {
             let k = w.pawn_index(dead).unwrap();
             w.pawns[k].dead = true;
             w.pawns[k].buried = true;
+            // The roof test's room, made a workshop.
+            for (dx, id) in [(-1, "sawbench"), (1, "table")] {
+                let i = w.map.idx(((room.0 as i32 + dx) as usize, room.1, room_z));
+                w.map.feature[i] = my_world::map::Feature::built(id);
+            }
+            w.map.rooms_dirty = true;
             (bench, (cx - 4, cy + 2, z), grow, bed, grave)
         };
         // The build menu docks on the left, collapses, and filters.
@@ -302,7 +309,15 @@ mod tests {
         app.world_mut().resource_mut::<front::UiState>().show_build = true;
         app.world_mut().resource_mut::<front::UiState>().show_resources = true;
         app.world_mut().resource_mut::<front::UiState>().show_menu = true;
-        for t in [bench, stock, grow, bed, grave] {
+        app.world_mut().resource_mut::<front::UiState>().show_rooms = true;
+        for _ in 0..40 {
+            app.update();
+        }
+        {
+            let w = &app.world().resource::<front::Sim>().world;
+            assert_eq!(w.room_at((room.0, room.1, room_z)).and_then(|r| r.kind_name()), Some("Workshop"));
+        }
+        for t in [bench, stock, grow, bed, grave, (room.0, room.1, room_z)] {
             app.world_mut().resource_mut::<front::UiState>().selected = Some(front::Selection::Tile(t));
             for _ in 0..5 {
                 app.update();
