@@ -22,15 +22,15 @@ pub struct Sim {
 }
 
 impl Sim {
-    /// A game in `scenario`, or a new colony if there's none (or no such scenario).
+    /// A game in `scenario`, or the last saved game, or a new colony.
     pub fn new(mut scenario: Option<String>) -> Sim {
-        let world = start_world(&mut scenario);
+        let world = start_world(&mut scenario, true);
         Sim { world, speed: 1, paused: false, generation: 0, scenario, acc: 0.0 }
     }
 
-    /// The scenario's world again, or a new colony.
+    /// A new game: the scenario again, or a new colony on a new map (never the save).
     pub fn fresh_world(&mut self) -> SimWorld {
-        start_world(&mut self.scenario)
+        start_world(&mut self.scenario, false)
     }
 
     pub fn replace(&mut self, world: SimWorld) {
@@ -61,9 +61,10 @@ pub fn seed() -> u64 {
         .unwrap_or(42)
 }
 
-/// The world of `scenario`, or a new colony. An unknown scenario is
-/// reported (with the ones there are) and forgotten.
-fn start_world(scenario: &mut Option<String>) -> SimWorld {
+/// The world of `scenario`, or (`resume`, when the game starts) the last
+/// saved game, or a new colony. An unknown scenario is reported (with the
+/// ones there are) and forgotten.
+fn start_world(scenario: &mut Option<String>, resume: bool) -> SimWorld {
     if let Some(name) = scenario.as_deref() {
         if let Some(w) = scenarios::build(name) {
             return w;
@@ -74,7 +75,7 @@ fn start_world(scenario: &mut Option<String>) -> SimWorld {
     }
     // Carry on from the last game, unless asked for a new one (`--new`).
     // Tests always start fresh, whatever saves lie around.
-    let fresh = cfg!(test) || std::env::args().any(|a| a == "--new");
+    let fresh = !resume || cfg!(test) || std::env::args().any(|a| a == "--new");
     if !fresh {
         match super::input::read_newest_save() {
             Ok(Some((mut w, which))) => {
