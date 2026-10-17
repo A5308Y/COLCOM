@@ -510,7 +510,8 @@ impl World {
 
     pub(crate) fn update_health(&mut self, p: &mut Pawn, dt: f32) {
         let lying = p.lying();
-        let in_bed = lying && self.in_bed(p);
+        // A sleeping spot heals no better than lying anywhere.
+        let in_bed = lying && self.map.feature[self.map.idx(p.pos)].structure().is_some_and(|d| d.proper_bed());
         // A hospital bed heals faster.
         let care = if in_bed { self.room_effects(p.pos).map_or(1.0, |(_, e)| e.heal) } else { 1.0 };
         let ctx = TickCtx { in_bed, resting: lying, fed: !p.is_colonist() || p.hunger > 0.0, care };
@@ -1344,6 +1345,21 @@ mod tests {
         w.map.recompute_rooms();
         w.mark_roofs();
         assert_eq!(roof_blueprints(&w, Z + 1), inner, "no roof over the pit");
+    }
+
+    #[test]
+    fn sleeping_spots_cost_nothing_and_count_as_beds() {
+        let mut w = test_world(16, 16);
+        let id = colonist(&mut w, (2, 2, Z));
+        assert!(w.alerts().iter().any(|a| a.0.starts_with("Need beds")));
+        let spot = BuildId::named("sleeping_spot");
+        assert!(spot.def().free());
+        assert!(w.apply_order((8, 8, Z), Order::Build(spot)));
+        run(&mut w, 20.0);
+        let i = w.map.idx((8, 8, Z));
+        assert_eq!(w.map.feature[i], Feature::built("sleeping_spot"), "built without materials");
+        assert_eq!(w.find_bed(w.pawn(id).unwrap()), Some((8, 8, Z)), "a place to sleep");
+        assert!(!w.alerts().iter().any(|a| a.0.starts_with("Need beds")));
     }
 
     #[test]

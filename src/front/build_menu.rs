@@ -221,7 +221,7 @@ fn entry(ui: &mut egui::Ui, e: &ToolEntry, st: &mut UiState, totals: &[u32], hit
     let cost = def.map(|d| {
         let c = &d.cost;
         let have = totals[c.item.index()];
-        let text = format!("{} {}", c.count, c.item.name().to_lowercase());
+        let text = if d.free() { "free".to_string() } else { format!("{} {}", c.count, c.item.name().to_lowercase()) };
         (text, have >= c.count)
     });
     let visuals = ui.visuals().clone();
@@ -292,13 +292,17 @@ fn details(ui: &mut egui::Ui, e: &ToolEntry, def: Option<&BuildDef>, totals: &[u
         return;
     };
     let c = &d.cost;
-    ui.label(format!(
-        "{} {} ({} in the colony), {:.0} s of work",
-        c.count,
-        c.item.name().to_lowercase(),
-        totals[c.item.index()],
-        d.work_time
-    ));
+    if d.free() {
+        ui.label(format!("Free, {:.0} s of work", d.work_time));
+    } else {
+        ui.label(format!(
+            "{} {} ({} in the colony), {:.0} s of work",
+            c.count,
+            c.item.name().to_lowercase(),
+            totals[c.item.index()],
+            d.work_time
+        ));
+    }
     let mut facts: Vec<String> = Vec::new();
     match d.special {
         Special::Floor => {
@@ -307,6 +311,9 @@ fn details(ui: &mut egui::Ui, e: &ToolEntry, def: Option<&BuildDef>, totals: &[u
         }
         Special::Roof => facts.push("Put over enclosed rooms by themselves".into()),
         Special::Stairs => facts.push("Connects this level with the one above; walk on from the low end".into()),
+        Special::Bed if d.comfort < 1.0 => {
+            facts.push("A place on the ground to sleep and recover: better than nothing, worse than a bed".into())
+        }
         Special::Bed => facts.push("Colonists sleep and recover here".into()),
         Special::Door => facts.push("Lets colonists through but closes the room".into()),
         Special::Table => facts.push("Colonists eat here, sitting on a chair beside it".into()),

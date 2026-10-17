@@ -362,6 +362,10 @@ pub struct BuildDef {
     /// it or sleeps in it.
     #[serde(default)]
     pub medical: bool,
+    /// How good a bed it is, 0..1: a sleeping spot on the ground is less
+    /// restful than a bed (1), heals like lying anywhere, and counts for no room theme.
+    #[serde(default = "full")]
+    pub comfort: f32,
     /// Dropped when it is removed; half the cost if not given.
     #[serde(default)]
     drops: Option<Amount>,
@@ -386,6 +390,16 @@ pub struct BuildDef {
 
 impl BuildDef {
     /// What removing it gives back.
+    /// Costs nothing to build.
+    pub fn free(&self) -> bool {
+        self.cost.count == 0
+    }
+
+    /// A proper bed (not a sleeping spot).
+    pub fn proper_bed(&self) -> bool {
+        self.special == Special::Bed && self.comfort >= 1.0
+    }
+
     pub fn drops(&self) -> (ItemId, u32) {
         match &self.drops {
             Some(a) => (a.item, a.count),
@@ -453,6 +467,10 @@ pub struct Stage {
 }
 
 fn one_each() -> f32 {
+    1.0
+}
+
+fn full() -> f32 {
     1.0
 }
 
@@ -661,7 +679,8 @@ impl RoomDef {
     /// Whether a bed or workbench of `kind` may be in this kind of room.
     pub fn allows(&self, kind: BuildId) -> bool {
         let d = kind.def();
-        let restricted = d.special == Special::Bed || !d.recipes.is_empty();
+        // Sleeping spots go anywhere.
+        let restricted = d.proper_bed() || !d.recipes.is_empty();
         !restricted || self.needs.iter().any(|n| n.includes(kind))
     }
 }
@@ -802,8 +821,11 @@ impl Defs {
             if d.medical && d.special != Special::Bed {
                 return Err(format!("{}: only beds can be medical", d.id));
             }
-            if d.cost.count == 0 || d.work_time <= 0.0 {
-                return Err(format!("{}: needs a cost and work time", d.id));
+            if d.work_time <= 0.0 {
+                return Err(format!("{}: needs a work time", d.id));
+            }
+            if !(d.comfort > 0.0 && d.comfort <= 1.0) {
+                return Err(format!("{}: comfort must be above 0 and up to 1", d.id));
             }
             parts(&d.id, d.parts())?;
             if let BuildLook::Opening { width, bottom, top, .. } = d.look {

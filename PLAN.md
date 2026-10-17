@@ -470,6 +470,11 @@ real play.
   colonist keeps working that cell (`Pawn::forced`, "(prioritized)" in their status) until `forced_job`
   finds nothing more there. `find_work`'s map scan is now `World::scan` (`Scan`), shared with the menu.
   Right-click on gear now opens the menu too (Equip is one of its choices).
+- Sleeping spots (2026-10-17): `sleeping_spot`, a free (`cost` count 0 is now allowed, `BuildDef::free`) bed
+  with `comfort: 0.5` (beds default to 1). Rest per second is 0.8 + 0.4 × comfort (ground 0.8, spot 1.0, bed
+  1.2); sleeping there gives `Memory::SleptOnSpot` (-2, vs -5 on the ground) instead of a bedroom memory; it
+  heals like lying anywhere (`in_bed` for healing needs `proper_bed`), but tending counts it as a bed and
+  rescuers carry the downed to it. It counts towards no room theme and spoils none (`RoomDef::allows`).
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 

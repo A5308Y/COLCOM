@@ -94,7 +94,8 @@ furniture, light, production), searchable, with costs (red if the colony is shor
 - **Work priorities and skills:** each colonist has 1–4 (or off) per work type. Skills make work faster
   and improve with practice.
 - **Needs:** hunger (eat food from the ground or stockpiles) and rest (sleep in a bed, or on the ground if
-  there isn't one). Going hungry leads to malnutrition.
+  there isn't one). A **sleeping spot** (Furniture, free) is a place on the ground to sleep: better than
+  nothing, worse than a bed, and rescuers bring the wounded there. Going hungry leads to malnutrition.
 - **Health (RimWorld-style):** the body is 29 parts (organs inside the torso, brain inside the skull, limbs
   down to hands and feet), each with its own hit points. Hits land on outer parts and can go deeper. Wounds
   (cuts, gunshots, bruises) bleed and hurt; destroyed parts are gone for good. Untended wounds don't heal and

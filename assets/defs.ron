@@ -433,6 +433,23 @@
             ]),
         ),
         (
+            id: "sleeping_spot",
+            cover: Some(None),
+            category: "Furniture",
+            name: "Sleeping spot",
+            cost: ("wood", 0),
+            work_time: 1.0,
+            passable: true,
+            special: Bed,
+            comfort: 0.5,
+            look: Parts([
+                (shape: Cube, color: "wheat", at: (0.0, 0.02, 0.0), size: (0.8, 0.04, 0.9)),
+                (shape: Cube, color: "cloth", at: (0.0, 0.05, -0.3), size: (0.5, 0.05, 0.2)),
+                // "owner" is the colour of whoever sleeps here.
+                (shape: Cube, color: "owner", at: (0.0, 0.05, 0.12), size: (0.72, 0.03, 0.5)),
+            ]),
+        ),
+        (
             id: "floor",
             category: "Structure",
             name: "Floor",

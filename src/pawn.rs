@@ -227,6 +227,7 @@ pub enum Memory {
     LostBattle,
     /// Slept in a themed room (index into `defs().rooms`) that has a thought.
     RoomThought(u8),
+    SleptOnSpot,
 }
 
 impl Memory {
@@ -256,6 +257,7 @@ impl Memory {
             Memory::WonBattle => "Won a battle",
             Memory::LostBattle => "Lost a battle",
             Memory::RoomThought(k) => room_thought(k).map_or("Slept in a themed room", |t| t.0.as_str()),
+            Memory::SleptOnSpot => "Slept on a sleeping spot",
         }
     }
 
@@ -273,6 +275,7 @@ impl Memory {
             Memory::WonBattle => 6.0,
             Memory::LostBattle => -10.0,
             Memory::RoomThought(k) => room_thought(k).map_or(0.0, |t| t.1),
+            Memory::SleptOnSpot => -2.0,
         }
     }
 

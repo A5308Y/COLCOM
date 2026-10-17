@@ -321,6 +321,24 @@ mod tests {
     }
 
     #[test]
+    fn a_sleeping_spot_beats_the_ground_but_not_a_bed() {
+        let mut w = room_world();
+        place(&mut w, (6, 6, Z), "bed");
+        place(&mut w, (8, 8, Z), "sleeping_spot");
+        let (bed, _) = sleep_in(&mut w, (6, 6, Z));
+        let (spot, memories) = sleep_in(&mut w, (8, 8, Z));
+        assert!(spot < bed && spot > 0.8, "{} vs {}", spot, bed);
+        assert_eq!(memories, vec![Memory::SleptOnSpot]);
+        assert!(Memory::SleptOnSpot.mood() > Memory::SleptOnGround.mood());
+        // It spoils no theme: a workshop with a sleeping spot in it.
+        let mut w = room_world();
+        place(&mut w, (6, 6, Z), "sawbench");
+        place(&mut w, (8, 8, Z), "table");
+        place(&mut w, (6, 8, Z), "sleeping_spot");
+        assert_eq!(w.room_at((7, 7, Z)).unwrap().kind_name(), Some("Workshop"));
+    }
+
+    #[test]
     fn workbenches_in_a_themed_room_get_its_effects() {
         let mut w = room_world();
         place(&mut w, (6, 6, Z), "sawbench");

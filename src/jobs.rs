@@ -648,10 +648,13 @@ impl World {
         }
         p.sleeping = true;
         let themed = bed.and_then(|b| self.room_effects(b));
-        let rate = if bed.is_some() { 1.2 * themed.map_or(1.0, |(_, e)| e.rest) } else { 0.8 };
+        // From 0.8 on the ground to 1.2 in a proper bed (a sleeping spot is in between).
+        let comfort = bed.and_then(|b| self.map.feature[self.map.idx(b)].structure()).map_or(0.0, |d| d.comfort);
+        let rate = (0.8 + 0.4 * comfort) * themed.map_or(1.0, |(_, e)| e.rest);
         p.rest = (p.rest + rate * dt).min(100.0);
         if p.rest >= 100.0 {
             let memory = match bed {
+                Some(_) if comfort < 1.0 => Memory::SleptOnSpot,
                 Some(b) if self.map.roofed(b) => Memory::Bedroom(self.room_at(b).map_or(1, |r| r.tier())),
                 Some(_) => Memory::SleptOutside,
                 None => Memory::SleptOnGround,
