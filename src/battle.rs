@@ -191,6 +191,24 @@ pub struct Parley {
     pub demand: Vec<Stack>,
 }
 
+/// Split `raiders` into squads, largest first. Small raids come mostly as
+/// lone raiders (3: usually 1-1-1), bigger ones in pairs (4: usually 2-2,
+/// else 2-1-1), and a full squad of `RAIDER_SQUAD` shows up at about 10.
+pub fn raider_squads(raiders: usize, rng: &mut crate::rng::Rng) -> Vec<usize> {
+    if raiders == 0 {
+        return Vec::new();
+    }
+    // Average squad size: about 1 up to 3 raiders, rising to 3.4 at 10.
+    let n = raiders as f32;
+    let size = if n <= 3.0 { 1.1 } else { (1.7 + (n - 4.0) * 0.283).min(3.5) };
+    // That many squads, rounded up or down at random (the nearer, the likelier).
+    let count = n / size;
+    let mut groups = count.floor() as usize + rng.chance(count.fract()) as usize;
+    groups = groups.clamp(raiders.div_ceil(RAIDER_SQUAD), raiders);
+    // As even as possible.
+    (0..groups).map(|k| raiders / groups + (k < raiders % groups) as usize).collect()
+}
+
 impl Parley {
     pub fn raiders(&self) -> usize {
         self.squads.iter().sum()
@@ -339,13 +357,7 @@ impl World {
 
     /// Raiders arrive and make their demand; the colony stops until answered.
     pub(crate) fn open_parley(&mut self, raiders: usize, entry: Pos) {
-        let mut squads = Vec::new();
-        let mut left = raiders;
-        while left > 0 {
-            let n = left.min(RAIDER_SQUAD);
-            squads.push(n);
-            left -= n;
-        }
+        let squads = raider_squads(raiders, &mut self.rng);
         let demand = self.goods_worth(raiders as f32 * DEMAND_PER_RAIDER);
         self.parley = Some(Parley { squads, entry, demand });
     }
@@ -1437,8 +1449,9 @@ mod tests {
         w.open_parley(3, (19, 10, Z));
         assert!(w.parley.as_ref().unwrap().demand.is_empty());
         assert!(!w.pay_tribute(), "nothing to pay with");
+        let squads = w.parley.as_ref().unwrap().squads.len();
         w.refuse_tribute();
-        assert_eq!(battle(&w).units.iter().filter(|u| u.side == Faction::Raider).count(), 1);
+        assert_eq!(battle(&w).units.iter().filter(|u| u.side == Faction::Raider).count(), squads, "a unit per squad");
         assert_eq!(raiders(&w).len(), 3);
     }
 
@@ -1593,6 +1606,32 @@ mod tests {
         let raider = battle(&w).units.iter().position(|u| u.side == Faction::Raider).unwrap();
         assert!(w.battle_order(BattleOrder::Attack(raider)).is_err(), "AP left, but 25 cells is out of range");
         assert!(w.battle_order(BattleOrder::Activate(raider)).is_err());
+    }
+
+    #[test]
+    fn small_raids_come_in_small_squads() {
+        let mut rng = crate::rng::Rng::new(5);
+        // How often each split comes up, out of 1000 raids of `n`.
+        let mut splits = |n: usize| {
+            let mut seen: std::collections::HashMap<Vec<usize>, u32> = Default::default();
+            for _ in 0..1000 {
+                let s = raider_squads(n, &mut rng);
+                assert_eq!(s.iter().sum::<usize>(), n);
+                assert!(s.iter().all(|&g| (1..=RAIDER_SQUAD).contains(&g)));
+                assert!(s.windows(2).all(|w| w[0] >= w[1]), "largest first");
+                *seen.entry(s).or_default() += 1;
+            }
+            seen
+        };
+        assert_eq!(splits(1).get(&vec![1]), Some(&1000));
+        let three = splits(3);
+        assert!(three[&vec![1, 1, 1]] > 600, "mostly alone: {:?}", three);
+        let four = splits(4);
+        assert!(four[&vec![2, 2]] > 500 && four[&vec![2, 1, 1]] > 200, "pairs: {:?}", four);
+        assert!(!four.contains_key(&vec![4]), "no full squad");
+        let mut full = |n| splits(n).iter().filter(|(s, _)| s[0] == RAIDER_SQUAD).map(|(_, &c)| c).sum::<u32>();
+        assert!(full(6) < 100, "rarely a full squad at 6");
+        assert!(full(10) > 900, "usually one at 10");
     }
 
     #[test]
