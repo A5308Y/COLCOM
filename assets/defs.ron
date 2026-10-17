@@ -812,7 +812,7 @@
             id: "berry_bush",
             cover: Some(Light),
             name: "Berry bush",
-            passable: false,
+            passable: true,
             wild: Some((density: 0.025, regrow: 0.4)),
             harvest: (desig: Some(Forage), work: Growing, skill: Growing, time: 1.5, yields: ("raw_food", 4), verb: "foraging"),
             stages: [
