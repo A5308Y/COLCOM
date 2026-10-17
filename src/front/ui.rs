@@ -495,7 +495,7 @@ fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
 }
 
 /// Inside size of a card in the colonist list: the same for everyone, whatever they're doing.
-const CARD: egui::Vec2 = egui::vec2(150.0, 46.0);
+const CARD: egui::Vec2 = egui::vec2(150.0, 62.0);
 const CARD_MARGIN: f32 = 6.0;
 /// Width the colonist list takes from the left edge (after the build menu);
 /// the inspectors open to its right.
@@ -535,6 +535,9 @@ fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, left: f32) {
                         // One line, cut short with an ellipsis; the whole text on hover.
                         let status = p.status();
                         ui.add(egui::Label::new(RichText::new(&status).small()).truncate()).on_hover_text(&status);
+                        let weapon = p.weapon.map_or("Unarmed", |w| w.name());
+                        let color = if p.weapon.is_some() { Color32::from_rgb(230, 205, 140) } else { Color32::GRAY };
+                        ui.add(egui::Label::new(RichText::new(weapon).small().color(color)).truncate());
                     })
                     .response
                     .interact(egui::Sense::click());
@@ -572,6 +575,7 @@ fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32,
         st.inspector_tab = InspectorTab::Overview;
     }
     let mut actions = Vec::new();
+    let mut world_actions: Vec<Action> = Vec::new();
     let title = if p.is_colonist() { p.name.clone() } else { format!("{} (raider)", p.name) };
     let mut open = true;
     egui::Window::new(RichText::new(title).strong())
@@ -602,12 +606,18 @@ fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32,
             ui.separator();
             match st.inspector_tab {
                 InspectorTab::Overview => overview_tab(ui, p),
-                InspectorTab::Health => health_tab(ui, p),
+                InspectorTab::Health => {
+                    health_tab(ui, p);
+                    operations(ui, &sim.world, p, &mut world_actions);
+                }
                 InspectorTab::Combat => actions = squads_ui::combat_tab(ui, &sim.world, p),
             }
         });
     if !actions.is_empty() {
         squads_ui::apply(&mut sim.world, id, actions);
+    }
+    for act in world_actions {
+        act(&mut sim.world);
     }
     if !open {
         st.select(None);
@@ -644,6 +654,58 @@ fn overview_tab(ui: &mut egui::Ui, p: &Pawn) {
     }
     if p.is_colonist() && !p.dead {
         ui.label(RichText::new("Right-click a weapon or clothes: equip   Combat tab: squad and loadout").small().weak());
+    }
+}
+
+/// Lost limbs and the operations ordered for them: fit a prosthetic, or call it off.
+fn operations(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn, actions: &mut Vec<Action>) {
+    let lost = p.health.lost_parts();
+    if !p.is_colonist() || p.dead || lost.is_empty() {
+        return;
+    }
+    ui.separator();
+    ui.label(RichText::new("Operations").strong());
+    let id = p.id;
+    let tables = (0..w.map.len()).any(|i| w.medical_bed(w.map.pos(i)));
+    for part in lost {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(format!("{}: lost", part.name()));
+            match p.operations.iter().find(|o| o.part == part) {
+                Some(op) => {
+                    let have = w.map.count_items(op.item);
+                    ui.label(RichText::new(format!("fitting a {}", op.item.name().to_lowercase())).color(Color32::from_rgb(150, 190, 230)));
+                    if ui.small_button("Cancel").clicked() {
+                        actions.push(Box::new(move |w| {
+                            w.cancel_operation(id, part);
+                        }));
+                    }
+                    let waiting = if have == 0 {
+                        Some(format!("Waiting for a {} (a smithy makes them).", op.item.name().to_lowercase()))
+                    } else if !tables {
+                        Some("Waiting for an operating table.".to_string())
+                    } else {
+                        None
+                    };
+                    if let Some(text) = waiting {
+                        ui.label(RichText::new(text).small().color(Color32::from_rgb(240, 210, 90)));
+                    }
+                }
+                None => {
+                    for item in SimWorld::prosthetics_for(part) {
+                        let have = w.map.count_items(item);
+                        let hint = format!(
+                            "A doctor fits it at an operating table ({} in the colony). It can go wrong: better doctors and a surgery room help.",
+                            have
+                        );
+                        if ui.small_button(format!("Fit {}", item.name().to_lowercase())).on_hover_text(hint).clicked() {
+                            actions.push(Box::new(move |w| {
+                                w.order_operation(id, part, item);
+                            }));
+                        }
+                    }
+                }
+            }
+        });
     }
 }
 

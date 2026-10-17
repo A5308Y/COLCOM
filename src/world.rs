@@ -628,7 +628,9 @@ impl World {
             self.start_job(p, Job::Sleep { bed });
             return;
         }
-        // A lost limb, a prosthetic for it and a doctor: onto the operating table.
+        // An ordered operation, its prosthetic and a doctor: onto the operating table.
+        let lost = p.health.lost_parts();
+        p.operations.retain(|o| lost.contains(&o.part));
         if let Some(table) = self.operation_table(p) {
             self.start_job(p, Job::Operation { table });
             return;

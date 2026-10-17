@@ -373,6 +373,9 @@ pub struct Pawn {
     /// Lying down awake (as a patient).
     pub resting: bool,
     pub memories: Vec<MemoryEntry>,
+    /// Operations the player ordered for them (see `surgery.rs`).
+    #[serde(default)]
+    pub operations: Vec<crate::surgery::Operation>,
     pub bed: Option<Pos>,
     pub color: [f32; 3],
     pub think_timer: f32,
@@ -433,6 +436,7 @@ impl Pawn {
             sleeping: false,
             resting: false,
             memories: Vec::new(),
+            operations: Vec::new(),
             bed: None,
             color: [rng.range_f32(0.5, 1.0), rng.range_f32(0.45, 0.95), rng.range_f32(0.45, 0.95)],
             think_timer: rng.f32(),

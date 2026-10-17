@@ -106,8 +106,9 @@ furniture, light, production), searchable, with costs (red if the colony is shor
   patients. Wounded or sick colonists go to bed on their own. A lone doctor tends their own wounds. Click a
   colonist and open the **Health** tab for the full picture. Patients take hospital beds first; nobody
   claims a hospital bed or sleeps on an operating table.
-- **Prosthetics:** a smithy makes prosthetic arms and legs. A colonist who lost a limb lies down on an
-  operating table when one fits and a doctor is free; the doctor fits it (75% as good as the real thing).
+- **Prosthetics:** a smithy makes prosthetic arms and legs. Order one in a colonist's **Health** tab
+  (*Fit prosthetic leg* next to the lost limb; *Cancel* calls it off). Once it's made, an operating table is
+  free and another colonist can doctor, the patient lies down and a doctor fits it (75% as good as the real thing).
   It can go wrong (more likely with a poor doctor, less in a surgery room): the prosthetic is ruined and
   the patient wounded.
 - **Terrain:** the world is a 3D grid of soil, rock and water, 16 levels deep, with rolling hills, lakes and

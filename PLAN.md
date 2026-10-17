@@ -458,6 +458,10 @@ real play.
   `Job::Operation` (lies on the table, gives up after 90 s without a doctor); doctors take `Job::Surgery`
   after rescues, tending and feeding. Success: `surgery_chance` (0.55 + 0.025 per Medicine level, times
   hands and sight, plus the room's `surgery`, 5–98%); failure ruins the prosthetic and cuts the part above.
+- Operations are ordered by the player (2026-10-17): `Pawn::operations` (`surgery::Operation { part, item }`),
+  `World::order_operation` / `cancel_operation`, shown in the Health tab with Fit/Cancel buttons and what
+  it's waiting for. Only ordered operations happen; an order ends when tried (fitted or botched) or when
+  the part is no longer lost. Colonist cards show the equipped weapon (or "Unarmed").
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 

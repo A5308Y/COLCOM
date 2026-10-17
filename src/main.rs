@@ -125,9 +125,45 @@ mod tests {
         for _ in 0..5 {
             app.update();
         }
+        // The Health tab's operations: a lost leg, then a prosthetic ordered for it.
+        let healthy = {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            let w = &mut sim.world;
+            let i = w.pawn_index(ids[2]).unwrap();
+            let healthy = w.pawns[i].health.clone();
+            let mut rng = my_world::rng::Rng::new(1);
+            let h = &mut w.pawns[i].health;
+            while !h.is_missing(my_world::health::Part::LeftLeg) {
+                h.injure(my_world::health::Part::LeftLeg, 50.0, my_world::health::DamageKind::Cut, &mut rng);
+            }
+            h.recompute();
+            healthy
+        };
         {
             let mut ui = app.world_mut().resource_mut::<front::UiState>();
             ui.show_squads = false;
+            ui.select(Some(front::Selection::Pawn(ids[2])));
+            ui.inspector_tab = front::InspectorTab::Health;
+        }
+        for ordered in [false, true] {
+            if ordered {
+                let leg = my_world::defs::ItemId::named("prosthetic_leg");
+                let mut sim = app.world_mut().resource_mut::<front::Sim>();
+                assert!(sim.world.order_operation(ids[2], my_world::health::Part::LeftLeg, leg));
+            }
+            for _ in 0..3 {
+                app.update();
+            }
+        }
+        {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            let i = sim.world.pawn_index(ids[2]).unwrap();
+            sim.world.pawns[i].health = healthy;
+            sim.world.pawns[i].health.recompute();
+            sim.world.pawns[i].operations.clear();
+        }
+        {
+            let mut ui = app.world_mut().resource_mut::<front::UiState>();
             ui.select(None);
             ui.inspector_tab = front::InspectorTab::Overview;
         }

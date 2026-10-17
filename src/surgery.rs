@@ -3,11 +3,14 @@
 //! are care beds: patients look for them first, and nobody claims them as
 //! their own bed. An operating table isn't slept in at all.
 //!
-//! Prosthetics: a colonist who has lost a limb, with a prosthetic that fits
-//! lying around and a doctor free, lies down on an operating table
+//! Prosthetics: the player orders an operation for a colonist who has lost
+//! a limb (`World::order_operation`: which part, which prosthetic). Once
+//! such a prosthetic is lying around, an operating table is free and
+//! another colonist can doctor, the patient lies down on the table
 //! (`Job::Operation`). A doctor fetches the prosthetic and fits it
 //! (`Job::Surgery`); it may go wrong, ruining the prosthetic and wounding
-//! the patient. Better doctors and surgery rooms make that rarer.
+//! the patient. Better doctors and surgery rooms make that rarer. Either
+//! way the order is done.
 
 use crate::defs::{Defs, ItemId};
 use crate::health::{DamageKind, Part};
@@ -15,6 +18,14 @@ use crate::map::Pos;
 use crate::pathing::{bfs, DistField};
 use crate::pawn::{Job, Pawn, Skill};
 use crate::world::{Step, World};
+use serde::{Deserialize, Serialize};
+
+/// An operation ordered for a colonist: fit a prosthetic of kind `item` to lost `part`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub struct Operation {
+    pub part: Part,
+    pub item: ItemId,
+}
 
 /// Seconds of work for an operation at speed 1.0.
 const SURGERY_TIME: f32 = 10.0;
@@ -59,10 +70,41 @@ impl World {
             .or_else(|| cells().find(|&b| free(b)))
     }
 
-    /// Whether a prosthetic of `kind` could replace one of `p`'s lost parts (which, if so).
+    /// Prosthetics that could replace `part`.
+    pub fn prosthetics_for(part: Part) -> impl Iterator<Item = ItemId> {
+        ItemId::all().filter(move |k| k.def().prosthetic.as_ref().is_some_and(|d| d.fits.contains(&part)))
+    }
+
+    /// Order fitting a prosthetic of kind `item` to colonist `id`'s lost
+    /// `part`. Returns false if it doesn't fit, the part isn't lost, or it's
+    /// already ordered.
+    pub fn order_operation(&mut self, id: u32, part: Part, item: ItemId) -> bool {
+        let Some(i) = self.pawn_index(id) else { return false };
+        let p = &mut self.pawns[i];
+        let fits = Self::prosthetics_for(part).any(|k| k == item);
+        if !p.is_colonist() || p.dead || !fits || !p.health.lost_parts().contains(&part) {
+            return false;
+        }
+        if p.operations.iter().any(|o| o.part == part) {
+            return false;
+        }
+        p.operations.push(Operation { part, item });
+        true
+    }
+
+    /// Call off the operation on colonist `id`'s `part`. Returns false if none was ordered.
+    pub fn cancel_operation(&mut self, id: u32, part: Part) -> bool {
+        let Some(i) = self.pawn_index(id) else { return false };
+        let ops = &mut self.pawns[i].operations;
+        let before = ops.len();
+        ops.retain(|o| o.part != part);
+        ops.len() < before
+    }
+
+    /// The part `p` has an operation ordered for with a prosthetic of `kind`, if still lost.
     fn fits(p: &Pawn, kind: ItemId) -> Option<Part> {
-        let fits = &kind.def().prosthetic.as_ref()?.fits;
-        p.health.lost_parts().into_iter().find(|part| fits.contains(part))
+        let lost = p.health.lost_parts();
+        p.operations.iter().find(|o| o.item == kind && lost.contains(&o.part)).map(|o| o.part)
     }
 
     /// The nearest free prosthetic that fits `p`, by distance field `df`.
@@ -73,10 +115,10 @@ impl World {
             .map(|&i| self.map.pos(i))
     }
 
-    /// A free operating table for colonist `p` to lie on for a prosthetic,
-    /// if one fits a part they lost and there's a doctor to fit it.
+    /// A free operating table for colonist `p` to lie on for an ordered
+    /// operation, if its prosthetic is around and there's a doctor to fit it.
     pub(crate) fn operation_table(&self, p: &Pawn) -> Option<Pos> {
-        if !p.is_colonist() || p.health.lost_parts().is_empty() || !self.other_doctor_available(p.id) {
+        if !p.is_colonist() || p.operations.is_empty() || !self.other_doctor_available(p.id) {
             return None;
         }
         let df = bfs(&self.map, p.pos);
@@ -87,7 +129,8 @@ impl World {
     /// The patient: lie on the table and wait for the doctor.
     pub(crate) fn run_operation(&mut self, p: &mut Pawn, table: Pos, dt: f32) {
         let waiting_for = self.pawns.iter().any(|o| matches!(o.job, Some(Job::Surgery { patient, .. }) if patient == p.id));
-        if !self.medical_bed(table) || p.health.lost_parts().is_empty() {
+        let ordered = p.operations.iter().any(|o| Self::fits(p, o.item).is_some());
+        if !self.medical_bed(table) || !ordered {
             self.end_job(p);
             return;
         }
@@ -189,6 +232,8 @@ impl World {
             self.end_job(p);
             return;
         };
+        // Done, one way or the other.
+        o.operations.retain(|op| op.part != part);
         let msg = if ok {
             let efficiency = item.kind.def().prosthetic.as_ref().map_or(1.0, |d| d.efficiency);
             o.health.fit_prosthetic(part, efficiency);
@@ -277,7 +322,16 @@ mod tests {
         lose_leg(&mut w, patient);
         let walk = w.pawn(patient).unwrap().health.caps.moving;
         put(&mut w, (10, 10, Z), "operating_table");
-        w.map.drop_item((8, 3, Z), Stack { kind: ItemId::named("prosthetic_leg"), count: 1 });
+        let leg = ItemId::named("prosthetic_leg");
+        w.map.drop_item((8, 3, Z), Stack { kind: leg, count: 1 });
+        // Nothing happens until the player orders it.
+        run(&mut w, 10.0);
+        assert!(w.pawn(patient).unwrap().health.is_missing(Part::LeftLeg));
+        assert!(!matches!(w.pawn(patient).unwrap().job, Some(Job::Operation { .. })));
+        assert!(!w.order_operation(patient, Part::LeftArm, leg), "not lost");
+        assert!(!w.order_operation(patient, Part::LeftLeg, ItemId::named("prosthetic_arm")), "doesn't fit");
+        assert!(w.order_operation(patient, Part::LeftLeg, leg));
+        assert!(!w.order_operation(patient, Part::LeftLeg, leg), "already ordered");
         let mut done = false;
         for _ in 0..120 {
             run(&mut w, 1.0);
@@ -285,9 +339,12 @@ mod tests {
                 done = true;
                 break;
             }
-            // A botched try ruins the prosthetic: give them another.
-            if w.map.count_items(ItemId::named("prosthetic_leg")) == 0 && w.pawns.iter().all(|p| p.carrying.is_none()) {
-                w.map.drop_item((8, 3, Z), Stack { kind: ItemId::named("prosthetic_leg"), count: 1 });
+            // A botched try ruins the prosthetic and ends the order: try again.
+            if w.pawn(patient).unwrap().operations.is_empty() && w.pawns.iter().all(|p| p.carrying.is_none()) {
+                if w.map.count_items(leg) == 0 {
+                    w.map.drop_item((8, 3, Z), Stack { kind: leg, count: 1 });
+                }
+                w.order_operation(patient, Part::LeftLeg, leg);
             }
         }
         assert!(done, "fitted in time");
@@ -295,6 +352,20 @@ mod tests {
         assert!(p.health.caps.moving > walk + 0.2, "walks better: {} vs {}", p.health.caps.moving, walk);
         assert!(p.health.efficiency(Part::LeftFoot) > 0.5, "the foot comes with it");
         assert!(w.log.iter().any(|l| l.contains("fitted")), "{:?}", w.log);
+        assert!(p.operations.is_empty(), "the order is done");
+    }
+
+    #[test]
+    fn operations_can_be_called_off() {
+        let mut w = test_world();
+        let id = colonist(&mut w, (3, 3, Z));
+        lose_leg(&mut w, id);
+        let leg = ItemId::named("prosthetic_leg");
+        assert!(w.order_operation(id, Part::LeftLeg, leg));
+        assert!(w.cancel_operation(id, Part::LeftLeg));
+        assert!(!w.cancel_operation(id, Part::LeftLeg), "nothing left to call off");
+        assert!(w.pawn(id).unwrap().operations.is_empty());
+        assert_eq!(World::prosthetics_for(Part::LeftFoot).collect::<Vec<_>>(), vec![leg]);
     }
 
     #[test]
