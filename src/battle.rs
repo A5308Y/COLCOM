@@ -12,7 +12,7 @@
 
 use crate::defs::ItemId;
 use crate::map::{adjacent, Pos, Stack, Zone};
-use crate::pathing::bfs;
+use crate::pathing::{bfs, bfs_avoiding, DistField};
 use crate::pawn::{Faction, Memory, Pawn, Role, Skill};
 use crate::world::{Effect, Step, World};
 use serde::{Deserialize, Serialize};
@@ -734,16 +734,39 @@ impl World {
         if self.pawns.iter().any(|p| p.active() && p.pos == to && !unit.members.contains(&p.id)) {
             return Err("someone is standing there".into());
         }
-        let d = bfs(&self.map, lead.pos).dist(to).ok_or("can't get there")?;
+        let d = self.battle_field(unit.side, lead.pos).dist(to).ok_or("can't get there")?;
         if d == 0 {
             return Err("already there".into());
         }
         Ok(d * AP_MOVE)
     }
 
+    /// Walking distances from `from` for side `side` in the battle: nobody
+    /// gets past an enemy by walking through their cell.
+    pub fn battle_field(&self, side: Faction, from: Pos) -> DistField {
+        let blocked: std::collections::HashSet<usize> = self
+            .battle
+            .iter()
+            .flat_map(|b| b.units.iter().filter(|u| u.side != side).flat_map(|u| u.members.iter()))
+            .filter_map(|&id| self.pawn(id))
+            .filter(|p| p.active())
+            .map(|p| self.map.idx(p.pos))
+            .collect();
+        bfs_avoiding(&self.map, from, |i| blocked.contains(&i))
+    }
+
     /// The whole unit sets off for `to` together.
     fn start_move(&mut self, u: usize, to: Pos) {
-        let members = self.battle.as_ref().unwrap().units[u].members.clone();
+        let unit = &self.battle.as_ref().unwrap().units[u];
+        let (members, side) = (unit.members.clone(), unit.side);
+        // Plan each walk around the enemy (`go_to` keeps a path planned for the same goal).
+        for &id in &members {
+            let Some(i) = self.pawn_index(id) else { continue };
+            let path = self.battle_field(side, self.pawns[i].pos).path_to(to);
+            let p = &mut self.pawns[i];
+            p.path = path;
+            p.path_goal = Some(to);
+        }
         let moving = members.iter().map(|&pawn| Mover { pawn, goal: to }).collect();
         let b = self.battle.as_mut().unwrap();
         b.moving = moving;
@@ -1644,6 +1667,46 @@ mod tests {
         let mut full = |n| splits(n).iter().filter(|(s, _)| s[0] == RAIDER_SQUAD).map(|(_, &c)| c).sum::<u32>();
         assert!(full(6) < 100, "rarely a full squad at 6");
         assert!(full(10) > 900, "usually one at 10");
+    }
+
+    #[test]
+    fn enemies_block_the_way() {
+        let mut w = world(30, 20, 3);
+        // A dead-end corridor along y = 10 between walls, x 4..=16, closed at x = 17.
+        let mut walls = vec![(17, 10)];
+        for x in 4..=17 {
+            walls.extend([(x, 9), (x, 11)]);
+        }
+        for (x, y) in walls {
+            let i = w.map.idx((x, y, Z));
+            w.map.set_feature(i, crate::map::Feature::built("wall"));
+        }
+        let id = colonist(&mut w, (5, 10, Z));
+        fight(&mut w, 1, (29, 10, Z));
+        // The raider stands in the middle of it.
+        let r = raiders(&w)[0];
+        let ri = w.pawn_index(r).unwrap();
+        w.pawns[ri].pos = (10, 10, Z);
+        (w.pawns[ri].x, w.pawns[ri].y) = (10.0, 10.0);
+        let u = battle(&w).unit_of(id).unwrap();
+        w.battle_order(BattleOrder::Activate(u)).unwrap();
+        assert_eq!(w.move_cost(u, (8, 10, Z)), Ok(3 * AP_MOVE), "up to them is fine");
+        assert!(w.move_cost(u, (11, 10, Z)).is_err(), "not past them");
+        // A way round (gaps in the wall either side of them): the long way it is.
+        for x in [9, 11] {
+            let i = w.map.idx((x, 11, Z));
+            w.map.set_feature(i, crate::map::Feature::None);
+        }
+        let cost = w.move_cost(u, (11, 10, Z)).unwrap();
+        assert_eq!(cost, 10 * AP_MOVE, "round them, not the 6 steps through");
+        w.battle_order(BattleOrder::Move((11, 10, Z))).unwrap();
+        let mut through = false;
+        for _ in 0..(10.0 / TICK) as usize {
+            w.tick(TICK);
+            through |= w.pawn(id).unwrap().pos == (10, 10, Z);
+        }
+        assert!(!through, "never stepped into the raider's cell");
+        assert_eq!(w.pawn(id).unwrap().pos, (11, 10, Z), "got there");
     }
 
     #[test]

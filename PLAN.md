@@ -486,6 +486,10 @@ real play.
   (stairs only if `Map::stairs_fit`, else `stairs_facing`), and moved furniture keeps its own. `BuildDef::front`
   is the way a model faces (chair: 2, +y): the placement arrow shows it, and seats beside a table are drawn
   facing it (`props::seat_dir`, display only). Blueprint ghosts are drawn turned.
+- Enemies block the way in battles (2026-10-17): `World::battle_field(side, from)` is a BFS
+  (`pathing::bfs_avoiding`) that can't enter cells where an active enemy of `side` stands. Move costs, the AI
+  (`best_spot`, `flee_order`), the reach area and path preview use it, and `start_move` plans each walker's
+  path with it (so `go_to` follows it). Allies can still pass each other.
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 

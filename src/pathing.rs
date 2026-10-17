@@ -18,6 +18,12 @@ pub struct DistField {
 /// BFS over walkable cells. The start cell is always included, even if it
 /// can't be stood on (e.g. a pawn where a wall was just built).
 pub fn bfs(map: &Map, start: Pos) -> DistField {
+    bfs_avoiding(map, start, |_| false)
+}
+
+/// BFS that doesn't go through cells (by index) that are `blocked`, such as
+/// enemies' cells in a battle.
+pub fn bfs_avoiding(map: &Map, start: Pos, blocked: impl Fn(usize) -> bool) -> DistField {
     let n = map.len();
     let mut steps = vec![0u32; n];
     let mut parent = vec![0u32; n];
@@ -32,7 +38,7 @@ pub fn bfs(map: &Map, start: Pos) -> DistField {
         let d = steps[pi];
         for nb in map.walk_neighbors(p) {
             let ni = map.idx(nb);
-            if steps[ni] == 0 {
+            if steps[ni] == 0 && !blocked(ni) {
                 steps[ni] = d + 1;
                 parent[ni] = pi as u32;
                 order.push(ni);

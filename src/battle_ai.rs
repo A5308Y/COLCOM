@@ -135,7 +135,7 @@ impl World {
         let unit = &b.units[u];
         let Some(lead) = unit.members.first().and_then(|&id| self.pawn(id)) else { return BattleOrder::End };
         let edge = self.nearest_edge(lead.pos);
-        let df = bfs(&self.map, lead.pos);
+        let df = self.battle_field(unit.side, lead.pos);
         // `path_to` runs from the goal back to the start.
         let path = df.path_to(edge);
         let steps = (unit.ap / AP_MOVE) as usize;
@@ -159,7 +159,7 @@ impl World {
         let near = enemies.iter().min_by_key(|e| e.pos.0.abs_diff(lead.pos.0) + e.pos.1.abs_diff(lead.pos.1))?;
         // Walking distance to the nearest enemy, so units go round obstacles.
         let to_enemy = bfs(&self.map, near.pos);
-        let df = bfs(&self.map, lead.pos);
+        let df = self.battle_field(unit.side, lead.pos);
         let taken = |c: Pos| self.pawns.iter().any(|p| p.active() && p.pos == c && !unit.members.contains(&p.id));
         let mut best: Option<(Pos, f32)> = None;
         for &i in &df.order {

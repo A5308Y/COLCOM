@@ -131,7 +131,8 @@ furniture, light, production), searchable, with costs (red if the colony is shor
 - **Storyteller:** raids that grow with colony wealth and age, wanderers who join, cargo pods (sometimes
   medicine), flu outbreaks and crop blight.
 - **Combat:** drafted colonists shoot raiders in range with line of sight. Wounds land on body parts (see
-  Health). Hurt raiders flee, and downed ones die if left lying.
+  Health). Hurt raiders flee, and downed ones die if left lying. In battles nobody walks through an
+  enemy: units go round them, or can't get past.
 
 ## Code layout
 

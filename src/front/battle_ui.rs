@@ -18,7 +18,6 @@ use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::battle::{Battle, BattleOrder, Cover, Unit, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MAX, AP_MOVE, BROKEN, PINNED};
 use my_world::map::{Pos, DIRS};
-use my_world::pathing::bfs;
 use my_world::pawn::Faction;
 use my_world::world::World as SimWorld;
 use std::f32::consts::FRAC_PI_2;
@@ -238,8 +237,9 @@ struct BattleGizmos;
 /// full run), outlined in bold.
 #[derive(Resource, Default)]
 struct ReachArea {
-    /// What it was worked out for: unit, leader's cell, AP, view (level, roofs).
-    key: Option<(usize, Pos, i32, usize, u64)>,
+    /// What it was worked out for: unit, leader's cell, AP, view (level,
+    /// roofs), and where everyone else stands (enemies block the way).
+    key: Option<(usize, Pos, i32, usize, u64, Vec<Pos>)>,
     cost: HashMap<Pos, i32>,
     /// Columns (x, y) in each zone, for outlines.
     attack_cols: HashSet<(usize, usize)>,
@@ -274,22 +274,24 @@ fn update_reach(mut commands: Commands, sim: Res<Sim>, ui: Res<UiState>, mut are
         // A deployed squad can't move: no area.
         let u = my_unit(b).filter(|&u| !b.busy() && !b.units[u].deployed)?;
         let lead = w.pawn(*b.units[u].members.first()?)?;
-        Some((u, lead.pos, b.units[u].ap, ui.top_level(m), ui.roof_version))
+        let others: Vec<Pos> = w.pawns.iter().filter(|p| p.active() && !b.units[u].members.contains(&p.id)).map(|p| p.pos).collect();
+        Some((u, lead.pos, b.units[u].ap, ui.top_level(m), ui.roof_version, others))
     });
     if key == area.key {
         return;
     }
-    area.key = key;
+    area.key = key.clone();
     area.cost.clear();
     area.attack_cols.clear();
     area.all_cols.clear();
-    let Some((_, from, ap, _, _)) = key else {
+    let Some((u, from, ap, _, _, _)) = key else {
         if let Some(e) = area.entity {
             commands.entity(e).insert(Visibility::Hidden);
         }
         return;
     };
-    let df = bfs(m, from);
+    let side = w.battle.as_ref().map_or(Faction::Colony, |b| b.units[u].side);
+    let df = w.battle_field(side, from);
     let (mut pos, mut col, mut idx) = (Vec::new(), Vec::new(), Vec::new());
     for &i in &df.order {
         let Some(d) = df.dist_i(i) else { continue };
@@ -557,7 +559,7 @@ fn draw_battle(sim: Res<Sim>, ui: Res<UiState>, area: Res<ReachArea>, mut gizmos
         let flat = Quat::from_rotation_x(FRAC_PI_2);
         bold.circle(Isometry3d::new(at, flat), 0.36, color);
         gizmos.circle(Isometry3d::new(at, flat), 0.2, color);
-        let df = bfs(m, lead.pos);
+        let df = w.battle_field(unit.side, lead.pos);
         let mut points = vec![Vec3::new(lead.x + 0.5, floor_y(m, lead.pos) + 0.08, lead.y + 0.5)];
         points.extend(df.path_to(h.stand).iter().rev().map(|&c| Vec3::new(c.0 as f32 + 0.5, floor_y(m, c) + 0.08, c.1 as f32 + 0.5)));
         bold.linestrip(points, Color::WHITE.with_alpha(0.9));
