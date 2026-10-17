@@ -229,7 +229,7 @@ impl World {
                     return work(Task::Harvest(kind));
                 }
             }
-            Feature::Blueprint { kind, delivered } => {
+            Feature::Blueprint { kind, delivered, .. } => {
                 let def = kind.def();
                 if def.work != wt {
                     return None;
@@ -335,7 +335,7 @@ impl World {
             Task::Deconstruct => d == Some(Desig::Deconstruct) && m.deconstructable(target),
             Task::Sow(_) => plantable(m, i),
             Task::Construct => match f {
-                Feature::Blueprint { kind, delivered } => match self.move_to(target) {
+                Feature::Blueprint { kind, delivered, .. } => match self.move_to(target) {
                     Some(mv) => mv.lifted,
                     None => delivered >= kind.def().cost.count,
                 },
@@ -457,7 +457,7 @@ impl World {
                         return;
                     }
                 }
-                if let Feature::Blueprint { kind, .. } = f {
+                if let Feature::Blueprint { kind, dir, .. } = f {
                     match kind.def().special {
                         Special::Floor => {
                             self.map.set_feature(i, Feature::None);
@@ -469,7 +469,8 @@ impl World {
                             self.map.set_roof(i, true);
                         }
                         Special::Stairs => {
-                            let dir = self.map.stairs_facing(target);
+                            // The way the player turned them, if they can climb that way.
+                            let dir = if self.map.stairs_fit(target, dir) { dir } else { self.map.stairs_facing(target) };
                             self.map.set_feature(i, Feature::Built { kind, dir });
                             // A roof overhead would block the way up: take it down.
                             if let Some(a) = self.map.above(target) {
@@ -482,7 +483,7 @@ impl World {
                                 }
                             }
                         }
-                        _ => self.map.set_feature(i, Feature::Built { kind, dir: 0 }),
+                        _ => self.map.set_feature(i, Feature::Built { kind, dir }),
                     }
                     self.sound("built", Some(target));
                     // Shove anything lying here out of the way.
@@ -570,7 +571,7 @@ impl World {
     fn delivery_need(&self, at: Pos) -> Option<Stack> {
         match self.map.feature[self.map.idx(at)] {
             Feature::Blueprint { .. } if self.move_to(at).is_some() => None,
-            Feature::Blueprint { kind, delivered } => {
+            Feature::Blueprint { kind, delivered, .. } => {
                 let cost = &kind.def().cost;
                 (delivered < cost.count).then(|| Stack { kind: cost.item, count: cost.count - delivered })
             }
@@ -651,9 +652,9 @@ impl World {
             Step::Arrived => {
                 let used = if deliver {
                     match self.map.feature[ti] {
-                        Feature::Blueprint { kind, delivered } => {
+                        Feature::Blueprint { kind, delivered, dir } => {
                             let used = self.delivery_need(to).map_or(0, |n| n.count).min(carry.count);
-                            self.map.feature[ti] = Feature::Blueprint { kind, delivered: delivered + used };
+                            self.map.feature[ti] = Feature::Blueprint { kind, delivered: delivered + used, dir };
                             used
                         }
                         _ => self.stock_bench(to, carry),

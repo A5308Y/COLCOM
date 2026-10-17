@@ -24,6 +24,9 @@ pub struct Move {
     pub bills: Vec<Bill>,
     /// Who slept in it, if it's a bed.
     pub owner: Option<u32>,
+    /// How it was turned where it stood.
+    #[serde(default)]
+    pub dir: u8,
 }
 
 impl World {
@@ -50,10 +53,15 @@ impl World {
         }
         let Some(kind) = self.movable(from) else { return false };
         let (fi, ti) = (self.map.idx(from), self.map.idx(to));
+        // It keeps facing the way it did (turn the blueprint to change that).
+        let dir = match self.map.feature[fi] {
+            Feature::Built { dir, .. } => dir,
+            _ => 0,
+        };
         // Moving it instead of taking it down.
         self.map.desig[fi] = None;
-        self.map.feature[ti] = Feature::Blueprint { kind, delivered: 0 };
-        self.moves.push(Move { kind, from, to, lifted: false, bills: Vec::new(), owner: None });
+        self.map.feature[ti] = Feature::Blueprint { kind, delivered: 0, dir };
+        self.moves.push(Move { kind, from, to, lifted: false, bills: Vec::new(), owner: None, dir });
         true
     }
 
@@ -72,7 +80,7 @@ impl World {
         let Some(k) = self.moves.iter().position(|m| m.from == p || m.to == p) else { return false };
         let mv = self.moves.remove(k);
         let ti = self.map.idx(mv.to);
-        if self.map.feature[ti] == (Feature::Blueprint { kind: mv.kind, delivered: 0 }) {
+        if self.is_move_blueprint(&mv) {
             self.map.feature[ti] = Feature::None;
         }
         if mv.lifted {
@@ -124,10 +132,20 @@ impl World {
         true
     }
 
-    /// Put moved furniture down at `at`, with its bills and owner.
+    /// The blueprint for move `mv` is still where it's going.
+    fn is_move_blueprint(&self, mv: &Move) -> bool {
+        matches!(self.map.feature[self.map.idx(mv.to)], Feature::Blueprint { kind, delivered: 0, .. } if kind == mv.kind)
+    }
+
+    /// Put moved furniture down at `at`, with its bills and owner, turned
+    /// as its blueprint is (or as it was, back where it came from).
     fn set_down(&mut self, mv: &Move, at: Pos) {
         let i = self.map.idx(at);
-        self.map.set_feature(i, Feature::Built { kind: mv.kind, dir: 0 });
+        let dir = match self.map.feature[i] {
+            Feature::Blueprint { dir, .. } => dir,
+            _ => mv.dir,
+        };
+        self.map.set_feature(i, Feature::Built { kind: mv.kind, dir });
         // Shove anything lying here out of the way.
         if let Some(s) = self.map.items[i].take() {
             self.map.drop_item(at, s);
@@ -153,7 +171,7 @@ impl World {
             .moves
             .iter()
             .filter(|mv| {
-                let blueprint = self.map.feature[self.map.idx(mv.to)] == Feature::Blueprint { kind: mv.kind, delivered: 0 };
+                let blueprint = self.is_move_blueprint(mv);
                 let there = mv.lifted || self.map.feature[self.map.idx(mv.from)].structure_id() == Some(mv.kind);
                 !blueprint || !there
             })
@@ -233,6 +251,19 @@ mod tests {
         let bills = &w.bench_at(to).expect("a bench there").bills;
         assert_eq!(bills.len(), 1);
         assert_eq!(bills[0].recipe, cook);
+    }
+
+    #[test]
+    fn moved_furniture_keeps_facing_its_way() {
+        let mut w = test_world();
+        w.spawn_colonist((2, 2, Z));
+        let (from, to) = ((5, 5, Z), (10, 9, Z));
+        let i = w.map.idx(from);
+        w.map.set_feature(i, Feature::Built { kind: BuildId::named("chair"), dir: 2 });
+        assert!(w.order_move(from, to));
+        assert!(matches!(feature(&w, to), Feature::Blueprint { dir: 2, .. }));
+        run(&mut w, 60.0);
+        assert_eq!(feature(&w, to), Feature::Built { kind: BuildId::named("chair"), dir: 2 });
     }
 
     #[test]

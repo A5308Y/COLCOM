@@ -358,6 +358,9 @@ fn current_hint(tool: Tool) -> String {
         Tool::Paint(Order::Build(kind)) if kind.def().is_block() => {
             format!("{}: left-drag a rectangle to wall it in (Shift fills it). Right-click to stop.", name)
         }
+        Tool::Paint(Order::Build(kind)) if kind.def().turnable() => {
+            format!("{}: left-drag to place blueprints; , and . turn them (the arrow). Right-click to stop.", name)
+        }
         Tool::Paint(Order::Build(_)) => format!("{}: left-drag to place blueprints. Right-click to stop.", name),
         Tool::Paint(_) => format!("{}: left-drag over an area. Right-click to stop.", name),
         Tool::Move(None) => "Move furniture: click the furniture to move. Right-click to stop.".into(),

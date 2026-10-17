@@ -115,7 +115,7 @@ pub fn draw(
                 }
             }
             // Roofs are many cheap cells: their counts would only clutter the view.
-            if let Feature::Blueprint { kind, delivered } = m.feature[i] {
+            if let Feature::Blueprint { kind, delivered, .. } = m.feature[i] {
                 if m.roof_blueprint(i) {
                     continue;
                 }

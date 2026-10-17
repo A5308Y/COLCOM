@@ -24,7 +24,7 @@ enum PropKey {
     /// is buried in yet. `links`: bit per
     /// direction (`DIRS`) with a neighbour that linked parts join up with.
     Built { kind: BuildId, dir: u8, owner: Option<u32>, open: bool, links: u8 },
-    Blueprint { kind: BuildId },
+    Blueprint { kind: BuildId, dir: u8 },
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -148,7 +148,7 @@ fn links(m: &Map, pos: Pos, kind: BuildId) -> u8 {
 }
 
 /// The world direction (index into `DIRS`) a model's direction `l` faces once turned by `dir`.
-fn turned(l: u8, dir: u8) -> u8 {
+pub fn turned(l: u8, dir: u8) -> u8 {
     let (lx, ly) = DIRS[l as usize % 4];
     let v = facing(dir) * Vec3::new(lx as f32, 0.0, ly as f32);
     let found = DIRS.iter().position(|&(x, y)| (x as f32 - v.x).abs() < 0.5 && (y as f32 - v.z).abs() < 0.5);
@@ -168,6 +168,21 @@ fn flicker_lights(time: Res<Time>, mut lights: Query<(&Flicker, &mut PointLight)
         let wave = (t * 9.0 + f.seed).sin() * 0.5 + (t * 23.0 + f.seed * 1.7).sin() * 0.3 + (t * 3.1 + f.seed).sin() * 0.2;
         light.intensity = f.base * (0.85 + 0.12 * wave);
     }
+}
+
+/// A seat beside a table faces it (if it doesn't face one already);
+/// otherwise it stays as it was placed. `front`: the way its model faces.
+pub fn seat_dir(m: &Map, pos: Pos, front: u8, dir: u8) -> u8 {
+    let table = |d: usize| {
+        let (dx, dy) = DIRS[d];
+        m.at(pos.0 as i32 + dx, pos.1 as i32 + dy, pos.2 as i32)
+            .is_some_and(|t| m.feature[m.idx(t)].is_special(Special::Table))
+    };
+    if table(turned(front, dir) as usize) {
+        return dir;
+    }
+    let Some(t) = (0..4).find(|&d| table(d)) else { return dir };
+    (0..4u8).find(|&d| turned(front, d) as usize == t).unwrap_or(dir)
 }
 
 /// Rotation that turns +x towards `DIRS[dir]`.
@@ -250,6 +265,8 @@ fn sync_props(
                     } else {
                         3
                     }
+                } else if def.special == Special::Seat {
+                    seat_dir(m, pos, def.front, dir)
                 } else {
                     dir
                 };
@@ -257,7 +274,7 @@ fn sync_props(
                 let links = if linked { links(m, pos, kind) } else { 0 };
                 PropKey::Built { kind, dir, owner, open, links }
             }),
-            Feature::Blueprint { kind, .. } => Some(PropKey::Blueprint { kind }),
+            Feature::Blueprint { kind, dir, .. } => Some(PropKey::Blueprint { kind, dir: if kind.def().turnable() { dir } else { 0 } }),
         };
         let have = props.features[i].map(|(k, _)| k);
         // A door swinging open.
@@ -409,9 +426,10 @@ fn spawn_feature(
             }
             e
         }
-        PropKey::Blueprint { kind } => match &kind.def().look {
+        PropKey::Blueprint { kind, dir } => match &kind.def().look {
             BuildLook::Parts(parts) => {
-                spawn_parts(commands, a, base, parts, Pose { ghost: true, ..default() }, &blanket)
+                let pose = Pose { ghost: true, dir, ..default() };
+                spawn_parts(commands, a, base.with_rotation(facing(dir)), parts, pose, &blanket)
             }
             BuildLook::Block | BuildLook::Opening { .. } => {
                 let block = Part {
@@ -437,4 +455,27 @@ fn spawn_item(commands: &mut Commands, a: &PropAssets, key: ItemKey, pos: Pos, l
         .with_rotation(Quat::from_rotation_y(hash(xi, yi, 24) * TAU))
         .with_scale(Vec3::splat(s));
     spawn_parts(commands, a, root, &key.kind.def().look, Pose::default(), &a.blanket_free)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use my_world::map::FLAT_Z as Z;
+
+    #[test]
+    fn chairs_face_their_table() {
+        let mut m = Map::flat(8, 8);
+        let front = defs().builds[BuildId::named("chair").index()].front;
+        let chair = (4, 4, Z);
+        assert_eq!(seat_dir(&m, chair, front, 1), 1, "no table: as placed");
+        let t = m.idx((3, 4, Z));
+        m.set_feature(t, Feature::built("table"));
+        let d = seat_dir(&m, chair, front, 1);
+        assert_eq!(DIRS[turned(front, d) as usize], (-1, 0), "towards the table");
+        // Facing one of two tables already: left as it is.
+        let t2 = m.idx((4, 5, Z));
+        m.set_feature(t2, Feature::built("table"));
+        let towards_second = (0..4).find(|&d| DIRS[turned(front, d) as usize] == (0, 1)).unwrap();
+        assert_eq!(seat_dir(&m, chair, front, towards_second), towards_second);
+    }
 }

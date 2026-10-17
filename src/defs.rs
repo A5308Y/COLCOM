@@ -374,6 +374,10 @@ pub struct BuildDef {
     /// Modelled spanning x; turned to run along the walls beside it.
     #[serde(default)]
     pub along_walls: bool,
+    /// The way its model faces (index into `map::DIRS`: 0 +x, 1 -x, 2 +y,
+    /// 3 -y): shown by the arrow while placing; seats face their table with it.
+    #[serde(default)]
+    pub front: u8,
     /// Lets daylight into rooms it borders (windows).
     #[serde(default)]
     pub daylight: bool,
@@ -405,6 +409,14 @@ impl BuildDef {
             Some(a) => (a.item, a.count),
             None => (self.cost.item, self.cost.count / 2),
         }
+    }
+
+    /// Can be turned while placing: modelled furniture and stairs, not
+    /// walls, doors or windows (which follow their walls), floors or roofs.
+    pub fn turnable(&self) -> bool {
+        matches!(self.look, BuildLook::Parts(_))
+            && !self.along_walls
+            && !matches!(self.special, Special::Floor | Special::Roof | Special::Grave)
     }
 
     /// Drawn as a solid block with the terrain (walls).
@@ -823,6 +835,9 @@ impl Defs {
             }
             if d.work_time <= 0.0 {
                 return Err(format!("{}: needs a work time", d.id));
+            }
+            if d.front > 3 {
+                return Err(format!("{}: front must be 0 to 3", d.id));
             }
             if !(d.comfort > 0.0 && d.comfort <= 1.0) {
                 return Err(format!("{}: comfort must be above 0 and up to 1", d.id));

@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::{egui_wants_any_keyboard_input, EguiWantsInput};
 use my_world::defs::{defs, BuildId, Special};
-use my_world::map::{Block, Desig, Map, Pos, Zone};
+use my_world::map::{Block, Desig, Map, Pos, Zone, DIRS};
 use my_world::pawn::Faction;
 use my_world::world::{Order, World as SimWorld};
 use std::f32::consts::FRAC_PI_2;
@@ -252,6 +252,8 @@ pub struct UiState {
     pub dropped_tool: bool,
     /// The right-click menu of jobs to prioritize, while it's open.
     pub job_menu: Option<JobMenu>,
+    /// How what's being placed is turned (index into `DIRS`; `,` and `.` turn it).
+    pub place_dir: u8,
     /// The build menu docked on the left.
     pub show_build: bool,
     /// Search text in the build menu.
@@ -295,6 +297,7 @@ impl UiState {
             roof_version: 0,
             dropped_tool: false,
             job_menu: None,
+            place_dir: 0,
             show_build: true,
             build_filter: String::new(),
             dock_width: 0.0,
@@ -667,6 +670,15 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
             }
         }
     }
+    // `,` and `.` turn what's being placed, a quarter turn each way.
+    if let Tool::Paint(Order::Build(kind)) = ui.tool {
+        if kind.def().turnable() {
+            let turn = [KeyCode::Comma, KeyCode::Period].iter().position(|&k| keys.just_pressed(k));
+            if let Some(t) = turn {
+                ui.place_dir = turn_dir(ui.place_dir, t == 1);
+            }
+        }
+    }
     if shift && keys.just_pressed(KeyCode::KeyR) {
         ui.hide_roofs = !ui.hide_roofs;
     }
@@ -769,7 +781,7 @@ fn mouse(
             if buttons.just_released(MouseButton::Left) {
                 if let (Some(a), Some(h)) = (ui.drag_start, hover) {
                     let b = order_target(&sim.world, h, order);
-                    if paint_box(&mut sim.world, a, b, order, hollow(order, shift)) > 0 {
+                    if paint_box(&mut sim.world, a, b, order, hollow(order, shift), ui.place_dir) > 0 {
                         sounds.play("ui_place", None);
                     }
                 }
@@ -846,8 +858,18 @@ fn hollow(order: Order, shift: bool) -> bool {
     matches!(order, Order::Build(kind) if kind.def().is_block()) && !shift
 }
 
-/// Apply `order` over the rectangle from `a` to `b` (only its edge if `hollow`).
-fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order, hollow: bool) -> usize {
+/// The next direction (index into `DIRS`) a quarter turn from `dir`, one way or the other.
+pub fn turn_dir(dir: u8, clockwise: bool) -> u8 {
+    // +x, +y, -x, -y: round the compass.
+    const ROUND: [u8; 4] = [0, 2, 1, 3];
+    let k = ROUND.iter().position(|&d| d == dir % 4).unwrap_or(0);
+    ROUND[(k + if clockwise { 1 } else { 3 }) % 4]
+}
+
+/// Apply `order` over the rectangle from `a` to `b` (only its edge if
+/// `hollow`); blueprints are turned to face `dir`.
+fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order, hollow: bool, dir: u8) -> usize {
+    let turnable = matches!(order, Order::Build(kind) if kind.def().turnable());
     let z0 = a.2 as i32;
     let mut done = 0;
     let (lx, ly, hx, hy) = (a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1));
@@ -859,6 +881,9 @@ fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order, hollow: bool) -> us
             for dz in [0, 1, -1] {
                 if let Some(p) = w.map.at(x as i32, y as i32, z0 + dz) {
                     if w.apply_order(p, order) {
+                        if turnable {
+                            w.turn_blueprint(p, dir);
+                        }
                         done += 1;
                         break;
                     }
@@ -960,6 +985,16 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
         gizmos.grid(iso, UVec2::splat(9), Vec2::ONE, Color::srgba(1.0, 1.0, 1.0, 0.18));
     }
 
+    // What's being placed: an arrow the way it will face.
+    if let (Some(h), Tool::Paint(order @ Order::Build(kind))) = (ui.hover, ui.tool) {
+        if kind.def().turnable() {
+            let at = order_target(w, h, order);
+            let way = super::props::turned(kind.def().front, ui.place_dir);
+            let (dx, dy) = DIRS[way as usize];
+            let c = tile_center(at) + Vec3::Y * 0.1;
+            gizmos.arrow(c, c + Vec3::new(dx as f32, 0.0, dy as f32) * 0.6, Color::srgb(1.0, 0.85, 0.3));
+        }
+    }
     if let Some(h) = ui.hover {
         match ui.tool {
             Tool::Paint(order @ Order::Desig(Desig::Mine | Desig::Deconstruct)) if order_target(w, h, order) == h.solid => {
@@ -1032,19 +1067,32 @@ mod tests {
     }
 
     #[test]
+    fn turning_goes_round_the_compass() {
+        let mut d = 0;
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            d = turn_dir(d, true);
+            seen.push(DIRS[d as usize]);
+        }
+        assert_eq!(seen, vec![(0, 1), (-1, 0), (0, -1), (1, 0)], "a quarter turn at a time, back to the start");
+        assert_eq!(turn_dir(turn_dir(2, true), false), 2, "and back");
+    }
+
+    #[test]
     fn walls_go_around_the_dragged_rectangle() {
         use my_world::map::{Feature, FLAT_Z as Z};
         use my_world::rng::Rng;
         let mut w = SimWorld::with_map(Map::flat(12, 12), Rng::new(1));
         let wall = Order::Build(BuildId::named("wall"));
-        assert_eq!(paint_box(&mut w, (2, 2, Z), (6, 5, Z), wall, hollow(wall, false)), 14, "5×4 edge");
+        assert_eq!(paint_box(&mut w, (2, 2, Z), (6, 5, Z), wall, hollow(wall, false), 0), 14, "5×4 edge");
         let at = |w: &SimWorld, x, y| matches!(w.map.feature[w.map.idx((x, y, Z))], Feature::Blueprint { .. });
         assert!(at(&w, 2, 2) && at(&w, 6, 5) && at(&w, 4, 2) && at(&w, 2, 4));
         assert!(!at(&w, 3, 3) && !at(&w, 5, 4), "the inside stays empty");
         assert!(hollow(wall, false) && !hollow(wall, true), "Shift fills");
         let chair = Order::Build(BuildId::named("chair"));
         assert!(!hollow(chair, false), "furniture fills the rectangle");
-        assert_eq!(paint_box(&mut w, (8, 8, Z), (9, 9, Z), chair, false), 4);
+        assert_eq!(paint_box(&mut w, (8, 8, Z), (9, 9, Z), chair, false, 2), 4);
+        assert!(matches!(w.map.feature[w.map.idx((8, 8, Z))], Feature::Blueprint { dir: 2, .. }), "turned as placed");
     }
 
     #[test]
@@ -1058,7 +1106,7 @@ mod tests {
                 if x == 2 || y == 2 || x == 6 || y == 6 {
                     m.set_feature(i, Feature::built("wall"));
                 } else if (x, y) == (4, 4) {
-                    m.feature[above] = Feature::Blueprint { kind: defs().roof().unwrap(), delivered: 0 };
+                    m.feature[above] = Feature::Blueprint { kind: defs().roof().unwrap(), delivered: 0, dir: 0 };
                 } else if (x, y) != (3, 3) {
                     m.set_roof(above, true);
                 }

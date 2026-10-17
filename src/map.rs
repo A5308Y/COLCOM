@@ -85,7 +85,13 @@ pub enum Feature {
     /// and the only way in or out at this level is from the foot (the
     /// opposite side).
     Built { kind: BuildId, dir: u8 },
-    Blueprint { kind: BuildId, delivered: u32 },
+    /// `dir`: how it's turned once built (as in `Built`).
+    Blueprint {
+        kind: BuildId,
+        delivered: u32,
+        #[serde(default)]
+        dir: u8,
+    },
 }
 
 impl Feature {
@@ -376,14 +382,21 @@ impl Map {
     /// Which way new stairs at `p` should rise: away from walkable ground at
     /// their foot, ideally towards somewhere to stand at the top.
     pub fn stairs_facing(&self, p: Pos) -> u8 {
-        let score = |d: usize| {
-            let (dx, dy) = DIRS[d];
-            let (x, y, z) = (p.0 as i32, p.1 as i32, p.2 as i32);
-            let foot = self.at(x - dx, y - dy, z).is_some_and(|f| self.standable(f));
-            let top = self.at(x + dx, y + dy, z + 1).is_some_and(|t| self.standable(t));
-            2 * foot as u8 + top as u8
-        };
-        (0..4).max_by_key(|&d| (score(d), 4 - d)).unwrap_or(0) as u8
+        (0..4).max_by_key(|&d| (self.stairs_score(p, d), 4 - d)).unwrap_or(0)
+    }
+
+    /// Whether stairs at `p` rising towards `DIRS[dir]` can be walked at both ends.
+    pub fn stairs_fit(&self, p: Pos, dir: u8) -> bool {
+        self.stairs_score(p, dir) == 3
+    }
+
+    /// 2 if the foot can be stood on, plus 1 if the top can.
+    fn stairs_score(&self, p: Pos, dir: u8) -> u8 {
+        let (dx, dy) = DIRS[dir as usize % 4];
+        let (x, y, z) = (p.0 as i32, p.1 as i32, p.2 as i32);
+        let foot = self.at(x - dx, y - dy, z).is_some_and(|f| self.standable(f));
+        let top = self.at(x + dx, y + dy, z + 1).is_some_and(|t| self.standable(t));
+        2 * foot as u8 + top as u8
     }
 
     fn step(&self, p: Pos, dx: i32, dy: i32) -> Option<Pos> {
@@ -965,6 +978,9 @@ mod tests {
         }
         let dir = m.stairs_facing((4, 1, Z));
         assert_eq!(DIRS[dir as usize], (1, 0));
+        // Turned that way they fit; turned away from the platform they don't.
+        assert!(m.stairs_fit((4, 1, Z), 0));
+        assert!(!m.stairs_fit((4, 1, Z), 1));
     }
 
     #[test]

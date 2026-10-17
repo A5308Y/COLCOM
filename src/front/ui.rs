@@ -233,7 +233,8 @@ fn tool_at_cursor(ctx: &egui::Context, st: &UiState) {
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("tool_at_cursor")));
     let pos = at + egui::vec2(16.0, 14.0);
     let font = egui::FontId::proportional(13.0);
-    let text = format!("{}  (right-click: stop)", name);
+    let turn = matches!(st.tool, input::Tool::Paint(my_world::world::Order::Build(k)) if k.def().turnable());
+    let text = if turn { format!("{}  (, . turn   right-click: stop)", name) } else { format!("{}  (right-click: stop)", name) };
     let galley = painter.layout_no_wrap(text, font, Color32::from_rgb(255, 225, 140));
     let rect = egui::Rect::from_min_size(pos, galley.size() + egui::vec2(10.0, 4.0));
     painter.rect_filled(rect, 3.0, Color32::from_black_alpha(190));
@@ -839,7 +840,7 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32, move_fr
         .show(ctx, |ui| {
             let what = match m.feature[i] {
                 f @ Feature::Plant { growth, .. } if f.is_crop() => format!("{}, {:.0}% grown", f.name(), growth * 100.0),
-                Feature::Blueprint { kind, delivered } => {
+                Feature::Blueprint { kind, delivered, .. } => {
                     let c = &kind.def().cost;
                     format!("{} blueprint ({}/{} {})", kind.name(), delivered, c.count, c.item.name().to_lowercase())
                 }

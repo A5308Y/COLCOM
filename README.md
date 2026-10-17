@@ -44,6 +44,7 @@ furniture, light, production), searchable, with costs (red if the colony is shor
 | `Esc` | Select tool: click colonists or tiles to inspect them |
 | Left drag | Paint the current tool over a rectangle |
 | Left drag with walls | Wall in a rectangle: only its outline (`Shift` fills it) |
+| `,` / `.` while placing | Turn furniture or stairs a quarter turn (an arrow shows which way it will face). Stairs only turn where both ends can be walked on; chairs next to a table face it by themselves |
 | `F` | Draft the selected colonist (or everyone if nothing is selected) |
 | Right click | With a drafted colonist: move there, or attack the clicked raider |
 | Right click with a colonist selected | Menu of what they could do there: prioritize building this grave, tending this colonist, hauling this stack, equipping this rifle... They do it now (even work they're not assigned to), then finish everything there |

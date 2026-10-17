@@ -480,6 +480,12 @@ real play.
   belongs there more than where it lies (`gather_next`, walking to each before setting off). Deliveries take
   enough for the blueprint plus the free blueprints within 8 steps needing the same material
   (`delivery_load`, up to a stack), then carry the rest on to the next one (`next_delivery`).
+- Turning things while placing (2026-10-17): `Feature::Blueprint` has a `dir` (serde default 0), set by
+  `World::turn_blueprint` when placed (`UiState::place_dir`, `,`/`.` via `input::turn_dir`) for
+  `BuildDef::turnable` things (modelled, not along walls, not floors/roofs/graves); built things keep it
+  (stairs only if `Map::stairs_fit`, else `stairs_facing`), and moved furniture keeps its own. `BuildDef::front`
+  is the way a model faces (chair: 2, +y): the placement arrow shows it, and seats beside a table are drawn
+  facing it (`props::seat_dir`, display only). Blueprint ghosts are drawn turned.
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 
