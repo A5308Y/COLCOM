@@ -88,7 +88,8 @@ pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction
         let text = if members.is_empty() { "No one in the squad yet".to_string() } else { members.join(", ") };
         ui.label(RichText::new(format!("Squad: {}", text)).weak());
         if p.poor_quarters {
-            ui.label(RichText::new("Wants a decent bedroom of their own.").color(Color32::from_rgb(255, 140, 100)));
+            let text = "Wants a decent bedroom of their own. Click a bed to give it to them.";
+            ui.label(RichText::new(text).color(Color32::from_rgb(255, 140, 100)));
         }
     }
 

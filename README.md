@@ -28,11 +28,12 @@ according to their **work priorities** (press `P`).
 
 | Key | Tool / action |
 |---|---|
-| `1` / `2` / `3` | Designate trees to chop / rock or structures to mine / berry bushes to forage |
-| `4` / `5` | Stockpile zone (loose items get hauled there) / grow zone (crops get planted) |
+| `1` / `2` / `3` / `4` | Game speed 1x / 2x / 5x / 10x (also carries on if paused) |
+| `Space` | Pause |
+| Build menu | Orders (chop, mine, forage, cancel), zones (stockpile, grow, safe, clear), and every buildable |
+| `Backspace` | Deconstruct |
 | `V` `J` `T` `M` `U` | Workbenches: stove, sawing bench, stonecutter, smelter, crafting bench (the smithy is in the build menu) |
 | `O` `G` / `Y` `R` `X` / `Z` | Window, fence / table, chair, shelf / torch (all buildables are also in the toolbar's category menus) |
-| `6` / `7` / `8` | Blueprint a wall (4 stone) / door (4 wood) / bed (8 wood) |
 | `-` / `=` | Blueprint a floor (2 wood) / stairs (6 wood) |
 | `B` | Blueprint a lamp (3 wood) |
 
@@ -40,7 +41,6 @@ Everything is also in the **build menu** docked on the left: grouped (orders, zo
 furniture, light, production), searchable, with costs (red if the colony is short) and details on hover.
 `` ` `` (the key left of `1`) hides and shows it. Build shortcuts and costs come from `assets/defs.ron`.
 | `PageDown` / `PageUp` (or `[` / `]`) | Layer view: hide everything above a level, and build on that level |
-| `9` / `0` | Clear zones / cancel designations and blueprints (refunds materials) |
 | `Esc` | Select tool: click colonists or tiles to inspect them |
 | Left drag | Paint the current tool over a rectangle |
 | `F` | Draft the selected colonist (or everyone if nothing is selected) |
@@ -48,7 +48,6 @@ furniture, light, production), searchable, with costs (red if the colony is shor
 | `WASD` / arrows, middle-drag | Pan the camera |
 | `Q` / `E`, right-drag | Rotate and tilt the camera |
 | Mouse wheel | Zoom |
-| `Space` / `Tab` | Pause / cycle speed 1x-2x-3x |
 | `P` / `I` / `H` / `C` | Work priorities / resources (what the colony has) / help / center camera |
 | `K` / `L` | Save / load (`savegame.json`; saves from other versions are refused with a message) |
 | `Shift+N` | New colony |

@@ -3,7 +3,7 @@
 
 use super::audio::SoundQueue;
 use super::camera::{colony_center, CameraRig, DragTracker, MainCamera};
-use super::sim::Sim;
+use super::sim::{Sim, SPEEDS};
 use super::terrain::{FLOOR_T, LEVEL_H};
 use super::{tile_center, tile_point};
 use bevy::prelude::*;
@@ -40,62 +40,48 @@ pub struct ToolEntry {
 
 /// Every tool: orders and zones, then one per buildable in the definitions.
 pub static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(|| {
-    let fixed = |tool, name: &str, key: &str, code, group: &str, hint| ToolEntry {
+    let fixed = |tool, name: &str, key: Option<(&str, KeyCode)>, group: &str, hint| ToolEntry {
         tool,
         name: name.to_string(),
-        key: Some((key.to_string(), code)),
+        key: key.map(|(k, code)| (k.to_string(), code)),
         group: group.to_string(),
         hint,
     };
+    // (The number keys set the game speed.)
     let mut tools = vec![
-        fixed(Tool::Select, "Select", "Esc", KeyCode::Escape, "Orders", "Click colonists and cells to inspect them."),
-        fixed(Tool::Paint(Order::Desig(Desig::Chop)), "Chop trees", "1", KeyCode::Digit1, "Orders", "Mark trees to be cut down for wood."),
-        fixed(
-            Tool::Paint(Order::Desig(Desig::Mine)),
-            "Mine",
-            "2",
-            KeyCode::Digit2,
-            "Orders",
-            "Dig out rock, ore and soil.",
-        ),
+        fixed(Tool::Select, "Select", Some(("Esc", KeyCode::Escape)), "Orders", "Click colonists and cells to inspect them."),
+        fixed(Tool::Paint(Order::Desig(Desig::Chop)), "Chop trees", None, "Orders", "Mark trees to be cut down for wood."),
+        fixed(Tool::Paint(Order::Desig(Desig::Mine)), "Mine", None, "Orders", "Dig out rock, ore and soil."),
         fixed(
             Tool::Paint(Order::Desig(Desig::Deconstruct)),
             "Deconstruct",
-            "Bksp",
-            KeyCode::Backspace,
+            Some(("Bksp", KeyCode::Backspace)),
             "Orders",
             "Take down walls, furniture, floors and roofs. Builders do it and get back half the cost.",
         ),
-        fixed(Tool::Paint(Order::Desig(Desig::Forage)), "Forage", "3", KeyCode::Digit3, "Orders", "Mark berry bushes to be picked."),
+        fixed(Tool::Paint(Order::Desig(Desig::Forage)), "Forage", None, "Orders", "Mark berry bushes to be picked."),
         fixed(
             Tool::Paint(Order::Cancel),
             "Cancel",
-            "0",
-            KeyCode::Digit0,
+            None,
             "Orders",
             "Remove designations and blueprints (delivered materials are dropped).",
         ),
         fixed(
             Tool::Paint(Order::Stockpile),
             "Stockpile",
-            "4",
-            KeyCode::Digit4,
+            None,
             "Zones",
             "Loose items get hauled here. Click a stockpile to set its priority and what it takes.",
         ),
     ];
     if let Some(crop) = defs().sown() {
         let hint = "Colonists plant and harvest crops here. Click it to choose the crop.";
-        tools.push(fixed(Tool::Paint(Order::Zone(Zone::Grow(crop))), "Grow zone", "5", KeyCode::Digit5, "Zones", hint));
+        tools.push(fixed(Tool::Paint(Order::Zone(Zone::Grow(crop))), "Grow zone", None, "Zones", hint));
     }
-    tools.push(ToolEntry {
-        tool: Tool::Paint(Order::Zone(Zone::Safe)),
-        name: "Safe zone".to_string(),
-        key: None,
-        group: "Zones".to_string(),
-        hint: "Civilians shelter here when a battle starts. Raiders can still reach it.",
-    });
-    tools.push(fixed(Tool::Paint(Order::Zone(Zone::None)), "Clear zone", "9", KeyCode::Digit9, "Zones", "Remove stockpile, grow and safe zones."));
+    let hint = "Civilians shelter here when a battle starts. Raiders can still reach it.";
+    tools.push(fixed(Tool::Paint(Order::Zone(Zone::Safe)), "Safe zone", None, "Zones", hint));
+    tools.push(fixed(Tool::Paint(Order::Zone(Zone::None)), "Clear zone", None, "Zones", "Remove stockpile, grow and safe zones."));
     // Roofs aren't placed by the player: rooms get them by themselves.
     for kind in BuildId::all().filter(|k| k.def().special != Special::Roof) {
         let def = kind.def();
@@ -111,16 +97,16 @@ pub static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(|| {
     tools
 });
 
+/// Keys for the game speeds in `SPEEDS`, slowest first.
+const SPEED_KEYS: [KeyCode; 4] = [KeyCode::Digit1, KeyCode::Digit2, KeyCode::Digit3, KeyCode::Digit4];
+
 /// Keys with fixed meanings, which buildables can't use as shortcuts.
-const RESERVED: [KeyCode; 22] = [
+const RESERVED: [KeyCode; 19] = [
     KeyCode::Escape,
     KeyCode::Digit1,
     KeyCode::Digit2,
     KeyCode::Digit3,
     KeyCode::Digit4,
-    KeyCode::Digit5,
-    KeyCode::Digit9,
-    KeyCode::Digit0,
     KeyCode::KeyW,
     KeyCode::KeyA,
     KeyCode::KeyS,
@@ -612,14 +598,18 @@ fn update_roof_cut(sim: Res<Sim>, mut ui: ResMut<UiState>) {
 
 fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMut<UiState>, mut rig: ResMut<CameraRig>) {
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    // In a battle, Space and Tab belong to the battle (`battle_ui.rs`), and
-    // there's nothing to build.
+    // In a battle, Space and Tab belong to the battle (`battle_ui.rs`), it
+    // always plays at 1x, and there's nothing to build.
     let battle = sim.world.battle.is_some();
     if keys.just_pressed(KeyCode::Space) && !battle {
         sim.paused = !sim.paused;
     }
-    if keys.just_pressed(KeyCode::Tab) && !battle {
-        sim.cycle_speed();
+    // 1-4 pick the speed (and carry on if paused).
+    for (k, key) in SPEED_KEYS.into_iter().enumerate() {
+        if keys.just_pressed(key) && !battle {
+            sim.speed = SPEEDS[k];
+            sim.paused = false;
+        }
     }
     // Esc, one step at a time: close a window, put the tool down (below),
     // let go of the selection, open the menu.
@@ -938,6 +928,7 @@ mod tests {
         for (k, key) in keys.iter().enumerate() {
             assert!(!keys[k + 1..].contains(key), "{:?} used twice", key);
         }
+        assert!(!keys.iter().any(|k| SPEED_KEYS.contains(k)), "the number keys set the speed");
         for kind in BuildId::all().filter(|k| k.def().special != Special::Roof) {
             let tool = TOOLS.iter().find(|t| t.tool == Tool::Paint(Order::Build(kind))).expect("in the build menu");
             assert_eq!(tool.key.is_some(), kind.def().key.is_some(), "{} shortcut", kind.def().id);

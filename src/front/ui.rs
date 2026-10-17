@@ -15,7 +15,7 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::health::HediffKind;
 use my_world::defs::{BuildId, ItemId, PlantId, Special};
 use my_world::map::{Block, Feature, Pos, Zone};
-use my_world::pawn::{Pawn, Skill, WorkType};
+use my_world::pawn::{Pawn, Role, Skill, WorkType};
 use my_world::production::{BillMode, PRIORITY_NAMES};
 use my_world::rooms::TIERS;
 use my_world::world::World as SimWorld;
@@ -24,14 +24,14 @@ use my_world::DAY_LEN;
 const HELP_ORDERS: [&str; 7] = [
     "You don't control colonists directly - you give orders and they pick up the work.",
     "",
-    "1-3   Designate trees to chop, rock and soil to mine, berry bushes to forage; Backspace: deconstruct",
-    "4/5   Paint stockpile zones (items get hauled there) and grow zones (crops)",
-    "9/0   Clear zones / cancel designations and blueprints",
+    "Orders (build menu, left): mark trees to chop, rock and soil to mine, berry bushes to forage;",
+    "      Backspace: deconstruct. Cancel takes designations and blueprints away.",
+    "Zones: paint stockpile zones (items get hauled there) and grow zones (crops); Clear zone removes them.",
     "      Left-drag to paint a rectangle. Right-click goes back to Select.",
     "",
 ];
 
-const HELP_REST: [&str; 36] = [
+const HELP_REST: [&str; 37] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -61,10 +61,11 @@ const HELP_REST: [&str; 36] = [
     "Raids come every few days. Pay what the raiders demand, or fight a turn-based battle (the colony stops).",
     "      Squads: in a colonist's Combat tab make them a leader, put others in their squad, set loadouts;",
     "      mark civilians and paint a safe zone. Far-away squad members join their leader a few rounds in.",
+    "      Leaders want a decent bedroom of their own: click a bed to choose who sleeps in it.",
     "      In battle: click your unit (or Tab), click a cell to move, an enemy to attack; Space ends its turn.",
     "",
     "Camera: WASD/arrows pan, Q/E rotate, wheel zooms, right-drag orbits, middle-drag pans.",
-    "Space: pause   Tab: speed   P: work priorities   I: resources   C: center camera",
+    "Space: pause   1-4: speed (1x, 2x, 5x, 10x)   P: work priorities   I: resources   C: center camera",
     "Esc: menu (save, load, new game, sound)   K: save   L: load   Shift+N: new colony",
     "",
     "H or Esc closes this help.",
@@ -219,7 +220,7 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 let speed = if sim.world.battle.is_some() {
                     "Speed 1x (battle)".to_string()
                 } else {
-                    format!("Speed {}x (Tab)", sim.speed)
+                    format!("Speed {}x (1-4)", sim.speed)
                 };
                 if ui.button(speed).clicked() {
                     sim.cycle_speed();
@@ -651,12 +652,50 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) -> (boo
             if let Some(kind) = m.feature[i].structure_id().filter(|k| !k.def().recipes.is_empty()) {
                 bills(ui, w, t, kind, &mut actions);
             }
+            if m.feature[i].is_bed() {
+                bed_owner(ui, w, t, &mut actions);
+            }
         });
     let changed = !actions.is_empty();
     for act in actions {
         act(&mut sim.world);
     }
     (changed, open)
+}
+
+/// Who sleeps in the bed at `t`, to choose from the colonists. A leader
+/// is told whether it makes proper quarters for them.
+fn bed_owner(ui: &mut egui::Ui, w: &SimWorld, t: Pos, actions: &mut Vec<Action>) {
+    ui.separator();
+    let label = |p: &Pawn| if p.role == Role::Leader { format!("{} (leader)", p.name) } else { p.name.clone() };
+    let owner = w.bed_owner(t).and_then(|id| w.pawn(id));
+    ui.horizontal(|ui| {
+        ui.label("Sleeps here");
+        let current = owner.map_or("Nobody yet".to_string(), label);
+        egui::ComboBox::from_id_salt(("bed", t)).selected_text(current).show_ui(ui, |ui| {
+            if ui.selectable_label(owner.is_none(), "Nobody (first come)").clicked() {
+                actions.push(Box::new(move |w| {
+                    w.assign_bed(t, None);
+                }));
+            }
+            for p in w.pawns.iter().filter(|p| p.is_colonist() && !p.dead) {
+                let id = p.id;
+                if ui.selectable_label(owner.is_some_and(|o| o.id == id), label(p)).clicked() {
+                    actions.push(Box::new(move |w| {
+                        w.assign_bed(t, Some(id));
+                    }));
+                }
+            }
+        });
+    });
+    if let Some(p) = owner.filter(|p| p.role == Role::Leader) {
+        if w.has_proper_quarters(p) {
+            ui.label(RichText::new("Proper quarters for a leader.").weak());
+        } else {
+            let why = "Not proper quarters: a leader wants a room of at least decent quality that nobody else sleeps in.";
+            ui.label(RichText::new(why).color(Color32::from_rgb(255, 140, 100)));
+        }
+    }
 }
 
 fn stockpile_settings(ui: &mut egui::Ui, w: &SimWorld, id: u16, actions: &mut Vec<Action>) {

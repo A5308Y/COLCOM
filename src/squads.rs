@@ -159,16 +159,8 @@ mod tests {
         assert_eq!(w.pawn(ids[1]).unwrap().role, Role::Fighter);
     }
 
-    #[test]
-    fn leaders_want_a_decent_room_of_their_own() {
-        let (mut w, ids) = world();
-        w.set_role(ids[0], Role::Leader).unwrap();
-        w.update_squads();
-        let thoughts = |w: &World| w.pawn(ids[0]).unwrap().thoughts().iter().map(|t| t.0).collect::<Vec<_>>();
-        assert!(thoughts(&w).contains(&"No proper quarters for a leader"));
-        assert!(thoughts(&w).contains(&"Responsible for a squad"));
-
-        // A walled, roofed, furnished bedroom with their bed.
+    /// A walled, roofed, furnished bedroom from (8, 8) to (12, 12), with a bed at (10, 10).
+    fn bedroom(w: &mut World) {
         for y in 8..=12 {
             for x in 8..=12 {
                 let i = w.map.idx((x, y, Z));
@@ -185,8 +177,47 @@ mod tests {
         }
         w.map.recompute_rooms();
         w.update_room_stats();
-        let i = w.pawn_index(ids[0]).unwrap();
-        w.pawns[i].bed = Some((10, 10, Z));
+    }
+
+    #[test]
+    fn beds_can_be_given_to_a_leader() {
+        let (mut w, ids) = world();
+        w.set_role(ids[0], Role::Leader).unwrap();
+        bedroom(&mut w);
+        let outside = (3, 3, Z);
+        let i = w.map.idx(outside);
+        w.map.set_feature(i, Feature::built("bed"));
+        // Someone else got the good bed first.
+        assert!(w.assign_bed((10, 10, Z), Some(ids[1])));
+        assert!(w.assign_bed(outside, Some(ids[0])));
+        w.update_squads();
+        assert!(w.pawn(ids[0]).unwrap().poor_quarters);
+
+        assert!(w.assign_bed((10, 10, Z), Some(ids[0])));
+        assert_eq!(w.bed_owner((10, 10, Z)), Some(ids[0]));
+        assert_eq!(w.bed_owner(outside), None, "the leader's old bed is free");
+        assert_eq!(w.pawn(ids[1]).unwrap().bed, None, "and the other looks for one");
+        w.update_squads();
+        assert!(!w.pawn(ids[0]).unwrap().poor_quarters);
+        assert_eq!(w.find_bed(w.pawn(ids[1]).unwrap()), Some(outside), "not the leader's");
+
+        assert!(w.assign_bed((10, 10, Z), None));
+        assert_eq!(w.bed_owner((10, 10, Z)), None);
+        assert!(!w.assign_bed((5, 5, Z), Some(ids[0])), "no bed there");
+    }
+
+    #[test]
+    fn leaders_want_a_decent_room_of_their_own() {
+        let (mut w, ids) = world();
+        w.set_role(ids[0], Role::Leader).unwrap();
+        w.update_squads();
+        let thoughts = |w: &World| w.pawn(ids[0]).unwrap().thoughts().iter().map(|t| t.0).collect::<Vec<_>>();
+        assert!(thoughts(&w).contains(&"No proper quarters for a leader"));
+        assert!(thoughts(&w).contains(&"Responsible for a squad"));
+
+        // A walled, roofed, furnished bedroom with their bed.
+        bedroom(&mut w);
+        assert!(w.assign_bed((10, 10, Z), Some(ids[0])));
         let tier = w.room_at((10, 10, Z)).unwrap().tier();
         assert!(tier >= LEADER_ROOM_TIER, "the test room is decent (tier {})", tier);
         w.update_squads();

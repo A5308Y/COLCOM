@@ -290,7 +290,9 @@ real play.
   each member who can reach, bold rings mark the targets, a label gives the best chance, how many can
   reach and the AP cost (or why not), and the pointer becomes a crosshair.
 
-- Game speeds (Tab or the HUD button): 1x, 2x, 5x, 10x (`sim::SPEEDS`). At most 40 simulation steps
+- Game speeds (keys 1-4, or the HUD button cycles): 1x, 2x, 5x, 10x (`sim::SPEEDS`). Tab used to
+  cycle them, but egui takes Tab to move between buttons, so the number keys do it now and no tool or
+  buildable has a number key (`SPEED_KEYS`, reserved). At most 40 simulation steps
   run per frame, which 10x needs only below 15 fps.
 - Build orders replace a blueprint of something else in place (`order_applies` treats the cell as
   empty; materials already delivered are dropped there for the haulers). The same blueprint again
@@ -413,6 +415,11 @@ real play.
     The roof also covers the tops of the walls around it, and eaves overhang 0.3 and drop 0.12. Each
     triangle is drawn from below as well, darker.
   - The battle arena's house has a roof.
+
+- Beds can be given to a colonist (2026-10-17): click a bed, pick who sleeps there in the inspector
+  ("Nobody (first come)" frees it). `World::assign_bed` moves `Pawn::bed`: the new owner's old bed is
+  freed and whoever had this one looks for another (`find_bed` skips beds others own). With a leader
+  as owner, the panel says whether it makes proper quarters (`has_proper_quarters`).
 
 - Shelves (any buildable with `storage`) are storage by themselves (2026-10-17): `sync_containers`
   (each colony second, on load, and when storage furniture is built or taken down) gives one standing

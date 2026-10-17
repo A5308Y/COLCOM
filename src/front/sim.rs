@@ -5,7 +5,7 @@ use my_world::scenarios;
 use my_world::world::World as SimWorld;
 use my_world::TICK;
 
-/// Game speeds Tab and the speed button cycle through.
+/// Game speeds: keys 1-4 pick one, the speed button cycles through them.
 pub const SPEEDS: [u32; 4] = [1, 2, 5, 10];
 
 #[derive(Resource)]

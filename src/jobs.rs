@@ -628,6 +628,34 @@ impl World {
         })
     }
 
+    /// Who sleeps in the bed at `bed`, if anyone has claimed it.
+    pub fn bed_owner(&self, bed: Pos) -> Option<u32> {
+        self.pawns.iter().find(|o| !o.dead && o.bed == Some(bed)).map(|o| o.id)
+    }
+
+    /// Give the bed at `bed` to colonist `owner` (whose old bed is freed), or
+    /// to nobody (`None`: whoever needs it next). Whoever had it looks for
+    /// another. Returns false if there's no bed there or no such colonist.
+    pub fn assign_bed(&mut self, bed: Pos, owner: Option<u32>) -> bool {
+        if !self.map.feature[self.map.idx(bed)].is_bed() {
+            return false;
+        }
+        if let Some(id) = owner {
+            if !self.pawn(id).is_some_and(|p| p.is_colonist() && !p.dead) {
+                return false;
+            }
+        }
+        for p in self.pawns.iter_mut() {
+            if p.bed == Some(bed) {
+                p.bed = None;
+            }
+            if Some(p.id) == owner {
+                p.bed = Some(bed);
+            }
+        }
+        true
+    }
+
     pub(crate) fn start_wander(&mut self, p: &mut Pawn, radius: i32) {
         let df = bfs(&self.map, p.pos);
         let options: Vec<usize> =

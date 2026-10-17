@@ -251,8 +251,8 @@ mod tests {
         }
         assert_eq!(roof_meshes(&mut app), 1, "and drawn again");
 
-        // The inspector's bills, stockpile and grow zone panels.
-        let (bench, stock, grow) = {
+        // The inspector's bills, stockpile, grow zone and bed panels.
+        let (bench, stock, grow, bed) = {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             let w = &mut sim.world;
             let (cx, cy) = (w.map.w / 2, w.map.h / 2);
@@ -272,7 +272,14 @@ mod tests {
             }
             let shelf = w.map.idx((cx - 1, cy + 6, z));
             w.map.items[shelf] = Some(my_world::map::Stack { kind: my_world::defs::ItemId::named("wood"), count: 120 });
-            (bench, (cx - 4, cy + 2, z), grow)
+            // A bed given to a squad leader.
+            let bed = (cx + 5, cy - 5, z);
+            let i = w.map.idx(bed);
+            w.map.feature[i] = my_world::map::Feature::built("bed");
+            let leader = w.pawns[0].id;
+            w.set_role(leader, my_world::pawn::Role::Leader).unwrap();
+            assert!(w.assign_bed(bed, Some(leader)));
+            (bench, (cx - 4, cy + 2, z), grow, bed)
         };
         // The build menu docks on the left, collapses, and filters.
         let dock = app.world().resource::<front::UiState>().dock_width;
@@ -287,7 +294,7 @@ mod tests {
         app.world_mut().resource_mut::<front::UiState>().show_build = true;
         app.world_mut().resource_mut::<front::UiState>().show_resources = true;
         app.world_mut().resource_mut::<front::UiState>().show_menu = true;
-        for t in [bench, stock, grow] {
+        for t in [bench, stock, grow, bed] {
             app.world_mut().resource_mut::<front::UiState>().selected = Some(front::Selection::Tile(t));
             for _ in 0..5 {
                 app.update();
