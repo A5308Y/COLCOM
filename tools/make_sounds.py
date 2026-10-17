@@ -237,11 +237,55 @@ def furnace(k):
 
 
 def tree_fall(k):
-    creak = mul(bandpass([math.copysign(1, v) for v in tone(0.7, 220, 110, vibrato=0.04, vib_rate=11)], 150, 1500),
-                env(int(0.7 * RATE), 0.2, 0.3))
-    crash = mix((shaped_noise(1.0, 60, 700, 0.005, 0.3), 1.0, 0),
-                (tone(0.5, 70, 45, decay=0.15), 0.8, 0))
-    return mix((creak, 0.5, 0), (crash, 1.0, 0.55))
+    """Wood fibres cracking faster and louder, the crown rushing through the
+    air, then a deep thump with branches snapping and leaves settling. No
+    pitched creak (that sounded like a playground seesaw). Uses its own
+    random numbers, one seed per variant."""
+    r = random.Random(4000 + k)
+
+    def burst(secs, lo, hi, attack, decay):
+        x = bandpass([r.uniform(-1.0, 1.0) for _ in range(int(secs * RATE))], lo, hi)
+        return mul(x, env(len(x), attack, decay))
+
+    def crack(gain):
+        # A sharp snap with a short woody knock under it.
+        f = r.uniform(150, 320)
+        return (mix((burst(0.06, 700, r.uniform(3500, 6000), 0.0005, r.uniform(0.006, 0.02)), 1.0, 0),
+                    (tone(0.08, f, f * 0.8, decay=0.025), 0.5, 0)), gain)
+
+    parts = []
+    impact = r.uniform(1.35, 1.6)
+    # Cracking: slow and quiet at first, then quicker and louder as it gives way.
+    t, gap = 0.0, 0.16
+    while t < impact - 0.45:
+        x, g = crack(0.25 + 0.75 * t / impact)
+        parts.append((x, g * r.uniform(0.6, 1.0), t))
+        t += gap * r.uniform(0.6, 1.4)
+        gap = max(0.035, gap * 0.85)
+    # Fibres tearing under the cracks: rough, flickering noise.
+    tear = burst(impact - 0.3, 250, 1400, 0.4, 10.0)
+    flicker, level = [], 0.0
+    for i in range(len(tear)):
+        if i % 200 == 0:
+            level = r.uniform(0.0, 1.0) ** 2
+        flicker.append(level * i / len(tear))
+    parts.append((mul(tear, flicker), 0.35, 0.0))
+    # The crown falling: a swelling rush of leaves and air.
+    rush = burst(0.75, 500, 3500, 0.6, 10.0)
+    parts.append((mul(rush, [i / len(rush) for i in range(len(rush))]), 0.4, impact - 0.75))
+    # The trunk lands: a deep thump and a broad crash.
+    parts.append((tone(1.0, r.uniform(55, 65), 32, decay=0.28), 1.0, impact))
+    parts.append((burst(0.9, 60, 1200, 0.003, 0.16), 0.9, impact))
+    # Branches snapping and leaves settling after it.
+    for _ in range(r.randint(6, 10)):
+        x, g = crack(r.uniform(0.15, 0.45))
+        parts.append((x, g, impact + r.uniform(0.02, 0.5)))
+    parts.append((burst(1.4, 1200, 6000, 0.02, 0.45), 0.25, impact + 0.05))
+    # A last bounce or two.
+    for d, g in [(r.uniform(0.35, 0.5), 0.35), (r.uniform(0.7, 0.9), 0.15)]:
+        parts.append((tone(0.4, 70, 45, decay=0.1), g, impact + d))
+        parts.append((burst(0.2, 80, 800, 0.002, 0.05), g, impact + d))
+    return mix(*parts)
 
 
 def rock_break(k):
@@ -406,7 +450,7 @@ def main():
     variants("saw", 2, saw)
     variants("craft", 3, craft)
     variants("furnace", 1, furnace)
-    variants("tree_fall", 1, tree_fall)
+    variants("tree_fall", 3, tree_fall)
     variants("rock_break", 2, rock_break)
     variants("built", 1, built)
     variants("rifle", 3, lambda k: gunshot(k))

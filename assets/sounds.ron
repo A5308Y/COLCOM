@@ -81,9 +81,11 @@
             files: ["sounds/furnace_1.wav"],
             volume: 0.45, pitch: (0.95, 1.05), range: 30.0, max: 2, every: Some(0.95), kind: Effect,
         ),
+        // Cracking, the crown rushing down, a thump and snapping branches
+        // (generated; the Kenney creaks slowed down sounded like a seesaw).
         "tree_fall": (
-            files: ["sounds/kenney/creak1.ogg", "sounds/kenney/creak2.ogg", "sounds/kenney/creak3.ogg"],
-            volume: 0.8, pitch: (0.6, 0.75), range: 50.0, max: 3, kind: Effect,
+            files: ["sounds/tree_fall_1.wav", "sounds/tree_fall_2.wav", "sounds/tree_fall_3.wav"],
+            volume: 0.8, pitch: (0.92, 1.05), range: 50.0, max: 3, kind: Effect,
         ),
         "rock_break": (
             files: ["sounds/kenney/impactMining_000.ogg", "sounds/kenney/impactMining_001.ogg", "sounds/kenney/impactMining_002.ogg", "sounds/kenney/impactMining_003.ogg", "sounds/kenney/impactMining_004.ogg"],
