@@ -52,6 +52,8 @@ pub struct PropAssets {
     cone: Handle<Mesh>,
     /// One material per palette and glow colour of the definitions.
     paints: HashMap<String, Handle<StandardMaterial>>,
+    /// Polished metal in each palette colour, for armour.
+    metals: HashMap<String, Handle<StandardMaterial>>,
     blueprint: Handle<StandardMaterial>,
     blanket_free: Handle<StandardMaterial>,
 }
@@ -94,8 +96,11 @@ pub fn lit(materials: &mut Assets<StandardMaterial>, c: Rgb) -> Handle<StandardM
 fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
     let d = defs();
     let mut paints = HashMap::new();
+    let mut metals = HashMap::new();
     for (name, &(r, g, b)) in &d.palette {
         paints.insert(name.clone(), lit(&mut materials, Rgb(r, g, b)));
+        let metal = StandardMaterial { base_color: Rgb(r, g, b).color(), metallic: 0.85, perceptual_roughness: 0.32, ..default() };
+        metals.insert(name.clone(), materials.add(metal));
     }
     // Bright enough to bloom.
     for (name, &(r, g, b)) in &d.glow {
@@ -127,6 +132,7 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
         cylinder: meshes.add(Cylinder::new(0.5, 1.0)),
         cone: meshes.add(Cone::new(0.5, 1.0)),
         paints,
+        metals,
         blueprint,
         blanket_free: lit(&mut materials, Rgb(0.55, 0.58, 0.62)),
     };
@@ -374,6 +380,24 @@ fn spawn_parts(
                 // A quarter turn around its left edge.
                 t.rotate_around(at - Vec3::X * p.size.0 / 2.0, Quat::from_rotation_y(-FRAC_PI_2));
             }
+            c.spawn((Mesh3d(a.mesh(p.shape).clone()), MeshMaterial3d(mat), t));
+        }
+    });
+    e.id()
+}
+
+/// Worn armour: `parts` (in metres from the bone, in the character's own
+/// frame) under a root turned by `turn` (undoing the bone's own rest turn),
+/// in polished metal.
+pub fn spawn_worn(commands: &mut Commands, a: &PropAssets, turn: Quat, parts: &[Part]) -> Entity {
+    let mut e = commands.spawn((Transform::from_rotation(turn), Visibility::default()));
+    e.with_children(|c| {
+        for p in parts {
+            let (tx, ty, tz) = p.turn;
+            let t = Transform::from_xyz(p.at.0, p.at.1, p.at.2)
+                .with_rotation(Quat::from_euler(EulerRot::XYZ, tx.to_radians(), ty.to_radians(), tz.to_radians()))
+                .with_scale(Vec3::new(p.size.0, p.size.1, p.size.2));
+            let mat = a.metals.get(&p.color).cloned().unwrap_or_else(|| a.paint(&p.color));
             c.spawn((Mesh3d(a.mesh(p.shape).clone()), MeshMaterial3d(mat), t));
         }
     });

@@ -63,8 +63,9 @@ furniture, light, production), searchable, with costs (red if the colony is shor
   selected to have them do its bill now. Colonists with Cook or Craft work make it, and products get hauled to
   stockpiles. Chains: crops → meals (stove); wood → planks; stone → blocks; healroot → herbal medicine;
   cotton → cloth → clothes; iron ore (veins in the rock, more of it deeper down) → steel (smelter) →
-  knives, pistols, rifles and steel armour (smithy). Colonists pick up better weapons and apparel by
-  themselves; armour stops part of every blow, and clothes cheer colonists up.
+  knives, pistols, rifles, steel armour and steel helmets (smithy). Colonists pick up better weapons and
+  apparel by themselves; armour stops part of every blow (and shows: a breastplate with shoulder plates, a
+  helmet), and clothes cheer colonists up.
 - **Stockpiles:** each has a priority (low to critical) and a list of item kinds it takes; things move
   to better stockpiles. Grow zones plant the crop chosen for them (corn, healroot, cotton).
 - **Sound:** footsteps that depend on the ground, chopping, mining, hammering, sawing, cooking and

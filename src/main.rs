@@ -162,6 +162,17 @@ mod tests {
             sim.world.pawns[i].health.recompute();
             sim.world.pawns[i].operations.clear();
         }
+        // Armour and a helmet show on whoever wears them.
+        {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            let i = sim.world.pawn_index(ids[1]).unwrap();
+            for kind in ["steel_armor", "steel_helmet"] {
+                sim.world.pawns[i].apparel.push(my_world::defs::ItemId::named(kind));
+            }
+        }
+        for _ in 0..3 {
+            app.update();
+        }
         // The right-click menu: equip a rifle lying beside them, then pick it.
         {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
@@ -371,12 +382,20 @@ mod tests {
         app.world_mut().resource_mut::<front::UiState>().show_resources = true;
         app.world_mut().resource_mut::<front::UiState>().show_menu = true;
         app.world_mut().resource_mut::<front::UiState>().show_rooms = true;
+        // The app runs on real time: give the rooms a moment to be recounted.
+        let workshop = |app: &App| {
+            let w = &app.world().resource::<front::Sim>().world;
+            w.room_at((room.0, room.1, room_z)).and_then(|r| r.kind_name()) == Some("Workshop")
+        };
+        for _ in 0..300 {
+            app.update();
+            if workshop(&app) {
+                break;
+            }
+        }
+        assert!(workshop(&app), "the room became a workshop");
         for _ in 0..40 {
             app.update();
-        }
-        {
-            let w = &app.world().resource::<front::Sim>().world;
-            assert_eq!(w.room_at((room.0, room.1, room_z)).and_then(|r| r.kind_name()), Some("Workshop"));
         }
         for t in [bench, stock, grow, bed, grave, (room.0, room.1, room_z)] {
             app.world_mut().resource_mut::<front::UiState>().selected = Some(front::Selection::Tile(t));

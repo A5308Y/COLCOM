@@ -190,6 +190,8 @@ pub enum Slot {
     Body,
     /// Armour worn over clothes.
     Outer,
+    /// Helmets and hats.
+    Head,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -199,27 +201,22 @@ pub struct ApparelDef {
     pub armor: f32,
     /// Mood while worn.
     pub mood: f32,
-    /// How the wearer's outfit looks with it on (none: as it is).
+    /// What shows on the wearer: shapes fixed to the character's bones.
     #[serde(default)]
-    pub worn: Option<WornLook>,
+    pub pieces: Vec<WornPiece>,
 }
 
-/// The outfit's look while a piece of apparel is worn: steel armour turns it
-/// to grey metal.
+/// Part of a piece of apparel as worn, following one bone of the character
+/// (`spine_03` the chest, `Head`, `upperarm_l`/`_r`). `parts` are placed
+/// from the bone in the character's own frame, in metres (+y up, +z the way
+/// they face; about 1.8 m tall), drawn in polished metal.
 #[derive(Clone, Debug, Deserialize)]
-pub struct WornLook {
-    /// Palette colour it takes on.
-    pub color: String,
-    /// 0 cloth .. 1 metal.
+pub struct WornPiece {
+    pub bone: String,
+    pub parts: Vec<Part>,
+    /// Hair is hidden under it (helmets).
     #[serde(default)]
-    pub metallic: f32,
-    /// 0 polished .. 1 matt.
-    #[serde(default = "matt")]
-    pub roughness: f32,
-}
-
-fn matt() -> f32 {
-    0.9
+    pub hides_hair: bool,
 }
 
 /// A replacement for a lost limb, fitted by a doctor at an operating table.
@@ -894,10 +891,8 @@ impl Defs {
             if d.category.is_empty() {
                 return Err(format!("{}: needs a category", d.id));
             }
-            if let Some(w) = d.apparel.as_ref().and_then(|a| a.worn.as_ref()) {
-                if !self.palette.contains_key(&w.color) {
-                    return Err(format!("{}: no colour \"{}\" in the palette", d.id, w.color));
-                }
+            for piece in d.apparel.iter().flat_map(|a| &a.pieces) {
+                parts(&d.id, &piece.parts)?;
             }
             if d.prosthetic.as_ref().is_some_and(|p| p.fits.is_empty() || !(p.efficiency > 0.0 && p.efficiency <= 1.0)) {
                 return Err(format!("{}: a prosthetic fits some parts, with efficiency above 0 and up to 1", d.id));

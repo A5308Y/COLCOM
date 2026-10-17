@@ -8,13 +8,6 @@ use my_world::pawn::{Faction, Pawn};
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rgb(pub f32, pub f32, pub f32);
 
-/// How a pawn's outfit looks with what they wear on top: colour, metallic,
-/// roughness (the outermost thing with a worn look, e.g. steel armour).
-pub fn worn_look(p: &my_world::pawn::Pawn) -> Option<(Rgb, f32, f32)> {
-    let worn = p.apparel.iter().rev().find_map(|a| a.def().apparel.as_ref()?.worn.as_ref())?;
-    let (r, g, b) = *my_world::defs::defs().palette.get(&worn.color)?;
-    Some((Rgb(r, g, b), worn.metallic, worn.roughness))
-}
 
 impl Rgb {
     pub fn color(self) -> Color {
@@ -123,23 +116,4 @@ pub fn pawn_look(p: &Pawn) -> Look {
         return Look { skin: look.skin.mix(grey, 0.6), hair: look.hair.mix(grey, 0.6), clothes: look.clothes.mix(grey, 0.6) };
     }
     look
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use my_world::defs::ItemId;
-    use my_world::rng::Rng;
-
-    #[test]
-    fn steel_armour_shows() {
-        let mut p = Pawn::new_colonist(1, "Dax".into(), (0, 0, 1), &mut Rng::new(1));
-        p.apparel = vec![ItemId::named("clothes")];
-        assert!(worn_look(&p).is_none(), "plain clothes: the outfit as it is");
-        p.apparel.push(ItemId::named("steel_armor"));
-        let (color, metallic, roughness) = worn_look(&p).expect("armour changes the look");
-        let (r, g, b) = my_world::defs::defs().palette["steel"];
-        assert_eq!(color, Rgb(r, g, b));
-        assert!(metallic > 0.5 && roughness < 0.5, "shiny metal");
-    }
 }

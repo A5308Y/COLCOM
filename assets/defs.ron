@@ -57,8 +57,9 @@
     // (hunger restored per unit); `raw` food upsets colonists and may give
     // food poisoning (`poison`: chance per unit eaten). `medicine`: how much
     // it improves tending (1 = full medicine). `pods`: amounts arriving in
-    // cargo pods (an `apparel`'s `worn` look restyles the wearer's outfit:
-    // palette `color`, `metallic`, `roughness`). `weapon` and `apparel` items are picked up and used by
+    // cargo pods. `apparel` `pieces` are what shows on the wearer: shapes on
+    // a bone of the character (see `WornPiece` in src/defs.rs), in metres from
+    // the bone, +z forward. `weapon` and `apparel` items are picked up and used by
     // colonists; `held` is how a weapon looks in hand, `shots` how many shots it
     // fires per attack in a battle (1 if not given). `value`: worth of one,
     // for what raiders demand and take. A `prosthetic` replaces a lost body
@@ -336,13 +337,46 @@
             ],
         ),
         (
+            id: "steel_helmet",
+            value: 60.0,
+            name: "Steel helmet",
+            category: "Apparel",
+            color: "steel",
+            apparel: Some((slot: Head, armor: 0.12, mood: 0.0, pieces: [
+                // A dome over the head with an iron brim and a nose guard.
+                (bone: "Head", hides_hair: true, parts: [
+                    (shape: Sphere, color: "steel", at: (0.0, 0.18, -0.01), size: (0.26, 0.21, 0.27)),
+                    (shape: Cylinder, color: "iron", at: (0.0, 0.14, -0.01), size: (0.27, 0.03, 0.28)),
+                    (shape: Cube, color: "steel", at: (0.0, 0.09, 0.135), size: (0.02, 0.08, 0.015)),
+                ]),
+            ])),
+            look: [
+                (shape: Sphere, color: "steel", at: (0.0, 0.08, 0.0), size: (0.3, 0.22, 0.32)),
+                (shape: Cylinder, color: "iron", at: (0.0, 0.03, 0.0), size: (0.32, 0.03, 0.34)),
+            ],
+        ),
+        (
             id: "steel_armor",
             value: 150.0,
             name: "Steel armour",
             category: "Apparel",
             color: "steel",
-            // Worn, it turns the outfit to plate steel.
-            apparel: Some((slot: Outer, armor: 0.35, mood: 0.0, worn: Some((color: "steel", metallic: 0.85, roughness: 0.35)))),
+            apparel: Some((slot: Outer, armor: 0.35, mood: 0.0, pieces: [
+                // A breastplate round the chest, raised at the front, with an iron collar and belt.
+                (bone: "spine_03", parts: [
+                    (shape: Cylinder, color: "steel", at: (0.0, 0.0, -0.02), size: (0.44, 0.40, 0.35)),
+                    (shape: Sphere, color: "steel", at: (0.0, 0.05, 0.08), size: (0.4, 0.33, 0.18)),
+                    (shape: Cylinder, color: "iron", at: (0.0, 0.2, -0.02), size: (0.25, 0.05, 0.22)),
+                    (shape: Cylinder, color: "iron", at: (0.0, -0.2, -0.02), size: (0.45, 0.06, 0.36)),
+                ]),
+                // Domed plates over the shoulders.
+                (bone: "upperarm_l", parts: [
+                    (shape: Sphere, color: "steel", at: (0.02, 0.04, 0.0), size: (0.19, 0.13, 0.19)),
+                ]),
+                (bone: "upperarm_r", parts: [
+                    (shape: Sphere, color: "steel", at: (-0.02, 0.04, 0.0), size: (0.19, 0.13, 0.19)),
+                ]),
+            ])),
             look: [
                 (shape: Cube, color: "steel", at: (0.0, 0.12, 0.0), size: (0.42, 0.24, 0.26)),
                 (shape: Cube, color: "iron", at: (0.0, 0.25, 0.0), size: (0.2, 0.04, 0.2)),
@@ -1128,6 +1162,8 @@
             ingredients: [("steel", 6), ("planks", 2)], products: [("pistol", 1)], sound: Some("anvil")),
         (id: "make_rifle", name: "Make rifle", bench: "smithy", work: Crafting, skill: Crafting, time: 14.0,
             ingredients: [("steel", 10), ("planks", 4)], products: [("rifle", 1)], sound: Some("anvil")),
+        (id: "make_helmet", name: "Make steel helmet", bench: "smithy", work: Crafting, skill: Crafting, time: 8.0,
+            ingredients: [("steel", 5)], products: [("steel_helmet", 1)], sound: Some("anvil")),
         (id: "make_armor", name: "Make steel armour", bench: "smithy", work: Crafting, skill: Crafting, time: 14.0,
             ingredients: [("steel", 12)], products: [("steel_armor", 1)], sound: Some("anvil")),
         (id: "make_club", name: "Make club", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 4.0,

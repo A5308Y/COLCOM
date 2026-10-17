@@ -161,8 +161,10 @@ pub struct Rig {
     variant: bool,
     /// This character's own materials and their living colour, for greying on death.
     own: Vec<(Handle<StandardMaterial>, Color)>,
-    /// The outfit's materials, with their own metallic and roughness, for what's worn on top.
-    outfit_mats: Vec<(Handle<StandardMaterial>, f32, f32)>,
+    /// Bones by name, with their turn in the character's frame at rest (for armour).
+    bones: HashMap<String, (Entity, Quat)>,
+    /// Hair parts (not the beard), hidden under a helmet.
+    hair_parts: Vec<Entity>,
     /// The animation graph is attached.
     animated: bool,
     playing: Option<Anim>,
@@ -254,6 +256,7 @@ pub fn spawn_rig(commands: &mut Commands, assets: &AssetServer, p: &Pawn, parent
             ChildOf(parent),
         ))
         .id();
+    let hairy: Vec<bool> = parts.iter().map(|p| p.starts_with("hair/") && !p.ends_with("Beard")).collect();
     let parts: Vec<Entity> = parts
         .into_iter()
         .map(|part| {
@@ -264,6 +267,7 @@ pub fn spawn_rig(commands: &mut Commands, assets: &AssetServer, p: &Pawn, parent
                 .id()
         })
         .collect();
+    let hair_parts: Vec<Entity> = parts.iter().zip(&hairy).filter(|(_, h)| **h).map(|(e, _)| *e).collect();
     commands.entity(rig).insert(Rig {
         pending: parts.len(),
         hand: None,
@@ -279,7 +283,8 @@ pub fn spawn_rig(commands: &mut Commands, assets: &AssetServer, p: &Pawn, parent
         hair: look.hair.color(),
         variant: !raider && h(4) < 0.5,
         own: Vec::new(),
-        outfit_mats: Vec::new(),
+        bones: HashMap::new(),
+        hair_parts,
         animated: false,
         playing: None,
     });
@@ -297,6 +302,7 @@ fn rig_part(
     children: Query<&Children>,
     names: Query<&Name>,
     parents: Query<&ChildOf>,
+    transforms: Query<&Transform>,
     meshes: Query<(&GltfMaterialName, &MeshMaterial3d<StandardMaterial>)>,
     mut rigs: Query<&mut Rig>,
     mut materials: ResMut<Assets<StandardMaterial>>,
@@ -314,17 +320,22 @@ fn rig_part(
     if let Some(armature) =
         children.iter_descendants(part).find(|&e| names.get(e).is_ok_and(|n| n.as_str() == "Armature"))
     {
-        let mut stack = vec![(armature, vec![names.get(armature).unwrap().clone()])];
-        while let Some((e, path)) = stack.pop() {
+        let turn = |e: Entity| transforms.get(e).map_or(Quat::IDENTITY, |t| t.rotation);
+        let mut stack = vec![(armature, vec![names.get(armature).unwrap().clone()], turn(armature))];
+        while let Some((e, path, rest)) = stack.pop() {
             commands.entity(e).insert((AnimationTargetId::from_names(path.iter()), AnimatedBy(character)));
             if rig.hand.is_none() && path.last().is_some_and(|n| n.as_str() == "hand_r") {
                 rig.hand = Some(e);
+            }
+            // The first part's skeleton carries the armour (every part has the same one).
+            if let Some(name) = path.last() {
+                rig.bones.entry(name.as_str().to_string()).or_insert((e, rest));
             }
             for child in children.get(e).into_iter().flatten() {
                 if let Ok(name) = names.get(*child) {
                     let mut p = path.clone();
                     p.push(name.clone());
-                    stack.push((*child, p));
+                    stack.push((*child, p, rest * turn(*child)));
                 }
             }
         }
@@ -335,10 +346,6 @@ fn rig_part(
             continue;
         };
         let name = name.0.as_str();
-        let outfit = !(name.starts_with("MI_Eyes")
-            || name.starts_with("MI_Hair")
-            || name.starts_with("MI_Superhero")
-            || name.starts_with("MI_Regular"));
         let tint = if name.starts_with("MI_Eyes") {
             rig.eyes.push((e, mat.0.clone()));
             continue;
@@ -356,12 +363,8 @@ fn rig_part(
         if rig.variant && name.starts_with("MI_Peasant") {
             own.base_color_texture = Some(library.peasant_2.clone());
         }
-        let (metallic, roughness) = (own.metallic, own.perceptual_roughness);
         let handle = materials.add(own);
         rig.own.push((handle.clone(), tint));
-        if outfit {
-            rig.outfit_mats.push((handle.clone(), metallic, roughness));
-        }
         commands.entity(e).insert(MeshMaterial3d(handle));
     }
 }
@@ -379,25 +382,18 @@ pub fn prepare(commands: &mut Commands, library: &CharacterLibrary, rig_entity: 
 }
 
 /// Grey a dead pawn's character, or restore its colours.
-/// Show what's worn over the outfit (`look::worn_look`: colour, metallic,
-/// roughness), or the outfit as it is. A little of the pawn's own colour shows through.
-pub fn dress(rig: &mut Rig, worn: Option<(Rgb, f32, f32)>, materials: &mut Assets<StandardMaterial>) {
-    let clothes = rig.clothes;
-    for (handle, metallic, roughness) in &rig.outfit_mats {
-        let Some(mut m) = materials.get_mut(handle) else { continue };
-        let (color, metallic, roughness) = match worn {
-            Some((c, metal, rough)) => {
-                let own = clothes.to_srgba();
-                (c.mix(Rgb(own.red, own.green, own.blue), 0.2).color(), metal, rough)
+impl Rig {
+    /// A bone, and its turn in the character's frame at rest.
+    pub fn bone(&self, name: &str) -> Option<(Entity, Quat)> {
+        self.bones.get(name).copied()
+    }
+
+    /// Show or hide the hair (under a helmet).
+    pub fn show_hair(&self, show: bool, visibility: &mut Query<&mut Visibility>) {
+        for &e in &self.hair_parts {
+            if let Ok(mut v) = visibility.get_mut(e) {
+                *v = if show { Visibility::Inherited } else { Visibility::Hidden };
             }
-            None => (clothes, *metallic, *roughness),
-        };
-        m.base_color = color;
-        m.metallic = metallic;
-        m.perceptual_roughness = roughness;
-        // Greyed from this colour on death.
-        if let Some(own) = rig.own.iter_mut().find(|o| o.0 == *handle) {
-            own.1 = color;
         }
     }
 }

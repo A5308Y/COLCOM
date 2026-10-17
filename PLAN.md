@@ -525,10 +525,15 @@ real play.
   not saved); each gets an urgent alert, and climbs out (`way_out`: nearest standable cell beyond the
   furniture from which the edge can be reached, as a `Goto`). Their paths may cross `Map::climbable`
   furniture (built, blocking, not a wall or door; `pathing::bfs_climbing`) at `CLIMB_PACE` (30%).
-- Armour shows (2026-10-17): `ApparelDef::worn` (`WornLook { color, metallic, roughness }`) restyles the
-  wearer's outfit materials: steel armour turns them to shiny steel, with a fifth of the pawn's own colour.
-  `look::worn_look` picks the outermost such apparel; `characters::dress` restyles the character's outfit
-  materials (`Rig::outfit_mats`), `pawns.rs` the figure's clothes, whenever what's worn changes.
+- Armour shows (2026-10-17): `ApparelDef::pieces` (`WornPiece { bone, parts, hides_hair }`): shapes on a bone
+  of the character, placed from the bone in the model's own frame (metres, +z forward). `Rig::bones` records
+  each bone's turn at rest (composed down from the `Armature` as parts load), and `props::spawn_worn` hangs
+  the parts under the bone turned back by it, in polished metal (`PropAssets::metals`), so they follow the
+  animations. Steel armour: a rounded breastplate (spine_03) with iron collar and belt, shoulder domes
+  (upperarm_l/_r); new steel helmet (slot `Head`, smithy): dome, brim and nose guard on `Head`, hiding the hair
+  (`Rig::show_hair`). Sizes were checked against the body and head meshes (no skull vertex pokes through the
+  helmet; the breastplate covers the torso except where the arms join). The figure shows a metal shell and cap.
+  (An earlier outfit tint, `worn`, was dropped.)
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 

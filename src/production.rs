@@ -738,6 +738,27 @@ mod tests {
     }
 
     #[test]
+    fn helmets_armour_and_clothes_are_worn_together() {
+        let mut w = test_world(16, 16);
+        let id = colonist(&mut w, (2, 2, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].apparel = vec![item("clothes")];
+        for kind in ["steel_helmet", "steel_armor"] {
+            w.map.drop_item((6, 6, Z), Stack { kind: item(kind), count: 1 });
+            run(&mut w, 20.0);
+        }
+        let worn = &w.pawn(id).unwrap().apparel;
+        for kind in ["clothes", "steel_armor", "steel_helmet"] {
+            assert!(worn.contains(&item(kind)), "wears {}: {:?}", kind, worn);
+        }
+        // What shows of them: plates on the chest and shoulders, a helmet over the hair.
+        let pieces = |k: &str| item(k).def().apparel.as_ref().unwrap().pieces.clone();
+        let bones: Vec<String> = pieces("steel_armor").iter().map(|p| p.bone.clone()).collect();
+        assert_eq!(bones, ["spine_03", "upperarm_l", "upperarm_r"]);
+        assert!(pieces("steel_helmet").iter().any(|p| p.bone == "Head" && p.hides_hair));
+    }
+
+    #[test]
     fn cooks_fetch_their_own_ingredients() {
         let mut w = test_world(20, 20);
         let cook = colonist(&mut w, (2, 2, Z));

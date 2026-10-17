@@ -6,11 +6,11 @@ use super::characters::{self, Anim, CharacterLibrary, Rig};
 use super::input::UiState;
 use super::look::*;
 use super::terrain::FLOOR_T;
-use super::props::{lit, PropAssets};
+use super::props::{self, lit, PropAssets};
 use super::sim::Sim;
 use super::tile_point;
 use bevy::prelude::*;
-use my_world::defs::{ItemId, Special};
+use my_world::defs::{ItemId, Special, WornPiece};
 use my_world::pawn::{Job, Pawn};
 use my_world::world::World as SimWorld;
 use std::collections::HashMap;
@@ -53,6 +53,10 @@ struct PawnVis {
     weapon_kind: Option<Option<ItemId>>,
     /// What's worn that the figure and character were last dressed for.
     dressed: Option<(Vec<ItemId>, bool)>,
+    /// Armour pieces on the character's bones.
+    armor: Vec<Entity>,
+    /// The figure's breastplate and helmet (shown while the character isn't).
+    figure_armor: [Entity; 2],
     carry_kind: Option<ItemId>,
     dead: bool,
     yaw: f32,
@@ -141,6 +145,13 @@ fn spawn_pawn(
     let cap = Transform::from_xyz(0.0, 1.06, -0.03).with_scale(Vec3::new(0.32, 0.22, 0.32));
     commands.spawn(mesh(&a.sphere, hair, cap, figure));
     let weapon = commands.spawn((mesh(&a.cube, a.metal.clone(), Transform::default(), figure), Visibility::Hidden)).id();
+    // Armour on the figure: a shell over the torso, a cap over the head.
+    let plate = Transform::from_xyz(0.0, 0.6, 0.0).with_scale(Vec3::new(1.12, 0.9, 1.12));
+    let cap = Transform::from_xyz(0.0, 1.07, 0.0).with_scale(Vec3::new(0.34, 0.24, 0.34));
+    let figure_armor = [
+        commands.spawn((mesh(&a.torso, a.metal.clone(), plate, figure), Visibility::Hidden)).id(),
+        commands.spawn((mesh(&a.sphere, a.metal.clone(), cap, figure), Visibility::Hidden)).id(),
+    ];
     // Carried things are held in front of the chest, by either body.
     let carry_tf = Transform::from_xyz(0.0, 0.6 * SCALE, 0.28 * SCALE).with_scale(Vec3::splat(0.24 * SCALE));
     let carry = commands.spawn((mesh(&a.cube, a.wood.clone(), carry_tf, root), Visibility::Hidden)).id();
@@ -174,6 +185,8 @@ fn spawn_pawn(
         carry,
         weapon_kind: None,
         dressed: None,
+        armor: Vec::new(),
+        figure_armor,
         carry_kind: None,
         dead: false,
         yaw: 0.0,
@@ -344,21 +357,31 @@ fn sync_pawns(
             }
         }
 
-        // Armour and the like change how the outfit looks (on the figure, and the character once it's ready).
+        // Armour and helmets: pieces on the character's bones (once it's ready), and on the figure.
         let wearing = (p.apparel.clone(), rig_ready);
-        if !p.dead && v.dressed.as_ref() != Some(&wearing) {
-            let worn = worn_look(p);
-            if let Some(mut mat) = materials.get_mut(&v.own[0]) {
-                let (color, metallic, roughness) = match worn {
-                    Some((c, metal, rough)) => (c.mix(pawn_look(p).clothes, 0.2), metal, rough),
-                    None => (pawn_look(p).clothes, 0.0, 0.9),
-                };
-                mat.base_color = color.color();
-                mat.metallic = metallic;
-                mat.perceptual_roughness = roughness;
+        if v.dressed.as_ref() != Some(&wearing) {
+            for e in v.armor.drain(..) {
+                commands.entity(e).despawn();
             }
-            if let Some((r, ..)) = rig.as_mut().filter(|_| rig_ready) {
-                characters::dress(r, worn, &mut materials);
+            let pieces: Vec<&WornPiece> =
+                p.apparel.iter().filter_map(|a| a.def().apparel.as_ref()).flat_map(|a| &a.pieces).collect();
+            for (e, bone) in v.figure_armor.into_iter().zip(["spine_03", "Head"]) {
+                if let Ok(mut vis) = visibility.get_mut(e) {
+                    *vis = if pieces.iter().any(|w| w.bone == bone) { Visibility::Inherited } else { Visibility::Hidden };
+                }
+            }
+            if let Some((r, ..)) = rig.as_ref().filter(|_| rig_ready) {
+                for piece in &pieces {
+                    let Some((bone, rest)) = r.bone(&piece.bone) else {
+                        warn!("no bone \"{}\" for armour", piece.bone);
+                        continue;
+                    };
+                    // Undo the bone's turn at rest, so the parts sit in the character's own frame.
+                    let e = props::spawn_worn(&mut commands, &props, rest.inverse(), &piece.parts);
+                    commands.entity(e).insert(ChildOf(bone));
+                    v.armor.push(e);
+                }
+                r.show_hair(!pieces.iter().any(|w| w.hides_hair), &mut visibility);
             }
             v.dressed = Some(wearing);
         }
