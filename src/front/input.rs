@@ -755,7 +755,7 @@ fn mouse(
             if buttons.just_released(MouseButton::Left) {
                 if let (Some(a), Some(h)) = (ui.drag_start, hover) {
                     let b = order_target(&sim.world, h, order);
-                    if paint_box(&mut sim.world, a, b, order) > 0 {
+                    if paint_box(&mut sim.world, a, b, order, hollow(order, shift)) > 0 {
                         sounds.play("ui_place", None);
                     }
                 }
@@ -821,11 +821,21 @@ fn mouse(
 /// Apply an order over a rectangle at the level where the drag started,
 /// following the ground one level up or down where it slopes. Returns how
 /// many cells it applied to.
-fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order) -> usize {
+/// Walls go around the dragged rectangle, not over all of it (Shift fills it).
+fn hollow(order: Order, shift: bool) -> bool {
+    matches!(order, Order::Build(kind) if kind.def().is_block()) && !shift
+}
+
+/// Apply `order` over the rectangle from `a` to `b` (only its edge if `hollow`).
+fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order, hollow: bool) -> usize {
     let z0 = a.2 as i32;
     let mut done = 0;
-    for y in a.1.min(b.1)..=a.1.max(b.1) {
-        for x in a.0.min(b.0)..=a.0.max(b.0) {
+    let (lx, ly, hx, hy) = (a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1));
+    for y in ly..=hy {
+        for x in lx..=hx {
+            if hollow && x > lx && x < hx && y > ly && y < hy {
+                continue;
+            }
             for dz in [0, 1, -1] {
                 if let Some(p) = w.map.at(x as i32, y as i32, z0 + dz) {
                     if w.apply_order(p, order) {
@@ -870,7 +880,7 @@ pub fn cell_outline(gizmos: &mut Gizmos, t: Pos, color: Color) {
     gizmos.cube(Transform::from_translation(c).with_scale(Vec3::new(1.03, LEVEL_H * 1.03, 1.03)), color);
 }
 
-fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
+fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<ButtonInput<KeyCode>>) {
     let w = &sim.world;
     let m = &w.map;
 
@@ -952,6 +962,11 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
         let c = Vec3::new((lx + hx + 1) as f32 / 2.0, floor, (ly + hy + 1) as f32 / 2.0);
         let size = Vec2::new((hx - lx + 1) as f32, (hy - ly + 1) as f32);
         gizmos.rect(Isometry3d::new(c, Quat::from_rotation_x(FRAC_PI_2)), size, Color::WHITE);
+        // Walls: the inside stays empty.
+        let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+        if hollow(order, shift) && size.x >= 3.0 && size.y >= 3.0 {
+            gizmos.rect(Isometry3d::new(c, Quat::from_rotation_x(FRAC_PI_2)), size - Vec2::splat(2.0), Color::WHITE);
+        }
     }
 
     for p in w.pawns.iter().filter(|p| !p.left && !p.dead && ui.shows_at(m, p.x, p.y, p.z)) {
@@ -994,6 +1009,22 @@ mod tests {
         std::fs::write(&b, "b").unwrap();
         assert_eq!(newer_file(&a, &b), Some(b.clone()), "the autosave is newer");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn walls_go_around_the_dragged_rectangle() {
+        use my_world::map::{Feature, FLAT_Z as Z};
+        use my_world::rng::Rng;
+        let mut w = SimWorld::with_map(Map::flat(12, 12), Rng::new(1));
+        let wall = Order::Build(BuildId::named("wall"));
+        assert_eq!(paint_box(&mut w, (2, 2, Z), (6, 5, Z), wall, hollow(wall, false)), 14, "5×4 edge");
+        let at = |w: &SimWorld, x, y| matches!(w.map.feature[w.map.idx((x, y, Z))], Feature::Blueprint { .. });
+        assert!(at(&w, 2, 2) && at(&w, 6, 5) && at(&w, 4, 2) && at(&w, 2, 4));
+        assert!(!at(&w, 3, 3) && !at(&w, 5, 4), "the inside stays empty");
+        assert!(hollow(wall, false) && !hollow(wall, true), "Shift fills");
+        let chair = Order::Build(BuildId::named("chair"));
+        assert!(!hollow(chair, false), "furniture fills the rectangle");
+        assert_eq!(paint_box(&mut w, (8, 8, Z), (9, 9, Z), chair, false), 4);
     }
 
     #[test]

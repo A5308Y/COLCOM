@@ -43,6 +43,7 @@ furniture, light, production), searchable, with costs (red if the colony is shor
 | `PageDown` / `PageUp` (or `[` / `]`) | Layer view: hide everything above a level, and build on that level |
 | `Esc` | Select tool: click colonists or tiles to inspect them |
 | Left drag | Paint the current tool over a rectangle |
+| Left drag with walls | Wall in a rectangle: only its outline (`Shift` fills it) |
 | `F` | Draft the selected colonist (or everyone if nothing is selected) |
 | Right click | With a drafted colonist: move there, or attack the clicked raider |
 | `WASD` / arrows, middle-drag | Pan the camera |

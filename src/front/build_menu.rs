@@ -348,6 +348,9 @@ fn current_hint(tool: Tool) -> String {
     let name = TOOLS.iter().find(|e| e.tool == tool).map_or("", |e| e.name.as_str());
     match tool {
         Tool::Select => "Click colonists or cells to inspect them.".into(),
+        Tool::Paint(Order::Build(kind)) if kind.def().is_block() => {
+            format!("{}: left-drag a rectangle to wall it in (Shift fills it). Right-click to stop.", name)
+        }
         Tool::Paint(Order::Build(_)) => format!("{}: left-drag to place blueprints. Right-click to stop.", name),
         Tool::Paint(_) => format!("{}: left-drag over an area. Right-click to stop.", name),
         Tool::Move(None) => "Move furniture: click the furniture to move. Right-click to stop.".into(),
