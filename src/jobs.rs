@@ -1,7 +1,7 @@
 //! Finding work for colonists and carrying jobs out step by step.
 
 use crate::defs::{defs, Defs, ItemId, PlantId, Special};
-use crate::map::{Block, Desig, Feature, Map, Pos, Stack, STACK_MAX};
+use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone, STACK_MAX};
 use crate::moving::MOVE_SHARE;
 use crate::pathing::{bfs, DistField};
 use crate::pawn::{Job, Memory, Pawn, Skill, Task, WorkType};
@@ -12,6 +12,8 @@ const MINE_TIME: f32 = 5.0;
 /// Haulers pick up more of the same item lying within this many steps, and
 /// deliver to other blueprints within this many steps on the same trip.
 const NEARBY_STEPS: i32 = 8;
+/// Base seconds to fill one cell with soil.
+const FILL_TIME: f32 = 3.0;
 /// Deconstructing takes this share of the building's work time.
 const DECONSTRUCT_SHARE: f32 = 0.5;
 
@@ -67,7 +69,7 @@ fn from_beside(task: Task) -> bool {
     match task {
         Task::Harvest(kind) => !kind.def().passable,
         Task::Sow(_) => false,
-        Task::Mine | Task::Construct | Task::Deconstruct | Task::Craft | Task::Uninstall => true,
+        Task::Mine | Task::Fill | Task::Construct | Task::Deconstruct | Task::Craft | Task::Uninstall => true,
     }
 }
 
@@ -137,7 +139,11 @@ impl World {
     pub(crate) fn find_work(&self, p: &Pawn) -> Option<Job> {
         let scan = self.scan(p.pos);
         let (df, nearest_item, nearest_cell) = (&scan.df, &scan.nearest_item, &scan.nearest_cell);
-        let candidates = reachable_and_around(&self.map, df);
+        let mut candidates = reachable_and_around(&self.map, df);
+        // Cells to fill deep in a shaft are worked from its rim, further away.
+        let deep = self.map.desig.iter().enumerate().filter(|(_, d)| **d == Some(Desig::Fill)).map(|(i, _)| i);
+        // (A cell listed twice is harmless: the nearest job wins.)
+        candidates.extend(deep);
 
         // Better gear first: it's quick.
         if p.is_colonist() {
@@ -217,6 +223,11 @@ impl World {
         if wt == WorkType::Mining && m.desig[i] == Some(Desig::Mine) && m.mineable(pos) {
             return work(Task::Mine);
         }
+        // Bottom up: a cell waits for the one below to be filled. Worked from the shaft's rim.
+        if wt == WorkType::Mining && m.desig[i] == Some(Desig::Fill) && m.fillable(pos, false) && !self.someone_at(pos) {
+            let spot = m.fill_spot(pos);
+            return df.approach(m, spot, true).map(|(_, d)| (d, Job::Work { target: pos, task: Task::Fill }));
+        }
         if wt == WorkType::Construction && m.desig[i] == Some(Desig::Deconstruct) && m.deconstructable(pos) {
             return work(Task::Deconstruct);
         }
@@ -292,7 +303,8 @@ impl World {
             self.end_job(p);
             return;
         }
-        match self.go_to(p, target, from_beside(task), dt) {
+        let goal = if task == Task::Fill { self.map.fill_spot(target) } else { target };
+        match self.go_to(p, goal, from_beside(task), dt) {
             Step::Moving => {}
             Step::Unreachable => self.end_job(p),
             Step::Arrived => {
@@ -332,6 +344,7 @@ impl World {
         match task {
             Task::Harvest(kind) => harvestable(m, i) == Some(kind),
             Task::Mine => d == Some(Desig::Mine) && m.mineable(target),
+            Task::Fill => d == Some(Desig::Fill) && m.fillable(target, false) && !self.someone_at(target),
             Task::Deconstruct => d == Some(Desig::Deconstruct) && m.deconstructable(target),
             Task::Sow(_) => plantable(m, i),
             Task::Construct => match f {
@@ -357,6 +370,7 @@ impl World {
             }
             Task::Sow(kind) => kind.def().sow.as_ref().map(|s| (s.skill, s.time)),
             Task::Mine => Some((Skill::Mining, MINE_TIME)),
+            Task::Fill => Some((Skill::Mining, FILL_TIME)),
             // Taking down is quicker than putting up.
             Task::Deconstruct => {
                 let m = &self.map;
@@ -407,6 +421,17 @@ impl World {
                 drop(&mut self.map, target, (y.item, y.count));
             }
             Task::Sow(kind) => self.map.set_feature(i, Feature::Plant { kind, growth: 0.0 }),
+            Task::Fill => {
+                // Anything lying here is pushed up onto the new ground.
+                let stack = self.map.items[i].take();
+                self.map.set_block(i, Block::Soil);
+                self.map.zone[i] = Zone::None;
+                self.map.blood[i] = 0.0;
+                self.sound("dig", Some(target));
+                if let (Some(s), Some(up)) = (stack, self.map.above(target)) {
+                    self.map.drop_item(up, s);
+                }
+            }
             Task::Mine => {
                 let dug = self.map.block[i];
                 if dug.solid() {
@@ -566,6 +591,11 @@ impl World {
     /// The nearest blueprint within reach of `from` still needing `kind`.
     fn next_delivery(&self, from: Pos, kind: ItemId, me: u32) -> Option<Pos> {
         self.nearby_blueprints(from, kind, me).first().map(|b| b.0)
+    }
+
+    /// Someone (alive, not buried) is in cell `p`.
+    fn someone_at(&self, p: Pos) -> bool {
+        self.pawns.iter().any(|o| !o.dead && !o.left && o.pos == p)
     }
 
     fn delivery_need(&self, at: Pos) -> Option<Stack> {

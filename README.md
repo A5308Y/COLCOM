@@ -118,7 +118,9 @@ furniture, light, production), searchable, with costs (red if the colony is shor
   the patient wounded.
 - **Terrain:** the world is a 3D grid of soil, rock and water, 16 levels deep, with rolling hills, lakes and
   rocky mountains. Pawns walk up and down one-level slopes of natural ground but can't climb cliffs,
-  walls or floors. Mining digs tunnels into rock and shafts down through soil.
+  walls or floors. Mining digs tunnels into rock and shafts down through soil; **Fill** (Orders) fills
+  holes and tunnels back in with soil, for free, bottom up (mark a shaft again to mark the level above),
+  and on open ground raises it a level.
 - **Building upwards:** floors make upper storeys and roofs; each needs a wall, stairs or ground beneath
   some cell within 3 steps. Stairs connect a cell to the one above; you enter them from their low end
   and can't walk across them. Use the layer view to place floors in mid-air (a faint grid shows the

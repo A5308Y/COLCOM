@@ -180,6 +180,8 @@ pub enum Desig {
     Forage,
     /// Take down a structure or floor, getting part of its cost back.
     Deconstruct,
+    /// Fill an open cell back in with soil (a hole, a tunnel, or to raise the ground).
+    Fill,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -460,6 +462,34 @@ impl Map {
     /// Something a Mine order can dig out: rock, ore or soil.
     pub fn mineable(&self, p: Pos) -> bool {
         self.block[self.idx(p)].solid()
+    }
+
+    /// Where to work from to fill `p`: the lowest open cell in its shaft (up
+    /// to 6 above) with ground beside it to stand on, so deep holes are
+    /// filled from the rim.
+    pub fn fill_spot(&self, p: Pos) -> Pos {
+        let mut c = p;
+        for _ in 0..6 {
+            if self.around(c).any(|n| n != p && self.standable(n)) {
+                return c;
+            }
+            match self.above(c) {
+                Some(a) if self.block[self.idx(a)] == Block::Air => c = a,
+                _ => break,
+            }
+        }
+        p
+    }
+
+    /// An open cell with nothing built in it, which could be filled with
+    /// soil: now if it's on the ground, or (`pending`) once the cell below is.
+    pub fn fillable(&self, p: Pos, pending: bool) -> bool {
+        let i = self.idx(p);
+        let empty = self.block[i] == Block::Air && self.feature[i] == Feature::None && !self.floor[i] && !self.roof[i];
+        let below = self.below(p).map(|b| self.idx(b));
+        let ground = below.is_some_and(|b| self.block[b].solid() && self.block[b] != Block::Water);
+        let filling = below.is_some_and(|b| self.desig[b] == Some(Desig::Fill));
+        empty && (ground || pending && filling)
     }
 
     /// Something a Deconstruct order can take down: a structure, a floor or a roof.

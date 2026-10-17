@@ -419,11 +419,31 @@ impl World {
                 && !m.covered((x, y, z))
                 && !self.pawns.iter().any(|p| m.idx(p.pos) == i);
             if free {
-                if let Some(kind) = self.pick_regrowing() {
+                // Only up to how much of the land it covered when the map was made.
+                if let Some(kind) = self.pick_regrowing().filter(|&k| self.wild_count(k) < self.wild_cap(k)) {
                     self.map.set_feature(i, Feature::Plant { kind, growth: 1.0 });
                 }
             }
         }
+    }
+
+    /// How many plants of `kind` grow on the map.
+    pub fn wild_count(&self, kind: PlantId) -> usize {
+        self.map.feature.iter().filter(|f| matches!(f, Feature::Plant { kind: k, .. } if *k == kind)).count()
+    }
+
+    /// Most wild plants of `kind` the map regrows to: its share (`density`)
+    /// of the columns with open soil on top, as when the map was made.
+    pub fn wild_cap(&self, kind: PlantId) -> usize {
+        let Some(w) = kind.def().wild.as_ref() else { return 0 };
+        let m = &self.map;
+        // Columns whose topmost solid ground is soil with open air above (whatever stands on it).
+        let soil_top = |x: usize, y: usize| {
+            let top = (0..m.d).rev().find(|&z| m.block[m.idx((x, y, z))].solid());
+            top.is_some_and(|z| m.block[m.idx((x, y, z))] == Block::Soil && z + 1 < m.d)
+        };
+        let soil = (0..m.h).flat_map(|y| (0..m.w).map(move |x| (x, y))).filter(|&(x, y)| soil_top(x, y)).count();
+        (w.density * soil as f32).ceil() as usize
     }
 
     /// A wild plant, weighted by how readily each regrows.
@@ -792,6 +812,7 @@ impl World {
         let f = m.feature[i];
         match order {
             Order::Desig(Desig::Mine) => m.mineable(p),
+            Order::Desig(Desig::Fill) => m.fillable(p, true) && m.desig[i] != Some(Desig::Fill),
             // A filled grave stays.
             Order::Desig(Desig::Deconstruct) => m.deconstructable(p) && self.grave_occupant(p).is_none(),
             Order::Desig(d) => f.harvest_desig() == Some(d),
@@ -1101,6 +1122,70 @@ mod tests {
         w.apply_order((6, 6, Z), Order::Zone(Zone::Grow(defs().sown().unwrap())));
         run(&mut w, 10.0);
         assert!(w.map.feature[i].is_crop());
+    }
+
+    #[test]
+    fn dug_holes_can_be_filled_in() {
+        let mut w = test_world(20, 20);
+        let id = colonist(&mut w, (2, 2, Z));
+        // A hill two levels high (with a step up to it) and a shaft dug down through it.
+        raise(&mut w, 5, 5, 13, 13, 1);
+        raise(&mut w, 6, 6, 12, 12, 2);
+        let (low, high) = ((9, 9, Z), (9, 9, Z + 1));
+        for p in [low, high] {
+            let i = w.map.idx(p);
+            w.map.set_block(i, Block::Air);
+        }
+        w.map.drop_item(low, Stack { kind: item("wood"), count: 3 });
+        // The top can only be marked once the bottom is.
+        assert!(!w.apply_order(high, Order::Desig(Desig::Fill)), "nothing under it yet");
+        assert!(w.apply_order(low, Order::Desig(Desig::Fill)));
+        assert!(!w.apply_order(low, Order::Desig(Desig::Fill)), "already marked");
+        assert!(w.apply_order(high, Order::Desig(Desig::Fill)), "waits for the one below");
+        // Not into the sky, nor where something is built.
+        assert!(!w.apply_order((15, 15, Z + 1), Order::Desig(Desig::Fill)), "in mid-air");
+        let wall = w.map.idx((3, 3, Z));
+        w.map.set_feature(wall, Feature::built("wall"));
+        assert!(!w.apply_order((3, 3, Z), Order::Desig(Desig::Fill)));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].priorities = [0; WorkType::ALL.len()];
+        w.pawns[i].priorities[WorkType::Mining as usize] = 1;
+        run(&mut w, 40.0);
+        for p in [low, high] {
+            assert_eq!(w.map.block[w.map.idx(p)], Block::Soil, "{:?} filled", p);
+            assert_eq!(w.map.desig[w.map.idx(p)], None);
+        }
+        assert_eq!(w.map.count_items(item("wood")), 3, "the wood was pushed out, not buried");
+        assert!(w.map.standable((9, 9, Z + 2)), "level with the hilltop again");
+    }
+
+    #[test]
+    fn wild_plants_regrow_only_to_their_share() {
+        let mut w = test_world(30, 30);
+        let tree = PlantId::named("tree");
+        let cap = w.wild_cap(tree);
+        assert_eq!(cap, (0.11f32 * 900.0).ceil() as usize, "11% of the open soil");
+        // Many regrowth chances: far more than would fill the map without a limit.
+        w.regrow_timer = 0.0;
+        for _ in 0..20_000 {
+            w.grow_plants(4.0);
+            w.regrow_timer = 0.0;
+        }
+        let trees = w.wild_count(tree);
+        assert!(trees <= cap && trees > cap * 3 / 4, "{} trees, cap {}", trees, cap);
+        let bushes = w.wild_count(PlantId::named("berry_bush"));
+        assert!(bushes <= w.wild_cap(PlantId::named("berry_bush")), "{} bushes, cap {}", bushes, w.wild_cap(PlantId::named("berry_bush")));
+        // Chopped down, they grow back.
+        for f in w.map.feature.iter_mut() {
+            if matches!(f, Feature::Plant { kind, .. } if *kind == tree) {
+                *f = Feature::None;
+            }
+        }
+        for _ in 0..5_000 {
+            w.grow_plants(4.0);
+            w.regrow_timer = 0.0;
+        }
+        assert!(w.wild_count(tree) > 0, "a forest comes back");
     }
 
     #[test]

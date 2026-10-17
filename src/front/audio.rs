@@ -244,6 +244,7 @@ fn work_sound(w: &my_world::world::World, target: my_world::map::Pos, task: Task
     match task {
         Task::Harvest(kind) => kind.def().harvest.sound.as_deref().unwrap_or("rustle"),
         Task::Sow(kind) => kind.def().sow.as_ref().and_then(|s| s.sound.as_deref()).unwrap_or("rustle"),
+        Task::Fill => "dig",
         Task::Mine => match m.block[i] {
             Block::Soil => "dig",
             Block::Rock | Block::Ore => "mine",

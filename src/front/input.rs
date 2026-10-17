@@ -63,6 +63,13 @@ pub static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(|| {
         ),
         fixed(Tool::Paint(Order::Desig(Desig::Forage)), "Forage", None, "Orders", "Mark berry bushes to be picked."),
         fixed(
+            Tool::Paint(Order::Desig(Desig::Fill)),
+            "Fill",
+            None,
+            "Orders",
+            "Fill holes and tunnels back in with soil (free), from the bottom up. On open ground it raises the ground a level.",
+        ),
+        fixed(
             Tool::Move(None),
             "Move furniture",
             None,
@@ -942,6 +949,7 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
             Desig::Mine => floor_outline(&mut gizmos, p, 0.12, Color::srgb(0.45, 0.8, 1.0)),
             Desig::Chop => floor_outline(&mut gizmos, p, 0.12, Color::srgb(1.0, 0.6, 0.1)),
             Desig::Forage => floor_outline(&mut gizmos, p, 0.12, Color::srgb(1.0, 0.5, 0.75)),
+            Desig::Fill => cell_outline(&mut gizmos, p, Color::srgb(0.75, 0.55, 0.3)),
             Desig::Deconstruct if m.feature[i].is_block() => cell_outline(&mut gizmos, p, Color::srgb(1.0, 0.3, 0.25)),
             Desig::Deconstruct => floor_outline(&mut gizmos, p, 0.12, Color::srgb(1.0, 0.3, 0.25)),
         }

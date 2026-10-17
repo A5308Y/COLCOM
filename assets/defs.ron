@@ -832,7 +832,7 @@
     // Plants grow in open cells on soil. `growth` runs from 0 to 1 over
     // `grow_time` seconds of daylight; wild plants appear fully grown.
     // `sow`: can be planted in grow zones (the first such plant is the default). `wild`: share of open soil covered when the
-    // map is made, and relative chance of being the one that regrows.
+    // map is made (and the most it regrows to), and relative chance of being the one that regrows.
     // `harvest`: work that removes the plant and drops its yield once grown,
     // on cells designated `desig` (or automatically if there is none), with
     // `sound` while working and `done_sound` at the end.

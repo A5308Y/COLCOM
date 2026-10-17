@@ -115,6 +115,8 @@ pub enum Task {
     /// Plant in a grow zone.
     Sow(PlantId),
     Mine,
+    /// Fill an open cell with soil.
+    Fill,
     Construct,
     /// Take down a structure or floor.
     Deconstruct,
@@ -130,6 +132,7 @@ impl Task {
             Task::Harvest(kind) => &kind.def().harvest.verb,
             Task::Sow(_) => "planting",
             Task::Mine => "mining",
+            Task::Fill => "filling in",
             Task::Construct => "building",
             Task::Deconstruct => "deconstructing",
             Task::Craft => "crafting",

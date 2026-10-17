@@ -498,6 +498,14 @@ real play.
   to a new game). With raids off the raid timer runs on but nobody comes. `raid_size()` scales the usual size
   (1 + day/3 + wealth/800, up to 8) by `raid_size` (0.25–3, at least 1, up to 8 × the multiplier when above 1).
   `raid_now` calls one in (not during another). The Menu has a Difficulty section with all three.
+- Fill (2026-10-17): `Desig::Fill` on an open, empty cell (no structure, floor or roof) on the ground, or on
+  one whose cell below is marked too (`Map::fillable`). Miners (`Task::Fill`, 3 s, Mining skill) fill it with
+  soil once the cell below is solid and nobody stands in it; items in it go up onto the new ground, its zone
+  and blood go. Deep shafts are worked from the rim (`Map::fill_spot`); `find_work` also looks at every
+  cell marked Fill, since those may be further down than the cells around reachable ones.
+- Vegetation cap (2026-10-17): wild plants regrow (one try every 4 s) only while their kind covers less than
+  its `wild.density` share of the columns topped by soil (`World::wild_cap`, counted from the terrain, so
+  plants on it don't shrink it), so a long game stays about as wooded as a new map.
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 
