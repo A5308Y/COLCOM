@@ -323,6 +323,25 @@ mod tests {
                 app.update();
             }
         }
+        // Moving furniture: the tool choosing a spot, then the move's arrow and its inspector.
+        let spot = {
+            let w = &app.world().resource::<front::Sim>().world;
+            [(1, 0), (0, 1), (-1, 0), (0, -1), (2, 0), (0, 2)]
+                .into_iter()
+                .map(|(dx, dy)| ((bed.0 as i32 + dx) as usize, (bed.1 as i32 + dy) as usize, bed.2))
+                .find(|&to| w.move_target_ok(bed, to))
+                .expect("room beside the bed")
+        };
+        app.world_mut().resource_mut::<front::UiState>().tool = front::Tool::Move(Some(bed));
+        app.update();
+        app.world_mut().resource_mut::<front::UiState>().tool = front::Tool::Select;
+        assert!(app.world_mut().resource_mut::<front::Sim>().world.order_move(bed, spot));
+        for t in [bed, spot] {
+            app.world_mut().resource_mut::<front::UiState>().selected = Some(front::Selection::Tile(t));
+            for _ in 0..5 {
+                app.update();
+            }
+        }
 
         // Sound: the placeholder files load (WAV support is on), ambience
         // loops exist, and a sound asked for gets played.

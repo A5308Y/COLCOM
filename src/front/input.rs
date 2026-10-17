@@ -24,6 +24,8 @@ pub const AUTOSAVE_PATH: &str = "autosave.json";
 pub enum Tool {
     Select,
     Paint(Order),
+    /// Move furniture: first which (`None`), then where it goes.
+    Move(Option<Pos>),
 }
 
 /// One tool in the build menu.
@@ -60,6 +62,13 @@ pub static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(|| {
             "Take down walls, furniture, floors and roofs. Builders do it and get back half the cost.",
         ),
         fixed(Tool::Paint(Order::Desig(Desig::Forage)), "Forage", None, "Orders", "Mark berry bushes to be picked."),
+        fixed(
+            Tool::Move(None),
+            "Move furniture",
+            None,
+            "Orders",
+            "Click furniture, then where it should go. A builder packs it up and sets it down there, at no cost.",
+        ),
         fixed(
             Tool::Paint(Order::Cancel),
             "Cancel",
@@ -422,6 +431,13 @@ fn pick(m: &Map, ray: Ray3d, ui: &UiState) -> Option<Hover> {
 
 /// The cell an order should go to: rock and walls are mined where they are,
 /// everything else happens in the open cell on top of what was clicked.
+/// Where the furniture at `from` would go with the cursor at `h`, if it can.
+pub fn move_target(w: &SimWorld, from: Pos, h: Hover) -> Option<Pos> {
+    let kind = w.movable(from)?;
+    let to = order_target(w, h, Order::Build(kind));
+    w.move_target_ok(from, to).then_some(to)
+}
+
 pub fn order_target(w: &SimWorld, h: Hover, order: Order) -> Pos {
     let first = match order {
         Order::Desig(Desig::Mine) => [h.solid, h.stand],
@@ -746,12 +762,34 @@ fn mouse(
                 ui.drag_start = None;
             }
         }
+        Tool::Move(from) => {
+            if buttons.just_released(MouseButton::Left) && !over_ui {
+                if let Some(h) = hover {
+                    match from {
+                        None => {
+                            if sim.world.movable(h.stand).is_some() {
+                                ui.tool = Tool::Move(Some(h.stand));
+                                sounds.play("ui_click", None);
+                            }
+                        }
+                        Some(from) => {
+                            if let Some(to) = move_target(&sim.world, from, h) {
+                                if sim.world.order_move(from, to) {
+                                    sounds.play("ui_place", None);
+                                    ui.tool = Tool::Select;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Any right press puts a tool down (back to Select), over the map or a
     // panel, click or camera drag alike.
     if buttons.just_pressed(MouseButton::Right) {
-        if let Tool::Paint(_) = ui.tool {
+        if ui.tool != Tool::Select {
             ui.tool = Tool::Select;
             ui.drag_start = None;
             ui.dropped_tool = true;
@@ -821,6 +859,12 @@ pub fn floor_outline(gizmos: &mut Gizmos, t: Pos, inset: f32, color: Color) {
 }
 
 /// Box outline around a whole (solid) cell.
+/// A line a little above the floor from cell `a` to cell `b`, with an arrowhead at `b`.
+fn move_arrow(gizmos: &mut Gizmos, a: Pos, b: Pos, color: Color) {
+    let lift = Vec3::Y * 0.25;
+    gizmos.arrow(tile_center(a) + lift, tile_center(b) + lift, color);
+}
+
 pub fn cell_outline(gizmos: &mut Gizmos, t: Pos, color: Color) {
     let c = tile_center(t) + Vec3::Y * (LEVEL_H / 2.0);
     gizmos.cube(Transform::from_translation(c).with_scale(Vec3::new(1.03, LEVEL_H * 1.03, 1.03)), color);
@@ -843,6 +887,26 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>) {
             Desig::Forage => floor_outline(&mut gizmos, p, 0.12, Color::srgb(1.0, 0.5, 0.75)),
             Desig::Deconstruct if m.feature[i].is_block() => cell_outline(&mut gizmos, p, Color::srgb(1.0, 0.3, 0.25)),
             Desig::Deconstruct => floor_outline(&mut gizmos, p, 0.12, Color::srgb(1.0, 0.3, 0.25)),
+        }
+    }
+
+    // Furniture on the move: where it stands (until packed up), an arrow to where it goes.
+    let moving = Color::srgb(0.4, 0.85, 1.0);
+    for mv in &w.moves {
+        if !mv.lifted && mv.from.2 <= ui.top_at(m, mv.from.0, mv.from.1) {
+            floor_outline(&mut gizmos, mv.from, 0.12, moving);
+        }
+        move_arrow(&mut gizmos, mv.from, mv.to, moving);
+    }
+    // Choosing where furniture goes: green where it can, red where it can't.
+    if let (Tool::Move(Some(from)), Some(h)) = (ui.tool, ui.hover) {
+        floor_outline(&mut gizmos, from, 0.06, Color::WHITE);
+        match move_target(w, from, h) {
+            Some(to) => {
+                floor_outline(&mut gizmos, to, 0.06, Color::srgb(0.4, 1.0, 0.45));
+                move_arrow(&mut gizmos, from, to, Color::srgb(0.4, 1.0, 0.45));
+            }
+            None => floor_outline(&mut gizmos, h.stand, 0.06, Color::srgb(1.0, 0.3, 0.25)),
         }
     }
 

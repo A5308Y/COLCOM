@@ -434,6 +434,18 @@ real play.
   skill gained crafting at its benches), `extra` (chance of a spare of each product). Bedroom: rest +25%,
   +4 mood; barracks: rest +10%, +2 mood; kitchen: work +25%, 15% spare meals; smithy: work +30%, 10% spare;
   workshop: work +20%, learning +50%. Listed in the inspector and the Rooms window.
+- Moving furniture (2026-10-17, `src/moving.rs`): `World::order_move(from, to)` puts a blueprint of the
+  furniture at `to` (no materials; hauling skips it) and records a `Move` in `World::moves`. A builder packs
+  it up (`Task::Uninstall`, half its work time), keeping a bench's bills and a bed's owner, then builds the
+  blueprint (half the work time) and `finish_move` sets it down. Cancel at either end calls it off (packed-up
+  furniture goes back, or its full cost is dropped if its old cell is taken); `update_moves` drops moves
+  whose blueprint or furniture is gone. Not movable: walls, doors, windows, floors, roofs, stairs, graves.
+  UI: `Tool::Move` (pick the furniture, then the spot; green/red preview and an arrow), a Move button and
+  the move's status in the cell inspector.
+- Plants need open sky (2026-10-17): nothing grows where `Map::covered` (roof, floor, rock overhead); grow
+  zones can't be painted there and nothing is sown there. Stairs get no roof over them (`recompute_rooms`
+  skips them and counts them as covered, so the room is still a room), and stairs built under a finished
+  roof take that roof cell down.
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 

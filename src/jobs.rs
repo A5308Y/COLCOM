@@ -2,6 +2,7 @@
 
 use crate::defs::{defs, Defs, ItemId, PlantId, Special};
 use crate::map::{Block, Desig, Feature, Map, Pos, Stack, STACK_MAX};
+use crate::moving::MOVE_SHARE;
 use crate::pathing::{bfs, DistField};
 use crate::pawn::{Job, Memory, Pawn, Skill, Task, WorkType};
 use crate::world::{Step, World};
@@ -43,6 +44,7 @@ fn plantable(m: &Map, i: usize) -> bool {
         && m.items[i].is_none()
         && m.standable(p)
         && m.below(p).is_some_and(|b| m.block[m.idx(b)] == Block::Soil)
+        && !m.covered(p)
 }
 
 /// The grown plant in cell `i`, if it may be harvested now: automatically,
@@ -62,7 +64,7 @@ fn from_beside(task: Task) -> bool {
     match task {
         Task::Harvest(kind) => !kind.def().passable,
         Task::Sow(_) => false,
-        Task::Mine | Task::Construct | Task::Deconstruct | Task::Craft => true,
+        Task::Mine | Task::Construct | Task::Deconstruct | Task::Craft | Task::Uninstall => true,
     }
 }
 
@@ -191,6 +193,9 @@ impl World {
         if wt == WorkType::Construction && m.desig[i] == Some(Desig::Deconstruct) && m.deconstructable(pos) {
             return work(Task::Deconstruct);
         }
+        if wt == WorkType::Construction && self.move_from(pos).is_some_and(|mv| !mv.lifted) {
+            return work(Task::Uninstall);
+        }
         match m.feature[i] {
             Feature::Plant { kind, .. } => {
                 if kind.def().harvest.work == wt && harvestable(m, i).is_some() {
@@ -201,6 +206,10 @@ impl World {
                 let def = kind.def();
                 if def.work != wt {
                     return None;
+                }
+                // Moved furniture needs no materials, only to be packed up first.
+                if let Some(mv) = self.move_to(pos) {
+                    return if mv.lifted { work(Task::Construct) } else { None };
                 }
                 if delivered >= def.cost.count {
                     return work(Task::Construct);
@@ -274,7 +283,12 @@ impl World {
                     self.push_log(msg);
                 }
                 if p.job_progress >= 1.0 {
+                    // Setting down their own bed: `p` is a copy, so it's given back here.
+                    let own_bed = task == Task::Construct && self.move_to(target).is_some_and(|mv| mv.owner == Some(p.id));
                     self.complete_work(target, task, &p.name);
+                    if own_bed {
+                        p.bed = Some(target);
+                    }
                     self.end_job(p);
                 }
             }
@@ -291,10 +305,17 @@ impl World {
             Task::Mine => d == Some(Desig::Mine) && m.mineable(target),
             Task::Deconstruct => d == Some(Desig::Deconstruct) && m.deconstructable(target),
             Task::Sow(_) => plantable(m, i),
-            Task::Construct => {
-                matches!(f, Feature::Blueprint { kind, delivered } if delivered >= kind.def().cost.count)
-            }
+            Task::Construct => match f {
+                Feature::Blueprint { kind, delivered } => match self.move_to(target) {
+                    Some(mv) => mv.lifted,
+                    None => delivered >= kind.def().cost.count,
+                },
+                _ => false,
+            },
             Task::Craft => self.bench_at(target).is_some_and(|b| b.ready()),
+            Task::Uninstall => {
+                self.move_from(target).is_some_and(|mv| !mv.lifted && f.structure_id() == Some(mv.kind))
+            }
         }
     }
 
@@ -317,9 +338,16 @@ impl World {
             }
             Task::Craft => self.bench_at(target)?.current.map(|r| (r.def().skill, r.def().time)),
             Task::Construct => match self.map.feature[self.map.idx(target)] {
-                Feature::Blueprint { kind, .. } => Some((kind.def().skill, kind.def().work_time)),
+                Feature::Blueprint { kind, .. } => {
+                    let share = if self.move_to(target).is_some() { MOVE_SHARE } else { 1.0 };
+                    Some((kind.def().skill, (kind.def().work_time * share).max(1.0)))
+                }
                 _ => None,
             },
+            Task::Uninstall => {
+                let kind = self.move_from(target)?.kind;
+                Some((Skill::Construction, (kind.def().work_time * MOVE_SHARE).max(1.0)))
+            }
         }
     }
 
@@ -392,7 +420,14 @@ impl World {
                 }
             }
             Task::Craft => {}
+            Task::Uninstall => self.lift(target),
             Task::Construct => {
+                if let Feature::Blueprint { .. } = f {
+                    if self.finish_move(target) {
+                        self.sound("built", Some(target));
+                        return;
+                    }
+                }
                 if let Feature::Blueprint { kind, .. } = f {
                     match kind.def().special {
                         Special::Floor => {
@@ -407,6 +442,16 @@ impl World {
                         Special::Stairs => {
                             let dir = self.map.stairs_facing(target);
                             self.map.set_feature(i, Feature::Built { kind, dir });
+                            // A roof overhead would block the way up: take it down.
+                            if let Some(a) = self.map.above(target) {
+                                let ai = self.map.idx(a);
+                                if self.map.roof[ai] {
+                                    self.map.set_roof(ai, false);
+                                    if let Some(roof) = defs().roof() {
+                                        drop(&mut self.map, target, roof.def().drops());
+                                    }
+                                }
+                            }
                         }
                         _ => self.map.set_feature(i, Feature::Built { kind, dir: 0 }),
                     }
@@ -426,6 +471,7 @@ impl World {
     /// Materials a blueprint or workbench still needs.
     fn delivery_need(&self, at: Pos) -> Option<Stack> {
         match self.map.feature[self.map.idx(at)] {
+            Feature::Blueprint { .. } if self.move_to(at).is_some() => None,
             Feature::Blueprint { kind, delivered } => {
                 let cost = &kind.def().cost;
                 (delivered < cost.count).then(|| Stack { kind: cost.item, count: cost.count - delivered })

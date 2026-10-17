@@ -4,6 +4,7 @@ use crate::battle::{Battle, Parley};
 use crate::health::TickCtx;
 use crate::defs::{defs, BuildId, PlantId, Special};
 use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone};
+use crate::moving::Move;
 use crate::pawn::{Faction, Job, Memory, Pawn, WorkType};
 use crate::pathing::bfs;
 use crate::production::{Bench, Stockpile};
@@ -93,6 +94,9 @@ pub struct World {
     pub benches: Vec<Bench>,
     /// Stockpile settings, indexed by the id in `Zone::Stockpile`.
     pub stockpiles: Vec<Stockpile>,
+    /// Furniture being moved (see `moving.rs`).
+    #[serde(default)]
+    pub moves: Vec<Move>,
     /// Counts down to the next once-a-second pass over benches and rooms.
     pub colony_timer: f32,
     /// Quality per room id (index 0 unused). Derived, so not saved.
@@ -164,6 +168,7 @@ impl World {
             regrow_timer: 4.0,
             benches: Vec::new(),
             stockpiles: Vec::new(),
+            moves: Vec::new(),
             colony_timer: 0.0,
             room_stats: Vec::new(),
             parley: None,
@@ -353,6 +358,7 @@ impl World {
             self.colony_timer = 1.0;
             self.sync_containers();
             self.update_production();
+            self.update_moves();
             self.update_room_stats();
             self.update_squads();
             self.update_graves();
@@ -383,14 +389,16 @@ impl World {
     }
 
     fn grow_plants(&mut self, dt: f32) {
+        // Only in daylight, and not under a roof (or anything else overhead).
         if !self.is_night() {
-            for f in self.map.feature.iter_mut() {
-                if let Feature::Plant { kind, growth } = f {
-                    if *growth < 1.0 {
-                        let t = kind.def().grow_time;
-                        *growth = if t > 0.0 { (*growth + dt / t).min(1.0) } else { 1.0 };
-                    }
+            for i in 0..self.map.len() {
+                let Feature::Plant { kind, growth } = self.map.feature[i] else { continue };
+                if growth >= 1.0 || self.map.covered(self.map.pos(i)) {
+                    continue;
                 }
+                let t = kind.def().grow_time;
+                let growth = if t > 0.0 { (growth + dt / t).min(1.0) } else { 1.0 };
+                self.map.feature[i] = Feature::Plant { kind, growth };
             }
         }
         self.regrow_timer -= dt;
@@ -763,6 +771,8 @@ impl World {
             Order::Zone(Zone::Stockpile(_)) => false,
             // Safe zones go indoors too, among the furniture (but not over shelves).
             Order::Zone(Zone::Safe) => m.standable(p) && m.zone[i] != Zone::Safe && !self.container_at(i),
+            // Crops need open sky.
+            Order::Zone(Zone::Grow(_)) if m.covered(p) => false,
             Order::Zone(z) => m.standable(p) && (f == Feature::None || f.is_crop()) && m.zone[i] != z,
             Order::Stockpile => {
                 m.standable(p) && (f == Feature::None || f.is_crop()) && m.zone[i].stockpile().is_none()
@@ -796,7 +806,11 @@ impl World {
                 }
             }
             // Roof blueprints would only come back.
-            Order::Cancel => m.desig[i].is_some() || matches!(f, Feature::Blueprint { .. }) && !m.roof_blueprint(i),
+            Order::Cancel => {
+                m.desig[i].is_some()
+                    || matches!(f, Feature::Blueprint { .. }) && !m.roof_blueprint(i)
+                    || self.move_from(p).is_some()
+            }
         }
     }
 
@@ -825,6 +839,7 @@ impl World {
             }
             Order::Cancel => {
                 self.map.desig[i] = None;
+                self.cancel_move(p);
                 if let Feature::Blueprint { kind, delivered } = self.map.feature[i] {
                     self.map.feature[i] = Feature::None;
                     if delivered > 0 {
@@ -1305,6 +1320,71 @@ mod tests {
         w.map.recompute_rooms();
         w.mark_roofs();
         assert_eq!(roof_blueprints(&w, Z + 1), inner, "no roof over the pit");
+    }
+
+    #[test]
+    fn stairs_get_no_roof_over_them() {
+        let mut w = test_world(16, 16);
+        let i = w.map.idx((7, 7, Z));
+        w.map.set_feature(i, Feature::Built { kind: BuildId::named("stairs"), dir: 0 });
+        house(&mut w, 5, 5, 9, 9);
+        let marked = roof_blueprints(&w, Z + 1);
+        assert!(!marked.contains(&(7, 7)), "the way up stays open");
+        assert_eq!(marked.len(), 8);
+        // Roofed everywhere else, it's still a room (the stairwell counts as covered).
+        for (x, y) in marked {
+            let a = w.map.idx((x, y, Z + 1));
+            w.map.feature[a] = Feature::None;
+            w.map.set_roof(a, true);
+        }
+        w.map.recompute_rooms();
+        assert!(w.map.roofed((6, 6, Z)));
+    }
+
+    #[test]
+    fn stairs_built_under_a_roof_open_it() {
+        let mut w = test_world(16, 16);
+        colonist(&mut w, (2, 2, Z));
+        house(&mut w, 5, 5, 9, 9);
+        for y in 6..=8 {
+            for x in 6..=8 {
+                let a = w.map.idx((x, y, Z + 1));
+                w.map.feature[a] = Feature::None;
+                w.map.set_roof(a, true);
+            }
+        }
+        w.map.recompute_rooms();
+        let i = w.map.idx((7, 7, Z));
+        w.map.feature[i] = Feature::Blueprint { kind: BuildId::named("stairs"), delivered: BuildId::named("stairs").def().cost.count };
+        run(&mut w, 60.0);
+        assert!(w.map.feature[i].is_special(Special::Stairs), "built");
+        assert!(!w.map.roof[w.map.idx((7, 7, Z + 1))], "no roof over the stairs");
+        assert!(roof_blueprints(&w, Z + 1).is_empty(), "and none comes back");
+        assert!(w.map.roofed((6, 6, Z)), "still a room");
+    }
+
+    #[test]
+    fn plants_dont_grow_under_a_roof() {
+        let mut w = test_world(16, 16);
+        house(&mut w, 5, 5, 9, 9);
+        let a = w.map.idx((7, 7, Z + 1));
+        w.map.feature[a] = Feature::None;
+        w.map.set_roof(a, true);
+        let crop = defs().sown().unwrap();
+        assert!(!w.apply_order((7, 7, Z), Order::Zone(Zone::Grow(crop))), "no grow zone under a roof");
+        assert!(w.apply_order((2, 2, Z), Order::Zone(Zone::Grow(crop))));
+        for at in [(7, 7, Z), (2, 2, Z)] {
+            let i = w.map.idx(at);
+            w.map.feature[i] = Feature::Plant { kind: crop, growth: 0.0 };
+        }
+        w.time = DAY_LEN / 2.0;
+        run(&mut w, 10.0);
+        let growth = |w: &World, at: Pos| match w.map.feature[w.map.idx(at)] {
+            Feature::Plant { growth, .. } => growth,
+            _ => -1.0,
+        };
+        assert_eq!(growth(&w, (7, 7, Z)), 0.0, "under the roof");
+        assert!(growth(&w, (2, 2, Z)) > 0.0, "in the open");
     }
 
     #[test]

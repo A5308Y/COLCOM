@@ -10,6 +10,7 @@ pub mod health;
 pub mod jobs;
 pub mod map;
 pub mod medical;
+pub mod moving;
 pub mod pathing;
 pub mod pawn;
 pub mod production;

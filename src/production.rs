@@ -105,7 +105,7 @@ impl World {
     }
 
     /// The bench record for a workbench at `pos`, made if it's new.
-    fn bench_mut(&mut self, pos: Pos) -> Option<&mut Bench> {
+    pub(crate) fn bench_mut(&mut self, pos: Pos) -> Option<&mut Bench> {
         if !self.is_workbench(pos) {
             return None;
         }

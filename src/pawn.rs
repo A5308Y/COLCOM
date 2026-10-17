@@ -120,6 +120,8 @@ pub enum Task {
     Deconstruct,
     /// Make the current bill's recipe at a workbench.
     Craft,
+    /// Pack up furniture that is being moved (see `moving.rs`).
+    Uninstall,
 }
 
 impl Task {
@@ -131,6 +133,7 @@ impl Task {
             Task::Construct => "building",
             Task::Deconstruct => "deconstructing",
             Task::Craft => "crafting",
+            Task::Uninstall => "packing up",
         }
     }
 }

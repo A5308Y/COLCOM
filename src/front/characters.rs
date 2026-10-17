@@ -473,7 +473,7 @@ pub fn activity(p: &Pawn, w: &SimWorld, armed: bool) -> Anim {
             Task::Harvest(plant) if plant.def().harvest.desig == Some(Desig::Chop) => Anim::Swing,
             Task::Mine => Anim::Swing,
             Task::Harvest(_) | Task::Sow(_) => Anim::Kneel,
-            Task::Construct | Task::Deconstruct => match m.feature[m.idx(target)] {
+            Task::Construct | Task::Deconstruct | Task::Uninstall => match m.feature[m.idx(target)] {
                 Feature::Blueprint { kind, .. } | Feature::Built { kind, .. } if kind.def().is_block() => Anim::Interact,
                 _ => Anim::Kneel,
             },

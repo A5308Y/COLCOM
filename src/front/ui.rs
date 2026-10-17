@@ -18,7 +18,7 @@ use my_world::map::{Block, Feature, Pos, Zone};
 use my_world::pawn::{Pawn, Role, Skill, WorkType};
 use my_world::production::{BillMode, PRIORITY_NAMES};
 use my_world::rooms::{Progress, RoomStats, TIERS};
-use my_world::world::World as SimWorld;
+use my_world::world::{Order, World as SimWorld};
 use my_world::DAY_LEN;
 
 const HELP_ORDERS: [&str; 7] = [
@@ -134,8 +134,14 @@ fn draw_ui(
     match st.selected {
         Some(Selection::Pawn(id)) => pawn_inspector(&ctx, &mut sim, &mut st, id, left),
         Some(Selection::Tile(t)) => {
-            let (changed, open) = tile_inspector(&ctx, &mut sim, t, left);
+            let mut move_from = None;
+            let (changed, open) = tile_inspector(&ctx, &mut sim, t, left, &mut move_from);
             if changed {
+                sounds.play("ui_click", None);
+            }
+            if let Some(from) = move_from {
+                st.tool = input::Tool::Move(Some(from));
+                st.drag_start = None;
                 sounds.play("ui_click", None);
             }
             if !open {
@@ -186,9 +192,13 @@ fn draw_ui(
 /// With a tool in hand, its name by the cursor, so it's clear clicks give
 /// orders rather than inspect.
 fn tool_at_cursor(ctx: &egui::Context, st: &UiState) {
-    let input::Tool::Paint(_) = st.tool else { return };
+    let name = match st.tool {
+        input::Tool::Select => return,
+        input::Tool::Move(None) => "Move furniture: which?",
+        input::Tool::Move(Some(_)) => "Move furniture: where to?",
+        tool => input::TOOLS.iter().find(|e| e.tool == tool).map_or("Tool", |e| e.name.as_str()),
+    };
     let Some(at) = ctx.pointer_hover_pos() else { return };
-    let name = input::TOOLS.iter().find(|e| e.tool == st.tool).map_or("Tool", |e| e.name.as_str());
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("tool_at_cursor")));
     let pos = at + egui::vec2(16.0, 14.0);
     let font = egui::FontId::proportional(13.0);
@@ -719,7 +729,8 @@ type Action = Box<dyn FnOnce(&mut SimWorld)>;
 
 /// Returns whether anything was changed in it.
 /// The cell inspector; returns whether something was changed, and whether it's still open.
-fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) -> (bool, bool) {
+/// `move_from` is set if the player chose to move the furniture here.
+fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32, move_from: &mut Option<Pos>) -> (bool, bool) {
     let mut actions: Vec<Action> = Vec::new();
     let w = &sim.world;
     let m = &w.map;
@@ -801,6 +812,7 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) -> (boo
             if m.feature[i].is_bed() {
                 bed_owner(ui, w, t, &mut actions);
             }
+            furniture_move(ui, w, t, move_from, &mut actions);
             if m.feature[i].is_special(Special::Grave) {
                 ui.separator();
                 match w.grave_occupant(t).and_then(|id| w.pawn(id)) {
@@ -814,6 +826,34 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) -> (boo
         act(&mut sim.world);
     }
     (changed, open)
+}
+
+/// Moving the furniture here, or how its move is going.
+fn furniture_move(ui: &mut egui::Ui, w: &SimWorld, t: Pos, move_from: &mut Option<Pos>, actions: &mut Vec<Action>) {
+    let cell = |p: Pos| format!("cell {}, {}", p.0, p.1);
+    let (text, call_off) = if let Some(mv) = w.move_from(t) {
+        let how = if mv.lifted { "Packed up" } else { "Waiting to be packed up" };
+        (format!("{}: moving {} to {}.", how, mv.kind.name().to_lowercase(), cell(mv.to)), "Leave it here")
+    } else if let Some(mv) = w.move_to(t) {
+        let how = if mv.lifted { "packed up, waiting to be set down here" } else { "waiting to be packed up" };
+        (format!("{} from {}: {}.", mv.kind.name(), cell(mv.from), how), "Call off the move")
+    } else {
+        if w.movable(t).is_some() {
+            ui.separator();
+            let hint = "Pick a new spot for it. A builder packs it up and sets it down there, at no cost.";
+            if ui.button("Move").on_hover_text(hint).clicked() {
+                *move_from = Some(t);
+            }
+        }
+        return;
+    };
+    ui.separator();
+    ui.label(RichText::new(text).color(Color32::from_rgb(120, 210, 255)));
+    if ui.button(call_off).clicked() {
+        actions.push(Box::new(move |w| {
+            w.apply_order(t, Order::Cancel);
+        }));
+    }
 }
 
 /// Who sleeps in the bed at `t`, to choose from the colonists. A leader

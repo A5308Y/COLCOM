@@ -72,6 +72,9 @@ furniture, light, production), searchable, with costs (red if the colony is shor
   doors. Each room has a quality from its size, the beauty of its furniture, doors and windows, its
   cleanliness (blood, clutter) and light; sleeping and eating in better rooms lifts mood more. Click a
   cell in a room to see the breakdown.
+- **Moving furniture:** click a piece of furniture and press **Move** (or use *Move furniture* in the
+  build menu's Orders), then click where it should go. A builder packs it up and sets it down there at no
+  cost; a workbench keeps its bills and a bed its owner. Cancel (or the inspector) calls a move off.
 - **Themed rooms:** a room with everything a theme needs becomes a bedroom, barracks, kitchen, smithy or
   workshop: its floor changes and its name shows over it. The **Rooms** button lists what each needs;
   clicking a cell in a room shows a checklist towards every theme (themes are defined in
