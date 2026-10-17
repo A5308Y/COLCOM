@@ -172,7 +172,7 @@
             color: "berry",
             nutrition: 40.0,
             raw: true,
-            poison: 0.06,
+            poison: 0.02,
             pods: Some((15, 40)),
             look: [
                 (shape: Sphere, color: "berry", at: (-0.12, 0.08, 0.0), size: (0.16, 0.16, 0.16)),
@@ -831,7 +831,7 @@
             id: "corn",
             name: "Corn",
             passable: true,
-            grow_time: 180.0,
+            grow_time: 540.0,
             sow: Some((work: Growing, skill: Growing, time: 1.5)),
             harvest: (work: Growing, skill: Growing, time: 1.5, yields: ("raw_food", 6), verb: "harvesting"),
             stages: [
@@ -869,7 +869,7 @@
             id: "healroot",
             name: "Healroot",
             passable: true,
-            grow_time: 220.0,
+            grow_time: 660.0,
             sow: Some((work: Growing, skill: Growing, time: 1.5)),
             harvest: (work: Growing, skill: Growing, time: 1.5, yields: ("healroot", 3), verb: "harvesting"),
             stages: [
@@ -907,7 +907,7 @@
             id: "cotton",
             name: "Cotton",
             passable: true,
-            grow_time: 200.0,
+            grow_time: 600.0,
             sow: Some((work: Growing, skill: Growing, time: 1.5)),
             harvest: (work: Growing, skill: Growing, time: 1.5, yields: ("cotton", 6), verb: "harvesting"),
             stages: [

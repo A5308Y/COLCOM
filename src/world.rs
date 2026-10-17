@@ -1574,8 +1574,8 @@ mod tests {
         colonist(&mut w, (2, 2, Z));
         w.apply_order((6, 6, Z), Order::Zone(Zone::Grow(defs().sown().unwrap())));
         let yields = &defs().sown().unwrap().def().harvest.yields;
-        // Crops only grow in daylight, so this can take more than a day.
-        let harvested = (0..(3.0 * DAY_LEN) as usize).any(|_| {
+        // Crops only grow in daylight, so this takes a few days.
+        let harvested = (0..(6.0 * DAY_LEN) as usize).any(|_| {
             run(&mut w, 1.0);
             w.pawns.iter_mut().for_each(|p| p.hunger = 100.0);
             w.map.count_items(yields.item) >= yields.count

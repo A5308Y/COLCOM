@@ -87,7 +87,8 @@ impl World {
         match self.rng.below(4) {
             0 if self.colonists_alive() < 10 => self.wanderer_joins(),
             1 if has_crops => self.blight(),
-            2 if self.day() >= 3 => self.flu_outbreak(),
+            // Flu is rare: most of its draws bring cargo pods instead.
+            2 if self.day() >= 5 && self.rng.chance(0.4) => self.flu_outbreak(),
             _ => self.cargo_pods(),
         }
     }
@@ -124,7 +125,7 @@ impl World {
         if candidates.is_empty() {
             return;
         }
-        let victims = 1 + self.rng.below(2);
+        let victims = 1 + self.rng.chance(0.2) as usize;
         let mut names = Vec::new();
         for _ in 0..victims {
             let i = candidates[self.rng.below(candidates.len())];
