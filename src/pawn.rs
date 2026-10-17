@@ -177,6 +177,8 @@ pub enum Job {
         #[serde(default)]
         chosen: bool,
     },
+    /// Carry a dead colonist to an empty grave and bury them.
+    Bury { corpse: u32, grave: Pos, carrying: bool },
 }
 
 impl Job {
@@ -194,6 +196,7 @@ impl Job {
             Job::Rescue { .. } => "rescuing",
             Job::Feed { .. } => "feeding a patient",
             Job::Equip { .. } => "equipping",
+            Job::Bury { .. } => "burying the dead",
         }
     }
 }
@@ -372,6 +375,12 @@ pub struct Pawn {
     /// A leader without a decent bedroom of their own (updated once a second).
     #[serde(skip)]
     pub poor_quarters: bool,
+    /// Dead and buried in the grave at `pos` (see `graves.rs`).
+    #[serde(default)]
+    pub buried: bool,
+    /// A dead colonist lies unburied somewhere (updated once a second).
+    #[serde(skip)]
+    pub unburied_dead: bool,
 }
 
 impl Pawn {
@@ -416,6 +425,8 @@ impl Pawn {
             stash: Vec::new(),
             running: false,
             poor_quarters: false,
+            buried: false,
+            unburied_dead: false,
         }
     }
 
@@ -581,6 +592,9 @@ impl Pawn {
             if self.poor_quarters {
                 t.push(("No proper quarters for a leader", -8.0));
             }
+        }
+        if self.unburied_dead && !self.dead {
+            t.push(("A colonist lies unburied", -5.0));
         }
         t
     }

@@ -13,14 +13,15 @@ use super::tile_center;
 use bevy::prelude::*;
 use my_world::defs::{defs, BuildId, BuildLook, ItemId, Part, PlantId, Shape, Special};
 use my_world::map::{Feature, Map, Pos, DIRS};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::f32::consts::{FRAC_PI_2, TAU};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum PropKey {
     Plant { kind: PlantId, stage: u8 },
     /// Turned so the model's +x faces `DIRS[dir]`. `owner`: who sleeps in
-    /// a bed. `open`: a door someone is passing through. `links`: bit per
+    /// a bed. `open`: a door someone is passing through, or a grave nobody
+    /// is buried in yet. `links`: bit per
     /// direction (`DIRS`) with a neighbour that linked parts join up with.
     Built { kind: BuildId, dir: u8, owner: Option<u32>, open: bool, links: u8 },
     Blueprint { kind: BuildId },
@@ -220,6 +221,7 @@ fn sync_props(
             owners.insert(b, (p.id, p.color));
         }
     }
+    let filled: HashSet<Pos> = w.pawns.iter().filter(|p| p.buried).map(|p| p.pos).collect();
 
     for i in 0..m.len() {
         let pos = m.pos(i);
@@ -231,13 +233,15 @@ fn sync_props(
             Feature::Built { kind, dir } => Some({
                 let def = kind.def();
                 let owner = (def.special == Special::Bed).then(|| owners.get(&pos).map(|o| o.0)).flatten();
-                let open = def.special == Special::Door && {
-                    w.pawns.iter().any(|p| {
+                let open = match def.special {
+                    Special::Door => w.pawns.iter().any(|p| {
                         !p.dead
                             && (p.x - pos.0 as f32).abs() < 0.9
                             && (p.y - pos.1 as f32).abs() < 0.9
                             && (p.z - pos.2 as f32).abs() < 0.9
-                    })
+                    }),
+                    Special::Grave => !filled.contains(&pos),
+                    _ => false,
                 };
                 // Modelled spanning x; a quarter turn when the walls run along y.
                 let dir = if def.along_walls {
@@ -257,7 +261,8 @@ fn sync_props(
         };
         let have = props.features[i].map(|(k, _)| k);
         // A door swinging open.
-        if let (Some(PropKey::Built { open: true, .. }), Some(PropKey::Built { open: false, .. })) = (want, have) {
+        let door = matches!(m.feature[i], Feature::Built { kind, .. } if kind.def().special == Special::Door);
+        if let (true, Some(PropKey::Built { open: true, .. }), Some(PropKey::Built { open: false, .. })) = (door, want, have) {
             sounds.play("door", Some(tile_center(pos) + Vec3::Y * 0.5));
         }
         if want != have {
@@ -332,6 +337,10 @@ fn spawn_parts(
     e.with_children(|c| {
         for p in parts {
             if p.link.is_some_and(|l| links & (1 << turned(l, dir)) == 0) {
+                continue;
+            }
+            // Graves: the pit while open, the mound once filled.
+            if p.filled == Some(open) {
                 continue;
             }
             let mat = match p.color.as_str() {
@@ -413,6 +422,7 @@ fn spawn_feature(
                     turn: (0.0, 0.0, 0.0),
                     hinge: false,
                     link: None,
+                    filled: None,
                 };
                 spawn_parts(commands, a, base, &[block], Pose { ghost: true, ..default() }, &blanket)
             }

@@ -131,10 +131,13 @@ impl World {
                 let food = nearest_of(&|k| defs().is_food(k) && !k.def().raw).or(nearest_of(&|k| defs().is_food(k)));
                 self.doctor_candidate(p, &df, medicine, food)
             } else {
-                candidates
+                let cells = candidates
                     .iter()
                     .filter_map(|&i| self.work_candidate(wt, i, &df, &nearest_item, &nearest_cell))
-                    .min_by_key(|(d, _)| *d)
+                    .min_by_key(|(d, _)| *d);
+                // Haulers also bury the dead.
+                let burial = if wt == WorkType::Hauling { self.bury_candidate(&df) } else { None };
+                cells.into_iter().chain(burial).min_by_key(|(d, _)| *d)
             };
             if let Some((d, job)) = found {
                 per_type.push((prio, d, job));
@@ -242,6 +245,7 @@ impl World {
             Job::Rescue { patient, bed, carrying } => self.run_rescue(p, patient, bed, carrying, dt),
             Job::Feed { patient, food, picked } => self.run_feed(p, patient, food, picked, dt),
             Job::Equip { from, chosen } => self.run_equip(p, from, chosen, dt),
+            Job::Bury { corpse, grave, carrying } => self.run_bury(p, corpse, grave, carrying, dt),
         }
     }
 

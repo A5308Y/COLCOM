@@ -441,7 +441,7 @@ fn update_hover(
 /// Pawn nearest to a cell (living ones preferred), if close enough.
 pub fn pawn_at(w: &SimWorld, t: Pos) -> Option<u32> {
     let mut best: Option<(f32, u32)> = None;
-    for p in w.pawns.iter().filter(|p| !p.left) {
+    for p in w.pawns.iter().filter(|p| !p.left && !p.buried) {
         let (dx, dy, dz) = (p.x - t.0 as f32, p.y - t.1 as f32, p.z - t.2 as f32);
         let d = (dx * dx + dy * dy + dz * dz).sqrt() + if p.dead { 0.5 } else { 0.0 };
         if d < 0.9 && best.map_or(true, |(bd, _)| d < bd) {

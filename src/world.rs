@@ -262,6 +262,16 @@ impl World {
         if gaps > 0 {
             out.push((format!("Roof can't reach {} cell(s): build a wall within 3", gaps), false));
         }
+        let unburied = self.pawns.iter().filter(|p| p.is_colonist() && p.dead && !p.buried).count();
+        if unburied > 0 {
+            let graves = self.empty_graves().len();
+            let text = if graves >= unburied {
+                format!("{} unburied colonist(s)", unburied)
+            } else {
+                format!("{} unburied colonist(s): dig a grave", unburied)
+            };
+            out.push((text, false));
+        }
         let idle = colonists
             .iter()
             .filter(|p| p.active() && matches!(p.job, None | Some(Job::Wander { .. })))
@@ -345,6 +355,7 @@ impl World {
             self.update_production();
             self.update_room_stats();
             self.update_squads();
+            self.update_graves();
         }
         self.storyteller_tick();
         let fade = dt / (1.5 * DAY_LEN);
@@ -669,6 +680,11 @@ impl World {
                 self.res_item[i] = id;
                 self.res_patient.push((patient, id));
             }
+            Job::Bury { corpse, grave, .. } => {
+                let i = self.map.idx(grave);
+                self.res_target[i] = id;
+                self.res_patient.push((corpse, id));
+            }
             _ => {}
         }
         p.job = Some(job);
@@ -739,7 +755,8 @@ impl World {
         let f = m.feature[i];
         match order {
             Order::Desig(Desig::Mine) => m.mineable(p),
-            Order::Desig(Desig::Deconstruct) => m.deconstructable(p),
+            // A filled grave stays.
+            Order::Desig(Desig::Deconstruct) => m.deconstructable(p) && self.grave_occupant(p).is_none(),
             Order::Desig(d) => f.harvest_desig() == Some(d),
             // A shelf's own storage goes only with the shelf.
             Order::Zone(Zone::None) => m.zone[i] != Zone::None && !self.container_at(i),
@@ -763,6 +780,10 @@ impl World {
                     Special::Roof => false,
                     Special::Stairs => {
                         m.standable(p) && empty && m.above(p).is_some_and(|a| m.block[m.idx(a)] == Block::Air)
+                    }
+                    // Dug into natural soil.
+                    Special::Grave => {
+                        m.standable(p) && empty && !m.floor[i] && m.below(p).is_some_and(|b| m.block[m.idx(b)] == Block::Soil)
                     }
                     // Walls, doors and windows also stack straight onto walls below them.
                     _ => {

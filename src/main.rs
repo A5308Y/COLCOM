@@ -252,7 +252,7 @@ mod tests {
         assert_eq!(roof_meshes(&mut app), 1, "and drawn again");
 
         // The inspector's bills, stockpile, grow zone and bed panels.
-        let (bench, stock, grow, bed) = {
+        let (bench, stock, grow, bed, grave) = {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             let w = &mut sim.world;
             let (cx, cy) = (w.map.w / 2, w.map.h / 2);
@@ -279,7 +279,15 @@ mod tests {
             let leader = w.pawns[0].id;
             w.set_role(leader, my_world::pawn::Role::Leader).unwrap();
             assert!(w.assign_bed(bed, Some(leader)));
-            (bench, (cx - 4, cy + 2, z), grow, bed)
+            // A grave with someone in it.
+            let grave = (cx + 7, cy - 5, z);
+            let i = w.map.idx(grave);
+            w.map.feature[i] = my_world::map::Feature::built("grave");
+            let dead = w.spawn_colonist(grave);
+            let k = w.pawn_index(dead).unwrap();
+            w.pawns[k].dead = true;
+            w.pawns[k].buried = true;
+            (bench, (cx - 4, cy + 2, z), grow, bed, grave)
         };
         // The build menu docks on the left, collapses, and filters.
         let dock = app.world().resource::<front::UiState>().dock_width;
@@ -294,7 +302,7 @@ mod tests {
         app.world_mut().resource_mut::<front::UiState>().show_build = true;
         app.world_mut().resource_mut::<front::UiState>().show_resources = true;
         app.world_mut().resource_mut::<front::UiState>().show_menu = true;
-        for t in [bench, stock, grow, bed] {
+        for t in [bench, stock, grow, bed, grave] {
             app.world_mut().resource_mut::<front::UiState>().selected = Some(front::Selection::Tile(t));
             for _ in 0..5 {
                 app.update();

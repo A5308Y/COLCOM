@@ -311,6 +311,7 @@ fn details(ui: &mut egui::Ui, e: &ToolEntry, def: Option<&BuildDef>, totals: &[u
         Special::Door => facts.push("Lets colonists through but closes the room".into()),
         Special::Table => facts.push("Colonists eat here, sitting on a chair beside it".into()),
         Special::Seat => facts.push("Put it beside a table to eat at".into()),
+        Special::Grave => facts.push("Dug into soil; haulers bury a dead colonist in it".into()),
         Special::None => {}
     }
     if !d.passable && d.special == Special::None {

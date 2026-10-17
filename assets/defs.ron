@@ -27,6 +27,8 @@
         "sheet": (0.93, 0.91, 0.86),
         "pillow": (0.97, 0.97, 0.97),
         "stone": (0.575, 0.552, 0.529),
+        "earth": (0.4, 0.29, 0.19),
+        "earth_dark": (0.15, 0.1, 0.07),
         "white": (0.95, 0.95, 0.95),
         "wall": (0.6, 0.57, 0.53),
         "stone_block": (0.68, 0.66, 0.62),
@@ -335,7 +337,9 @@
     // put over enclosed rooms by themselves; the look is only its blueprint,
     // the roof itself is drawn in code), `Stairs` (connect a cell to
     // the one above), `Bed` (sleep and recover), `Door` (swings open),
-    // `Table` and `Seat` (colonists eat sitting at a table).
+    // `Table` and `Seat` (colonists eat sitting at a table), `Grave` (dug into
+    // soil; a dead colonist is buried in it; parts with `filled` show only
+    // while it is or isn't filled).
     // `beauty` counts towards the quality of the room it's in (or borders);
     // `daylight` lights the rooms it borders; `storage` holds more items per
     // cell. `along_walls`: modelled spanning x, turned to run along the walls
@@ -424,6 +428,28 @@
             drops: Some(("wood", 1)),
             look: Parts([
                 (shape: Cube, color: "wood_light", at: (0.0, 0.03, 0.0), size: (0.98, 0.06, 0.98)),
+            ]),
+        ),
+        (
+            id: "grave",
+            cover: Some(Light),
+            category: "Structure",
+            name: "Grave",
+            // The wooden marker; digging is the work.
+            cost: ("wood", 2),
+            work_time: 8.0,
+            passable: true,
+            special: Grave,
+            look: Parts([
+                // Open: a pit with the dug earth heaped beside it.
+                (shape: Cube, color: "earth_dark", at: (0.0, 0.01, 0.05), size: (0.46, 0.02, 0.78), filled: Some(false)),
+                (shape: Cube, color: "earth", at: (0.36, 0.07, 0.05), size: (0.2, 0.14, 0.76), filled: Some(false)),
+                // Filled: a mound.
+                (shape: Cube, color: "earth", at: (0.0, 0.06, 0.05), size: (0.52, 0.12, 0.8), filled: Some(true)),
+                (shape: Cube, color: "earth", at: (0.0, 0.13, 0.05), size: (0.36, 0.06, 0.66), filled: Some(true)),
+                // The marker at its head.
+                (shape: Cube, color: "wood", at: (0.0, 0.3, -0.42), size: (0.06, 0.6, 0.06)),
+                (shape: Cube, color: "wood", at: (0.0, 0.44, -0.42), size: (0.3, 0.06, 0.06)),
             ]),
         ),
         (

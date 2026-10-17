@@ -147,6 +147,9 @@ pub struct Part {
     /// is the same structure or a wall: fence rails joining up.
     #[serde(default)]
     pub link: Option<u8>,
+    /// Only shown while a grave is filled (`Some(true)`) or still open (`Some(false)`).
+    #[serde(default)]
+    pub filled: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -267,6 +270,8 @@ pub enum Special {
     /// Colonists eat at tables, sitting on a seat beside one.
     Table,
     Seat,
+    /// Dug into soil; haulers bury a dead colonist in it (`Job::Bury`).
+    Grave,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -650,7 +655,9 @@ impl Defs {
             if d.parts().iter().any(|p| p.link.is_some_and(|l| l > 3)) {
                 return Err(format!("{}: link must be 0 to 3", d.id));
             }
-            if matches!(d.special, Special::Floor | Special::Roof | Special::Stairs | Special::Bed | Special::Door) && !d.passable {
+            if matches!(d.special, Special::Floor | Special::Roof | Special::Stairs | Special::Bed | Special::Door | Special::Grave)
+                && !d.passable
+            {
                 return Err(format!("{}: {:?} must be passable", d.id, d.special));
             }
         }

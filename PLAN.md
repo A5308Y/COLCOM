@@ -420,6 +420,15 @@ real play.
     triangle is drawn from below as well, darker.
   - The battle arena's house has a roof.
 
+- Graves (2026-10-17, `src/graves.rs`): a `grave` buildable (`special: Grave`, 2 wood for the marker,
+  8 s of digging) goes only on natural soil. Haulers carry a dead colonist to an empty grave
+  (`Job::Bury`, corpse reserved in `res_patient`, grave in `res_target`); the colonist stays in the pawn
+  list with `buried` set and its position at the grave, so the inspector says whose it is. Buried
+  colonists aren't drawn, picked or listed in the colonist bar. While anyone lies unburied, colonists
+  think "A colonist lies unburied" (-5) and an alert asks for a grave. Filled graves can't be
+  deconstructed. Parts with `filled` show only while a grave is filled or open (pit and heap vs mound;
+  the props' `open` flag means an empty grave).
+
 - Squads fight one way (2026-10-17): everyone in a squad, the leader too, is ranged or melee
   (`squads::fights_at_range`: the loadout weapon, else the one carried; bare hands are melee). Joining a
   squad of the other kind and a member's loadout switching kind are refused; a leader switching kind

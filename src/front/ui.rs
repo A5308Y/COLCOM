@@ -31,7 +31,7 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 40] = [
+const HELP_REST: [&str; 41] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -56,6 +56,7 @@ const HELP_REST: [&str; 40] = [
     "      where it can't reach. Sleeping in a roofed bedroom makes colonists happier.",
     "Mining also digs soil. Dig straight down to sink a shaft; put stairs in it.",
     "Anything left with nothing underneath falls - more than one level hurts.",
+    "Dig graves (Structure menu, on soil) for the dead: haulers bury them. Unburied dead upset everyone.",
     "Wounds bleed and can get infected. Doctors (see P) rescue downed colonists to a bed",
     "and tend them - better with medicine and skill. Click a colonist, then Health for details.",
     "Raids come every few days. Pay what the raiders demand, or fight a turn-based battle (the colony stops).",
@@ -376,7 +377,8 @@ fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, left: f32) {
     egui::Area::new(egui::Id::new("colonists")).anchor(Align2::LEFT_TOP, [left + 8.0, 8.0]).show(ctx, |ui| {
         egui::ScrollArea::vertical().max_height(room).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
-            for p in sim.world.pawns.iter().filter(|p| p.is_colonist()) {
+            // The buried are at rest in their graves (click one to see whose it is).
+            for p in sim.world.pawns.iter().filter(|p| p.is_colonist() && !p.buried) {
                 let selected = st.is_selected(p.id);
                 let trouble = p.downed || p.hunger <= 0.0 || p.break_timer > 0.0 || p.health.bleed_rate() > 0.0;
                 let stroke = if selected {
@@ -677,6 +679,13 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32) -> (boo
             }
             if m.feature[i].is_bed() {
                 bed_owner(ui, w, t, &mut actions);
+            }
+            if m.feature[i].is_special(Special::Grave) {
+                ui.separator();
+                match w.grave_occupant(t).and_then(|id| w.pawn(id)) {
+                    Some(p) => ui.label(RichText::new(format!("Here lies {}.", p.name)).italics()),
+                    None => ui.label(RichText::new("An open grave: haulers bury a dead colonist here.").weak()),
+                };
             }
         });
     let changed = !actions.is_empty();

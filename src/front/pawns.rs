@@ -313,7 +313,7 @@ fn sync_pawns(
 
     // Drop visuals of pawns that left the map.
     visuals.map.retain(|id, v| {
-        let keep = w.pawn(*id).is_some_and(|p| !p.left);
+        let keep = w.pawn(*id).is_some_and(|p| !p.left && !p.buried);
         if !keep {
             commands.entity(v.root).despawn();
         }
@@ -323,7 +323,7 @@ fn sync_pawns(
     let dt = time.delta_secs();
     // Simulation seconds per real second: animations other than walking run at this rate.
     let sim_rate = if sim.paused { 0.0 } else { sim.rate() as f32 };
-    for p in w.pawns.iter().filter(|p| !p.left) {
+    for p in w.pawns.iter().filter(|p| !p.left && !p.buried) {
         let v = visuals
             .map
             .entry(p.id)
