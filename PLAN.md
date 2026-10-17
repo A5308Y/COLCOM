@@ -462,6 +462,14 @@ real play.
   `World::order_operation` / `cancel_operation`, shown in the Health tab with Fit/Cancel buttons and what
   it's waiting for. Only ordered operations happen; an order ends when tried (fitted or botched) or when
   the part is no longer lost. Colonist cards show the equipped weapon (or "Unarmed").
+- Prioritizing single jobs (2026-10-17, `src/prioritize.rs`): right-click a cell with a colonist selected for
+  a menu (`front::JobMenu`) of `World::job_options`: equip, and every job there of any work type (enabled or
+  not; `work_candidate(.., forced: true)` ignores others' reservations), doctoring a colonist lying there
+  (`doctor_job`, extracted from `doctor_candidate`), operating, burying a body there or into a grave there.
+  `prioritize` takes the job over (`take_over` ends whoever held its target or patient) and starts it; the
+  colonist keeps working that cell (`Pawn::forced`, "(prioritized)" in their status) until `forced_job`
+  finds nothing more there. `find_work`'s map scan is now `World::scan` (`Scan`), shared with the menu.
+  Right-click on gear now opens the menu too (Equip is one of its choices).
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 

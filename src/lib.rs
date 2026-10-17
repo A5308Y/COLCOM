@@ -13,6 +13,7 @@ pub mod medical;
 pub mod moving;
 pub mod pathing;
 pub mod pawn;
+pub mod prioritize;
 pub mod production;
 pub mod rng;
 pub mod rooms;

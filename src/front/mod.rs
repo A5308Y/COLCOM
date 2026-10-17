@@ -22,7 +22,7 @@ use bevy::prelude::*;
 use my_world::map::Pos;
 
 #[cfg(test)]
-pub use input::{InspectorTab, Selection, Tool, UiState};
+pub use input::{InspectorTab, JobMenu, Selection, Tool, UiState};
 #[cfg(test)]
 pub use audio::SoundQueue;
 #[cfg(test)]

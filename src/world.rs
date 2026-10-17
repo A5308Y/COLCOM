@@ -628,6 +628,12 @@ impl World {
             self.start_job(p, Job::Sleep { bed });
             return;
         }
+        // Carry on where the player sent them.
+        if let Some(job) = self.forced_job(p) {
+            self.take_over(p.id, job);
+            self.start_job(p, job);
+            return;
+        }
         // An ordered operation, its prosthetic and a doctor: onto the operating table.
         let lost = p.health.lost_parts();
         p.operations.retain(|o| lost.contains(&o.part));
@@ -897,7 +903,7 @@ impl World {
     }
 
     /// Run `f` on a copy of pawn `id` with full access to the world.
-    fn with_pawn(&mut self, id: u32, f: impl FnOnce(&mut World, &mut Pawn)) {
+    pub(crate) fn with_pawn(&mut self, id: u32, f: impl FnOnce(&mut World, &mut Pawn)) {
         if let Some(i) = self.pawn_index(id) {
             let mut p = self.pawns[i].clone();
             f(self, &mut p);

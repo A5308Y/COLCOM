@@ -162,8 +162,24 @@ mod tests {
             sim.world.pawns[i].health.recompute();
             sim.world.pawns[i].operations.clear();
         }
+        // The right-click menu: equip a rifle lying beside them, then pick it.
+        {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            let w = &mut sim.world;
+            let p = w.pawn(ids[0]).unwrap().pos;
+            let at = (p.0 + 1, p.1, p.2);
+            w.map.drop_item(at, my_world::map::Stack { kind: my_world::defs::ItemId::named("rifle"), count: 1 });
+            let options: Vec<_> = w.job_options(ids[0], at).into_iter().map(|(l, j)| (l, at, j)).collect();
+            assert!(!options.is_empty(), "something to do there");
+            app.world_mut().resource_mut::<front::UiState>().job_menu = Some(front::JobMenu { pawn: ids[0], options, at: None });
+        }
+        for _ in 0..3 {
+            app.update();
+        }
+        assert!(app.world().resource::<front::UiState>().job_menu.is_some(), "stays open until something is picked");
         {
             let mut ui = app.world_mut().resource_mut::<front::UiState>();
+            ui.job_menu = None;
             ui.select(None);
             ui.inspector_tab = front::InspectorTab::Overview;
         }

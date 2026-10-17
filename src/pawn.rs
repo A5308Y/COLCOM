@@ -373,6 +373,9 @@ pub struct Pawn {
     /// Lying down awake (as a patient).
     pub resting: bool,
     pub memories: Vec<MemoryEntry>,
+    /// A cell the player told them to work on (see `prioritize.rs`).
+    #[serde(default)]
+    pub forced: Option<Pos>,
     /// Operations the player ordered for them (see `surgery.rs`).
     #[serde(default)]
     pub operations: Vec<crate::surgery::Operation>,
@@ -437,6 +440,7 @@ impl Pawn {
             resting: false,
             memories: Vec::new(),
             operations: Vec::new(),
+            forced: None,
             bed: None,
             color: [rng.range_f32(0.5, 1.0), rng.range_f32(0.45, 0.95), rng.range_f32(0.45, 0.95)],
             think_timer: rng.f32(),
@@ -638,7 +642,12 @@ impl Pawn {
         if self.break_timer > 0.0 {
             return "mental break".into();
         }
-        self.job.map_or("idle", |j| j.describe()).into()
+        let doing = self.job.map_or("idle", |j| j.describe());
+        if self.forced.is_some() && self.job.is_some() {
+            format!("{} (prioritized)", doing)
+        } else {
+            doing.into()
+        }
     }
 
     /// Hold a weapon or put on apparel; returns what it replaced.

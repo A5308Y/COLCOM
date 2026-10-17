@@ -30,7 +30,7 @@ impl World {
     }
 
     /// A dead colonist lying unburied (not already being carried).
-    fn unburied(&self, p: &Pawn) -> bool {
+    pub(crate) fn unburied(&self, p: &Pawn) -> bool {
         p.is_colonist() && p.dead && !p.buried && !p.left
     }
 

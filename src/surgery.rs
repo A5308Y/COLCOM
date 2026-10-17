@@ -108,7 +108,7 @@ impl World {
     }
 
     /// The nearest free prosthetic that fits `p`, by distance field `df`.
-    fn nearest_prosthetic(&self, p: &Pawn, df: &DistField) -> Option<Pos> {
+    pub(crate) fn nearest_prosthetic(&self, p: &Pawn, df: &DistField) -> Option<Pos> {
         df.order
             .iter()
             .find(|&&i| self.res_item[i] == 0 && self.map.items[i].is_some_and(|s| Self::fits(p, s.kind).is_some()))

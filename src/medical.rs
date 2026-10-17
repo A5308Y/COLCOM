@@ -92,18 +92,7 @@ impl World {
                 continue;
             }
             let Some((_, d)) = df.approach(&self.map, o.pos, true) else { continue };
-            let rescue_bed = if o.downed && !self.in_bed(o) { self.find_patient_bed(o) } else { None };
-            // Medical work outranks other work of the same priority.
-            let candidate = if let Some(bed) = rescue_bed {
-                Some((d - 3000, Job::Rescue { patient: o.id, bed, carrying: false }))
-            } else if o.health.needs_tending() && o.lying() {
-                Some((d - 2000, Job::Tend { patient: o.id, medicine, picked: false }))
-            } else if o.downed && o.hunger < 30.0 {
-                food.map(|f| (d - 1000, Job::Feed { patient: o.id, food: f, picked: false }))
-            } else {
-                None
-            };
-            if let Some((score, job)) = candidate {
+            if let Some((score, job)) = self.doctor_job(o, d, medicine, food) {
                 if best.map_or(true, |(b, _)| score < b) {
                     best = Some((score, job));
                 }
@@ -111,6 +100,22 @@ impl World {
         }
         // Operations come after rescuing, tending and feeding.
         best.or_else(|| self.surgery_candidate(p, df))
+    }
+
+    /// What colonist `o` (`d` steps away) needs from a doctor, most urgent
+    /// first: rescue > tend > feed. Scored so that medical work outranks
+    /// other work of the same priority.
+    pub(crate) fn doctor_job(&self, o: &Pawn, d: i32, medicine: Option<Pos>, food: Option<Pos>) -> Option<(i32, Job)> {
+        let rescue_bed = if o.downed && !self.in_bed(o) { self.find_patient_bed(o) } else { None };
+        if let Some(bed) = rescue_bed {
+            Some((d - 3000, Job::Rescue { patient: o.id, bed, carrying: false }))
+        } else if o.health.needs_tending() && o.lying() {
+            Some((d - 2000, Job::Tend { patient: o.id, medicine, picked: false }))
+        } else if o.downed && o.hunger < 30.0 {
+            food.map(|f| (d - 1000, Job::Feed { patient: o.id, food: f, picked: false }))
+        } else {
+            None
+        }
     }
 
     /// `medicine` is the potency of the medicine used (0 = none).

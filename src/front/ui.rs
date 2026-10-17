@@ -128,6 +128,7 @@ fn draw_ui(
     }
 
     tool_at_cursor(&ctx, &st);
+    job_menu(&ctx, &mut sim, &mut st, &mut sounds);
     hud(&ctx, &mut sim, &mut st, &mut rig, left);
     colonist_bar(&ctx, &sim, &mut st, left);
     alerts(&ctx, &sim);
@@ -187,6 +188,36 @@ fn draw_ui(
         });
     }
     Ok(())
+}
+
+/// The right-click menu: what the selected colonist could do there. Picking
+/// one has them do it now; clicking elsewhere or Esc (`input::keyboard`) closes it.
+fn job_menu(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, sounds: &mut SoundQueue) {
+    let Some(menu) = st.job_menu.as_mut() else { return };
+    let at = *menu.at.get_or_insert_with(|| ctx.pointer_latest_pos().unwrap_or_default() + egui::vec2(6.0, 6.0));
+    let name = sim.world.pawn(menu.pawn).map_or("", |p| p.name.as_str()).to_string();
+    let mut chosen = None;
+    let area = egui::Area::new(egui::Id::new("job_menu")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
+        egui::Frame::popup(&ctx.global_style()).show(ui, |ui| {
+            ui.label(RichText::new(name).small().weak());
+            for (k, (label, _, _)) in menu.options.iter().enumerate() {
+                if ui.button(label).clicked() {
+                    chosen = Some(k);
+                }
+            }
+        });
+    });
+    let clicked_away = ctx.input(|i| i.pointer.any_pressed())
+        && ctx.pointer_latest_pos().is_some_and(|p| !area.response.rect.contains(p));
+    if let Some(k) = chosen {
+        let (_, cell, job) = menu.options[k];
+        if sim.world.prioritize(menu.pawn, cell, job) {
+            sounds.play("ui_place", None);
+        }
+        st.job_menu = None;
+    } else if clicked_away {
+        st.job_menu = None;
+    }
 }
 
 /// With a tool in hand, its name by the cursor, so it's clear clicks give
@@ -653,7 +684,7 @@ fn overview_tab(ui: &mut egui::Ui, p: &Pawn) {
         ui.label(RichText::new(format!("{:+}  {}", value as i32, label)).color(color));
     }
     if p.is_colonist() && !p.dead {
-        ui.label(RichText::new("Right-click a weapon or clothes: equip   Combat tab: squad and loadout").small().weak());
+        ui.label(RichText::new("Right-click a cell: prioritize a job there, or equip gear   Combat tab: squad and loadout").small().weak());
     }
 }
 

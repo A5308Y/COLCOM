@@ -210,6 +210,15 @@ pub struct Hover {
     pub stand: Pos,
 }
 
+/// What a colonist could do where the player right-clicked (see `World::job_options`).
+pub struct JobMenu {
+    pub pawn: u32,
+    /// Label, cell and job of each choice.
+    pub options: Vec<(String, Pos, my_world::pawn::Job)>,
+    /// Where it opens (taken from the pointer when it's first drawn).
+    pub at: Option<bevy_egui::egui::Pos2>,
+}
+
 #[derive(Resource)]
 pub struct UiState {
     pub tool: Tool,
@@ -241,6 +250,8 @@ pub struct UiState {
     pub roof_version: u64,
     /// The last right press put a tool down (so its release doesn't also deselect).
     pub dropped_tool: bool,
+    /// The right-click menu of jobs to prioritize, while it's open.
+    pub job_menu: Option<JobMenu>,
     /// The build menu docked on the left.
     pub show_build: bool,
     /// Search text in the build menu.
@@ -283,6 +294,7 @@ impl UiState {
             roof_cut: Vec::new(),
             roof_version: 0,
             dropped_tool: false,
+            job_menu: None,
             show_build: true,
             build_filter: String::new(),
             dock_width: 0.0,
@@ -640,7 +652,9 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
     // Esc, one step at a time: close a window, put the tool down (below),
     // let go of the selection, open the menu.
     if keys.just_pressed(KeyCode::Escape) {
-        if ui.show_help || ui.show_work || ui.show_menu {
+        if ui.job_menu.is_some() {
+            ui.job_menu = None;
+        } else if ui.show_help || ui.show_work || ui.show_menu {
             ui.show_help = false;
             ui.show_work = false;
             ui.show_menu = false;
@@ -797,23 +811,29 @@ fn mouse(
         }
         ui.dropped_tool = false;
     }
-    // A right *click* (not a camera drag) in Select: equip something, or let go of the selection.
+    // A right *click* (not a camera drag) in Select: a menu of what the first
+    // selected colonist could do there (equip, prioritize a job), or let go of the selection.
     if buttons.just_released(MouseButton::Right) && drag.right_moved <= 4.0 && !over_ui && !ui.dropped_tool {
+        ui.job_menu = None;
         let ids = ui.selected_pawns();
-        let (Some(&first), Some(Hover { stand: t, .. })) = (ids.first(), hover) else {
+        let (Some(&first), Some(h)) = (ids.first(), hover) else {
             ui.select(None);
             return;
         };
-        // A weapon or piece of clothing: the first selected colonist equips it.
-        let m = &sim.world.map;
-        let gear = m.items[m.idx(t)].is_some_and(|s| s.kind.def().weapon.is_some() || s.kind.def().apparel.is_some());
-        if gear && sim.world.pawn(first).is_some_and(|p| p.is_colonist()) {
-            if sim.world.order_equip(first, t) {
-                sounds.play("ui_place", None);
+        // The floor cell, and a wall or rock face behind it (to mine or take down).
+        let mut options = Vec::new();
+        for cell in [h.stand, h.solid] {
+            for (label, job) in sim.world.job_options(first, cell) {
+                if !options.iter().any(|o: &(String, Pos, _)| o.2 == job) {
+                    options.push((label, cell, job));
+                }
             }
-        } else {
-            // Right-click anywhere else lets go of the selection.
+        }
+        if options.is_empty() {
             ui.select(None);
+        } else {
+            sounds.play("ui_click", None);
+            ui.job_menu = Some(JobMenu { pawn: first, options, at: None });
         }
     }
 }

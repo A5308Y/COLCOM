@@ -13,9 +13,9 @@ const MINE_TIME: f32 = 5.0;
 const DECONSTRUCT_SHARE: f32 = 0.5;
 
 /// Nearest (distance, cell) per item kind.
-type Nearest = Vec<Option<(i32, Pos)>>;
+pub(crate) type Nearest = Vec<Option<(i32, Pos)>>;
 /// Per item kind, the nearest stockpile cell that takes it, per stockpile priority (1..=4).
-type NearestStore = Vec<[Option<(i32, Pos)>; 5]>;
+pub(crate) type NearestStore = Vec<[Option<(i32, Pos)>; 5]>;
 
 /// Cells worth checking for work: everywhere the pawn can walk, plus the
 /// cells next to those (trees, rock faces and walls are worked from beside).
@@ -68,13 +68,37 @@ fn from_beside(task: Task) -> bool {
     }
 }
 
-impl World {
-    /// Highest-priority, then nearest, available job for `p`.
-    pub(crate) fn find_work(&self, p: &Pawn) -> Option<Job> {
-        let df = bfs(&self.map, p.pos);
-        let m = &self.map;
-        let candidates = reachable_and_around(m, &df);
+/// What a colonist can reach from where they stand: distances, and the
+/// nearest free stack of each item kind and stockpile cell for it.
+pub(crate) struct Scan {
+    pub df: DistField,
+    pub nearest_item: Nearest,
+    pub nearest_cell: NearestStore,
+}
 
+impl Scan {
+    /// The nearest free stack of any item that `is`.
+    pub fn nearest_of(&self, is: impl Fn(ItemId) -> bool) -> Option<Pos> {
+        ItemId::all()
+            .filter(|&k| is(k))
+            .filter_map(|k| self.nearest_item[k.index()])
+            .min_by_key(|(d, _)| *d)
+            .map(|(_, pos)| pos)
+    }
+
+    /// Medicine and food for doctoring (cooked food if there is any).
+    pub fn medicine_and_food(&self) -> (Option<Pos>, Option<Pos>) {
+        let medicine = self.nearest_of(|k| defs().is_medicine(k));
+        let food = self.nearest_of(|k| defs().is_food(k) && !k.def().raw).or(self.nearest_of(|k| defs().is_food(k)));
+        (medicine, food)
+    }
+}
+
+impl World {
+    /// Look around from `from` (see `Scan`).
+    pub(crate) fn scan(&self, from: Pos) -> Scan {
+        let df = bfs(&self.map, from);
+        let m = &self.map;
         // Nearest free stack of each item kind (for deliveries) and nearest
         // stockpile cell of each priority that can take each kind (for hauling).
         let kinds = defs().items.len();
@@ -103,18 +127,18 @@ impl World {
                 }
             }
         }
+        Scan { df, nearest_item, nearest_cell }
+    }
 
-        let nearest_of = |is: &dyn Fn(ItemId) -> bool| {
-            ItemId::all()
-                .filter(|&k| is(k))
-                .filter_map(|k| nearest_item[k.index()])
-                .min_by_key(|(d, _)| *d)
-                .map(|(_, pos)| pos)
-        };
+    /// Highest-priority, then nearest, available job for `p`.
+    pub(crate) fn find_work(&self, p: &Pawn) -> Option<Job> {
+        let scan = self.scan(p.pos);
+        let (df, nearest_item, nearest_cell) = (&scan.df, &scan.nearest_item, &scan.nearest_cell);
+        let candidates = reachable_and_around(&self.map, df);
 
         // Better gear first: it's quick.
         if p.is_colonist() {
-            if let Some(job) = self.equip_candidate(p, &nearest_item) {
+            if let Some(job) = self.equip_candidate(p, nearest_item) {
                 return Some(job);
             }
         }
@@ -128,17 +152,15 @@ impl World {
                 continue;
             }
             let found = if wt == WorkType::Doctor {
-                let medicine = nearest_of(&|k| defs().is_medicine(k));
-                // Cooked food if there is any.
-                let food = nearest_of(&|k| defs().is_food(k) && !k.def().raw).or(nearest_of(&|k| defs().is_food(k)));
-                self.doctor_candidate(p, &df, medicine, food)
+                let (medicine, food) = scan.medicine_and_food();
+                self.doctor_candidate(p, df, medicine, food)
             } else {
                 let cells = candidates
                     .iter()
-                    .filter_map(|&i| self.work_candidate(wt, i, &df, &nearest_item, &nearest_cell))
+                    .filter_map(|&i| self.work_candidate(wt, i, df, nearest_item, nearest_cell, false))
                     .min_by_key(|(d, _)| *d);
                 // Haulers also bury the dead.
-                let burial = if wt == WorkType::Hauling { self.bury_candidate(&df) } else { None };
+                let burial = if wt == WorkType::Hauling { self.bury_candidate(df) } else { None };
                 cells.into_iter().chain(burial).min_by_key(|(d, _)| *d)
             };
             if let Some((d, job)) = found {
@@ -148,13 +170,15 @@ impl World {
         per_type.into_iter().min_by_key(|(prio, d, _)| (*prio, *d)).map(|(_, _, job)| job)
     }
 
-    fn work_candidate(
+    pub(crate) fn work_candidate(
         &self,
         wt: WorkType,
         i: usize,
         df: &DistField,
         nearest_item: &Nearest,
         nearest_cell: &NearestStore,
+        // Ordered by the player: take it over even if someone else has it.
+        forced: bool,
     ) -> Option<(i32, Job)> {
         let m = &self.map;
         let pos = m.pos(i);
@@ -174,7 +198,7 @@ impl World {
                     return to.map(|(_, to)| (d, Job::Haul { from: pos, to, deliver: false, picked: false }));
                 }
                 // Ingredients to a workbench.
-                if self.res_target[i] != 0 || !matches!(m.feature[i], Feature::Built { .. }) {
+                if self.res_target[i] != 0 && !forced || !matches!(m.feature[i], Feature::Built { .. }) {
                     return None;
                 }
                 let need = self.bench_at(pos)?.need()?;
@@ -184,7 +208,7 @@ impl World {
             }
             _ => {}
         }
-        if self.res_target[i] != 0 {
+        if self.res_target[i] != 0 && !forced {
             return None;
         }
         if wt == WorkType::Mining && m.desig[i] == Some(Desig::Mine) && m.mineable(pos) {
