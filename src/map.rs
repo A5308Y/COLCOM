@@ -365,6 +365,15 @@ impl Map {
     }
 
     /// Where a pawn standing at `p` can get to in one step.
+    /// Furniture a trapped pawn may climb over (slowly) to get out: anything
+    /// built that blocks the way but isn't part of a wall, on something to stand on.
+    pub fn climbable(&self, p: Pos) -> bool {
+        let i = self.idx(p);
+        self.block[i] == Block::Air
+            && self.feature[i].structure().is_some_and(|d| !d.passable && !d.blocks_room && !d.is_block())
+            && self.supported(p)
+    }
+
     /// Storage furniture nobody walks onto (shelves): worked from beside.
     pub fn storage_furniture(&self, i: usize) -> bool {
         self.feature[i].structure().is_some_and(|d| d.storage.is_some() && !d.passable)

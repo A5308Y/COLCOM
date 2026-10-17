@@ -520,6 +520,11 @@ real play.
   Crafters with a bill fetch its missing ingredients themselves (before, only haulers did, so a busy
   colony never cooked), which also lets the stove's bill be prioritized from the right-click menu
   ("... (bringing raw food first)"). Sleepers wake, and colonists in a mental break eat, below 10 hunger.
+- Trapped colonists (2026-10-17, found in a save: shelves made impassable shut Nell into the smithy):
+  once a second `update_trapped` lists active colonists who can't walk to the map edge (`World::trapped`,
+  not saved); each gets an urgent alert, and climbs out (`way_out`: nearest standable cell beyond the
+  furniture from which the edge can be reached, as a `Goto`). Their paths may cross `Map::climbable`
+  furniture (built, blocking, not a wall or door; `pathing::bfs_climbing`) at `CLIMB_PACE` (30%).
 - Right-click anywhere (map or panels, click or camera drag) puts the tool down; with a tool in hand,
   its name follows the cursor.
 

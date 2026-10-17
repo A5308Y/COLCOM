@@ -114,6 +114,10 @@ pub struct World {
     /// Sounds since the front end last took them (see `take_sounds`).
     #[serde(skip)]
     pub sounds: Vec<SoundEvent>,
+    /// Colonists who can't walk to the edge of the map (shut in by
+    /// furniture, walls or doors), checked once a second. They climb out.
+    #[serde(skip)]
+    pub trapped: Vec<u32>,
 }
 
 impl World {
@@ -178,6 +182,7 @@ impl World {
             parley: None,
             battle: None,
             sounds: Vec::new(),
+            trapped: Vec::new(),
         }
     }
 
@@ -224,6 +229,9 @@ impl World {
         let raiders = self.pawns.iter().filter(|p| p.faction == Faction::Raider && p.active()).count();
         if raiders > 0 {
             out.push((format!("Raid: {} raiders", raiders), true));
+        }
+        for p in self.trapped.iter().filter_map(|&id| self.pawn(id)) {
+            out.push((format!("{} is trapped (climbing out)", p.name), true));
         }
         let colonists: Vec<&Pawn> = self.pawns.iter().filter(|p| p.is_colonist() && !p.dead).collect();
         let mut needs_tending = false;
@@ -366,6 +374,7 @@ impl World {
             self.update_room_stats();
             self.update_squads();
             self.update_graves();
+            self.update_trapped();
         }
         self.storyteller_tick();
         let fade = dt / (1.5 * DAY_LEN);
@@ -596,6 +605,44 @@ impl World {
         }
     }
 
+    /// Whether someone at `p` can walk to the edge of the map.
+    fn reaches_edge(&self, p: Pos) -> bool {
+        let m = &self.map;
+        bfs(m, p).order.iter().any(|&i| {
+            let (x, y, _) = m.pos(i);
+            (x == 0 || y == 0 || x == m.w - 1 || y == m.h - 1) && m.standable(m.pos(i))
+        })
+    }
+
+    /// Once a second: who is shut in.
+    pub(crate) fn update_trapped(&mut self) {
+        self.trapped = if self.battle.is_some() {
+            Vec::new()
+        } else {
+            self.pawns
+                .iter()
+                .filter(|p| p.is_colonist() && p.active() && !p.left)
+                .filter(|p| !self.reaches_edge(p.pos))
+                .map(|p| p.id)
+                .collect()
+        };
+    }
+
+    /// For a trapped pawn at `p`: the nearest spot over the furniture from
+    /// which the edge of the map can be walked to.
+    fn way_out(&self, p: Pos) -> Option<Pos> {
+        let m = &self.map;
+        let inside = bfs(m, p);
+        let climbing = crate::pathing::bfs_climbing(m, p);
+        climbing
+            .order
+            .iter()
+            .map(|&i| m.pos(i))
+            .filter(|&c| inside.dist(c).is_none() && m.standable(c))
+            .take(6)
+            .find(|&c| self.reaches_edge(c))
+    }
+
     fn colonist_think(&mut self, p: &mut Pawn, dt: f32) {
         if p.break_timer > 0.0 {
             // In a daze, but not so far gone as to starve.
@@ -612,6 +659,15 @@ impl World {
             return;
         }
         p.think_timer = 0.5;
+
+        // Shut in: climb out over the furniture first.
+        if self.trapped.contains(&p.id) && !matches!(p.job, Some(Job::Goto { .. })) {
+            if let Some(out) = self.way_out(p.pos) {
+                self.end_job(p);
+                self.start_job(p, Job::Goto { to: out });
+                return;
+            }
+        }
 
         // Urgent needs interrupt whatever they're doing.
         let on_need = matches!(p.job, Some(Job::Eat { .. }) | Some(Job::Sleep { .. }));
@@ -776,12 +832,14 @@ impl World {
     pub(crate) fn go_to(&self, p: &mut Pawn, goal: Pos, adjacent: bool, dt: f32) -> Step {
         // What can't be stepped onto (a shelf) is reached from beside it.
         let adjacent = adjacent || p.pos != goal && self.map.storage_furniture(self.map.idx(goal));
+        // Shut in: over the furniture if need be.
+        let climb = self.trapped.contains(&p.id);
         if p.path_goal != Some(goal) {
             p.path.clear();
             p.path_goal = Some(goal);
             let at_goal = p.pos == goal || (adjacent && crate::map::adjacent(p.pos, goal));
             if !at_goal {
-                let df = bfs(&self.map, p.pos);
+                let df = if climb { crate::pathing::bfs_climbing(&self.map, p.pos) } else { bfs(&self.map, p.pos) };
                 match df.approach(&self.map, goal, adjacent) {
                     Some((stand, _)) => p.path = df.path_to(stand),
                     None => {
@@ -792,12 +850,15 @@ impl World {
             }
         }
         if let Some(&next) = p.path.last() {
-            if !self.map.passable(next) {
+            let over = climb && self.map.climbable(next);
+            if !self.map.passable(next) && !over {
                 // Something was built or grew in the way; plan again next tick.
                 p.path.clear();
                 p.path_goal = None;
                 return Step::Moving;
             }
+            // Climbing over furniture is slow going.
+            let dt = if over { dt * CLIMB_PACE } else { dt };
             if move_towards(p, next, dt) {
                 p.pos = next;
                 p.path.pop();
@@ -1011,6 +1072,9 @@ impl World {
 }
 
 /// Step `p` towards tile `t`; returns true once it is exactly there.
+/// Share of walking pace while climbing over furniture.
+const CLIMB_PACE: f32 = 0.3;
+
 fn move_towards(p: &mut Pawn, t: Pos, dt: f32) -> bool {
     let step = p.move_speed() * dt;
     let (tx, ty, tz) = (t.0 as f32, t.1 as f32, t.2 as f32);
@@ -1132,6 +1196,41 @@ mod tests {
         w.apply_order((6, 6, Z), Order::Zone(Zone::Grow(defs().sown().unwrap())));
         run(&mut w, 10.0);
         assert!(w.map.feature[i].is_crop());
+    }
+
+    #[test]
+    fn trapped_colonists_climb_out() {
+        let mut w = test_world(20, 20);
+        // A room (walls 5..=11) whose door at (5, 9) opens onto a cell boxed in
+        // by a lamp and a shelf: the rest of the room is shut off.
+        for y in 5..=11 {
+            for x in 5..=11 {
+                if x == 5 || x == 11 || y == 5 || y == 11 {
+                    let i = w.map.idx((x, y, Z));
+                    w.map.set_feature(i, Feature::built(if (x, y) == (5, 9) { "door" } else { "wall" }));
+                }
+            }
+        }
+        for (at, id) in [((6, 8), "lamp"), ((7, 9), "shelf"), ((6, 10), "lamp")] {
+            let i = w.map.idx((at.0, at.1, Z));
+            w.map.set_feature(i, Feature::built(id));
+        }
+        let nell = colonist(&mut w, (9, 7, Z));
+        let i = w.pawn_index(nell).unwrap();
+        w.pawns[i].hunger = 5.0;
+        w.map.drop_item((15, 15, Z), Stack { kind: item("raw_food"), count: 10 });
+        w.update_trapped();
+        assert_eq!(w.trapped, vec![nell]);
+        assert!(w.alerts().iter().any(|a| a.0.contains("is trapped")));
+        let mut climbed = false;
+        for _ in 0..(60.0 / TICK) as usize {
+            w.tick(TICK);
+            let p = w.pawn(nell).unwrap();
+            climbed |= w.map.climbable(p.pos);
+        }
+        assert!(climbed, "over the furniture");
+        assert!(w.trapped.is_empty(), "out");
+        assert!(w.pawn(nell).unwrap().hunger > 30.0, "and fed");
     }
 
     #[test]

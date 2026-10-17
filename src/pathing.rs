@@ -21,16 +21,21 @@ pub struct DistField {
 /// Shelves (and other storage nobody walks onto) beside reached cells are
 /// reached too, one step further, but nothing is reached through them.
 pub fn bfs(map: &Map, start: Pos) -> DistField {
-    search(map, start, |_| false, true)
+    search(map, start, |_| false, true, false)
+}
+
+/// BFS for a trapped pawn: also over furniture (`Map::climbable`), never through walls.
+pub fn bfs_climbing(map: &Map, start: Pos) -> DistField {
+    search(map, start, |_| false, true, true)
 }
 
 /// BFS that doesn't go through cells (by index) that are `blocked`, such as
 /// enemies' cells in a battle; only cells that can be stood on.
 pub fn bfs_avoiding(map: &Map, start: Pos, blocked: impl Fn(usize) -> bool) -> DistField {
-    search(map, start, blocked, false)
+    search(map, start, blocked, false, false)
 }
 
-fn search(map: &Map, start: Pos, blocked: impl Fn(usize) -> bool, shelves: bool) -> DistField {
+fn search(map: &Map, start: Pos, blocked: impl Fn(usize) -> bool, shelves: bool, climb: bool) -> DistField {
     let n = map.len();
     let mut steps = vec![0u32; n];
     let mut parent = vec![0u32; n];
@@ -50,6 +55,19 @@ fn search(map: &Map, start: Pos, blocked: impl Fn(usize) -> bool, shelves: bool)
                 parent[ni] = pi as u32;
                 order.push(ni);
                 q.push_back(nb);
+            }
+        }
+        // Over furniture, for a pawn who'd otherwise be stuck.
+        if climb {
+            for (dx, dy) in crate::map::DIRS {
+                let Some(nb) = map.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32) else { continue };
+                let ni = map.idx(nb);
+                if steps[ni] == 0 && map.climbable(nb) {
+                    steps[ni] = d + 1;
+                    parent[ni] = pi as u32;
+                    order.push(ni);
+                    q.push_back(nb);
+                }
             }
         }
         // Reached from here, but a dead end: not queued.
