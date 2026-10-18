@@ -27,6 +27,6 @@ mod testing;
 pub mod world;
 
 /// Game seconds in one in-game day.
-pub const DAY_LEN: f32 = 240.0;
+pub const DAY_LEN: f32 = 480.0;
 /// Length of one fixed simulation step, in game seconds.
 pub const TICK: f32 = 1.0 / 30.0;

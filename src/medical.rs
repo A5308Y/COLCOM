@@ -5,7 +5,8 @@ use crate::defs::{defs, Defs, ItemId};
 use crate::map::{Pos, Stack};
 use crate::pathing::{bfs, DistField, ANY_DISTANCE};
 use crate::pawn::{Job, Memory, Pawn, Skill, WorkType};
-use crate::world::{Step, World};
+use crate::jobs::Fetch;
+use crate::world::{Step, World, SLEEP_GAIN};
 
 /// Seconds of work for one treatment at speed 1.0.
 const TEND_TIME: f32 = 3.0;
@@ -156,7 +157,7 @@ impl World {
             p.sleeping = true;
         }
         if p.sleeping {
-            p.rest = (p.rest + dt).min(100.0);
+            p.rest = (p.rest + 1.25 * SLEEP_GAIN * dt).min(100.0);
             if p.rest >= 100.0 {
                 p.sleeping = false;
             }
@@ -182,29 +183,19 @@ impl World {
             return;
         }
 
-        // Fetch medicine first, if there is some.
+        // Fetch medicine first, if there is some (without it if it's gone or out of reach).
         if let (Some(m), false) = (medicine, picked) {
-            match self.go_to(p, m, false, dt) {
-                Step::Moving => {}
-                Step::Unreachable => p.job = Some(Job::Tend { patient, medicine: None, picked: false }),
-                Step::Arrived => {
-                    let i = self.map.idx(m);
-                    p.carrying = self.take_one(i, Defs::is_medicine);
-                    self.res_item[i] = 0;
-                    p.job = Some(Job::Tend { patient, medicine, picked: true });
-                }
+            match self.fetch(p, m, dt, |w, i| w.take_one(i, Defs::is_medicine)) {
+                Fetch::Walking => {}
+                Fetch::Unreachable => p.job = Some(Job::Tend { patient, medicine: None, picked: false }),
+                Fetch::Got | Fetch::Gone => p.job = Some(Job::Tend { patient, medicine, picked: true }),
             }
             return;
         }
 
         if !self_tend {
-            match self.go_to(p, ppos, true, dt) {
-                Step::Moving => return,
-                Step::Unreachable => {
-                    self.end_job(p);
-                    return;
-                }
-                Step::Arrived => {}
+            if !self.walk_to(p, ppos, true, dt) {
+                return;
             }
             if !ready {
                 // Wait for the patient to lie down.
@@ -212,12 +203,7 @@ impl World {
             }
         }
 
-        p.job_progress += dt * p.work_speed(Skill::Medicine) / TEND_TIME;
-        if p.learn(Skill::Medicine, dt) {
-            let msg = format!("{} reached Medicine level {}.", p.name, p.skill(Skill::Medicine));
-            self.push_log(msg);
-        }
-        if p.job_progress < 1.0 {
+        if !self.work_on(p, Skill::Medicine, TEND_TIME, (1.0, 1.0), dt) {
             return;
         }
 
@@ -259,32 +245,19 @@ impl World {
         }
         if !carrying {
             let ppos = self.pawns[pi].pos;
-            match self.go_to(p, ppos, true, dt) {
-                Step::Moving => {}
-                Step::Unreachable => self.end_job(p),
-                Step::Arrived => p.job = Some(Job::Rescue { patient, bed, carrying: true }),
+            if self.walk_to(p, ppos, true, dt) {
+                p.job = Some(Job::Rescue { patient, bed, carrying: true });
             }
             return;
         }
-        let step = self.go_to(p, bed, false, dt);
-        {
-            // The patient comes along.
-            let o = &mut self.pawns[pi];
-            o.x = p.x;
-            o.y = p.y;
-            o.pos = p.pos;
-            if matches!(step, Step::Arrived) {
-                o.bed = Some(bed);
-            }
-        }
-        match step {
-            Step::Moving => {}
-            Step::Unreachable => self.end_job(p),
-            Step::Arrived => {
-                let name = self.pawns[pi].name.clone();
-                self.push_log(format!("{} carried {} to bed.", p.name, name));
-                self.end_job(p);
-            }
+        // The patient comes along.
+        let there = self.walk_to(p, bed, false, dt);
+        self.carry_along(p, pi);
+        if there {
+            self.pawns[pi].bed = Some(bed);
+            let name = self.pawns[pi].name.clone();
+            self.push_log(format!("{} carried {} to bed.", p.name, name));
+            self.end_job(p);
         }
     }
 
@@ -298,38 +271,25 @@ impl World {
             return;
         }
         if !picked {
-            match self.go_to(p, food, false, dt) {
-                Step::Moving => {}
-                Step::Unreachable => self.end_job(p),
-                Step::Arrived => {
-                    let i = self.map.idx(food);
-                    match self.take_one(i, Defs::is_food) {
-                        Some(s) => {
-                            p.carrying = Some(s);
-                            self.res_item[i] = 0;
-                            p.job = Some(Job::Feed { patient, food, picked: true });
-                        }
-                        None => self.end_job(p),
-                    }
-                }
+            match self.fetch(p, food, dt, |w, i| w.take_one(i, Defs::is_food)) {
+                Fetch::Walking => {}
+                Fetch::Got => p.job = Some(Job::Feed { patient, food, picked: true }),
+                Fetch::Unreachable | Fetch::Gone => self.end_job(p),
             }
             return;
         }
         let ppos = self.pawns[pi].pos;
-        match self.go_to(p, ppos, true, dt) {
-            Step::Moving => {}
-            Step::Unreachable => self.end_job(p),
-            Step::Arrived => {
-                p.job_progress += dt / 2.0;
-                if p.job_progress >= 1.0 {
-                    if let Some(s) = p.carrying.take() {
-                        let mut o = self.pawns[pi].clone();
-                        self.eat(&mut o, s.kind);
-                        self.pawns[pi] = o;
-                    }
-                    self.end_job(p);
-                }
+        if !self.walk_to(p, ppos, true, dt) {
+            return;
+        }
+        p.job_progress += dt / 2.0;
+        if p.job_progress >= 1.0 {
+            if let Some(s) = p.carrying.take() {
+                let mut o = self.pawns[pi].clone();
+                self.eat(&mut o, s.kind);
+                self.pawns[pi] = o;
             }
+            self.end_job(p);
         }
     }
 }

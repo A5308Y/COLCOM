@@ -3,6 +3,7 @@
 
 use crate::map::Desig;
 use crate::world::World;
+use crate::DAY_LEN;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Bump whenever the save format changes incompatibly.
@@ -50,6 +51,15 @@ pub fn from_json(s: &str) -> Result<World, String> {
         if m.desig[i] == Some(Desig::Mine) && !m.mineable(p) && m.deconstructable(p) {
             m.desig[i] = Some(Desig::Deconstruct);
         }
+    }
+    // Days used to be shorter: keep the day, hour and timers where they were.
+    let w = &mut save.world;
+    if w.day_len != DAY_LEN {
+        let k = DAY_LEN / w.day_len;
+        w.time *= k;
+        w.story.next_raid *= k;
+        w.story.next_event *= k;
+        w.day_len = DAY_LEN;
     }
     Ok(save.world)
 }
@@ -107,6 +117,21 @@ mod tests {
         );
         assert!(from_json(&newer).err().unwrap().contains("newer version"));
         assert!(from_json("hello").err().unwrap().contains("not a save file"));
+    }
+
+    #[test]
+    fn saves_from_shorter_days_keep_their_day_and_hour() {
+        let mut w = World::new(5);
+        w.time = 240.0 * 4.5; // noon on day 5 when days were 240 s
+        w.day_len = 240.0;
+        w.story.next_raid = 240.0 * 6.0;
+        let json = to_json(&w).unwrap().replacen("\"day_len\":240.0,", "", 1);
+        assert!(!json.contains("day_len"), "an old save has no day length");
+        let loaded = from_json(&json).unwrap();
+        assert_eq!(loaded.day(), 5);
+        assert!((loaded.hour() - 12.0).abs() < 0.01);
+        assert_eq!(loaded.story.next_raid, 6.0 * DAY_LEN);
+        assert_eq!(loaded.day_len, DAY_LEN);
     }
 
     #[test]

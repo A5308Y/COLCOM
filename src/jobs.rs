@@ -5,7 +5,7 @@ use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone, STACK_MAX};
 use crate::moving::MOVE_SHARE;
 use crate::pathing::{bfs, DistField, ANY_DISTANCE};
 use crate::pawn::{Job, Memory, Pawn, Skill, Task, WorkType};
-use crate::world::{Step, World};
+use crate::world::{Step, World, SLEEP_GAIN};
 
 /// Base seconds to mine out one cell.
 const MINE_TIME: f32 = 5.0;
@@ -16,6 +16,15 @@ const NEARBY_STEPS: i32 = 8;
 const FILL_TIME: f32 = 3.0;
 /// Deconstructing takes this share of the building's work time.
 const DECONSTRUCT_SHARE: f32 = 0.5;
+
+/// How walking to an item to pick it up went (see `World::fetch`).
+pub(crate) enum Fetch {
+    Walking,
+    Got,
+    Unreachable,
+    /// There, but nothing (fitting) left to take.
+    Gone,
+}
 
 /// Nearest (distance, cell) per item kind.
 pub(crate) type Nearest = Vec<Option<(i32, Pos)>>;
@@ -313,41 +322,87 @@ impl World {
         }
     }
 
+    // ---------- steps jobs share ----------
+
+    /// Walk towards `goal` (to beside it if `beside`); true once there. If it
+    /// can't be reached the job is given up (and false returned).
+    pub(crate) fn walk_to(&mut self, p: &mut Pawn, goal: Pos, beside: bool, dt: f32) -> bool {
+        match self.go_to(p, goal, beside, dt) {
+            Step::Moving => false,
+            Step::Unreachable => {
+                self.end_job(p);
+                false
+            }
+            Step::Arrived => true,
+        }
+    }
+
+    /// Walk to the item at `from` and pick one up with `take` (into
+    /// `p.carrying`, its reservation freed). The job itself goes on: what
+    /// happens next is up to the caller.
+    pub(crate) fn fetch(&mut self, p: &mut Pawn, from: Pos, dt: f32, take: impl FnOnce(&mut World, usize) -> Option<Stack>) -> Fetch {
+        match self.go_to(p, from, false, dt) {
+            Step::Moving => Fetch::Walking,
+            Step::Unreachable => Fetch::Unreachable,
+            Step::Arrived => {
+                let i = self.map.idx(from);
+                let got = take(self, i);
+                self.res_item[i] = 0;
+                match got {
+                    Some(s) => {
+                        p.carrying = Some(s);
+                        Fetch::Got
+                    }
+                    None => Fetch::Gone,
+                }
+            }
+        }
+    }
+
+    /// Pawn `oi` (a patient, a body) carried along by `p`.
+    pub(crate) fn carry_along(&mut self, p: &Pawn, oi: usize) {
+        let o = &mut self.pawns[oi];
+        (o.x, o.y, o.z, o.pos) = (p.x, p.y, p.z, p.pos);
+    }
+
+    /// A stroke of `skill` work taking `time` seconds at speed 1 (`speed` and
+    /// `learn` scale it and the practice); true once done. New skill levels are announced.
+    pub(crate) fn work_on(&mut self, p: &mut Pawn, skill: Skill, time: f32, (speed, learn): (f32, f32), dt: f32) -> bool {
+        p.job_progress += dt * speed * p.work_speed(skill) / time;
+        if p.learn(skill, dt * learn) {
+            let msg = format!("{} reached {} level {}.", p.name, skill.name(), p.skill(skill));
+            self.sound("level_up", None);
+            self.push_log(msg);
+        }
+        p.job_progress >= 1.0
+    }
+
     fn run_work(&mut self, p: &mut Pawn, target: Pos, task: Task, dt: f32) {
         if !self.work_valid(target, task) {
             self.end_job(p);
             return;
         }
         let goal = if task == Task::Fill { self.map.fill_spot(target) } else { target };
-        match self.go_to(p, goal, from_beside(task), dt) {
-            Step::Moving => {}
-            Step::Unreachable => self.end_job(p),
-            Step::Arrived => {
-                let Some((skill, time)) = self.task_skill_time(target, task) else {
-                    self.end_job(p);
-                    return;
-                };
-                // A themed room speeds work and learning at its workbenches.
-                let (work, learn) = match task {
-                    Task::Craft => self.room_effects(target).map_or((1.0, 1.0), |(_, e)| (e.work, e.learn)),
-                    _ => (1.0, 1.0),
-                };
-                p.job_progress += dt * work * p.work_speed(skill) / time;
-                if p.learn(skill, dt * learn) {
-                    let msg = format!("{} reached {} level {}.", p.name, skill.name(), p.skill(skill));
-                    self.sound("level_up", None);
-                    self.push_log(msg);
-                }
-                if p.job_progress >= 1.0 {
-                    // Setting down their own bed: `p` is a copy, so it's given back here.
-                    let own_bed = task == Task::Construct && self.move_to(target).is_some_and(|mv| mv.owner == Some(p.id));
-                    self.complete_work(target, task, &p.name);
-                    if own_bed {
-                        p.bed = Some(target);
-                    }
-                    self.end_job(p);
-                }
+        if !self.walk_to(p, goal, from_beside(task), dt) {
+            return;
+        }
+        let Some((skill, time)) = self.task_skill_time(target, task) else {
+            self.end_job(p);
+            return;
+        };
+        // A themed room speeds work and learning at its workbenches.
+        let rates = match task {
+            Task::Craft => self.room_effects(target).map_or((1.0, 1.0), |(_, e)| (e.work, e.learn)),
+            _ => (1.0, 1.0),
+        };
+        if self.work_on(p, skill, time, rates, dt) {
+            // Setting down their own bed: `p` is a copy, so it's given back here.
+            let own_bed = task == Task::Construct && self.move_to(target).is_some_and(|mv| mv.owner == Some(p.id));
+            self.complete_work(target, task, &p.name);
+            if own_bed {
+                p.bed = Some(target);
             }
+            self.end_job(p);
         }
     }
 
@@ -797,22 +852,14 @@ impl World {
             }
             return;
         }
-        match self.go_to(p, from, false, dt) {
-            Step::Moving => {}
-            Step::Unreachable => self.end_job(p),
-            Step::Arrived => {
-                let i = self.map.idx(from);
-                match self.take_one(i, Defs::is_food) {
-                    Some(s) => {
-                        // Held while eating; dropped again if interrupted.
-                        p.carrying = Some(s);
-                        self.res_item[i] = 0;
-                        p.job = Some(Job::Eat { from, picked: true, seat });
-                        p.job_progress = 0.0;
-                    }
-                    None => self.end_job(p),
-                }
+        // Held while eating; dropped again if interrupted.
+        match self.fetch(p, from, dt, |w, i| w.take_one(i, Defs::is_food)) {
+            Fetch::Walking => {}
+            Fetch::Got => {
+                p.job = Some(Job::Eat { from, picked: true, seat });
+                p.job_progress = 0.0;
             }
+            Fetch::Unreachable | Fetch::Gone => self.end_job(p),
         }
     }
 
@@ -833,9 +880,9 @@ impl World {
         }
         p.sleeping = true;
         let themed = bed.and_then(|b| self.room_effects(b));
-        // From 0.8 on the ground to 1.2 in a proper bed (a sleeping spot is in between).
+        // From the ground to half again in a proper bed (a sleeping spot is in between).
         let comfort = bed.and_then(|b| self.map.feature[self.map.idx(b)].structure()).map_or(0.0, |d| d.comfort);
-        let rate = (0.8 + 0.4 * comfort) * themed.map_or(1.0, |(_, e)| e.rest);
+        let rate = SLEEP_GAIN * (1.0 + 0.5 * comfort) * themed.map_or(1.0, |(_, e)| e.rest);
         p.rest = (p.rest + rate * dt).min(100.0);
         if p.rest >= 100.0 {
             let memory = match bed {

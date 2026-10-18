@@ -472,7 +472,7 @@ real play.
   Right-click on gear now opens the menu too (Equip is one of its choices).
 - Sleeping spots (2026-10-17): `sleeping_spot`, a free (`cost` count 0 is now allowed, `BuildDef::free`) bed
   with `comfort: 0.5` (beds default to 1). Rest per second is 0.8 + 0.4 × comfort (ground 0.8, spot 1.0, bed
-  1.2); sleeping there gives `Memory::SleptOnSpot` (-2, vs -5 on the ground) instead of a bedroom memory; it
+  1.2; halved with the longer day, see below); sleeping there gives `Memory::SleptOnSpot` (-2, vs -5 on the ground) instead of a bedroom memory; it
   heals like lying anywhere (`in_bed` for healing needs `proper_bed`), but tending counts it as a bed and
   rescuers carry the downed to it. It counts towards no room theme and spoils none (`RoomDef::allows`).
 - Fuller hauling trips (2026-10-17, `jobs.rs`): hauling to a stockpile takes as much as fits in the target
@@ -753,3 +753,9 @@ real play.
   `add_to_cell`/`take_item`/`take_all`/`settle_cell`; hauling picks what to take from a mixed cell
   (`pick_up_kind`). Shelf sync settles over-full cells (old saves' one big stack becomes 4×50; a removed shelf
   spills). Props draw a shelf's slots small at x ±0.22.
+- Longer days (2026-10-18): `DAY_LEN` 240 → 480 s so colonists get more work done per day at the same
+  walking pace. Per-second need rates halved (`HUNGER_DRAIN` 0.2, `REST_DRAIN` 0.165, `SLEEP_GAIN` 0.4 on
+  the ground, ×1.5 in a bed; also during battle turns), crop `grow_time` doubled and wild regrowth every 8 s,
+  so all of these stay the same per day. Healing, illness, memories and the storyteller already count in
+  days, so they take twice as long in real time (raids are spaced further apart). `World::day_len` is saved
+  (missing = 240 in older saves); loading rescales the clock and storyteller timers so day and hour stay put.

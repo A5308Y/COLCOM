@@ -14,7 +14,7 @@ use crate::defs::ItemId;
 use crate::map::{adjacent, Pos, Stack, Zone};
 use crate::pathing::{bfs, bfs_avoiding, DistField};
 use crate::pawn::{Faction, Memory, Pawn, Role, Skill};
-use crate::world::{Effect, Step, World};
+use crate::world::{Effect, Step, World, HUNGER_DRAIN, REST_DRAIN};
 use serde::{Deserialize, Serialize};
 
 /// Action points per unit and round, and what things cost.
@@ -1070,8 +1070,8 @@ impl World {
             if !p.dead && !p.left {
                 self.update_health(&mut p, TURN_SECS);
                 if p.is_colonist() {
-                    p.hunger = (p.hunger - 0.4 * TURN_SECS).max(0.0);
-                    p.rest = (p.rest - 0.33 * TURN_SECS).max(0.0);
+                    p.hunger = (p.hunger - HUNGER_DRAIN * TURN_SECS).max(0.0);
+                    p.rest = (p.rest - REST_DRAIN * TURN_SECS).max(0.0);
                 }
             }
             self.pawns[i] = p;

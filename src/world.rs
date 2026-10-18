@@ -83,6 +83,10 @@ pub struct World {
     #[serde(default)]
     pub res_patient: Vec<(u32, u32)>,
     pub time: f32,
+    /// The day length `time` was counted in (saves from before the longer
+    /// days have none: 240), so loading can rescale the clock.
+    #[serde(default = "old_day_len")]
+    pub day_len: f32,
     pub rng: Rng,
     pub next_id: u32,
     pub log: Vec<String>,
@@ -166,6 +170,7 @@ impl World {
             res_cell: vec![0; n],
             res_patient: Vec::new(),
             time: DAY_LEN * 0.25,
+            day_len: DAY_LEN,
             rng,
             next_id: 1,
             log: Vec::new(),
@@ -173,7 +178,7 @@ impl World {
             difficulty: Default::default(),
             effects: Vec::new(),
             colonist_names_used: 0,
-            regrow_timer: 4.0,
+            regrow_timer: REGROW_SECS,
             benches: Vec::new(),
             stockpiles: Vec::new(),
             moves: Vec::new(),
@@ -427,7 +432,7 @@ impl World {
         }
         self.regrow_timer -= dt;
         if self.regrow_timer <= 0.0 {
-            self.regrow_timer = 4.0;
+            self.regrow_timer = REGROW_SECS;
             let (x, y) = (self.rng.below(self.map.w), self.rng.below(self.map.h));
             let m = &self.map;
             let Some(z) = m.surface(x, y) else { return };
@@ -589,9 +594,9 @@ impl World {
     }
 
     fn update_needs(&mut self, p: &mut Pawn, dt: f32) {
-        p.hunger = (p.hunger - 0.4 * dt).max(0.0);
+        p.hunger = (p.hunger - HUNGER_DRAIN * dt).max(0.0);
         if !p.sleeping {
-            p.rest = (p.rest - 0.33 * dt).max(0.0);
+            p.rest = (p.rest - REST_DRAIN * dt).max(0.0);
         }
 
         for m in p.memories.iter_mut() {
@@ -1093,17 +1098,32 @@ impl World {
     }
 }
 
-/// Step `p` towards tile `t`; returns true once it is exactly there.
-/// Hunger (100 full, 0 starving; it drops 0.4 a second) below which
-/// colonists eat: between jobs, dropping what they're doing, and waking up
-/// or snapping out of a mental break. With room for a long walk to the food.
+fn old_day_len() -> f32 {
+    240.0
+}
+
+/// Hunger lost per second (100 full, 0 starving): a full stomach lasts a
+/// little over a day.
+pub(crate) const HUNGER_DRAIN: f32 = 0.2;
+/// Rest lost per second awake.
+pub(crate) const REST_DRAIN: f32 = 0.165;
+/// Rest gained per second asleep on the ground (a bed adds half again).
+pub(crate) const SLEEP_GAIN: f32 = 0.4;
+
+/// Hunger below which colonists eat: between jobs, dropping what they're
+/// doing, and waking up or snapping out of a mental break. With room for a
+/// long walk to the food.
 const HUNGER_IDLE: f32 = 50.0;
 const HUNGER_URGENT: f32 = 30.0;
 const HUNGER_WAKE: f32 = 15.0;
 
+/// Seconds between attempts to grow back a wild plant.
+const REGROW_SECS: f32 = 8.0;
+
 /// Share of walking pace while climbing over furniture.
 const CLIMB_PACE: f32 = 0.3;
 
+/// Step `p` towards tile `t`; returns true once it is exactly there.
 fn move_towards(p: &mut Pawn, t: Pos, dt: f32) -> bool {
     let step = p.move_speed() * dt;
     let (tx, ty, tz) = (t.0 as f32, t.1 as f32, t.2 as f32);

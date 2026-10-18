@@ -1319,7 +1319,7 @@
             id: "corn",
             name: "Corn",
             passable: true,
-            grow_time: 540.0,
+            grow_time: 1080.0,
             sow: Some((work: Growing, skill: Growing, time: 1.5)),
             harvest: (work: Growing, skill: Growing, time: 1.5, yields: ("raw_food", 6), verb: "harvesting"),
             stages: [
@@ -1357,7 +1357,7 @@
             id: "healroot",
             name: "Healroot",
             passable: true,
-            grow_time: 660.0,
+            grow_time: 1320.0,
             sow: Some((work: Growing, skill: Growing, time: 1.5)),
             harvest: (work: Growing, skill: Growing, time: 1.5, yields: ("healroot", 3), verb: "harvesting"),
             stages: [
@@ -1395,7 +1395,7 @@
             id: "cotton",
             name: "Cotton",
             passable: true,
-            grow_time: 600.0,
+            grow_time: 1200.0,
             sow: Some((work: Growing, skill: Growing, time: 1.5)),
             harvest: (work: Growing, skill: Growing, time: 1.5, yields: ("cotton", 6), verb: "harvesting"),
             stages: [
@@ -1433,7 +1433,7 @@
             id: "rubber_plant",
             name: "Rubber plant",
             passable: true,
-            grow_time: 660.0,
+            grow_time: 1320.0,
             sow: Some((work: Growing, skill: Growing, time: 1.5)),
             harvest: (work: Growing, skill: Growing, time: 2.0, yields: ("latex", 5), verb: "tapping"),
             stages: [

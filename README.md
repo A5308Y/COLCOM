@@ -115,6 +115,7 @@ furniture, light, production), searchable, with costs (red if the colony is shor
 - **Needs:** hunger (eat food from the ground or stockpiles) and rest (sleep in a bed, or on the ground if
   there isn't one). A **sleeping spot** (Furniture, free) is a place on the ground to sleep: better than
   nothing, worse than a bed, and rescuers bring the wounded there. Going hungry leads to malnutrition.
+  A day lasts 8 minutes; a full stomach lasts a little over a day.
 - **Health (RimWorld-style):** the body is 29 parts (organs inside the torso, brain inside the skull, limbs
   down to hands and feet), each with its own hit points. Hits land on outer parts and can go deeper. Wounds
   (cuts, gunshots, bruises) bleed and hurt; destroyed parts are gone for good. Untended wounds don't heal and

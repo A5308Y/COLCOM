@@ -327,7 +327,7 @@ mod tests {
         place(&mut w, (8, 8, Z), "sleeping_spot");
         let (bed, _) = sleep_in(&mut w, (6, 6, Z));
         let (spot, memories) = sleep_in(&mut w, (8, 8, Z));
-        assert!(spot < bed && spot > 0.8, "{} vs {}", spot, bed);
+        assert!(spot < bed && spot > crate::world::SLEEP_GAIN, "{} vs {}", spot, bed);
         assert_eq!(memories, vec![Memory::SleptOnSpot]);
         assert!(Memory::SleptOnSpot.mood() > Memory::SleptOnGround.mood());
         // It spoils no theme: a workshop with a sleeping spot in it.

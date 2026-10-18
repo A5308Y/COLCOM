@@ -8,7 +8,7 @@ use crate::defs::Special;
 use crate::map::Pos;
 use crate::pathing::DistField;
 use crate::pawn::{Job, Pawn};
-use crate::world::{Step, World};
+use crate::world::World;
 
 impl World {
     /// Who is buried in the grave at `grave`, if anyone.
@@ -63,37 +63,25 @@ impl World {
         }
         if !carrying {
             let at = self.pawns[ci].pos;
-            match self.go_to(p, at, true, dt) {
-                Step::Moving => {}
-                Step::Unreachable => self.end_job(p),
-                Step::Arrived => p.job = Some(Job::Bury { corpse, grave, carrying: true }),
+            if self.walk_to(p, at, true, dt) {
+                p.job = Some(Job::Bury { corpse, grave, carrying: true });
             }
             return;
         }
-        let step = self.go_to(p, grave, false, dt);
-        {
-            // The body comes along.
+        // The body comes along.
+        let there = self.walk_to(p, grave, false, dt);
+        self.carry_along(p, ci);
+        if there {
             let o = &mut self.pawns[ci];
-            o.x = p.x;
-            o.y = p.y;
-            o.z = p.z;
-            o.pos = p.pos;
-        }
-        match step {
-            Step::Moving => {}
-            Step::Unreachable => self.end_job(p),
-            Step::Arrived => {
-                let o = &mut self.pawns[ci];
-                o.buried = true;
-                o.pos = grave;
-                o.x = grave.0 as f32;
-                o.y = grave.1 as f32;
-                o.z = grave.2 as f32;
-                let name = o.name.clone();
-                self.sound("dig", Some(grave));
-                self.push_log(format!("{} buried {}.", p.name, name));
-                self.end_job(p);
-            }
+            o.buried = true;
+            o.pos = grave;
+            o.x = grave.0 as f32;
+            o.y = grave.1 as f32;
+            o.z = grave.2 as f32;
+            let name = o.name.clone();
+            self.sound("dig", Some(grave));
+            self.push_log(format!("{} buried {}.", p.name, name));
+            self.end_job(p);
         }
     }
 

@@ -11,7 +11,7 @@
 use crate::defs::{defs, ItemId, RecipeId};
 use crate::map::{Feature, Pos, Stack, Zone};
 use crate::pawn::{Job, Pawn};
-use crate::world::{Step, World};
+use crate::world::World;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -420,35 +420,30 @@ impl World {
     }
 
     pub(crate) fn run_equip(&mut self, p: &mut Pawn, from: Pos, chosen: bool, dt: f32) {
-        match self.go_to(p, from, false, dt) {
-            Step::Moving => {}
-            Step::Unreachable => {
+        let there = self.walk_to(p, from, false, dt);
+        if p.job.is_none() && chosen {
+            self.push_log(format!("{} can't reach that.", p.name));
+        }
+        if there {
+            let i = self.map.idx(from);
+            // The first weapon or piece of apparel here (a shelf may hold several things).
+            let kind = self.map.stacks(i).map(|s| s.kind).find(|k| k.def().is_gear());
+            if let Some(s) = kind.and_then(|k| self.map.take_item(i, k, 1)) {
+                self.res_item[i] = 0;
+                let d = s.kind.def();
+                let old = p.wear(s.kind);
+                if let Some(old) = old {
+                    self.map.drop_item(p.pos, Stack { kind: old, count: 1 });
+                    if let Some(k) = p.chosen.iter().position(|&c| c == old) {
+                        p.chosen.remove(k);
+                    }
+                }
                 if chosen {
-                    self.push_log(format!("{} can't reach that.", p.name));
+                    p.chosen.push(s.kind);
                 }
-                self.end_job(p);
+                self.push_log(format!("{} picked up {}.", p.name, d.name.to_lowercase()));
             }
-            Step::Arrived => {
-                let i = self.map.idx(from);
-                // The first weapon or piece of apparel here (a shelf may hold several things).
-                let kind = self.map.stacks(i).map(|s| s.kind).find(|k| k.def().is_gear());
-                if let Some(s) = kind.and_then(|k| self.map.take_item(i, k, 1)) {
-                    self.res_item[i] = 0;
-                    let d = s.kind.def();
-                    let old = p.wear(s.kind);
-                    if let Some(old) = old {
-                        self.map.drop_item(p.pos, Stack { kind: old, count: 1 });
-                        if let Some(k) = p.chosen.iter().position(|&c| c == old) {
-                            p.chosen.remove(k);
-                        }
-                    }
-                    if chosen {
-                        p.chosen.push(s.kind);
-                    }
-                    self.push_log(format!("{} picked up {}.", p.name, d.name.to_lowercase()));
-                }
-                self.end_job(p);
-            }
+            self.end_job(p);
         }
     }
 }

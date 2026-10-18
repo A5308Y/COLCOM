@@ -17,6 +17,7 @@ use crate::health::{DamageKind, Part};
 use crate::map::Pos;
 use crate::pathing::{bfs, DistField, ANY_DISTANCE};
 use crate::pawn::{Job, Pawn, Skill};
+use crate::jobs::Fetch;
 use crate::world::{Step, World};
 use serde::{Deserialize, Serialize};
 
@@ -179,40 +180,24 @@ impl World {
             }
         };
         if !picked {
-            match self.go_to(p, prosthetic, false, dt) {
-                Step::Moving => {}
-                Step::Unreachable => self.end_job(p),
-                Step::Arrived => {
-                    let i = self.map.idx(prosthetic);
-                    p.carrying = self.take_one(i, Defs::is_prosthetic);
-                    self.res_item[i] = 0;
-                    if p.carrying.is_some_and(|s| Self::fits(&self.pawns[pi], s.kind).is_some()) {
-                        p.job = Some(Job::Surgery { patient, prosthetic, picked: true });
-                    } else {
-                        self.end_job(p);
-                    }
+            match self.fetch(p, prosthetic, dt, |w, i| w.take_one(i, Defs::is_prosthetic)) {
+                Fetch::Walking => {}
+                Fetch::Got if p.carrying.is_some_and(|s| Self::fits(&self.pawns[pi], s.kind).is_some()) => {
+                    p.job = Some(Job::Surgery { patient, prosthetic, picked: true });
                 }
+                // Not one that fits (it's put back down), gone, or out of reach.
+                _ => self.end_job(p),
             }
             return;
         }
-        match self.go_to(p, table, true, dt) {
-            Step::Moving => return,
-            Step::Unreachable => {
-                self.end_job(p);
-                return;
-            }
-            Step::Arrived => {}
+        if !self.walk_to(p, table, true, dt) {
+            return;
         }
         if self.pawns[pi].pos != table {
             // Wait for the patient to lie down.
             return;
         }
-        p.job_progress += dt * p.work_speed(Skill::Medicine) / SURGERY_TIME;
-        if p.learn(Skill::Medicine, dt) {
-            let msg = format!("{} reached Medicine level {}.", p.name, p.skill(Skill::Medicine));
-            self.push_log(msg);
-        }
-        if p.job_progress < 1.0 {
+        if !self.work_on(p, Skill::Medicine, SURGERY_TIME, (1.0, 1.0), dt) {
             return;
         }
         let Some(item) = p.carrying.take() else {
