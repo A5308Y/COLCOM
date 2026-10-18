@@ -50,7 +50,7 @@ an item in the Resources window. "See also" links lead on (to the bench that mak
 for), and `<` goes back.
 | `PageDown` / `PageUp` (or `[` / `]`) | Layer view: hide everything above a level, and build on that level |
 | `Esc` | Select tool: click colonists or tiles to inspect them |
-| Left drag | Paint the current tool over a rectangle |
+| Left drag | Paint the current tool over a rectangle (with something to build picked, see-through ghosts show where it'll go, before and while dragging) |
 | Left drag with walls | Wall in a rectangle: only its outline (`Shift` fills it) |
 | `,` / `.` while placing or moving | Turn furniture or stairs a quarter turn. The arrow points to the front, where it's used from: crafters stand there at workbenches (beside it if that's blocked). For stairs it shows the way up, orange if they couldn't be climbed that way (yet); they're built exactly as placed. Chairs next to a table face it by themselves; things that look the same from every side (tables, lamps) don't turn |
 | `F` | Draft the selected colonist (or everyone if nothing is selected) |
@@ -80,7 +80,7 @@ for), and `<` goes back.
   and out of battle; for slots left empty they pick up the best they find. Armour stops part of every
   blow (and shows: a breastplate with shoulder plates, a helmet, powered armour's sealed suit), and
   clothes cheer them up. Powered armour's motors make its wearer a quarter faster, on foot and in
-  battle (a squad moves at its slowest member's pace). Pinned down in battle, a unit has 60% of its
+  battle; a limp (low Moving) slows them in both (a squad moves at its slowest member's pace). Pinned down in battle, a unit has 60% of its
   action points and each step costs twice as much.
 - **Components:** six kinds (mechanical, electrical, optical, structural, chemical, textile; their
   descriptions say what they stand for: gears, wiring, lenses ...) made at fitting benches: structural at
@@ -162,6 +162,9 @@ for), and `<` goes back.
   walls or floors. Mining digs tunnels into rock and shafts down through soil; **Fill** (Orders) fills
   holes and tunnels back in with soil, for free, bottom up (mark a shaft again to mark the level above),
   and on open ground raises it a level.
+- **Building:** builders work from any cell around what they build, diagonals included (so corners
+  behind furniture can be built), on its level or one up or down, but not from straight above or below;
+  floors and roofs are put up from underneath. Materials are brought the same way.
 - **Building upwards:** floors make upper storeys and roofs; each needs a wall, door, stairs or ground
   beneath some cell within 3 steps. Walls, doors and windows stack onto walls, doors and windows below,
   even ones still planned: plan a wall several storeys high and it goes up one level at a time

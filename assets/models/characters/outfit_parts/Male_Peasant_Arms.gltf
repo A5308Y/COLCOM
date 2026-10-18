@@ -1323,7 +1323,6 @@
 						"TEXCOORD_0":2,
 						"TEXCOORD_1":3,
 						"COLOR_0":4,
-						"COLOR_1":5,
 						"JOINTS_0":6,
 						"WEIGHTS_0":7
 					},
@@ -1337,7 +1336,6 @@
 						"TEXCOORD_0":11,
 						"TEXCOORD_1":12,
 						"COLOR_0":13,
-						"COLOR_1":14,
 						"JOINTS_0":15,
 						"WEIGHTS_0":16
 					},

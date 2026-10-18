@@ -60,6 +60,8 @@
     // Glowing colours (linear, above 1 blooms). Lamps use these.
     glow: {
         "lamp_glow": (9.0, 6.5, 3.2),
+        // A wall lamp's small bulb: a softer glow.
+        "wall_lamp_glow": (3.5, 2.6, 1.3),
         "ember": (6.0, 2.2, 0.4),
         "flame": (12.0, 5.0, 1.0),
         "visor": (0.4, 3.0, 5.0),
@@ -889,11 +891,11 @@
             passable: true,
             on_wall: true,
             beauty: 0.5,
-            light: Some((color: (1.0, 0.82, 0.6), intensity: 250000.0, range: 7.0, at: (0.0, 0.76, 0.08))),
+            light: Some((color: (1.0, 0.82, 0.6), intensity: 100000.0, range: 6.0, at: (0.0, 0.76, 0.08))),
             look: Parts([
                 (shape: Cube, color: "iron", at: (0.0, 0.74, 0.005), size: (0.05, 0.09, 0.01)),
                 (shape: Cube, color: "iron", at: (0.0, 0.74, 0.035), size: (0.02, 0.02, 0.06)),
-                (shape: Sphere, color: "lamp_glow", at: (0.0, 0.76, 0.075), size: (0.07, 0.07, 0.07)),
+                (shape: Sphere, color: "wall_lamp_glow", at: (0.0, 0.76, 0.075), size: (0.07, 0.07, 0.07)),
             ]),
         ),
         (

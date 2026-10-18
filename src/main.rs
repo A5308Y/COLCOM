@@ -457,6 +457,26 @@ mod tests {
         }
         app.update();
         app.update();
+        // Placing: ghosts where the blueprints would go, under the cursor and over a dragged box.
+        {
+            let at = {
+                let w = &app.world().resource::<front::Sim>().world;
+                let (cx, cy) = (w.map.w / 2, w.map.h / 2);
+                (cx, cy - 2, w.map.surface(cx, cy - 2).unwrap_or(1))
+            };
+            let mut ui = app.world_mut().resource_mut::<front::UiState>();
+            ui.tool = front::Tool::Paint(my_world::world::Order::Build(my_world::defs::BuildId::named("wall")));
+            ui.hover = Some(front::Hover { solid: (at.0, at.1, at.2 - 1), stand: at });
+            ui.drag_start = Some((at.0 - 3, at.1 - 2, at.2));
+        }
+        app.update();
+        app.update();
+        {
+            let mut ui = app.world_mut().resource_mut::<front::UiState>();
+            ui.drag_start = None;
+            ui.tool = front::Tool::Select;
+        }
+        app.update();
         // Hanging a painting: the slot under the cursor is marked, and the wall's inspector lists what's on it.
         {
             let wall = {
@@ -484,9 +504,11 @@ mod tests {
             let w = &app.world().resource::<front::Sim>().world;
             w.room_at((room.0, room.1, room_z)).and_then(|r| r.kind_name()) == Some("Workshop")
         };
-        for _ in 0..300 {
+        // Rooms are recounted once a game second: wait up to three of them, however fast the frames come.
+        let start = app.world().resource::<front::Sim>().world.time;
+        for _ in 0..20_000 {
             app.update();
-            if workshop(&app) {
+            if workshop(&app) || app.world().resource::<front::Sim>().world.time - start > 3.0 {
                 break;
             }
         }

@@ -63,6 +63,17 @@ pub enum Order {
     Cancel,
 }
 
+/// Where to get to for a goal (see `World::go_to_reach`).
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Reach {
+    /// The goal cell itself.
+    On,
+    /// Beside it (`Map::around`).
+    Beside,
+    /// Somewhere to build it from (`Map::build_around`).
+    Build,
+}
+
 pub(crate) enum Step {
     Arrived,
     Moving,
@@ -860,17 +871,29 @@ impl World {
 
     /// Walk towards `goal` (or next to it if `adjacent`), planning a path as needed.
     pub(crate) fn go_to(&self, p: &mut Pawn, goal: Pos, adjacent: bool, dt: f32) -> Step {
+        self.go_to_reach(p, goal, if adjacent { Reach::Beside } else { Reach::On }, dt)
+    }
+
+    pub(crate) fn go_to_reach(&self, p: &mut Pawn, goal: Pos, reach: Reach, dt: f32) -> Step {
         // What can't be stepped onto (a shelf) is reached from beside it.
-        let adjacent = adjacent || p.pos != goal && self.map.storage_furniture(self.map.idx(goal));
+        let reach = if reach == Reach::On && p.pos != goal && self.map.storage_furniture(self.map.idx(goal)) { Reach::Beside } else { reach };
         // Shut in: over the furniture if need be.
         let climb = self.trapped.contains(&p.id);
         if p.path_goal != Some(goal) {
             p.path.clear();
             p.path_goal = Some(goal);
-            let at_goal = p.pos == goal || (adjacent && crate::map::adjacent(p.pos, goal));
+            let at_goal = match reach {
+                Reach::On => p.pos == goal,
+                Reach::Beside => p.pos == goal || crate::map::adjacent(p.pos, goal),
+                Reach::Build => self.map.build_around(goal, self.map.overhead_work(goal)).any(|c| c == p.pos),
+            };
             if !at_goal {
                 let df = if climb { crate::pathing::bfs_climbing(&self.map, p.pos) } else { bfs(&self.map, p.pos) };
-                match df.approach(&self.map, goal, adjacent) {
+                let stand = match reach {
+                    Reach::Build => df.approach_build(&self.map, goal),
+                    _ => df.approach(&self.map, goal, reach == Reach::Beside),
+                };
+                match stand {
                     Some((stand, _)) => p.path = df.path_to(stand),
                     None => {
                         p.path_goal = None;
@@ -2075,6 +2098,34 @@ mod tests {
         w.map.drop_item((4, 4, Z), Stack { kind: door.def().cost[0].item, count: door.def().total_cost() });
         run(&mut w, 160.0);
         assert_eq!(w.map.feature[i], Feature::built("door"));
+    }
+
+    #[test]
+    fn corners_are_built_from_diagonally_beside() {
+        let mut w = test_world(16, 16);
+        colonist(&mut w, (2, 2, Z));
+        // A corner closed in by walls on two sides and shelves on the others:
+        // only the cell diagonally in front of it is free to stand on.
+        for (at, id) in [((4, 5, Z), "wall"), ((5, 4, Z), "wall"), ((6, 5, Z), "shelf"), ((5, 6, Z), "shelf")] {
+            let i = w.map.idx(at);
+            w.map.set_feature(i, Feature::built(id));
+        }
+        let chair = BuildId::named("chair");
+        assert!(w.apply_order((5, 5, Z), Order::Build(chair)));
+        w.map.drop_item((2, 4, Z), Stack { kind: chair.def().cost[0].item, count: chair.def().total_cost() });
+        run(&mut w, 60.0);
+        assert!(matches!(w.map.feature[w.map.idx((5, 5, Z))], Feature::Built { kind, .. } if kind == chair), "built from a diagonal");
+    }
+
+    #[test]
+    fn nobody_builds_from_straight_above_or_below() {
+        let m = &test_world(8, 8).map;
+        let at = (3, 3, Z);
+        let spots: Vec<Pos> = m.build_around(at, false).collect();
+        assert!(spots.contains(&(4, 4, Z)) && spots.contains(&(2, 3, Z + 1)), "diagonals, and a level up or down beside");
+        assert!(!spots.contains(&(3, 3, Z + 1)) && !spots.contains(&(3, 3, Z - 1)), "not straight above or below");
+        // Floors and roofs are built from underneath.
+        assert!(m.build_around((3, 3, Z + 1), true).any(|c| c == (3, 3, Z)));
     }
 
     #[test]

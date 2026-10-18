@@ -728,12 +728,12 @@ impl World {
         Ok(d * self.step_ap(u))
     }
 
-    /// AP unit `u` spends per cell it moves: `AP_MOVE`, less for the
-    /// speed of the slowest member's gear (powered armour), and
+    /// AP unit `u` spends per cell it moves: `AP_MOVE` at the slowest
+    /// member's pace (more if they limp, less in powered armour), and
     /// `PINNED_MOVE` times as much while pinned down.
     pub fn step_ap(&self, u: usize) -> i32 {
         let Some(unit) = self.battle.as_ref().and_then(|b| b.units.get(u)) else { return AP_MOVE };
-        let speed = unit.members.iter().filter_map(|&id| self.pawn(id)).map(|p| p.gear_speed()).fold(f32::MAX, f32::min);
+        let speed = unit.members.iter().filter_map(|&id| self.pawn(id)).map(|p| p.pace()).fold(f32::MAX, f32::min);
         let speed = if speed == f32::MAX { 1.0 } else { speed.max(0.25) };
         let pinned = if unit.held_down() { PINNED_MOVE } else { 1 };
         ((AP_MOVE as f32 / speed).round() as i32).max(1) * pinned
@@ -1543,7 +1543,10 @@ mod tests {
         w.battle.as_mut().unwrap().units.push(Unit::new(Faction::Colony, vec![lone], false, 50.0));
         w.battle_order(BattleOrder::Activate(u)).unwrap();
         assert!(w.move_cost(u, (9, 10, Z)).is_err(), "taken by another unit");
-        w.battle_order(BattleOrder::Move((10, 12, Z))).unwrap();
+        // The limp costs AP too: 17 a step at 60% (too far to (10, 12), 7 cells).
+        assert_eq!(w.step_ap(u), 17);
+        assert!(w.battle_order(BattleOrder::Move((10, 12, Z))).is_err());
+        w.battle_order(BattleOrder::Move((8, 11, Z))).unwrap();
         for _ in 0..(0.7 / TICK) as usize {
             w.tick(TICK);
             let at = |id: u32| {
@@ -1557,7 +1560,7 @@ mod tests {
             w.tick(TICK);
         }
         for id in [leader, a, b2] {
-            assert_eq!(w.pawn(id).unwrap().pos, (10, 12, Z), "everyone on the new cell");
+            assert_eq!(w.pawn(id).unwrap().pos, (8, 11, Z), "everyone on the new cell");
         }
         assert!(!battle(&w).busy());
     }
@@ -2073,9 +2076,16 @@ mod tests {
         w.set_role(leader, Role::Leader).unwrap();
         w.set_role(member, Role::Member(leader)).unwrap();
         fight(&mut w, 1, (39, 10, Z));
-        let unit = |id| battle(&w).unit_of(id).unwrap();
-        assert_eq!(w.step_ap(unit(lone)), 8, "fewer AP a step");
-        assert_eq!(w.step_ap(unit(leader)), AP_MOVE, "the squad goes at its slowest member's pace");
+        let (squad, alone) = (battle(&w).unit_of(leader).unwrap(), battle(&w).unit_of(lone).unwrap());
+        assert_eq!(w.step_ap(alone), 8, "fewer AP a step");
+        assert_eq!(w.step_ap(squad), AP_MOVE, "the squad goes at its slowest member's pace");
+        // Limping at half speed: twice the AP a step; in powered armour, a bit less than that.
+        let i = w.pawn_index(member).unwrap();
+        w.pawns[i].health.caps.moving = 0.5;
+        assert_eq!(w.step_ap(squad), 2 * AP_MOVE);
+        let i = w.pawn_index(lone).unwrap();
+        w.pawns[i].health.caps.moving = 0.5;
+        assert_eq!(w.step_ap(alone), 16);
     }
 
     #[test]

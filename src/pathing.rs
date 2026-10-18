@@ -136,6 +136,15 @@ impl DistField {
         best
     }
 
+    /// The nearest place to build at `target` from (`Map::build_around`),
+    /// and how far it is. Never on shelves.
+    pub fn approach_build(&self, map: &Map, target: Pos) -> Option<(Pos, i32)> {
+        map.build_around(target, map.overhead_work(target))
+            .filter(|&nb| !map.storage_furniture(map.idx(nb)))
+            .filter_map(|nb| self.dist(nb).map(|d| (nb, d)))
+            .min_by_key(|&(_, d)| d)
+    }
+
     /// Path to a reachable `goal`, reversed so that `pop()` yields the next step.
     /// The start cell is not included.
     pub fn path_to(&self, goal: Pos) -> Vec<Pos> {

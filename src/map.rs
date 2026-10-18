@@ -585,6 +585,29 @@ impl Map {
         })
     }
 
+    /// Cells a builder can work on `p` from: the eight around it (diagonals
+    /// too), on its level or one up or down, but not straight above or
+    /// below it; with `overhead` (a floor or roof, built from underneath)
+    /// also the cell below.
+    pub fn build_around(&self, p: Pos, overhead: bool) -> impl Iterator<Item = Pos> + '_ {
+        const RING: [(i32, i32); 8] = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)];
+        let (x, y, z) = (p.0 as i32, p.1 as i32, p.2 as i32);
+        RING.into_iter()
+            .flat_map(move |(dx, dy)| (-1..=1).filter_map(move |dz| self.at(x + dx, y + dy, z + dz)))
+            .chain(self.below(p).filter(|_| overhead))
+    }
+
+    /// Building (or taking down) at `p` is done from underneath: a floor or
+    /// roof there, built or planned, and nothing else.
+    pub fn overhead_work(&self, p: Pos) -> bool {
+        let i = self.idx(p);
+        match self.feature[i] {
+            Feature::Blueprint { kind, .. } => matches!(kind.def().special, Special::Floor | Special::Roof),
+            Feature::None => self.floor[i] || self.roof[i],
+            _ => false,
+        }
+    }
+
     /// Something a Mine order can dig out: rock, ore or soil.
     pub fn mineable(&self, p: Pos) -> bool {
         self.block[self.idx(p)].solid()

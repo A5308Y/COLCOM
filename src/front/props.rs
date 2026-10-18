@@ -5,7 +5,7 @@
 //! spawned; changed tiles get their entity replaced.
 
 use super::audio::SoundQueue;
-use super::input::UiState;
+use super::input::{box_cells, hollow, order_target, Tool, UiState};
 use super::look::*;
 use super::sim::Sim;
 use super::terrain::{FLOOR_T, LEVEL_H};
@@ -100,7 +100,7 @@ impl Plugin for PropsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Props>()
             .add_systems(Startup, setup_assets)
-            .add_systems(Update, (sync_props, flicker_lights));
+            .add_systems(Update, (sync_props, flicker_lights, preview_blueprints));
     }
 }
 
@@ -438,6 +438,83 @@ fn sync_props(
             commands.entity(e).insert(Visibility::Hidden);
         }
         props.decor.insert(k, (key, e));
+    }
+}
+
+/// Blueprint ghosts shown where they'd go before clicking: under the cursor
+/// while a buildable is picked, or over the whole rectangle while dragging.
+#[derive(Default)]
+struct Preview {
+    cells: Vec<(Pos, PropKey)>,
+    decor: Option<(Pos, u8, u8, BuildId)>,
+    entities: Vec<Entity>,
+}
+
+/// Most ghosts shown at once (a big drag shows its first ones).
+const PREVIEW_MAX: usize = 400;
+
+fn preview_blueprints(
+    mut commands: Commands,
+    sim: Res<Sim>,
+    ui: Res<UiState>,
+    keys: Res<ButtonInput<KeyCode>>,
+    assets: Res<PropAssets>,
+    mut shown: Local<Preview>,
+) {
+    let w = &sim.world;
+    let m = &w.map;
+    let mut cells = Vec::new();
+    let mut decor = None;
+    if let (Tool::Paint(order @ my_world::world::Order::Build(kind)), Some(h)) = (ui.tool, ui.hover) {
+        let d = kind.def();
+        if d.on_wall {
+            decor = ui.wall_slot.filter(|&(at, f, s)| w.decor_ok(at, f, s, kind)).map(|(at, f, s)| (at, f, s, kind));
+        } else {
+            let to = order_target(w, h, order);
+            let from = ui.drag_start.unwrap_or(to);
+            let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
+            for p in box_cells(w, from, to, order, hollow(order, shift)).into_iter().take(PREVIEW_MAX) {
+                if p.2 > ui.top_at(m, p.0, p.1) {
+                    continue;
+                }
+                // Into a standing wall (a window): the shell around it, as once planned.
+                let over = matches!(m.feature[m.idx(p)], Feature::Built { .. });
+                let dir = if d.turnable() { ui.place_dir } else { 0 };
+                let key = if over {
+                    PropKey::Blueprint { kind, dir: 0, over: true, snug: (0.0, 0.0) }
+                } else {
+                    let s = snug(m, p, kind, dir);
+                    PropKey::Blueprint { kind, dir, over: false, snug: (s.x, s.y) }
+                };
+                cells.push((p, key));
+            }
+        }
+    }
+    if cells == shown.cells && decor == shown.decor {
+        return;
+    }
+    for e in shown.entities.drain(..) {
+        commands.entity(e).despawn();
+    }
+    for &(p, key) in &cells {
+        let i = m.idx(p);
+        let lift = if m.floor[i] && !key_along_walls(key) { FLOOR_T } else { 0.0 };
+        shown.entities.push(spawn_feature(&mut commands, &assets, key, p, lift, assets.blanket_free.clone()));
+    }
+    if let Some((at, face, slot, kind)) = decor {
+        let lift = if m.floor[m.idx(at)] { FLOOR_T } else { 0.0 };
+        let key = DecorKey { kind, built: false, item: None };
+        shown.entities.push(spawn_decor(&mut commands, &assets, key, at, face, slot, lift));
+    }
+    shown.cells = cells;
+    shown.decor = decor;
+}
+
+/// Doors and windows fill their cell like the walls they sit in, floor or not.
+fn key_along_walls(key: PropKey) -> bool {
+    match key {
+        PropKey::Blueprint { kind, .. } | PropKey::Built { kind, .. } => kind.def().along_walls,
+        PropKey::Plant { .. } => false,
     }
 }
 

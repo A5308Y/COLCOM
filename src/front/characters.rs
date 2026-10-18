@@ -558,6 +558,38 @@ pub fn hand_pose(size: Vec3, turn: Quat, figure_scale: f32) -> Transform {
 mod tests {
     use super::*;
 
+    /// The models only use vertex attributes Bevy loads: anything else makes
+    /// it warn on every load (extra colour and texture sets, more than four
+    /// bones per vertex). Strip those from new models.
+    #[test]
+    fn models_only_use_vertex_attributes_bevy_loads() {
+        const KNOWN: [&str; 8] = ["POSITION", "NORMAL", "TANGENT", "TEXCOORD_0", "TEXCOORD_1", "COLOR_0", "JOINTS_0", "WEIGHTS_0"];
+        let mut dirs = vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/models")];
+        let mut checked = 0;
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    dirs.push(path);
+                    continue;
+                }
+                if path.extension().is_none_or(|e| e != "gltf") {
+                    continue;
+                }
+                let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+                for mesh in json["meshes"].as_array().into_iter().flatten() {
+                    for prim in mesh["primitives"].as_array().into_iter().flatten() {
+                        for name in prim["attributes"].as_object().into_iter().flatten().map(|(k, _)| k) {
+                            assert!(KNOWN.contains(&name.as_str()), "{}: vertex attribute {}", path.display(), name);
+                        }
+                    }
+                }
+                checked += 1;
+            }
+        }
+        assert!(checked > 50, "found the models");
+    }
+
     #[test]
     fn locomotion_matches_speed() {
         use my_world::pawn::{RUN_SPEED, WALK_SPEED};

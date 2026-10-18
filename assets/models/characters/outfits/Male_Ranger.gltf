@@ -1387,7 +1387,6 @@
 						"TEXCOORD_0":9,
 						"TEXCOORD_1":10,
 						"COLOR_0":11,
-						"COLOR_1":12,
 						"JOINTS_0":13,
 						"WEIGHTS_0":14
 					},
@@ -1401,7 +1400,6 @@
 						"TEXCOORD_0":18,
 						"TEXCOORD_1":19,
 						"COLOR_0":20,
-						"COLOR_1":21,
 						"JOINTS_0":22,
 						"WEIGHTS_0":23
 					},
@@ -1419,7 +1417,6 @@
 						"NORMAL":26,
 						"TEXCOORD_0":27,
 						"COLOR_0":28,
-						"COLOR_1":29,
 						"JOINTS_0":30,
 						"WEIGHTS_0":31
 					},
@@ -1437,7 +1434,6 @@
 						"NORMAL":34,
 						"TEXCOORD_0":35,
 						"COLOR_0":36,
-						"COLOR_1":37,
 						"JOINTS_0":38,
 						"WEIGHTS_0":39
 					},
@@ -1487,7 +1483,6 @@
 						"NORMAL":54,
 						"TEXCOORD_0":55,
 						"COLOR_0":56,
-						"COLOR_1":57,
 						"JOINTS_0":58,
 						"WEIGHTS_0":59
 					},
@@ -1505,7 +1500,6 @@
 						"NORMAL":62,
 						"TEXCOORD_0":63,
 						"COLOR_0":64,
-						"COLOR_1":65,
 						"JOINTS_0":66,
 						"WEIGHTS_0":67
 					},
@@ -1523,7 +1517,6 @@
 						"NORMAL":70,
 						"TEXCOORD_0":71,
 						"COLOR_0":72,
-						"COLOR_1":73,
 						"JOINTS_0":74,
 						"WEIGHTS_0":75
 					},

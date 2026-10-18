@@ -1029,7 +1029,7 @@ fn mouse(
 /// following the ground one level up or down where it slopes. Returns how
 /// many cells it applied to.
 /// Walls go around the dragged rectangle, not over all of it (Shift fills it).
-fn hollow(order: Order, shift: bool) -> bool {
+pub fn hollow(order: Order, shift: bool) -> bool {
     matches!(order, Order::Build(kind) if kind.def().is_block()) && !shift
 }
 
@@ -1041,13 +1041,13 @@ pub fn turn_dir(dir: u8, clockwise: bool) -> u8 {
     ROUND[(k + if clockwise { 1 } else { 3 }) % 4]
 }
 
-/// Apply `order` over the rectangle from `a` to `b` (only its edge if
-/// `hollow`); blueprints are turned to face `dir`.
-fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order, hollow: bool, dir: u8) -> usize {
-    let turnable = matches!(order, Order::Build(kind) if kind.def().turnable());
+/// The cells `order` would go to over the rectangle from `a` to `b` (only
+/// its edge if `hollow`): in each column the first of `a`'s level, one up and
+/// one down where it applies (a quarry: the column's ground).
+pub fn box_cells(w: &SimWorld, a: Pos, b: Pos, order: Order, hollow: bool) -> Vec<Pos> {
     let z0 = a.2 as i32;
-    let mut done = 0;
     let (lx, ly, hx, hy) = (a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1));
+    let mut cells = Vec::new();
     for y in ly..=hy {
         for x in lx..=hx {
             if hollow && x > lx && x < hx && y > ly && y < hy {
@@ -1059,17 +1059,24 @@ fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order, hollow: bool, dir: 
                 Some(z) => vec![z as i32],
                 None => vec![z0, z0 + 1, z0 - 1],
             };
-            for z in levels {
-                if let Some(p) = w.map.at(x as i32, y as i32, z) {
-                    if w.apply_order(p, order) {
-                        if turnable {
-                            w.turn_blueprint(p, dir);
-                        }
-                        done += 1;
-                        break;
-                    }
-                }
+            let at = levels.into_iter().filter_map(|z| w.map.at(x as i32, y as i32, z)).find(|&p| w.order_applies(p, order));
+            cells.extend(at);
+        }
+    }
+    cells
+}
+
+/// Apply `order` over the rectangle from `a` to `b` (see `box_cells`);
+/// blueprints are turned to face `dir`.
+fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order, hollow: bool, dir: u8) -> usize {
+    let turnable = matches!(order, Order::Build(kind) if kind.def().turnable());
+    let mut done = 0;
+    for p in box_cells(w, a, b, order, hollow) {
+        if w.apply_order(p, order) {
+            if turnable {
+                w.turn_blueprint(p, dir);
             }
+            done += 1;
         }
     }
     done
@@ -1305,6 +1312,23 @@ mod tests {
         let loaded = SimWorld::load_json(&std::fs::read_to_string(&saves[0].1).unwrap()).unwrap();
         assert_eq!(loaded.map.len(), w.map.len());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_preview_shows_the_cells_a_click_would_take() {
+        let mut w = SimWorld::with_map(Map::flat(10, 10), my_world::rng::Rng::new(1));
+        let z = (0..w.map.d).find(|&z| w.map.standable((3, 3, z))).unwrap();
+        let wall = Order::Build(my_world::defs::BuildId::named("wall"));
+        // Walls: the outline of the box (Shift: all of it).
+        assert_eq!(box_cells(&w, (2, 2, z), (5, 4, z), wall, hollow(wall, false)).len(), 4 * 3 - 2);
+        assert_eq!(box_cells(&w, (2, 2, z), (5, 4, z), wall, hollow(wall, true)).len(), 4 * 3);
+        // Only where it can go: not where a chair stands.
+        let i = w.map.idx((2, 2, z));
+        w.map.set_feature(i, my_world::map::Feature::built("chair"));
+        let cells = box_cells(&w, (2, 2, z), (5, 4, z), wall, true);
+        assert!(!cells.iter().any(|c| (c.0, c.1) == (2, 2)) && cells.len() == 4 * 3 - 2 - 1, "the outline but the chair's cell: {:?}", cells);
+        // And painting takes just those.
+        assert_eq!(paint_box(&mut w, (2, 2, z), (5, 4, z), wall, true, 0), cells.len());
     }
 
     #[test]

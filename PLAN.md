@@ -879,7 +879,21 @@ real play.
   manipulation) is shared by `hit_chance_from` and the tab's new Fighting section (Shooting and Melee
   levels, chances with the weapon they have: shots at 3 cells and at its range, or blows).
 - Movement in battle (2026-10-18): `World::step_ap` is what a unit pays per cell: `AP_MOVE` divided by
-  the slowest member's `Pawn::gear_speed` (product of `ApparelDef::speed`; powered armour 1.25, so 8),
+  the slowest member's `Pawn::pace` (Moving capacity, 15% at least, times `gear_speed`, the product of
+  `ApparelDef::speed`; powered armour 1.25, so 8; a limp at 50% makes it 20),
   times `PINNED_MOVE` (2) for a unit that started the round pinned (`Unit::held_down`: its AP were cut,
   even if its suppression has halved since). Used by orders, the AI and the move preview. Everyday
   walking (`Pawn::move_speed`) uses `gear_speed` too.
+- Where builders stand (2026-10-18): building, deconstructing and packing up (`jobs::builds`) and
+  deliveries go by `Map::build_around`: the eight cells around (diagonals too) on the level or one up or
+  down, not straight above or below, plus the cell below for floors and roofs (`Map::overhead_work`).
+  `DistField::approach_build`, `World::go_to_reach(Reach::Build)`; work candidates and nearby
+  blueprints look at those cells too. Mining and the rest keep `Map::around`.
+- Blueprint preview (2026-10-18): `props::preview_blueprints` shows ghosts (the blueprint look,
+  turned and pushed back as they'd be) where the picked buildable would go: under the cursor, or over
+  the dragged box (`input::box_cells`, shared with `paint_box`, so the preview is what a click
+  places; at most 400), and for wall decor in the slot under the cursor. Rebuilt only when that changes.
+- No glTF loader warnings (2026-10-18): the character models carried vertex attributes Bevy doesn't load
+  (COLOR_1-3, TEXCOORD_2-4, JOINTS_1/WEIGHTS_1), so it warned on every load. They're stripped from the
+  meshes' attribute lists (the data stays in the .bin files, unused); a test
+  (`characters::models_only_use_vertex_attributes_bevy_loads`) keeps new models clean.

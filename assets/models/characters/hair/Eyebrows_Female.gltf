@@ -1330,11 +1330,7 @@
 						"NORMAL":1,
 						"TEXCOORD_0":2,
 						"TEXCOORD_1":3,
-						"TEXCOORD_2":4,
-						"TEXCOORD_3":5,
 						"COLOR_0":6,
-						"COLOR_1":7,
-						"COLOR_2":8,
 						"JOINTS_0":9,
 						"WEIGHTS_0":10
 					},

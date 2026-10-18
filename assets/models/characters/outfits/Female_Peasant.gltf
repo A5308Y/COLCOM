@@ -1365,7 +1365,6 @@
 						"NORMAL":8,
 						"TEXCOORD_0":9,
 						"COLOR_0":10,
-						"COLOR_1":11,
 						"JOINTS_0":12,
 						"WEIGHTS_0":13
 					},
@@ -1383,7 +1382,6 @@
 						"NORMAL":16,
 						"TEXCOORD_0":17,
 						"COLOR_0":18,
-						"COLOR_1":19,
 						"JOINTS_0":20,
 						"WEIGHTS_0":21
 					},

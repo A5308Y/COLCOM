@@ -27,6 +27,8 @@ pub use input::{InspectorTab, JobMenu, Selection, Tool, UiState};
 #[cfg(test)]
 pub use info::InfoTarget;
 #[cfg(test)]
+pub use input::Hover;
+#[cfg(test)]
 pub use audio::SoundQueue;
 #[cfg(test)]
 pub use camera::CameraRig;

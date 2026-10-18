@@ -1343,12 +1343,8 @@
 						"NORMAL":1,
 						"TEXCOORD_0":2,
 						"COLOR_0":3,
-						"COLOR_1":4,
-						"COLOR_2":5,
 						"JOINTS_0":6,
-						"JOINTS_1":7,
-						"WEIGHTS_0":8,
-						"WEIGHTS_1":9
+						"WEIGHTS_0":8
 					},
 					"indices":10,
 					"material":0
@@ -1364,8 +1360,6 @@
 						"NORMAL":13,
 						"TEXCOORD_0":14,
 						"COLOR_0":15,
-						"COLOR_1":16,
-						"COLOR_2":17,
 						"JOINTS_0":18,
 						"WEIGHTS_0":19
 					},
@@ -1383,8 +1377,6 @@
 						"NORMAL":22,
 						"TEXCOORD_0":23,
 						"COLOR_0":24,
-						"COLOR_1":25,
-						"COLOR_2":26,
 						"JOINTS_0":27,
 						"WEIGHTS_0":28
 					},

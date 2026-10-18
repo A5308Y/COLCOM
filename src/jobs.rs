@@ -5,7 +5,7 @@ use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone, STACK_MAX};
 use crate::moving::MOVE_SHARE;
 use crate::pathing::{bfs, DistField, ANY_DISTANCE};
 use crate::pawn::{Job, Memory, Pawn, Skill, Task, WorkType};
-use crate::world::{Step, World, SLEEP_GAIN};
+use crate::world::{Reach, Step, World, SLEEP_GAIN};
 
 /// Base seconds to mine out one cell.
 const MINE_TIME: f32 = 5.0;
@@ -40,7 +40,9 @@ fn reachable_and_around(m: &Map, df: &DistField) -> Vec<usize> {
         if !std::mem::replace(&mut seen[i], true) {
             out.push(i);
         }
-        for nb in m.around(m.pos(i)) {
+        // (Built from diagonally beside, and floors from below, too.)
+        let p = m.pos(i);
+        for nb in m.around(p).chain(m.build_around(p, false)).chain(m.above(p)) {
             let ni = m.idx(nb);
             if !std::mem::replace(&mut seen[ni], true) {
                 out.push(ni);
@@ -74,6 +76,11 @@ fn harvestable(m: &Map, i: usize) -> Option<PlantId> {
 }
 
 /// Work done from beside the target (it's in the way) rather than standing on it.
+/// Building work: done from any cell around, diagonals too (`Map::build_around`).
+fn builds(task: Task) -> bool {
+    matches!(task, Task::Construct | Task::Deconstruct | Task::Uninstall)
+}
+
 fn from_beside(task: Task) -> bool {
     match task {
         Task::Harvest(kind) => !kind.def().passable,
@@ -202,7 +209,8 @@ impl World {
         let m = &self.map;
         let pos = m.pos(i);
         let work = |task: Task| {
-            df.approach(m, pos, from_beside(task)).map(|(_, d)| (d, Job::Work { target: pos, task }))
+            let stand = if builds(task) { df.approach_build(m, pos) } else { df.approach(m, pos, from_beside(task)) };
+            stand.map(|(_, d)| (d, Job::Work { target: pos, task }))
         };
         match wt {
             // Handled per patient in `doctor_candidate`.
@@ -270,7 +278,7 @@ impl World {
                 let Some((material, _)) = def.missing(delivered) else {
                     return work(Task::Construct);
                 };
-                let (_, d) = df.approach(m, pos, true)?;
+                let (_, d) = df.approach_build(m, pos)?;
                 let (di, from) = nearest_item[material.index()]?;
                 return Some((d + di, Job::Haul { from, to: pos, deliver: true, picked: false }));
             }
@@ -287,7 +295,7 @@ impl World {
                         return df.dist(front).map(|d| (d, Job::Work { target: pos, task: Task::Decorate }));
                     }
                     let need = self.decor_need(pos)?;
-                    let (_, d) = df.approach(m, pos, true)?;
+                    let (_, d) = df.approach_build(m, pos)?;
                     let (di, from) = nearest_item[need.kind.index()]?;
                     return Some((d + di, Job::Haul { from, to: pos, deliver: true, picked: false }));
                 }
@@ -416,6 +424,15 @@ impl World {
                     self.walk_to(p, target, true, dt);
                     return;
                 }
+            }
+        } else if builds(task) {
+            match self.go_to_reach(p, goal, Reach::Build, dt) {
+                Step::Moving => return,
+                Step::Unreachable => {
+                    self.end_job(p);
+                    return;
+                }
+                Step::Arrived => {}
             }
         } else if !self.walk_to(p, goal, from_beside(task), dt) {
             return;
@@ -727,7 +744,8 @@ impl World {
         // Blueprints aren't walked onto, so look at the cells beside reachable ones too.
         let mut found: Vec<(i32, Pos, u32)> = Vec::new();
         for (i, d) in df.nearest_first(NEARBY_STEPS) {
-            for c in std::iter::once(m.pos(i)).chain(m.neighbors(m.pos(i))) {
+            let p = m.pos(i);
+            for c in std::iter::once(p).chain(m.build_around(p, false)).chain(m.above(p)) {
                 let ci = m.idx(c);
                 if !matches!(m.feature[ci], Feature::Blueprint { .. }) || found.iter().any(|f| f.1 == c) {
                     continue;
@@ -850,7 +868,9 @@ impl World {
             self.end_job(p);
             return;
         }
-        match self.go_to(p, to, deliver, dt) {
+        // Deliveries are handed over from anywhere a builder could work from (diagonally beside too).
+        let reach = if deliver { Reach::Build } else { Reach::On };
+        match self.go_to_reach(p, to, reach, dt) {
             Step::Moving => {}
             Step::Unreachable => self.end_job(p),
             Step::Arrived => {
