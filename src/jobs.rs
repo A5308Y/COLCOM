@@ -383,8 +383,23 @@ impl World {
             self.end_job(p);
             return;
         }
-        let goal = if task == Task::Fill { self.map.fill_spot(target) } else { target };
-        if !self.walk_to(p, goal, from_beside(task), dt) {
+        let goal = match task {
+            Task::Fill => self.map.fill_spot(target),
+            // At a workbench's front, unless that turned out to be out of reach
+            // (then walking to beside it is under way).
+            Task::Craft if p.path_goal != Some(target) => self.map.front_cell(target).unwrap_or(target),
+            _ => target,
+        };
+        if goal != target && task == Task::Craft {
+            match self.go_to(p, goal, false, dt) {
+                Step::Moving => return,
+                Step::Arrived => {}
+                Step::Unreachable => {
+                    self.walk_to(p, target, true, dt);
+                    return;
+                }
+            }
+        } else if !self.walk_to(p, goal, from_beside(task), dt) {
             return;
         }
         let Some((skill, time)) = self.task_skill_time(target, task) else {

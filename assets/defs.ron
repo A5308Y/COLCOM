@@ -785,6 +785,7 @@
         ),
         (
             id: "stairs",
+            front: 0,
             cover: Some(None),
             category: "Structure",
             name: "Stairs",
@@ -804,6 +805,7 @@
         ),
         (
             id: "lamp",
+            any_way: true,
             cover: Some(None),
             category: "Light",
             beauty: 1.0,
@@ -863,6 +865,7 @@
         ),
         (
             id: "fence",
+            any_way: true,
             cover: Some(Light),
             name: "Fence",
             category: "Structure",
@@ -884,6 +887,7 @@
         ),
         (
             id: "table",
+            any_way: true,
             cover: Some(Light),
             name: "Table",
             category: "Furniture",
@@ -945,6 +949,7 @@
         ),
         (
             id: "dresser",
+            front: 3,
             cover: Some(Medium),
             name: "Dresser",
             category: "Furniture",
@@ -963,6 +968,7 @@
         ),
         (
             id: "medical_cabinet",
+            front: 3,
             cover: Some(Medium),
             name: "Medical cabinet",
             category: "Furniture",
@@ -996,6 +1002,7 @@
         ),
         (
             id: "torch",
+            any_way: true,
             cover: Some(None),
             name: "Torch",
             category: "Light",
@@ -1011,7 +1018,8 @@
                 (shape: Cone, color: "flame", at: (0.0, 0.82, 0.0), size: (0.12, 0.2, 0.12)),
             ]),
         ),
-        // Workbenches: recipes below name them. Colonists work them from beside.
+        // Workbenches: recipes below name them. Colonists work them from the front (+y as
+        // modelled, turned with the bench; from beside if that is blocked).
         (
             id: "stove",
             cover: Some(Medium),
@@ -1208,6 +1216,7 @@
         ),
         (
             id: "pv_system",
+            any_way: true,
             cover: Some(Light),
             category: "Power",
             name: "PV system",
@@ -1224,6 +1233,7 @@
         ),
         (
             id: "home_battery",
+            front: 3,
             cover: Some(Medium),
             category: "Power",
             name: "Home battery",

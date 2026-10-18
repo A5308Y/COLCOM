@@ -42,6 +42,16 @@ pub fn adjacent(a: Pos, target: Pos) -> bool {
 /// The four horizontal directions; stairs and other turned structures store an index into this.
 pub const DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 
+/// Direction `local` (as modelled) of something turned to face `DIRS[dir]`
+/// (its +x turned there), both indices into `DIRS`.
+pub fn turn_dir(local: u8, dir: u8) -> u8 {
+    let (x, y) = DIRS[local as usize % 4];
+    // Cosine and sine of the quarter turns, as the front end turns models.
+    let (c, s) = [(1, 0), (-1, 0), (0, -1), (0, 1)][dir as usize % 4];
+    let v = (x * c + y * s, y * c - x * s);
+    DIRS.iter().position(|&d| d == v).unwrap() as u8
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Block {
     Air,
@@ -517,6 +527,18 @@ impl Map {
             })
             .chain(self.above(p))
             .chain(self.below(p))
+    }
+
+    /// Where furniture at `p` is used from: the cell its front faces, if
+    /// someone can stand there.
+    pub fn front_cell(&self, p: Pos) -> Option<Pos> {
+        let Feature::Built { kind, dir } = self.feature[self.idx(p)] else { return None };
+        let d = kind.def();
+        if !d.turnable() {
+            return None;
+        }
+        let (dx, dy) = DIRS[turn_dir(d.front, dir) as usize];
+        self.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32).filter(|&f| self.standable(f))
     }
 
     /// A wall, door or window in one of the eight cells around `p` on its level.
@@ -1022,6 +1044,38 @@ fn noise(x: f32, y: f32, salt: u32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quarter_turns_go_round() {
+        for l in 0..4u8 {
+            assert_eq!(turn_dir(l, 0), l, "unturned");
+            // Two half turns, or four quarter turns of the same way, come back round.
+            assert_eq!(turn_dir(turn_dir(l, 1), 1), l);
+            let (x, y) = DIRS[l as usize];
+            let (tx, ty) = DIRS[turn_dir(l, 2) as usize];
+            assert_eq!(x * tx + y * ty, 0, "a quarter turn is square to where it was");
+        }
+        // Turned to face +y, the model's +x points there.
+        assert_eq!(turn_dir(0, 2), 2);
+    }
+
+    #[test]
+    fn furniture_is_used_from_its_front() {
+        let mut m = Map::flat(8, 8);
+        let z = FLAT_Z;
+        let stove = BuildId::named("stove");
+        assert_eq!(stove.def().front, 2, "modelled facing +y");
+        let i = m.idx((4, 4, z));
+        m.set_feature(i, Feature::Built { kind: stove, dir: 0 });
+        assert_eq!(m.front_cell((4, 4, z)), Some((4, 5, z)));
+        m.set_feature(i, Feature::Built { kind: stove, dir: 2 });
+        assert_eq!(m.front_cell((4, 4, z)), Some((3, 4, z)), "turned a quarter");
+        let front = m.idx((3, 4, z));
+        m.set_feature(front, Feature::built("wall"));
+        assert_eq!(m.front_cell((4, 4, z)), None, "blocked");
+        m.set_feature(i, Feature::built("table"));
+        assert_eq!(m.front_cell((4, 4, z)), None, "a table has no front");
+    }
 
     const Z: usize = FLAT_Z;
 

@@ -357,6 +357,23 @@ impl UiState {
         self.group = if ids.len() > 1 { ids } else { Vec::new() };
     }
 
+    /// Pick the furniture at `from` to move, starting out turned as it stands.
+    pub fn start_move(&mut self, from: Pos, w: &SimWorld) {
+        self.tool = Tool::Move(Some(from));
+        self.place_dir = w.facing_of(from);
+        self.drag_start = None;
+    }
+
+    /// What's being placed or moved, if `,` and `.` turn it.
+    pub fn turning(&self, w: &SimWorld) -> Option<BuildId> {
+        let kind = match self.tool {
+            Tool::Paint(Order::Build(kind)) => kind,
+            Tool::Move(Some(from)) => w.movable(from)?,
+            _ => return None,
+        };
+        kind.def().turnable().then_some(kind)
+    }
+
     /// Show `t` in the info window (what it showed before is kept for Back).
     pub fn open_info(&mut self, t: InfoTarget) {
         if let Some(old) = self.info.filter(|&old| old != t) {
@@ -775,13 +792,11 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
             }
         }
     }
-    // `,` and `.` turn what's being placed, a quarter turn each way.
-    if let Tool::Paint(Order::Build(kind)) = ui.tool {
-        if kind.def().turnable() {
-            let turn = [KeyCode::Comma, KeyCode::Period].iter().position(|&k| keys.just_pressed(k));
-            if let Some(t) = turn {
-                ui.place_dir = turn_dir(ui.place_dir, t == 1);
-            }
+    // `,` and `.` turn what's being placed or moved, a quarter turn each way.
+    if ui.turning(&sim.world).is_some() {
+        let turn = [KeyCode::Comma, KeyCode::Period].iter().position(|&k| keys.just_pressed(k));
+        if let Some(t) = turn {
+            ui.place_dir = turn_dir(ui.place_dir, t == 1);
         }
     }
     if shift && keys.just_pressed(KeyCode::KeyR) {
@@ -907,13 +922,13 @@ fn mouse(
                     match from {
                         None => {
                             if sim.world.movable(h.stand).is_some() {
-                                ui.tool = Tool::Move(Some(h.stand));
+                                ui.start_move(h.stand, &sim.world);
                                 sounds.play("ui_click", None);
                             }
                         }
                         Some(from) => {
                             if let Some(to) = move_target(&sim.world, from, h) {
-                                if sim.world.order_move(from, to) {
+                                if sim.world.order_move_facing(from, to, ui.place_dir) {
                                     sounds.play("ui_place", None);
                                     ui.tool = Tool::Select;
                                 }
@@ -1027,6 +1042,14 @@ pub fn floor_outline(gizmos: &mut Gizmos, t: Pos, inset: f32, color: Color) {
 }
 
 /// Box outline around a whole (solid) cell.
+/// An arrow from cell `at` towards the front of `kind` turned to `dir`:
+/// where it's used from (stairs: the way up).
+fn front_arrow(gizmos: &mut Gizmos, at: Pos, kind: BuildId, dir: u8) {
+    let (dx, dy) = DIRS[super::props::turned(kind.def().front, dir) as usize];
+    let c = tile_center(at) + Vec3::Y * 0.1;
+    gizmos.arrow(c, c + Vec3::new(dx as f32, 0.0, dy as f32) * 0.6, Color::srgb(1.0, 0.85, 0.3));
+}
+
 /// A line a little above the floor from cell `a` to cell `b`, with an arrowhead at `b`.
 fn move_arrow(gizmos: &mut Gizmos, a: Pos, b: Pos, color: Color) {
     let lift = Vec3::Y * 0.25;
@@ -1074,6 +1097,9 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
             Some(to) => {
                 floor_outline(&mut gizmos, to, 0.06, Color::srgb(0.4, 1.0, 0.45));
                 move_arrow(&mut gizmos, from, to, Color::srgb(0.4, 1.0, 0.45));
+                if let Some(kind) = ui.turning(w) {
+                    front_arrow(&mut gizmos, to, kind, ui.place_dir);
+                }
             }
             None => floor_outline(&mut gizmos, h.stand, 0.06, Color::srgb(1.0, 0.3, 0.25)),
         }
@@ -1099,14 +1125,10 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
         gizmos.grid(iso, UVec2::splat(9), Vec2::ONE, Color::srgba(1.0, 1.0, 1.0, 0.18));
     }
 
-    // What's being placed: an arrow the way it will face.
+    // What's being placed: an arrow to its front.
     if let (Some(h), Tool::Paint(order @ Order::Build(kind))) = (ui.hover, ui.tool) {
         if kind.def().turnable() {
-            let at = order_target(w, h, order);
-            let way = super::props::turned(kind.def().front, ui.place_dir);
-            let (dx, dy) = DIRS[way as usize];
-            let c = tile_center(at) + Vec3::Y * 0.1;
-            gizmos.arrow(c, c + Vec3::new(dx as f32, 0.0, dy as f32) * 0.6, Color::srgb(1.0, 0.85, 0.3));
+            front_arrow(&mut gizmos, order_target(w, h, order), kind, ui.place_dir);
         }
     }
     if let Some(h) = ui.hover {

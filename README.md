@@ -52,7 +52,7 @@ for), and `<` goes back.
 | `Esc` | Select tool: click colonists or tiles to inspect them |
 | Left drag | Paint the current tool over a rectangle |
 | Left drag with walls | Wall in a rectangle: only its outline (`Shift` fills it) |
-| `,` / `.` while placing | Turn furniture or stairs a quarter turn (an arrow shows which way it will face). Stairs only turn where both ends can be walked on; chairs next to a table face it by themselves |
+| `,` / `.` while placing or moving | Turn furniture or stairs a quarter turn. The arrow points to the front, where it's used from: crafters stand there at workbenches (beside it if that's blocked). For stairs it shows the way up; they only turn where both ends can be walked on. Chairs next to a table face it by themselves; things that look the same from every side (tables, lamps) don't turn |
 | `F` | Draft the selected colonist (or everyone if nothing is selected) |
 | Right click | With a drafted colonist: move there, or attack the clicked raider |
 | Right click with a colonist selected | Menu of what they could do there: prioritize building this grave, tending this colonist, hauling this stack, equipping this rifle... They do it now (even work they're not assigned to), then finish everything there |

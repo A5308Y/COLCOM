@@ -159,10 +159,7 @@ fn links(m: &Map, pos: Pos, kind: BuildId) -> u8 {
 
 /// The world direction (index into `DIRS`) a model's direction `l` faces once turned by `dir`.
 pub fn turned(l: u8, dir: u8) -> u8 {
-    let (lx, ly) = DIRS[l as usize % 4];
-    let v = facing(dir) * Vec3::new(lx as f32, 0.0, ly as f32);
-    let found = DIRS.iter().position(|&(x, y)| (x as f32 - v.x).abs() < 0.5 && (y as f32 - v.z).abs() < 0.5);
-    found.unwrap_or(l as usize) as u8
+    my_world::map::turn_dir(l, dir)
 }
 
 /// Torches and other flames: light that wavers around `base` intensity.
@@ -520,6 +517,18 @@ fn spawn_item(commands: &mut Commands, a: &PropAssets, key: ItemKey, pos: Pos, l
 mod tests {
     use super::*;
     use my_world::map::FLAT_Z as Z;
+
+    #[test]
+    fn turning_matches_how_models_are_turned() {
+        for l in 0..4u8 {
+            for dir in 0..4u8 {
+                let (lx, ly) = DIRS[l as usize];
+                let v = facing(dir) * Vec3::new(lx as f32, 0.0, ly as f32);
+                let (x, y) = DIRS[turned(l, dir) as usize];
+                assert!((x as f32 - v.x).abs() < 0.01 && (y as f32 - v.z).abs() < 0.01, "{} turned {}", l, dir);
+            }
+        }
+    }
 
     #[test]
     fn chairs_face_their_table() {

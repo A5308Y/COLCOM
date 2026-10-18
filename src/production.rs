@@ -769,6 +769,43 @@ mod tests {
         assert_eq!(w.map.count_items(item("meal")), 3, "fetched the raw food and cooked");
     }
 
+    /// Where the only (cooking) colonist stands once they're cooking at the stove at `stove`.
+    fn cooking_spot(w: &mut World, cook: u32, stove: Pos) -> Pos {
+        let i = w.pawn_index(cook).unwrap();
+        w.pawns[i].priorities = [0; crate::pawn::WorkType::ALL.len()];
+        w.pawns[i].priorities[crate::pawn::WorkType::Cooking as usize] = 1;
+        w.map.drop_item((stove.0 - 2, stove.1, Z), Stack { kind: item("raw_food"), count: 10 });
+        w.add_bill(stove, RecipeId::named("cook_meal"), BillMode::Count(5));
+        for _ in 0..(60.0 / TICK) as usize {
+            w.tick(TICK);
+            let p = w.pawn(cook).unwrap();
+            if matches!(p.job, Some(Job::Work { task: crate::pawn::Task::Craft, .. })) && p.job_progress > 0.0 {
+                return p.pos;
+            }
+        }
+        panic!("never got to cooking");
+    }
+
+    #[test]
+    fn crafters_stand_at_the_front() {
+        let mut w = test_world(20, 20);
+        let cook = colonist(&mut w, (2, 2, Z));
+        let stove = (10, 10, Z);
+        place_bench(&mut w, "stove", stove);
+        let i = w.map.idx(stove);
+        w.map.set_feature(i, Feature::Built { kind: crate::defs::BuildId::named("stove"), dir: 2 });
+        assert_eq!(cooking_spot(&mut w, cook, stove), (9, 10, Z), "at the front, turned towards -x");
+        // With the front walled off, from beside it.
+        let mut w = test_world(20, 20);
+        let cook = colonist(&mut w, (2, 2, Z));
+        place_bench(&mut w, "stove", stove);
+        let front = w.map.front_cell(stove).unwrap();
+        let fi = w.map.idx(front);
+        w.map.set_feature(fi, Feature::built("wall"));
+        let at = cooking_spot(&mut w, cook, stove);
+        assert!(crate::map::adjacent(at, stove) && at != front, "{:?}", at);
+    }
+
     #[test]
     fn a_big_stack_feeds_everyone_at_once() {
         let mut w = test_world(20, 20);

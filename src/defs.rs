@@ -415,10 +415,15 @@ pub struct BuildDef {
     /// Modelled spanning x; turned to run along the walls beside it.
     #[serde(default)]
     pub along_walls: bool,
-    /// The way its model faces (index into `map::DIRS`: 0 +x, 1 -x, 2 +y,
-    /// 3 -y): shown by the arrow while placing; seats face their table with it.
-    #[serde(default)]
+    /// The side it's used from, as modelled (index into `map::DIRS`: 0 +x,
+    /// 1 -x, 2 +y, 3 -y; +y if not given): the arrow while placing points
+    /// there, crafters stand there at workbenches, seats face their table
+    /// with it. Stairs: the way up.
+    #[serde(default = "plus_y")]
     pub front: u8,
+    /// Looks the same from every side (a lamp, a table): no front, nothing to turn.
+    #[serde(default)]
+    pub any_way: bool,
     /// Lets daylight into rooms it borders (windows).
     #[serde(default)]
     pub daylight: bool,
@@ -544,10 +549,11 @@ impl BuildDef {
         }
     }
 
-    /// Can be turned while placing: modelled furniture and stairs, not
-    /// walls, doors or windows (which follow their walls), floors or roofs.
+    /// Can be turned while placing: modelled furniture with a front and
+    /// stairs, not walls, doors or windows (which follow their walls), floors or roofs.
     pub fn turnable(&self) -> bool {
         matches!(self.look, BuildLook::Parts(_))
+            && !self.any_way
             && !self.along_walls
             && !matches!(self.special, Special::Floor | Special::Roof | Special::Grave)
     }
@@ -609,6 +615,10 @@ pub struct Stage {
     pub from: f32,
     /// One is picked per cell.
     pub variants: Vec<Vec<Part>>,
+}
+
+fn plus_y() -> u8 {
+    2
 }
 
 fn one_each() -> f32 {
@@ -1207,6 +1217,20 @@ impl Defs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn furniture_fronts_make_sense() {
+        for k in BuildId::all() {
+            let d = k.def();
+            assert!(d.front <= 3, "{}", d.id);
+            if d.any_way {
+                assert!(!d.turnable(), "{}: looks the same every way, so isn't turned", d.id);
+            }
+        }
+        // Workbenches are turned so crafters stand at their front.
+        assert!(BuildId::all().filter(|k| !k.def().recipes.is_empty()).all(|k| k.def().turnable()));
+        assert!(!BuildId::named("table").def().turnable() && BuildId::named("stairs").def().turnable());
+    }
 
     #[test]
     fn built_in_definitions_load() {

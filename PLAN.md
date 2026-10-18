@@ -786,3 +786,12 @@ real play.
   (`audio::steps_heard`, `SILENT_STEPS_SPEED`); work strokes and other sounds still play.
 - No wild plants beside buildings (2026-10-18): regrowth skips cells with a wall, door or window in any
   of the eight cells around on the same level (`Map::beside_wall`). Plants already there stay until cut.
+- Furniture fronts (2026-10-18): `BuildDef::front` is the side something is used from (default +y as
+  modelled; dresser, medical cabinet and home battery -y; stairs +x, the way up) and `any_way` marks things
+  that look the same from every side (lamp, torch, table, fence, PV system: not turnable, no arrow).
+  `map::turn_dir` turns a direction by a structure's `dir` (the front end's `props::turned` uses it,
+  checked against the model rotation); `Map::front_cell` is the standable cell a structure faces.
+  Crafters walk to a bench's front cell, or to beside it if the front is out of reach. The placement
+  arrow (`input::front_arrow`) points at the front, also while moving furniture: `,`/`.` turn it there
+  (`UiState::start_move` starts from how it stands, `UiState::turning`, `World::order_move_facing`;
+  `Move::dir` keeps how it stood, for when a move is called off).

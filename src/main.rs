@@ -444,10 +444,24 @@ mod tests {
                 .find(|&to| w.move_target_ok(bed, to))
                 .expect("room beside the bed")
         };
-        app.world_mut().resource_mut::<front::UiState>().tool = front::Tool::Move(Some(bed));
+        // Picked up turned as it stands, then turned a quarter while choosing where it goes.
+        let turned = {
+            let app_world = app.world_mut();
+            let world = app_world.resource::<front::Sim>().world.clone();
+            let mut ui = app_world.resource_mut::<front::UiState>();
+            ui.start_move(bed, &world);
+            assert_eq!(ui.place_dir, world.facing_of(bed));
+            assert!(ui.turning(&world).is_some(), "a bed can be turned");
+            ui.place_dir = (ui.place_dir + 2) % 4;
+            ui.place_dir
+        };
         app.update();
         app.world_mut().resource_mut::<front::UiState>().tool = front::Tool::Select;
-        assert!(app.world_mut().resource_mut::<front::Sim>().world.order_move(bed, spot));
+        assert!(app.world_mut().resource_mut::<front::Sim>().world.order_move_facing(bed, spot, turned));
+        {
+            let w = &app.world().resource::<front::Sim>().world;
+            assert!(matches!(w.map.feature[w.map.idx(spot)], my_world::map::Feature::Blueprint { dir, .. } if dir == turned));
+        }
         for t in [bed, spot] {
             app.world_mut().resource_mut::<front::UiState>().selected = Some(front::Selection::Tile(t));
             for _ in 0..5 {

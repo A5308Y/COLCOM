@@ -357,13 +357,17 @@ fn current_hint(tool: Tool) -> String {
         Tool::Paint(Order::Build(kind)) if kind.def().is_block() => {
             format!("{}: left-drag a rectangle to wall it in (Shift fills it). Right-click to stop.", name)
         }
-        Tool::Paint(Order::Build(kind)) if kind.def().turnable() => {
-            format!("{}: left-drag to place blueprints; , and . turn them (the arrow). Right-click to stop.", name)
+        Tool::Paint(Order::Build(kind)) if kind.def().special == Special::Stairs => {
+            format!("{}: left-drag to place blueprints; , and . turn them (the arrow: the way up). Right-click to stop.", name)
         }
+        Tool::Paint(Order::Build(kind)) if kind.def().turnable() => format!(
+            "{}: left-drag to place blueprints; , and . turn them. The arrow points to the front, where it's used from. Right-click to stop.",
+            name
+        ),
         Tool::Paint(Order::Build(_)) => format!("{}: left-drag to place blueprints. Right-click to stop.", name),
         Tool::Paint(_) => format!("{}: left-drag over an area. Right-click to stop.", name),
         Tool::Move(None) => "Move furniture: click the furniture to move. Right-click to stop.".into(),
-        Tool::Move(Some(_)) => "Move furniture: click where it should go. Right-click to stop.".into(),
+        Tool::Move(Some(_)) => "Move furniture: click where it should go; , and . turn it (the arrow: its front). Right-click to stop.".into(),
         Tool::Spawn(kind) => format!("Testing: click to drop {} there. Right-click to stop.", kind.name().to_lowercase()),
     }
 }

@@ -32,7 +32,7 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 46] = [
+const HELP_REST: [&str; 47] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -54,6 +54,7 @@ const HELP_REST: [&str; 46] = [
     "      Use the layer view to place floors in mid-air: PageDown/PageUp (or [ and ]).",
     "      Shift+R hides roofs, to look into the top room of every building at once.",
     "Stairs rise away from where you walk onto them; you can't walk across them.",
+    "While placing or moving furniture , and . turn it; the arrow points to its front, where it's used from.",
     "Lamps light up rooms and caves - nights are dark.",
     "",
     "A room needs walls and a roof. Enclose an area with walls and doors and it gets a roof by itself:",
@@ -131,7 +132,7 @@ fn draw_ui(
         }
     }
 
-    tool_at_cursor(&ctx, &st);
+    tool_at_cursor(&ctx, &st, &sim.world);
     job_menu(&ctx, &mut sim, &mut st, &mut sounds);
     hud(&ctx, &mut sim, &mut st, &mut rig, left);
     colonist_bar(&ctx, &sim, &mut st, left);
@@ -149,8 +150,7 @@ fn draw_ui(
                 sounds.play("ui_click", None);
             }
             if let Some(from) = move_from {
-                st.tool = input::Tool::Move(Some(from));
-                st.drag_start = None;
+                st.start_move(from, &sim.world);
                 sounds.play("ui_click", None);
             }
             if !open {
@@ -234,7 +234,7 @@ fn job_menu(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, sounds: &mut S
 
 /// With a tool in hand, its name by the cursor, so it's clear clicks give
 /// orders rather than inspect.
-fn tool_at_cursor(ctx: &egui::Context, st: &UiState) {
+fn tool_at_cursor(ctx: &egui::Context, st: &UiState, w: &SimWorld) {
     let name = match st.tool {
         input::Tool::Select => return,
         input::Tool::Move(None) => "Move furniture: which?",
@@ -246,7 +246,7 @@ fn tool_at_cursor(ctx: &egui::Context, st: &UiState) {
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("tool_at_cursor")));
     let pos = at + egui::vec2(16.0, 14.0);
     let font = egui::FontId::proportional(13.0);
-    let turn = matches!(st.tool, input::Tool::Paint(my_world::world::Order::Build(k)) if k.def().turnable());
+    let turn = st.turning(w).is_some();
     let text = if turn { format!("{}  (, . turn   right-click: stop)", name) } else { format!("{}  (right-click: stop)", name) };
     let galley = painter.layout_no_wrap(text, font, Color32::from_rgb(255, 225, 140));
     let rect = egui::Rect::from_min_size(pos, galley.size() + egui::vec2(10.0, 4.0));

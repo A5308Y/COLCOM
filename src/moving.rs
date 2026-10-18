@@ -46,22 +46,34 @@ impl World {
         to != from && self.map.feature[self.map.idx(to)] == Feature::None && self.order_applies(to, Order::Build(kind))
     }
 
-    /// Have the furniture at `from` moved to `to`. Returns false if it can't go there.
+    /// Have the furniture at `from` moved to `to`, facing the way it does now.
+    /// Returns false if it can't go there.
     pub fn order_move(&mut self, from: Pos, to: Pos) -> bool {
+        self.order_move_facing(from, to, self.facing_of(from))
+    }
+
+    /// How the structure at `p` is turned (0 if there's none).
+    pub fn facing_of(&self, p: Pos) -> u8 {
+        match self.map.feature[self.map.idx(p)] {
+            Feature::Built { dir, .. } => dir,
+            _ => 0,
+        }
+    }
+
+    /// Have the furniture at `from` moved to `to`, turned to `dir` there.
+    pub fn order_move_facing(&mut self, from: Pos, to: Pos, dir: u8) -> bool {
         if !self.move_target_ok(from, to) {
             return false;
         }
         let Some(kind) = self.movable(from) else { return false };
         let (fi, ti) = (self.map.idx(from), self.map.idx(to));
-        // It keeps facing the way it did (turn the blueprint to change that).
-        let dir = match self.map.feature[fi] {
-            Feature::Built { dir, .. } => dir,
-            _ => 0,
-        };
+        // How it stands now, for if it goes back; what can't be turned keeps that.
+        let was = self.facing_of(from);
+        let dir = if kind.def().turnable() { dir % 4 } else { was };
         // Moving it instead of taking it down.
         self.map.desig[fi] = None;
         self.map.feature[ti] = Feature::blueprint(kind, 0, dir);
-        self.moves.push(Move { kind, from, to, lifted: false, bills: Vec::new(), owner: None, dir });
+        self.moves.push(Move { kind, from, to, lifted: false, bills: Vec::new(), owner: None, dir: was });
         true
     }
 
@@ -220,6 +232,24 @@ mod tests {
         assert_eq!(feature(&w, to), Feature::built("bed"));
         assert_eq!(w.bed_owner(to), Some(id), "the bed is still theirs");
         assert_eq!(w.item_totals().iter().sum::<u32>(), 0, "no materials needed or left over");
+    }
+
+    #[test]
+    fn furniture_is_turned_as_it_is_moved() {
+        let mut w = test_world();
+        w.spawn_colonist((2, 2, Z));
+        let (from, to) = ((5, 5, Z), (10, 9, Z));
+        let bed = BuildId::named("bed");
+        let i = w.map.idx(from);
+        w.map.set_feature(i, Feature::Built { kind: bed, dir: 1 });
+        assert!(w.order_move_facing(from, to, 3));
+        assert_eq!(w.moves[0].dir, 1, "how it stood, for if it goes back");
+        run(&mut w, 60.0);
+        assert_eq!(feature(&w, to), Feature::Built { kind: bed, dir: 3 });
+        // Moved without turning, it keeps facing the same way.
+        assert!(w.order_move(to, from));
+        run(&mut w, 60.0);
+        assert_eq!(feature(&w, from), Feature::Built { kind: bed, dir: 3 });
     }
 
     #[test]

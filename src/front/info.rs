@@ -236,6 +236,9 @@ fn build_sheet(k: BuildId) -> Sheet {
     s.about.extend(purpose(d).map(String::from));
     if !d.recipes.is_empty() {
         s.about.push("A workbench: click it in the world to add bills.".into());
+        if d.turnable() {
+            s.about.push("Worked from its front (where the arrow points when placing), or from beside it if that's blocked.".into());
+        }
     }
 
     let mut building = Vec::new();
