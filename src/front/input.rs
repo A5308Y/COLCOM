@@ -247,6 +247,9 @@ pub struct UiState {
     /// Under the cursor (last known, so drags can end over the UI).
     pub hover: Option<Hover>,
     pub show_work: bool,
+    /// The Work window's tab: priorities (false) or schedules (true), and the block being painted.
+    pub work_schedule: bool,
+    pub schedule_brush: my_world::recreation::Block,
     pub show_help: bool,
     pub inspector_tab: InspectorTab,
     /// The Squads overview window.
@@ -315,6 +318,8 @@ impl UiState {
             drag_start: None,
             hover: None,
             show_work: false,
+            work_schedule: false,
+            schedule_brush: my_world::recreation::Block::Work,
             show_help: false,
             inspector_tab: InspectorTab::Overview,
             show_squads: false,

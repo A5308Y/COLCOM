@@ -657,6 +657,9 @@ impl World {
 
     fn update_needs(&mut self, p: &mut Pawn, dt: f32) {
         p.felt = crate::temperature::felt(self.temperature_at(p.pos), p.warmth());
+        if !p.sleeping && p.is_colonist() {
+            p.joy = (p.joy - crate::recreation::JOY_DRAIN * dt).max(0.0);
+        }
         p.hunger = (p.hunger - HUNGER_DRAIN * dt).max(0.0);
         if !p.sleeping {
             p.rest = (p.rest - REST_DRAIN * dt).max(0.0);
@@ -790,7 +793,9 @@ impl World {
         if p.hunger < HUNGER_IDLE && self.try_eat(p) {
             return;
         }
-        if p.rest < 30.0 || (self.is_night() && p.rest < 75.0) {
+        // Tired, or (a little) in their hours for sleep.
+        let block = self.block_now(p);
+        if p.rest < 30.0 || (block == crate::recreation::Block::Sleep && p.rest < 90.0) {
             let bed = self.find_bed(p);
             self.start_job(p, Job::Sleep { bed });
             return;
@@ -808,9 +813,17 @@ impl World {
             self.start_job(p, Job::Operation { table });
             return;
         }
-        if let Some(job) = self.find_work(p) {
+        // Their hours for fun, or bored in hours for anything.
+        if let Some(job) = self.fun_now(p) {
             self.start_job(p, job);
             return;
+        }
+        // No work in fun hours.
+        if block != crate::recreation::Block::Fun {
+            if let Some(job) = self.find_work(p) {
+                self.start_job(p, job);
+                return;
+            }
         }
         if self.rng.chance(0.25) {
             self.start_wander(p, 5);
@@ -849,6 +862,10 @@ impl World {
             Job::Eat { from, .. } | Job::Equip { from, .. } => {
                 let i = self.map.idx(from);
                 self.res_item[i] = id;
+            }
+            Job::Relax { at, .. } => {
+                let i = self.map.idx(at);
+                self.res_target[i] = id;
             }
             Job::Sleep { bed: Some(b) } => p.bed = Some(b),
             // Hospital beds and operating tables stay nobody's.

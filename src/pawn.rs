@@ -193,6 +193,10 @@ pub enum Job {
     Operation { table: Pos },
     /// Fetch a prosthetic and fit it to a patient on an operating table.
     Surgery { patient: u32, prosthetic: Pos, picked: bool },
+    /// Have fun at something built for it at `at`, standing at `stand` (see `recreation.rs`).
+    Relax { at: Pos, stand: Pos },
+    /// Stroll outdoors for fun, on to `to`.
+    Stroll { to: Pos },
 }
 
 impl Job {
@@ -213,6 +217,8 @@ impl Job {
             Job::Bury { .. } => "burying the dead",
             Job::Operation { .. } => "waiting for an operation",
             Job::Surgery { .. } => "operating",
+            Job::Relax { .. } => "having fun",
+            Job::Stroll { .. } => "strolling",
         }
     }
 }
@@ -416,6 +422,12 @@ pub struct Pawn {
     /// A dead colonist lies unburied somewhere (updated once a second).
     #[serde(skip)]
     pub unburied_dead: bool,
+    /// Their need for fun, 0..100 (see `recreation.rs`).
+    #[serde(default = "content_joy")]
+    pub joy: f32,
+    /// What each hour of their day is for.
+    #[serde(default = "crate::recreation::default_schedule")]
+    pub schedule: [crate::recreation::Block; 24],
     /// The temperature they feel (°C, updated every tick; see `temperature.rs`).
     #[serde(skip, default = "mild")]
     pub felt: f32,
@@ -423,6 +435,10 @@ pub struct Pawn {
 
 fn mild() -> f32 {
     20.0
+}
+
+fn content_joy() -> f32 {
+    70.0
 }
 
 impl Pawn {
@@ -472,6 +488,8 @@ impl Pawn {
             buried: false,
             unburied_dead: false,
             felt: mild(),
+            joy: content_joy(),
+            schedule: crate::recreation::default_schedule(),
         }
     }
 
@@ -639,6 +657,15 @@ impl Pawn {
         }
         if self.health.has_disease() {
             t.push(("Sick", -5.0));
+        }
+        if self.is_colonist() {
+            if self.joy < 5.0 {
+                t.push(("Very bored", -12.0));
+            } else if self.joy < 25.0 {
+                t.push(("Bored", -6.0));
+            } else if self.joy > 85.0 {
+                t.push(("Entertained", 3.0));
+            }
         }
         use crate::temperature::{COLD, FREEZING, HOT};
         if self.felt < FREEZING {

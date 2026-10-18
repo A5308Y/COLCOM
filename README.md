@@ -95,6 +95,13 @@ for), and `<` goes back.
   can be built from components; the Resources window sums their power, which nothing uses yet.
 - **Stockpiles:** each has a priority (low to critical) and a list of item kinds it takes; things move
   to better stockpiles. Grow zones plant the crop chosen for them (corn, healroot, cotton).
+- **Recreation and schedules:** colonists need fun (Overview tab), which drops while they're awake:
+  bored (-6) when low, very bored (-12) when nearly empty, entertained (+3) when high. They have fun at
+  a chess table, a bookshelf or a dartboard (wall decor), or strolling outdoors by day; a Recreation
+  room (two of those) makes fun come 40% faster. Each colonist's day is 24 hours painted in the Work
+  window's Schedule tab: Sleep (to bed even a little tired), Fun (fun until full, no work), Work (no
+  stopping for fun) or Anything (work, and fun when bored); by default sleep 22-6, fun 18-22. Hunger,
+  exhaustion and health come first. In the Priorities tab, left click raises a priority, right click lowers it.
 - **Seasons:** a year has four seasons of 5 days, starting in spring (the top bar shows the season and
   its day). Crops grow in spring and summer, slower in autumn and not at all in winter, and winter's
   first frost kills the ones not yet ripe (an alert warns the day before); wild plants don't grow back

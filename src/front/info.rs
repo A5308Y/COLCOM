@@ -300,6 +300,9 @@ fn build_sheet(k: BuildId) -> Sheet {
         props.push(row("Light", format!("lights up {:.0} cells around", l.range)));
     }
     let electric = d.power.is_some_and(|p| p.draw > 0.0);
+    if d.fun > 0.0 {
+        props.push(row("Fun", format!("colonists have fun at it, {:.1}× as fast as on a stroll", d.fun / 0.7)));
+    }
     if d.heat != 0.0 {
         let (what, when) = match (d.heat > 0.0, electric) {
             (true, false) => ("warms", String::new()),

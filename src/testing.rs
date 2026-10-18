@@ -16,12 +16,15 @@ pub fn quiet_world(w: usize, h: usize, seed: u64) -> World {
     world
 }
 
-/// A fed and rested colonist at `at`.
+/// A fed, rested and entertained colonist at `at`, with no fixed hours (any
+/// hour for anything), so tests time only the work.
 pub fn colonist(w: &mut World, at: Pos) -> u32 {
     let id = w.spawn_colonist(at);
     let i = w.pawn_index(id).unwrap();
     w.pawns[i].hunger = 100.0;
     w.pawns[i].rest = 100.0;
+    w.pawns[i].joy = 100.0;
+    w.pawns[i].schedule = [crate::recreation::Block::Anything; 24];
     id
 }
 

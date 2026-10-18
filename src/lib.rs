@@ -18,6 +18,7 @@ pub mod power;
 pub mod prioritize;
 pub mod production;
 pub mod quarry;
+pub mod recreation;
 pub mod rng;
 pub mod rooms;
 pub mod save;

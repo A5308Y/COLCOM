@@ -933,3 +933,15 @@ real play.
   `update_room_stats` (fires always count). `World::power` (`PowerState`) feeds the Resources window and
   the "Not enough power" alert; `device_state` the inspector. Possible later: cables and separate grids,
   more consumers (lamps, benches).
+- Work window (2026-10-18): left click raises a priority (never -> 4 -> ... -> 1), right click lowers it;
+  each level has its own green (`priority_color`, `raise_priority`/`lower_priority`).
+- Recreation and schedules (2026-10-18): `src/recreation.rs`. `Pawn::joy` (saved, 70 for old saves)
+  drains `JOY_DRAIN` (a full need lasts 1.5 days) while awake; thoughts Bored/Very bored/Entertained.
+  `BuildDef::fun` (chess table 1.6, bookshelf 1.3, dartboard 1.2 as wall decor); `Job::Relax { at,
+  stand }` (furniture from `approach_build`, decor from `decor_front`; reserves `at`), `Job::Stroll`
+  (outdoors by day, 0.7). `RoomEffects::fun`: the Recreation room theme (two of the fun things) 1.4.
+  `Pawn::schedule: [Block; 24]` (Anything/Work/Fun/Sleep; default sleep 22-6, fun 18-22): Sleep hours
+  send them to bed below 90 rest (else below 30), Fun hours to fun until `JOY_FULL` and no work, Anything
+  to fun below `JOY_BORED`. Fun ends when full or in Work/Sleep hours. UI: Fun bar, the Work window's
+  Schedule tab (pick a block, click or drag to paint), Info Fun row. `testing::colonist` starts
+  entertained with no fixed hours, so other tests time only the work.

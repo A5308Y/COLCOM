@@ -338,6 +338,8 @@ impl World {
             Job::Equip { from, chosen } => self.run_equip(p, from, chosen, dt),
             Job::Bury { corpse, grave, carrying } => self.run_bury(p, corpse, grave, carrying, dt),
             Job::Operation { table } => self.run_operation(p, table, dt),
+            Job::Relax { at, stand } => self.run_relax(p, at, stand, dt),
+            Job::Stroll { to } => self.run_stroll(p, to, dt),
             Job::Surgery { patient, prosthetic, picked } => self.run_surgery(p, patient, prosthetic, picked, dt),
         }
     }

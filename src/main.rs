@@ -423,6 +423,12 @@ mod tests {
         app.world_mut().resource_mut::<front::UiState>().show_resources = true;
         app.world_mut().resource_mut::<front::UiState>().show_menu = true;
         app.world_mut().resource_mut::<front::UiState>().show_rooms = true;
+        // The Work window: priorities, then schedules.
+        app.world_mut().resource_mut::<front::UiState>().show_work = true;
+        app.update();
+        app.world_mut().resource_mut::<front::UiState>().work_schedule = true;
+        app.update();
+        app.world_mut().resource_mut::<front::UiState>().show_work = false;
         // A quarry: painted, its shaft marked while the tool is out, and its inspector.
         {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();

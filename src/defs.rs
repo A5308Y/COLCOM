@@ -449,6 +449,9 @@ pub struct BuildDef {
     /// Adds to the beauty of the room it's in (or borders, for walls and windows).
     #[serde(default)]
     pub beauty: f32,
+    /// Colonists have fun at it (see `recreation.rs`): how fast, 1 = normal.
+    #[serde(default)]
+    pub fun: f32,
     /// Warms (or, below 0, cools) the room it's in: °C for a small room, less
     /// in bigger ones. What burns always; what uses power while it runs.
     #[serde(default)]
@@ -844,11 +847,13 @@ pub struct RoomEffects {
     pub tend: f32,
     /// Added to the chance that an operation here goes well.
     pub surgery: f32,
+    /// Fun comes this much faster here (multiplier).
+    pub fun: f32,
 }
 
 impl Default for RoomEffects {
     fn default() -> Self {
-        RoomEffects { rest: 1.0, thought: None, work: 1.0, learn: 1.0, extra: 0.0, heal: 1.0, tend: 0.0, surgery: 0.0 }
+        RoomEffects { rest: 1.0, thought: None, work: 1.0, learn: 1.0, extra: 0.0, heal: 1.0, tend: 0.0, surgery: 0.0, fun: 1.0 }
     }
 }
 
@@ -877,6 +882,9 @@ impl RoomEffects {
         }
         if self.tend > 0.0 {
             out.push(format!("Tending patients in its beds +{}% quality", (self.tend * 100.0).round() as i32));
+        }
+        if self.fun != 1.0 {
+            out.push(format!("Fun {}% faster", pct(self.fun)));
         }
         if self.surgery > 0.0 {
             out.push(format!("Operations +{}% likelier to go well", (self.surgery * 100.0).round() as i32));

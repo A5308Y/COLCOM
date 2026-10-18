@@ -33,7 +33,7 @@ const HELP_ORDERS: [&str; 8] = [
     "",
 ];
 
-const HELP_REST: [&str; 48] = [
+const HELP_REST: [&str; 49] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -57,6 +57,7 @@ const HELP_REST: [&str; 48] = [
     "Stairs rise away from where you walk onto them, onto the level above beside them; ladders go straight up.",
     "While placing or moving furniture , and . turn it; the arrow points to its front, where it's used from.",
     "Lamps light up rooms and caves - nights are dark.",
+    "Colonists need fun: chess tables, bookshelves, dartboards, strolls. Their day is set in Work > Schedule.",
     "",
     "Wall decor (build menu): point at a wall and click to hang it; five places on each side of a wall.",
     "A room needs walls and a roof. Enclose an area with walls and doors and it gets a roof by itself:",
@@ -853,6 +854,7 @@ fn overview_tab(ui: &mut egui::Ui, p: &Pawn) {
         need(ui, "Mood", p.mood, mood_color(p.mood));
         need(ui, "Food", p.hunger, Color32::from_rgb(230, 150, 40));
         need(ui, "Rest", p.rest, Color32::from_rgb(110, 170, 230));
+        need(ui, "Fun", p.joy, Color32::from_rgb(170, 120, 220));
         ui.separator();
         egui::Grid::new("skills").num_columns(4).spacing([12.0, 2.0]).show(ui, |ui| {
             for (k, s) in Skill::ALL.iter().enumerate() {
@@ -1483,6 +1485,95 @@ fn bills(ui: &mut egui::Ui, w: &SimWorld, t: Pos, kind: my_world::defs::BuildId,
     }
 }
 
+/// The colour of a schedule block.
+fn block_color(b: my_world::recreation::Block) -> Color32 {
+    use my_world::recreation::Block;
+    match b {
+        Block::Anything => Color32::from_rgb(70, 70, 70),
+        Block::Work => Color32::from_rgb(150, 116, 56),
+        Block::Fun => Color32::from_rgb(78, 120, 172),
+        Block::Sleep => Color32::from_rgb(58, 56, 108),
+    }
+}
+
+/// Every colonist's day, an hour a cell: pick a block, then click or drag over hours to paint it.
+fn schedules(ui: &mut egui::Ui, sim: &mut Sim, st: &mut UiState) {
+    use my_world::recreation::Block;
+    ui.horizontal(|ui| {
+        ui.label("Paint:");
+        for b in Block::ALL {
+            let chosen = st.schedule_brush == b;
+            let text = RichText::new(b.name()).color(if chosen { Color32::WHITE } else { Color32::LIGHT_GRAY });
+            let button = egui::Button::new(text).fill(block_color(b)).stroke(if chosen {
+                egui::Stroke::new(2.0, Color32::WHITE)
+            } else {
+                egui::Stroke::NONE
+            });
+            if ui.add(button).clicked() {
+                st.schedule_brush = b;
+            }
+        }
+    });
+    let how = "Sleep: to bed even a little tired. Fun: fun until full, no work. Work: no stopping for fun. \
+               Anything: work, and fun when bored. Hunger and exhaustion come first.";
+    ui.label(RichText::new(how).small().weak());
+    let now = (sim.world.hour() as usize).min(23);
+    let rows: Vec<(u32, String, [Block; 24])> =
+        sim.world.pawns.iter().filter(|p| p.is_living_colonist()).map(|p| (p.id, p.name.clone(), p.schedule)).collect();
+    let painting = ui.input(|i| i.pointer.primary_down());
+    egui::Grid::new("schedule_grid").spacing([1.0, 3.0]).show(ui, |ui| {
+        ui.label("");
+        for h in 0..24 {
+            let text = RichText::new(format!("{:>2}", h)).small().monospace();
+            ui.label(if h == now { text.strong().color(Color32::YELLOW) } else { text.weak() });
+        }
+        ui.end_row();
+        for (id, name, day) in &rows {
+            ui.label(name);
+            for (h, &b) in day.iter().enumerate() {
+                let cell = egui::Button::new("").fill(block_color(b)).min_size(egui::vec2(18.0, 18.0)).stroke(if h == now {
+                    egui::Stroke::new(1.0, Color32::YELLOW)
+                } else {
+                    egui::Stroke::NONE
+                });
+                let r = ui.add(cell).on_hover_text(format!("{}:00 {}", h, b.name()));
+                // Click, or drag across: paint the hour.
+                if (r.clicked() || r.hovered() && painting) && b != st.schedule_brush {
+                    sim.world.set_schedule(*id, h, st.schedule_brush);
+                }
+            }
+            ui.end_row();
+        }
+    });
+}
+
+/// One step more urgent: never → 4 → 3 → 2 → 1 (and 1 stays 1).
+fn raise_priority(prio: u8) -> u8 {
+    match prio {
+        0 => 4,
+        p => (p - 1).max(1),
+    }
+}
+
+/// One step less urgent: 1 → 2 → 3 → 4 → never (and never stays never).
+fn lower_priority(prio: u8) -> u8 {
+    match prio {
+        0 | 4 => 0,
+        p => p + 1,
+    }
+}
+
+/// A work priority's background: the more urgent, the stronger the green; never, plain.
+fn priority_color(prio: u8) -> Color32 {
+    match prio {
+        1 => Color32::from_rgb(64, 132, 72),
+        2 => Color32::from_rgb(60, 108, 68),
+        3 => Color32::from_rgb(56, 88, 64),
+        4 => Color32::from_rgb(52, 70, 60),
+        _ => Color32::from_rgb(42, 42, 42),
+    }
+}
+
 fn work_panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState) {
     let rows: Vec<(u32, String, [u8; WorkType::ALL.len()], [u8; Skill::ALL.len()])> = sim
         .world
@@ -1491,13 +1582,23 @@ fn work_panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState) {
         .filter(|p| p.is_living_colonist())
         .map(|p| (p.id, p.name.clone(), p.priorities, p.skills))
         .collect();
-    egui::Window::new("Work priorities")
-        .open(&mut st.show_work)
+    let mut open = st.show_work;
+    egui::Window::new("Work")
+        .open(&mut open)
         .collapsible(false)
         .resizable(false)
         .anchor(Align2::CENTER_TOP, [0.0, 80.0])
         .show(ctx, |ui| {
-            ui.label(RichText::new("Click to cycle: 1 = first ... 4 = last, - = never").weak());
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut st.work_schedule, false, "Priorities");
+                ui.selectable_value(&mut st.work_schedule, true, "Schedule");
+            });
+            ui.separator();
+            if st.work_schedule {
+                schedules(ui, sim, st);
+                return;
+            }
+            ui.label(RichText::new("Left click: higher priority, right click: lower. 1 = first ... 4 = last, - = never").weak());
             egui::Grid::new("work_grid").striped(true).spacing([6.0, 4.0]).show(ui, |ui| {
                 ui.label("");
                 for wt in WorkType::ALL {
@@ -1513,19 +1614,36 @@ fn work_panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState) {
                             (p, Some(s)) => format!("{}  (lv {})", p, skills[s as usize]),
                             (p, None) => p.to_string(),
                         };
-                        let button = egui::Button::new(label).selected(prio == 1).min_size(egui::vec2(84.0, 22.0));
-                        if ui.add(button).clicked() {
-                            let next = match prio {
-                                0 => 1,
-                                4 => 0,
-                                p => p + 1,
-                            };
-                            sim.world.set_priority(*id, wt, next);
+                        let button = egui::Button::new(label).fill(priority_color(prio)).min_size(egui::vec2(84.0, 22.0));
+                        let response = ui.add(button);
+                        if response.clicked() {
+                            sim.world.set_priority(*id, wt, raise_priority(prio));
+                        } else if response.secondary_clicked() {
+                            sim.world.set_priority(*id, wt, lower_priority(prio));
                         }
                     }
                     ui.end_row();
                 }
             });
         });
+    st.show_work = open;
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clicks_step_priorities_up_and_down() {
+        // Left: never, 4, 3, 2, 1, and no further.
+        let up: Vec<u8> = std::iter::successors(Some(0u8), |&p| Some(raise_priority(p))).take(6).collect();
+        assert_eq!(up, [0, 4, 3, 2, 1, 1]);
+        // Right: back down to never, and no further.
+        let down: Vec<u8> = std::iter::successors(Some(1u8), |&p| Some(lower_priority(p))).take(6).collect();
+        assert_eq!(down, [1, 2, 3, 4, 0, 0]);
+        // Every step looks a little different.
+        let shades: std::collections::HashSet<_> = (0..=4).map(|p| priority_color(p).to_array()).collect();
+        assert_eq!(shades.len(), 5);
+    }
+}
