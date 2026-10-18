@@ -897,3 +897,10 @@ real play.
   (COLOR_1-3, TEXCOORD_2-4, JOINTS_1/WEIGHTS_1), so it warned on every load. They're stripped from the
   meshes' attribute lists (the data stays in the .bin files, unused); a test
   (`characters::models_only_use_vertex_attributes_bevy_loads`) keeps new models clean.
+- Seasons, step 1 (2026-10-18): `src/seasons.rs`. A year of four `Season`s of `SEASON_DAYS` (5) days from
+  game time (no saved state). Sown crops grow at `Season::crop_growth` (1, 1, 0.6, 0) in `grow_plants`;
+  wild regrowth stops in winter; `check_season` (each tick) logs the new season and, at winter, kills
+  unripe sown crops (`frost`). `crops_frost_will_kill` feeds an alert the last day and a half of autumn.
+  Front end: the season in the HUD, grass tinted by season (`terrain::Cut::season`, golden/snow), a
+  Seasons row on crops' Info sheets. Next steps: temperature (rooms keep warmth by walls, roof, doors;
+  mood and health), clothing warmth, then heaters and coolers using power.

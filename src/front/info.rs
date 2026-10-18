@@ -338,6 +338,7 @@ fn plant_sheet(k: PlantId) -> Sheet {
     }
     if let Some(sow) = &d.sow {
         growing.push(row("Sown", format!("in grow zones, {:.0} s of {} ({})", sow.time, sow.work.name().to_lowercase(), sow.skill.name())));
+        growing.push(row("Seasons", "grows in spring and summer, slower in autumn, not in winter; the first frost kills it unripe"));
     }
     if d.wild.is_some() {
         growing.push(row("Wild", "grows by itself on open soil"));

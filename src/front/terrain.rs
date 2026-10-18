@@ -17,6 +17,7 @@ use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use my_world::defs::{defs, BuildLook, Wallpaper};
 use my_world::decor::{WALL_A, WALL_B};
+use my_world::seasons::Season;
 use my_world::map::{Block, Map, Pos, Zone, DIRS};
 
 const CHUNK: usize = 16;
@@ -50,10 +51,12 @@ struct Cut<'a> {
     level: usize,
     columns: &'a [u8],
     kinds: &'a [u8],
+    /// The season, which colours the grass (index into `Season::ALL`).
+    season: u8,
 }
 
 impl Cut<'_> {
-    const NONE: Cut<'static> = Cut { level: usize::MAX, columns: &[], kinds: &[] };
+    const NONE: Cut<'static> = Cut { level: usize::MAX, columns: &[], kinds: &[], season: 0 };
 
     /// The themed kind of the room cell `i` is in, if any.
     fn kind(&self, m: &Map, i: usize) -> Option<usize> {
@@ -180,7 +183,8 @@ fn update_chunks(
 ) {
     let m = &sim.world.map;
     let kinds: Vec<u8> = sim.world.room_stats.iter().map(|r| r.kind.map_or(0, |k| k as u8 + 1)).collect();
-    let cut = Cut { level: ui.top_level(m), columns: &ui.roof_cut, kinds: &kinds };
+    let season = Season::ALL.iter().position(|&s| s == sim.world.season()).unwrap_or(0) as u8;
+    let cut = Cut { level: ui.top_level(m), columns: &ui.roof_cut, kinds: &kinds, season };
     let chunks = chunks.into_inner();
     let (cols, rows) = (m.w.div_ceil(CHUNK), m.h.div_ceil(CHUNK));
     if chunks.generation != sim.generation || chunks.cols != cols || chunks.rows != rows {
@@ -254,6 +258,7 @@ fn signature(m: &Map, cx: usize, cy: usize, cut: Cut) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     let mut mix = |v: u8| h = (h ^ v as u64).wrapping_mul(0x0000_0100_0000_01b3);
     mix(cut.level as u8);
+    mix(cut.season);
     let x0 = (cx * CHUNK).saturating_sub(1);
     let y0 = (cy * CHUNK).saturating_sub(1);
     let x1 = ((cx + 1) * CHUNK + 1).min(m.w);
@@ -443,7 +448,13 @@ fn ground_color(m: &Map, solid: Pos, look: Look3, cut: Cut) -> Rgb {
         ROCK_TOP.shade(0.94 + jitter * 0.1)
     } else {
         let n = noise(x as f32 / 6.0, y as f32 / 6.0, 1) * 0.75 + hash(xi, yi, 2) * 0.25;
-        GRASS_A.mix(GRASS_B, n)
+        let grass = GRASS_A.mix(GRASS_B, n);
+        // Golden in autumn, under snow in winter.
+        match Season::ALL[cut.season as usize % 4] {
+            Season::Autumn => grass.mix(GRASS_AUTUMN, 0.55 + 0.2 * n),
+            Season::Winter => grass.mix(SNOW, 0.8 + 0.1 * n),
+            _ => grass,
+        }
     };
     if let Some(a) = above {
         if zone.stockpile().is_some() {
@@ -795,7 +806,7 @@ mod tests {
         }
         m.recompute_rooms();
         let colors = |kinds: &[u8]| {
-            let cut = Cut { level: Z, columns: &[], kinds };
+            let cut = Cut { level: Z, columns: &[], kinds, season: 0 };
             let (mesh, _) = build_chunk(&m, 0, 0, cut);
             let Some(bevy::mesh::VertexAttributeValues::Float32x4(c)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR) else {
                 panic!("vertex colours")
@@ -839,7 +850,7 @@ mod tests {
         let k = defs().rooms.iter().position(|r| r.id == "workshop").unwrap();
         let mut kinds = vec![0u8; room + 1];
         kinds[room] = k as u8 + 1;
-        let (mesh, _) = build_chunk(&m, 0, 0, Cut { level: Z, columns: &[], kinds: &kinds });
+        let (mesh, _) = build_chunk(&m, 0, 0, Cut { level: Z, columns: &[], kinds: &kinds, season: 0 });
         let (Some(bevy::mesh::VertexAttributeValues::Float32x3(pos)), Some(bevy::mesh::VertexAttributeValues::Float32x4(col))) =
             (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.attribute(Mesh::ATTRIBUTE_COLOR))
         else {
@@ -871,7 +882,7 @@ mod tests {
         let k = defs().rooms.iter().position(|r| r.id == "workshop").unwrap();
         let mut kinds = vec![0u8; room + 1];
         kinds[room] = k as u8 + 1;
-        let cut = Cut { level: Z, columns: &[], kinds: &kinds };
+        let cut = Cut { level: Z, columns: &[], kinds: &kinds, season: 0 };
         let (mesh, _) = build_chunk(&m, 0, 0, cut);
         let (Some(bevy::mesh::VertexAttributeValues::Float32x3(pos)), Some(bevy::mesh::VertexAttributeValues::Float32x4(col))) =
             (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.attribute(Mesh::ATTRIBUTE_COLOR))
@@ -975,6 +986,19 @@ mod tests {
         // (The floor's quarter of the wall's cell on that side starts halfway across it.)
         let quarter = |p: &&[f32; 3]| (p[1] - lo).abs() < 1e-3 && (p[0] - 4.5).abs() < 1e-3 && (p[2] - 4.5).abs() < 1e-3;
         assert!(pos.iter().filter(quarter).count() > 0, "the room's floor reaches the wall over the door");
+    }
+
+    #[test]
+    fn grass_turns_golden_in_autumn_and_snowy_in_winter() {
+        let m = Map::flat(6, 6);
+        let colour = |season: Season| {
+            let cut = Cut { season: Season::ALL.iter().position(|&s| s == season).unwrap() as u8, ..Cut::NONE };
+            ground_color(&m, (3, 3, Z - 1), Look3::Soil, cut)
+        };
+        let (summer, autumn, winter) = (colour(Season::Summer), colour(Season::Autumn), colour(Season::Winter));
+        assert_eq!(colour(Season::Spring).vertex(), summer.vertex());
+        assert!(autumn.0 > summer.0, "more yellow");
+        assert!(winter.0 > 0.8 && winter.2 > 0.8, "nearly white");
     }
 
     #[test]

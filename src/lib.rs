@@ -21,6 +21,7 @@ pub mod rng;
 pub mod rooms;
 pub mod save;
 pub mod scenarios;
+pub mod seasons;
 pub mod squads;
 pub mod story;
 pub mod surgery;

@@ -383,7 +383,15 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
         egui::Frame::window(&ctx.global_style()).show(ui, |ui| {
             let w = &sim.world;
             let hour = w.hour();
-            let clock = format!("Day {}  {:02}:{:02}", w.day(), hour as u32, ((hour - hour.floor()) * 60.0) as u32);
+            let clock = format!(
+                "Day {}  {} {}/{}  {:02}:{:02}",
+                w.day(),
+                w.season().name(),
+                w.day_of_season(),
+                my_world::seasons::SEASON_DAYS,
+                hour as u32,
+                ((hour - hour.floor()) * 60.0) as u32
+            );
             let colonists = format!("Colonists {}", w.colonists_alive());
             ui.horizontal(|ui| {
                 ui.label(RichText::new(clock).strong());

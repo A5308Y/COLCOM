@@ -35,6 +35,9 @@ impl Rgb {
 
 pub const GRASS_A: Rgb = Rgb(0.35, 0.49, 0.24);
 pub const GRASS_B: Rgb = Rgb(0.45, 0.57, 0.29);
+/// Autumn grass and winter snow.
+pub const GRASS_AUTUMN: Rgb = Rgb(0.62, 0.54, 0.27);
+pub const SNOW: Rgb = Rgb(0.9, 0.92, 0.95);
 pub const SOIL: Rgb = Rgb(0.42, 0.3, 0.2);
 pub const WATER: Rgb = Rgb(0.2, 0.42, 0.62);
 pub const FLOOR: Rgb = Rgb(0.62, 0.47, 0.31);

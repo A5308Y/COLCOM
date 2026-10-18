@@ -302,6 +302,11 @@ impl World {
         if !colonists.iter().any(|p| p.active() && p.priorities[WorkType::Doctor as usize] > 0) {
             out.push(("No doctor available".into(), needs_tending));
         }
+        let doomed = self.crops_frost_will_kill();
+        if doomed > 0 && self.season_left() < 1.5 * DAY_LEN {
+            let hours = (self.season_left() / DAY_LEN * 24.0).round();
+            out.push((format!("Frost in {:.0}h: {} crop(s) won't be ripe", hours, doomed), false));
+        }
         let food = self.map.count_items_where(|k| defs().is_food(k));
         if (food as usize) < colonists.len() * 4 {
             out.push((format!("Low food ({} left)", food), false));
@@ -394,6 +399,7 @@ impl World {
             return;
         }
         self.time += dt;
+        self.check_season(self.time - dt);
         if self.map.rooms_dirty {
             self.map.recompute_rooms();
             self.mark_roofs();
@@ -441,8 +447,10 @@ impl World {
         self.effects.retain(|e| e.ttl > 0.0);
     }
 
-    fn grow_plants(&mut self, dt: f32) {
-        // Only in daylight, and not under a roof (or anything else overhead).
+    pub(crate) fn grow_plants(&mut self, dt: f32) {
+        let season = self.season();
+        // Only in daylight, and not under a roof (or anything else overhead);
+        // sown crops as fast as the season lets them.
         if !self.is_night() {
             for i in 0..self.map.len() {
                 let Feature::Plant { kind, growth } = self.map.feature[i] else { continue };
@@ -450,12 +458,14 @@ impl World {
                     continue;
                 }
                 let t = kind.def().grow_time;
-                let growth = if t > 0.0 { (growth + dt / t).min(1.0) } else { 1.0 };
+                let rate = if kind.def().sow.is_some() { season.crop_growth() } else { 1.0 };
+                let growth = if t > 0.0 { (growth + dt * rate / t).min(1.0) } else { 1.0 };
                 self.map.feature[i] = Feature::Plant { kind, growth };
             }
         }
         self.regrow_timer -= dt;
-        if self.regrow_timer <= 0.0 {
+        // Wild plants don't come back in winter.
+        if self.regrow_timer <= 0.0 && season.regrowth() {
             self.regrow_timer = REGROW_SECS;
             let (x, y) = (self.rng.below(self.map.w), self.rng.below(self.map.h));
             let m = &self.map;

@@ -95,6 +95,10 @@ for), and `<` goes back.
   can be built from components; the Resources window sums their power, which nothing uses yet.
 - **Stockpiles:** each has a priority (low to critical) and a list of item kinds it takes; things move
   to better stockpiles. Grow zones plant the crop chosen for them (corn, healroot, cotton).
+- **Seasons:** a year has four seasons of 5 days, starting in spring (the top bar shows the season and
+  its day). Crops grow in spring and summer, slower in autumn and not at all in winter, and winter's
+  first frost kills the ones not yet ripe (an alert warns the day before); wild plants don't grow back
+  in winter. Grass turns golden in autumn and snowy in winter. So: sow in time, and stock up for winter.
 - **Quarries:** paint a Quarry zone over the ground (Zones) and miners dig it out level by level from
   the top, down to the depth set in its inspector (5 levels below the ground at its entrance to start,
   up to 12). The way down is a ladder in one edge column, on the side your colonists come from
