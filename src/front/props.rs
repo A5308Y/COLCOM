@@ -23,9 +23,10 @@ enum PropKey {
     /// a bed. `open`: a door someone is passing through, or a grave nobody
     /// is buried in yet. `links`: bit per
     /// direction (`DIRS`) with a neighbour that linked parts join up with.
-    Built { kind: BuildId, dir: u8, owner: Option<u32>, open: bool, links: u8 },
+    /// `snug`: how far it's drawn pushed back against a wall behind it (see `snug`).
+    Built { kind: BuildId, dir: u8, owner: Option<u32>, open: bool, links: u8, snug: (f32, f32) },
     /// `over`: around a wall still standing there (a slightly bigger ghost).
-    Blueprint { kind: BuildId, dir: u8, over: bool },
+    Blueprint { kind: BuildId, dir: u8, over: bool, snug: (f32, f32) },
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -202,6 +203,46 @@ pub fn seat_dir(m: &Map, pos: Pos, front: u8, dir: u8) -> u8 {
     (0..4u8).find(|&d| turned(front, d) as usize == t).unwrap_or(dir)
 }
 
+/// How far furniture `kind` turned to `dir` at `pos` is drawn pushed back
+/// (map x, y): until it touches a wall (or window, or rock) right behind it,
+/// the side away from its front. Walls are drawn thin, so it would stand
+/// clear of them otherwise. Stairs, ladders and seats stay put.
+pub fn snug(m: &Map, pos: Pos, kind: BuildId, dir: u8) -> Vec2 {
+    let d = kind.def();
+    if !d.turnable() || matches!(d.special, Special::Stairs | Special::Seat) {
+        return Vec2::ZERO;
+    }
+    let back = d.front ^ 1;
+    let (bx, by) = DIRS[turned(back, dir) as usize];
+    let Some(behind) = m.at(pos.0 as i32 + bx, pos.1 as i32 + by, pos.2 as i32) else { return Vec2::ZERO };
+    let bi = m.idx(behind);
+    // Where what's behind starts, from the middle of this cell.
+    let face = if m.block[bi].solid() {
+        0.5
+    } else if m.feature[bi].blocks_room() && !m.feature[bi].is_special(Special::Door) {
+        1.0 - my_world::decor::WALL_T / 2.0
+    } else {
+        return Vec2::ZERO;
+    };
+    // How far the model reaches towards its back.
+    let (lx, ly) = DIRS[back as usize];
+    let reach = d
+        .parts()
+        .iter()
+        .map(|p| p.at.0 * lx as f32 + p.at.2 * ly as f32 + if lx != 0 { p.size.0 } else { p.size.2 } / 2.0)
+        .fold(0.0f32, f32::max);
+    let shift = (face - reach - 0.01).max(0.0);
+    Vec2::new(bx as f32, by as f32) * shift
+}
+
+/// `snug` for what's built at `pos` (zero if it's not furniture).
+pub fn built_snug(m: &Map, pos: Pos) -> Vec2 {
+    match m.feature[m.idx(pos)] {
+        my_world::map::Feature::Built { kind, dir } => snug(m, pos, kind, dir),
+        _ => Vec2::ZERO,
+    }
+}
+
 /// Rotation that turns +x towards `DIRS[dir]`.
 fn facing(dir: u8) -> Quat {
     let (dx, dy) = DIRS[dir as usize % 4];
@@ -268,7 +309,7 @@ fn sync_props(
             Feature::None => None,
             Feature::Plant { kind, growth } => Some(PropKey::Plant { kind, stage: kind.def().stage(growth) as u8 }),
             // To be built over a wall that's drawn with the terrain.
-            Feature::Blueprint { kind, over: Some(_), .. } => Some(PropKey::Blueprint { kind, dir: 0, over: true }),
+            Feature::Blueprint { kind, over: Some(_), .. } => Some(PropKey::Blueprint { kind, dir: 0, over: true, snug: (0.0, 0.0) }),
             // Drawn with the terrain.
             f if f.is_block() => None,
             Feature::Built { kind, dir } => Some({
@@ -298,10 +339,13 @@ fn sync_props(
                 };
                 let linked = def.parts().iter().any(|p| p.link.is_some());
                 let links = if linked { links(m, pos, kind) } else { 0 };
-                PropKey::Built { kind, dir, owner, open, links }
+                let snug = snug(m, pos, kind, dir);
+                PropKey::Built { kind, dir, owner, open, links, snug: (snug.x, snug.y) }
             }),
             Feature::Blueprint { kind, dir, .. } => {
-                Some(PropKey::Blueprint { kind, dir: if kind.def().turnable() { dir } else { 0 }, over: false })
+                let dir = if kind.def().turnable() { dir } else { 0 };
+                let snug = snug(m, pos, kind, dir);
+                Some(PropKey::Blueprint { kind, dir, over: false, snug: (snug.x, snug.y) })
             }
         };
         let have = props.features[i].map(|(k, _)| k);
@@ -354,6 +398,11 @@ fn sync_props(
                     Some(st) if st.slots > 1 => spawn_shelf_items(&mut commands, &assets, key, pos, lift, st),
                     _ => spawn_item(&mut commands, &assets, key[0].unwrap(), pos, lift + storage.map_or(0.0, |s| s.height)),
                 };
+                // On a shelf pushed back against a wall: with it.
+                if storage.is_some() {
+                    let s = built_snug(m, pos);
+                    commands.entity(e).entry::<Transform>().and_modify(move |mut t| t.translation += Vec3::new(s.x, 0.0, s.y));
+                }
                 if hidden(pos) {
                     commands.entity(e).insert(Visibility::Hidden);
                 }
@@ -515,7 +564,11 @@ fn spawn_feature(
     lift: f32,
     blanket: Handle<StandardMaterial>,
 ) -> Entity {
-    let base = Transform::from_translation(tile_center(pos) + Vec3::Y * lift);
+    let pushed = match key {
+        PropKey::Built { snug, .. } | PropKey::Blueprint { snug, .. } => Vec3::new(snug.0, 0.0, snug.1),
+        PropKey::Plant { .. } => Vec3::ZERO,
+    };
+    let base = Transform::from_translation(tile_center(pos) + pushed + Vec3::Y * lift);
     let (xi, yi) = (pos.0 as i32, pos.1 as i32);
     match key {
         PropKey::Plant { kind, stage } => {
@@ -553,7 +606,7 @@ fn spawn_feature(
             }
             e
         }
-        PropKey::Blueprint { kind, dir, over } => match &kind.def().look {
+        PropKey::Blueprint { kind, dir, over, .. } => match &kind.def().look {
             BuildLook::Parts(parts) if !over => {
                 let pose = Pose { ghost: true, dir, ..default() };
                 spawn_parts(commands, a, base.with_rotation(facing(dir)), parts, pose, &blanket)
@@ -605,6 +658,27 @@ fn spawn_item(commands: &mut Commands, a: &PropAssets, key: ItemKey, pos: Pos, l
 mod tests {
     use super::*;
     use my_world::map::FLAT_Z as Z;
+
+    #[test]
+    fn furniture_is_drawn_back_against_the_wall_behind_it() {
+        let mut m = Map::flat(8, 8);
+        let bed = BuildId::named("bed");
+        // Unturned, a bed's head (pillow) is towards -y.
+        let at = (4, 4, Z);
+        assert_eq!(snug(&m, at, bed, 0), Vec2::ZERO, "nothing behind it");
+        let wall = m.idx((4, 3, Z));
+        m.set_feature(wall, Feature::built("wall"));
+        let s = snug(&m, at, bed, 0);
+        assert!(s.x == 0.0 && s.y < -0.4, "pushed back to the wall: {:?}", s);
+        // Its far end then just touches the wall's face.
+        assert!((0.46 - s.y - (1.0 - my_world::decor::WALL_T / 2.0)).abs() < 0.02);
+        assert_eq!(snug(&m, at, bed, 2), Vec2::ZERO, "turned, its head isn't at the wall");
+        m.set_feature(wall, Feature::built("door"));
+        assert_eq!(snug(&m, at, bed, 0), Vec2::ZERO, "not into a doorway");
+        m.set_feature(wall, Feature::built("wall"));
+        assert_eq!(snug(&m, at, BuildId::named("chair"), 0), Vec2::ZERO, "chairs stay by their table");
+        assert_eq!(snug(&m, at, BuildId::named("stairs"), 1), Vec2::ZERO);
+    }
 
     #[test]
     fn decor_sits_on_its_wall_face() {

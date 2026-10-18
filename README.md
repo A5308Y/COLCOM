@@ -162,11 +162,13 @@ for), and `<` goes back.
   even ones still planned: plan a wall several storeys high and it goes up one level at a time
   (cancelling the bottom takes the rest along). Doors and windows can be built into a standing wall
   (and walls, doors and windows over each other): the old one stays until the new one is built, then
-  gives back its materials; cancelling leaves it as it was. Stairs, even planned ones, and the cell in front of them get no roof. Stairs connect a cell to the one above; you enter them from their low end
-  and can't walk across them. Use the layer view to place floors in mid-air (a faint grid shows the
+  gives back its materials; cancelling leaves it as it was. Stairs, even planned ones, and the cell in front of them get no roof. Stairs work like a slope: walk on at the low end and off
+  the high end onto the level above, beside them (keep the space over them open for headroom); they
+  can't be walked across. Ladders are climbed straight up into the cell above, and stack. Use the layer view to place floors in mid-air (a faint grid shows the
   cells). Pawns and items with nothing underneath fall, and falls of two levels or more hurt.
 - **Wall decor:** walls are drawn thin (about 35 cm) through the middle of their cell, so rooms show
-  more floor. Each side of a wall has five places for a painting, poster, calendar (shows the date),
+  more floor. Furniture with its back to a wall (beds, workbenches, shelves) is drawn pushed back
+  against it, and whoever sleeps or works there with it. Each side of a wall has five places for a painting, poster, calendar (shows the date),
   wall lamp (lights the room), wall shelf (holds one stack; storage like a shelf) or hanging plant: pick
   one in the build menu's Wall decor, point at a wall (the place under the cursor is marked green, or red
   if it doesn't fit) and click. Builders bring the materials and put it up from in front. It counts

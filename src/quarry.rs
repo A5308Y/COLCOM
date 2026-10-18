@@ -344,6 +344,27 @@ impl World {
         }
     }
 
+    /// Stairs used as ladders (from before stairs became slopes): stacked on
+    /// or under other stairs, or in a quarry's shaft. They become ladders,
+    /// facing as they did, so the ways up they made still work.
+    pub(crate) fn stairs_to_ladders(&mut self) {
+        let Some(ladder) = defs().ladder() else { return };
+        let m = &self.map;
+        let used_as_ladders: Vec<usize> = (0..m.len())
+            .filter(|&i| {
+                let p = m.pos(i);
+                let ramp = m.ramp_dir(p).is_some();
+                let stacked = [m.above(p), m.below(p)].into_iter().flatten().any(|q| m.stairs_dir(q).is_some());
+                ramp && (stacked || self.quarry_stairs_dir(p).is_some())
+            })
+            .collect();
+        for i in used_as_ladders {
+            if let Feature::Built { dir, .. } = self.map.feature[i] {
+                self.map.feature[i] = Feature::Built { kind: ladder, dir };
+            }
+        }
+    }
+
     /// Stairs built in a quarry's shaft keep facing out of it, whatever the
     /// ground around them looks like while it's being dug.
     pub(crate) fn quarry_stairs_dir(&self, p: Pos) -> Option<u8> {
@@ -551,6 +572,24 @@ mod tests {
         }
         w.update_quarries();
         assert!(w.quarry_unreachable[0] > 0);
+    }
+
+    #[test]
+    fn stairs_used_as_ladders_become_ladders_when_loading() {
+        let mut w = hill(12, 12);
+        let stairs = defs().stairs().unwrap();
+        // Two stacked up a wall of rock, and one on its own.
+        for z in 8..10 {
+            let i = w.map.idx((2, 2, z));
+            w.map.feature[i] = Feature::Built { kind: stairs, dir: 1 };
+        }
+        let alone = w.map.idx((6, 6, 8));
+        w.map.feature[alone] = Feature::Built { kind: stairs, dir: 0 };
+        let loaded = World::load_json(&w.save_json().unwrap()).unwrap();
+        for z in 8..10 {
+            assert_eq!(loaded.map.feature[loaded.map.idx((2, 2, z))], Feature::Built { kind: defs().ladder().unwrap(), dir: 1 });
+        }
+        assert_eq!(loaded.map.feature[alone], Feature::Built { kind: stairs, dir: 0 }, "real stairs stay");
     }
 
     #[test]

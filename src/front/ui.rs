@@ -54,7 +54,7 @@ const HELP_REST: [&str; 48] = [
     "      Click a wall with a door or window to build it in; the wall stands until it's done.",
     "      Use the layer view to place floors in mid-air: PageDown/PageUp (or [ and ]).",
     "      Shift+R hides roofs, to look into the top room of every building at once.",
-    "Stairs rise away from where you walk onto them; you can't walk across them.",
+    "Stairs rise away from where you walk onto them, onto the level above beside them; ladders go straight up.",
     "While placing or moving furniture , and . turn it; the arrow points to its front, where it's used from.",
     "Lamps light up rooms and caves - nights are dark.",
     "",

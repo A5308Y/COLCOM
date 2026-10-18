@@ -423,16 +423,23 @@ mod tests {
         app.world_mut().resource_mut::<front::UiState>().show_resources = true;
         app.world_mut().resource_mut::<front::UiState>().show_menu = true;
         app.world_mut().resource_mut::<front::UiState>().show_rooms = true;
-        // A quarry: painted, its steps marked while the tool is out, and its inspector.
+        // A quarry: painted, its shaft marked while the tool is out, and its inspector.
         {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             let w = &mut sim.world;
             let (cx, cy) = (w.map.w / 2, w.map.h / 2);
-            for y in cy - 6..cy - 3 {
-                for x in cx - 12..cx - 8 {
-                    if let Some(z) = w.map.ground_level(x, y) {
-                        w.apply_order((x, y, z), my_world::world::Order::Quarry);
-                    }
+            // Somewhere dry near the middle (the map is random: there may be a lake).
+            let dry = |w: &my_world::world::World, x0: usize, y0: usize| {
+                (y0..y0 + 3).all(|y| (x0..x0 + 4).all(|x| w.map.ground_level(x, y).is_some() && w.map.quarry_at(x, y).is_none()))
+            };
+            let (x0, y0) = (0..20)
+                .flat_map(|k| [(cx - 12 + k, cy - 6), (cx - 12 + k, cy + 6)])
+                .find(|&(x, y)| dry(w, x, y))
+                .expect("dry ground for a quarry");
+            for y in y0..y0 + 3 {
+                for x in x0..x0 + 4 {
+                    let z = w.map.ground_level(x, y).unwrap();
+                    assert!(w.apply_order((x, y, z), my_world::world::Order::Quarry));
                 }
             }
             assert!(!w.quarries.is_empty(), "a quarry");

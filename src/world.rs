@@ -1161,6 +1161,7 @@ impl World {
     pub fn load_json(s: &str) -> Result<World, String> {
         let mut w = crate::save::from_json(s)?;
         w.index_quarries();
+        w.stairs_to_ladders();
         w.map.recompute_rooms();
         w.mark_roofs();
         w.sync_containers();

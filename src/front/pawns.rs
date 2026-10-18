@@ -5,13 +5,14 @@
 use super::characters::{self, Anim, CharacterLibrary, Rig};
 use super::input::UiState;
 use super::look::*;
-use super::terrain::FLOOR_T;
+use super::terrain::{FLOOR_T, LEVEL_H};
 use super::props::{self, lit, PropAssets};
 use super::sim::Sim;
 use super::tile_point;
 use bevy::prelude::*;
 use my_world::defs::{ItemId, Special, WornPiece};
-use my_world::pawn::{Job, Pawn};
+use my_world::map::{Feature, Map, Pos, DIRS};
+use my_world::pawn::{Job, Pawn, Task};
 use my_world::world::World as SimWorld;
 use std::collections::HashMap;
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
@@ -292,6 +293,50 @@ fn squad_slot(p: &Pawn, w: &SimWorld) -> Vec2 {
     Vec2::new(x, y)
 }
 
+/// Where someone using furniture pushed back against a wall is drawn moved
+/// along with it (see `props::snug`): asleep in such a bed, or working at
+/// such a bench from in front of it.
+fn snugged(p: &Pawn, m: &Map) -> Vec2 {
+    if p.lying() && !p.dead && m.feature[m.idx(p.pos)].is_bed() {
+        return props::built_snug(m, p.pos);
+    }
+    match p.job {
+        Some(Job::Work { target, task: Task::Craft }) if p.path.is_empty() && m.front_cell(target) == Some(p.pos) => {
+            props::built_snug(m, target)
+        }
+        _ => Vec2::ZERO,
+    }
+}
+
+/// The way a sleeper in the bed at `at` lies: along the bed, as it's turned.
+fn bed_yaw(m: &Map, at: Pos) -> f32 {
+    match m.feature[m.idx(at)] {
+        Feature::Built { dir, .. } => {
+            let (dx, dy) = DIRS[dir as usize % 4];
+            (-dy as f32).atan2(dx as f32)
+        }
+        _ => 0.0,
+    }
+}
+
+/// Height (in levels) of someone at (x, y) on level `z` (fractional, as pawns
+/// move) who is on stairs: on the stairs' own cell, the height of the steps
+/// under them; past the top while still on their way up or down, the level
+/// above. None elsewhere.
+fn stairs_height(m: &Map, x: f32, y: f32, z: f32) -> Option<f32> {
+    let level = (z + 1e-4).floor();
+    let (cx, cy) = (x.round() as i32, y.round() as i32);
+    let ramp = |cx: i32, cy: i32| m.at(cx, cy, level as i32).and_then(|c| m.ramp_dir(c));
+    if let Some((sx, sy)) = ramp(cx, cy) {
+        let along = (x - cx as f32) * sx as f32 + (y - cy as f32) * sy as f32;
+        return Some(level + (along + 0.5).clamp(0.0, 1.0));
+    }
+    // Stepped off the top, the move to the next level not quite done.
+    let between = z - level > 0.001;
+    let behind = DIRS.iter().any(|&(sx, sy)| ramp(cx - sx, cy - sy) == Some((sx, sy)));
+    (between && behind).then_some(level + 1.0)
+}
+
 /// Turn from `a` towards `b` by at most `max` radians.
 fn turn_towards(a: f32, b: f32, max: f32) -> f32 {
     let diff = (b - a + PI).rem_euclid(TAU) - PI;
@@ -402,7 +447,7 @@ fn sync_pawns(
 
         // The drawn position trails the simulated one a little, which rounds
         // corners and eases into and out of walking. Big jumps snap.
-        let target = Vec2::new(p.x, p.y) + squad_slot(p, w);
+        let target = Vec2::new(p.x, p.y) + squad_slot(p, w) + snugged(p, m);
         let before = v.shown;
         if v.shown.distance(target) > 2.0 || sim_rate == 0.0 && v.shown.distance(target) > 0.5 {
             v.shown = target;
@@ -430,10 +475,16 @@ fn sync_pawns(
         // Standing on a built floor slab rather than the cell's bottom.
         let on_slab = m.floor[m.idx(p.pos)] && (p.z - p.pos.2 as f32).abs() < 0.01;
         let mut base = tile_point(v.shown.x, v.shown.y, p.z) + Vec3::Y * if on_slab { FLOOR_T } else { 0.0 };
-        // A little hop when stepping up or down a level.
-        let frac = p.z - p.z.floor();
-        if frac > 0.001 && frac < 0.999 {
-            base.y += 0.35 * 4.0 * frac * (1.0 - frac);
+        match stairs_height(m, v.shown.x, v.shown.y, p.z) {
+            // Up or down the steps of stairs.
+            Some(h) => base.y = h * LEVEL_H,
+            None => {
+                // A little hop when stepping up or down a level.
+                let frac = p.z - p.z.floor();
+                if frac > 0.001 && frac < 0.999 {
+                    base.y += 0.35 * 4.0 * frac * (1.0 - frac);
+                }
+            }
         }
         // Falls drop with gravity instead of snapping down.
         if v.render_y.is_nan() || v.render_y < base.y + 0.3 {
@@ -450,7 +501,7 @@ fn sync_pawns(
         let root_tf = if tipped {
             // Upright along +Y; tip over so the head points along -Z (towards a
             // bed's pillow). A character in bed rests the back of its head on the pillow.
-            let yaw = if in_bed { 0.0 } else { v.yaw };
+            let yaw = if in_bed { bed_yaw(m, p.pos) } else { v.yaw };
             let turn = Quat::from_rotation_y(yaw);
             let (lift, along) = match (rig_ready, in_bed) {
                 (true, true) => (0.44, 0.58),
@@ -472,7 +523,7 @@ fn sync_pawns(
             *vis = if tucked { Visibility::Inherited } else { Visibility::Hidden };
         }
         if tucked {
-            let bed = Transform::from_translation(base);
+            let bed = Transform::from_translation(base).with_rotation(Quat::from_rotation_y(bed_yaw(m, p.pos)));
             if let Ok(mut t) = transforms.get_mut(v.blanket) {
                 *t = Transform::from_matrix(root_tf.to_matrix().inverse() * bed.to_matrix());
             }
@@ -577,5 +628,27 @@ fn sync_pawns(
                 v.carry_kind = carried;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use my_world::map::{Feature, FLAT_Z as Z};
+
+    #[test]
+    fn people_on_stairs_walk_up_the_steps() {
+        let mut m = Map::flat(8, 3);
+        let i = m.idx((3, 1, Z));
+        m.set_feature(i, Feature::built("stairs")); // rising towards +x
+        let z = Z as f32;
+        assert_eq!(stairs_height(&m, 1.0, 1.0, z), None, "not on them");
+        assert_eq!(stairs_height(&m, 2.5, 1.0, z), Some(z), "at the foot");
+        assert_eq!(stairs_height(&m, 3.0, 1.0, z), Some(z + 0.5), "halfway");
+        assert!((stairs_height(&m, 3.4, 1.0, z + 0.4).unwrap() - (z + 0.9)).abs() < 1e-4, "nearly at the top");
+        assert_eq!(stairs_height(&m, 3.7, 1.0, z + 0.7), Some(z + 1.0), "stepped off onto the level above");
+        // Ladders are climbed as before.
+        m.set_feature(i, Feature::built("ladder"));
+        assert_eq!(stairs_height(&m, 3.0, 1.0, z), None);
     }
 }

@@ -849,3 +849,15 @@ real play.
   treat it the same) with `BuildDef::climb` set: modelled as rails and rungs against its +x side,
   so stacked ones make one long ladder; 3 wood. `Defs::ladder()`/`stairs()` tell them apart.
   Quarries put ladders in their shaft (`update_quarries`), stairs already built there stay.
+- Stairs as slopes (2026-10-18): stairs (`Map::ramp_dir`, not ladders) are walked on at their foot and
+  off their high end straight onto the cell beside them one level up (`Map::step`; headroom: the cell
+  over them must be open), and down again the same way, like a natural one-level slope. The cell over
+  stairs is no longer somewhere to stand. Ladders (`Map::ladder_dir`) keep the old vertical climb and
+  hold up the cell (and the ladder) above them. `pawns::stairs_height` draws people walking up the
+  steps. Loading turns stairs used as ladders (stacked on or under stairs, or in a quarry's shaft)
+  into ladders facing the same way (`World::stairs_to_ladders`), so old ways up keep working.
+- Furniture against thin walls (2026-10-18): drawing only. `props::snug` pushes turnable furniture
+  (not stairs, ladders or seats) back until it touches a wall, window or rock right behind it (the side
+  opposite its `front`), from how far its parts reach; kept in the prop keys so it updates when a wall
+  goes up or comes down. Items on such shelves, sleepers in such beds and crafters at their front move
+  along (`built_snug`, `pawns::snugged`). Sleepers now lie along the bed as it's turned (`bed_yaw`).

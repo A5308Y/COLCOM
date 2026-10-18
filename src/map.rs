@@ -394,13 +394,13 @@ impl Map {
         self.below(p).is_some_and(|b| self.solid(b))
     }
 
-    /// Something to stand on: ground, a built floor, or the top of stairs.
+    /// Something to stand on: ground, a built floor, or the top of a ladder.
     pub fn supported(&self, p: Pos) -> bool {
         self.on_ground(p)
             || self.floor[self.idx(p)]
-            || self.below(p).is_some_and(|b| self.stairs_dir(b).is_some())
-            // Stairs on stairs still being built under them (a quarry's shaft going down).
-            || self.stairs_dir(p).is_some()
+            || self.below(p).is_some_and(|b| self.ladder_dir(b).is_some())
+            // A ladder on a ladder still being built under it (a quarry's shaft going down).
+            || self.ladder_dir(p).is_some()
                 && self.below(p).is_some_and(|b| self.feature[self.idx(b)].planned().is_some_and(|d| d.special == Special::Stairs))
     }
 
@@ -438,18 +438,28 @@ impl Map {
 
     pub fn walk_neighbors(&self, p: Pos) -> impl Iterator<Item = Pos> + '_ {
         let flat = DIRS.into_iter().filter_map(move |(dx, dy)| self.step(p, dx, dy));
-        // Stairs lead straight up from their cell, and down into it.
-        let up = self.above(p).filter(|&a| self.stairs_dir(p).is_some() && self.standable(a));
-        let down = self.below(p).filter(|&b| self.stairs_dir(b).is_some() && self.standable(b));
+        // Ladders lead straight up from their cell, and down into it.
+        let up = self.above(p).filter(|&a| self.ladder_dir(p).is_some() && self.standable(a));
+        let down = self.below(p).filter(|&b| self.ladder_dir(b).is_some() && self.standable(b));
         flat.chain(up).chain(down)
     }
 
-    /// Rising direction of stairs in cell `p`, if there are stairs.
+    /// Rising direction of stairs (or a ladder) in cell `p`, if there are any.
     pub fn stairs_dir(&self, p: Pos) -> Option<(i32, i32)> {
         match self.feature[self.idx(p)] {
             Feature::Built { kind, dir } if kind.def().special == Special::Stairs => Some(DIRS[dir as usize % 4]),
             _ => None,
         }
+    }
+
+    /// The side a ladder in cell `p` leans on, if there's a ladder.
+    pub fn ladder_dir(&self, p: Pos) -> Option<(i32, i32)> {
+        self.stairs_dir(p).filter(|_| self.feature[self.idx(p)].structure().is_some_and(|d| d.climb))
+    }
+
+    /// Rising direction of stairs (a ramp, not a ladder) in cell `p`.
+    pub fn ramp_dir(&self, p: Pos) -> Option<(i32, i32)> {
+        self.stairs_dir(p).filter(|_| self.ladder_dir(p).is_none())
     }
 
     /// Where stairs at `p`, built or planned, are walked onto: the cell at
@@ -483,18 +493,30 @@ impl Map {
     }
 
     fn step(&self, p: Pos, dx: i32, dy: i32) -> Option<Pos> {
-        // Stairs are only left through their foot (or by climbing).
+        let (x, y) = (p.0 as i32 + dx, p.1 as i32 + dy);
+        let z = p.2 as i32;
+        // Stairs are left through their foot, or (not ladders: those are climbed)
+        // off their top onto the level above, with headroom over them.
         if let Some((sx, sy)) = self.stairs_dir(p) {
+            if (dx, dy) == (sx, sy) && self.ramp_dir(p).is_some() {
+                let top = self.at(x, y, z + 1)?;
+                let head = self.above(p)?;
+                return (self.standable(top) && self.open(head) && self.stairs_dir(top).is_none()).then_some(top);
+            }
             if (dx, dy) != (-sx, -sy) {
                 return None;
             }
         }
-        let (x, y) = (p.0 as i32 + dx, p.1 as i32 + dy);
-        let z = p.2 as i32;
         let same = self.at(x, y, z)?;
         // ...and only entered from their foot: no walking across them.
         if let Some(rise) = self.stairs_dir(same) {
             return (rise == (dx, dy) && self.standable(same)).then_some(same);
+        }
+        // Down stairs below, from their top (over them is only headroom).
+        if let Some(below) = self.at(x, y, z - 1) {
+            if self.ramp_dir(below) == Some((-dx, -dy)) && self.open(same) && self.standable(below) {
+                return Some(below);
+            }
         }
         if self.standable(same) {
             return Some(same);
@@ -1218,17 +1240,39 @@ mod tests {
     }
 
     #[test]
-    fn stairs_connect_levels() {
+    fn stairs_connect_levels_like_a_slope() {
         let mut m = Map::flat(10, 3);
         let stairs = m.idx((3, 1, Z));
         m.set_feature(stairs, Feature::built("stairs")); // rising towards +x
+        for x in 4..8 {
+            let i = m.idx((x, 1, Z + 1));
+            m.set_floor(i, true);
+        }
+        assert!(!m.standable((3, 1, Z + 1)), "over the stairs is only headroom");
+        let up: Vec<Pos> = m.walk_neighbors((3, 1, Z)).collect();
+        assert!(up.contains(&(4, 1, Z + 1)), "off the top onto the floor above: {:?}", up);
+        let down: Vec<Pos> = m.walk_neighbors((4, 1, Z + 1)).collect();
+        assert!(down.contains(&(3, 1, Z)), "and back down onto them: {:?}", down);
+        let df = crate::pathing::bfs(&m, (0, 1, Z));
+        assert_eq!(df.dist((7, 1, Z + 1)), Some(3 + 1 + 3), "walk on, up and off, along the floor");
+        // Headroom: a floor over the stairs blocks the way up.
+        let over = m.idx((3, 1, Z + 1));
+        m.block[over] = Block::Rock;
+        assert!(!m.walk_neighbors((3, 1, Z)).any(|q| q.2 == Z + 1));
+    }
+
+    #[test]
+    fn ladders_are_climbed_straight_up() {
+        let mut m = Map::flat(10, 3);
+        let ladder = m.idx((3, 1, Z));
+        m.set_feature(ladder, Feature::built("ladder")); // leaning on the +x side
         for x in 3..8 {
             let i = m.idx((x, 1, Z + 1));
             m.set_floor(i, true);
         }
-        assert!(m.standable((3, 1, Z + 1)), "the top of the stairs is supported by them");
+        assert!(m.standable((3, 1, Z + 1)), "the top of the ladder is held up by it");
         let up: Vec<Pos> = m.walk_neighbors((3, 1, Z)).collect();
-        assert!(up.contains(&(3, 1, Z + 1)), "{:?}", up);
+        assert!(up.contains(&(3, 1, Z + 1)) && !up.contains(&(4, 1, Z + 1)), "{:?}", up);
         let down: Vec<Pos> = m.walk_neighbors((3, 1, Z + 1)).collect();
         assert!(down.contains(&(3, 1, Z)), "{:?}", down);
         let df = crate::pathing::bfs(&m, (0, 1, Z));
@@ -1243,7 +1287,7 @@ mod tests {
         let from_side: Vec<Pos> = m.walk_neighbors((3, 0, Z)).collect();
         assert!(!from_side.contains(&(3, 1, Z)), "only from the foot");
         let from_stairs: Vec<Pos> = m.walk_neighbors((3, 1, Z)).collect();
-        assert_eq!(from_stairs, vec![(2, 1, Z), (3, 1, Z + 1)], "back out the foot, or climb");
+        assert_eq!(from_stairs, vec![(2, 1, Z)], "back out the foot (nothing to step onto at the top)");
         let df = crate::pathing::bfs(&m, (2, 1, Z));
         assert_eq!(df.dist((4, 1, Z)), Some(4), "around, not through");
     }
