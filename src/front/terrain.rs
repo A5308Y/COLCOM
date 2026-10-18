@@ -502,8 +502,8 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: Cut) -> (Mesh, Option<Mesh>) 
                     let top_open = !above.is_some_and(|a| a.opaque());
                     let top_color = top_open.then_some(if sliced { WALL_TOP.shade(0.55) } else { WALL_TOP });
                     under_wall(&mut b, m, p, cut, lo);
-                    if !top_open {
-                        // Something on top (a wall above, rock): its underside is the ceiling here.
+                    if above.is_some_and(|a| a.opaque() && !a.thin()) {
+                        // Rock overhead (a wall in a cave): its underside is the ceiling here.
                         b.flat(fx, fz, hi, Vec3::NEG_Y, WALL_FACE.shade(0.7));
                     }
                     match look {
@@ -629,10 +629,15 @@ fn floor_around(m: &Map, q: Pos, cut: Cut) -> Option<Rgb> {
 
 /// The floor around a thin wall or window at `p` (bottom `lo`): each
 /// quarter of the cell in the colour of the floor beside it on that side
-/// (indoors on one side, grass on the other), on a slab if the wall stands on a built floor.
+/// (indoors on one side, grass on the other), on a slab if the wall stands
+/// on a built floor. Only natural ground is shown all round: elsewhere (an
+/// upper storey, on top of a lower wall) a quarter with no floor beside it
+/// stays open, so nothing sticks out past the wall.
 fn under_wall(b: &mut MeshBuf, m: &Map, p: Pos, cut: Cut, lo: f32) {
     let i = m.idx(p);
-    let on_ground = m.below(p).is_some_and(|q| look_at(m, q, cut).opaque());
+    let below = m.below(p).map(|q| look_at(m, q, cut));
+    let on_ground = below.is_some_and(|l| l.opaque());
+    let natural = below.is_some_and(|l| l.opaque() && !l.thin());
     if !m.floor[i] && !on_ground {
         return;
     }
@@ -640,7 +645,13 @@ fn under_wall(b: &mut MeshBuf, m: &Map, p: Pos, cut: Cut, lo: f32) {
     let (x, z, zi) = (p.0 as f32, p.1 as f32, p.2 as i32);
     let links = m.wall_links(p);
     let cell = |d: (i32, i32)| m.at(p.0 as i32 + d.0, p.1 as i32 + d.1, zi);
-    let fallback = m.below(p).filter(|_| on_ground).map_or(FLOOR, |q| ground_color(m, q, look_at(m, q, cut), cut));
+    let fallback = m.below(p).filter(|_| natural).map(|q| ground_color(m, q, look_at(m, q, cut), cut));
+    let no_floor = |d: (i32, i32)| {
+        cell(d).is_none_or(|q| {
+            let l = look_at(m, q, cut);
+            !m.floor[m.idx(q)] && !l.opaque()
+        })
+    };
     for (xs, ys) in [(0, 2), (1, 2), (0, 3), (1, 3)] {
         let (ax, ay) = (DIRS[xs], DIRS[ys]);
         let mut candidates = Vec::new();
@@ -651,20 +662,23 @@ fn under_wall(b: &mut MeshBuf, m: &Map, p: Pos, cut: Cut, lo: f32) {
             candidates.push(cell(ax));
         }
         candidates.push(cell((ax.0 + ay.0, ax.1 + ay.1)));
-        let color = candidates.into_iter().flatten().find_map(|q| floor_around(m, q, cut)).unwrap_or(fallback);
+        let Some(color) = candidates.into_iter().flatten().find_map(|q| floor_around(m, q, cut)).or(fallback) else {
+            continue;
+        };
         let (u0, u1) = if ax.0 > 0 { (0.5, 1.0) } else { (0.0, 0.5) };
         let (v0, v1) = if ay.1 > 0 { (0.5, 1.0) } else { (0.0, 0.5) };
-        b.rect((x + u0, z + v0), (x + u1, z + v1), y, Vec3::Y, color);
-    }
-    if y > lo {
-        b.flat(x, z, lo, Vec3::NEG_Y, FLOOR.shade(0.6));
-        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let open = m.at(p.0 as i32 + dx, p.1 as i32 + dz, zi).is_none_or(|q| {
-                let l = look_at(m, q, cut);
-                !m.floor[m.idx(q)] && !l.opaque()
-            });
-            if open {
-                b.side(x, z, dx, dz, lo, y, FLOOR.shade(0.7));
+        let (c0, c1) = ((x + u0, z + v0), (x + u1, z + v1));
+        b.rect(c0, c1, y, Vec3::Y, color);
+        if y > lo {
+            // This quarter of the slab: its underside, and its edges where no floor goes on.
+            b.rect(c0, c1, lo, Vec3::NEG_Y, FLOOR.shade(0.6));
+            let ex = if ax.0 > 0 { x + 1.0 } else { x };
+            let ez = if ay.1 > 0 { z + 1.0 } else { z };
+            if no_floor(ax) {
+                b.wall_face((ex, c0.1), (ex, c1.1), ax, lo, y, FLOOR.shade(0.7), None);
+            }
+            if no_floor(ay) {
+                b.wall_face((c0.0, ez), (c1.0, ez), ay, lo, y, FLOOR.shade(0.7), None);
             }
         }
     }
@@ -785,6 +799,41 @@ mod tests {
         // And the ground under it is drawn all across the cell.
         let ground = pos.iter().filter(|p| (p[1] - lo).abs() < 1e-4 && (4.0..=5.0).contains(&p[0]) && (p[2] - 4.0).abs() < 1e-4).count();
         assert!(ground > 0, "the floor shows at the cell's edge");
+    }
+
+    #[test]
+    fn upstairs_the_floor_stops_at_the_wall() {
+        // A wall along x at y = 4 with a floored room on its +y side (y 5..=6),
+        // a storey up: once on a floor slab, once stacked on a wall below.
+        for stacked in [false, true] {
+            let mut m = Map::flat(10, 10);
+            for x in 2..=6 {
+                let up = m.idx((x, 4, Z + 1));
+                m.set_feature(up, Feature::built("wall"));
+                if stacked {
+                    let below = m.idx((x, 4, Z));
+                    m.set_feature(below, Feature::built("wall"));
+                } else {
+                    m.set_floor(up, true);
+                }
+                for y in 5..=6 {
+                    let i = m.idx((x, y, Z + 1));
+                    m.set_floor(i, true);
+                }
+            }
+            let (mesh, _) = build_chunk(&m, 0, 0, Cut::NONE);
+            let Some(bevy::mesh::VertexAttributeValues::Float32x3(pos)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) else {
+                panic!("positions")
+            };
+            let lo = (Z + 1) as f32 * LEVEL_H;
+            // At the bottom of the upper storey, under the middle wall cell: nothing on the outside (-y) half.
+            let outside = pos.iter().filter(|p| {
+                (p[1] - lo).abs() < FLOOR_T + 1e-3 && p[0] > 4.0 && p[0] < 5.0 && p[2] < 4.0 + WALL_A - 1e-3
+            });
+            assert_eq!(outside.count(), 0, "nothing sticks out (stacked: {})", stacked);
+            let inside = pos.iter().filter(|p| (p[1] - lo).abs() < FLOOR_T + 1e-3 && p[0] > 4.0 && p[0] < 5.0 && p[2] > 4.0 + WALL_B);
+            assert!(inside.count() > 0, "the room's floor reaches the wall (stacked: {})", stacked);
+        }
     }
 
     #[test]

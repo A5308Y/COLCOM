@@ -799,8 +799,9 @@ real play.
   - Look: walls and windows are drawn `decor::WALL_T` (0.2 cell) thick through the middle of their cell:
     a core plus an arm towards each side `Map::wall_links` joins (walls, doors, windows, natural rock and
     soil). `terrain::thin_wall`/`opening`; `under_wall` draws the floor beneath in quarters coloured
-    like the floor beside each (indoors/outdoors), on a slab when standing on a built floor; a wall with
-    something on top gets a ceiling. Walls no longer hide neighbours' faces (`Look3::covers`). Wallpaper
+    like the floor beside each (indoors/outdoors), on a slab when standing on a built floor. Only on
+    natural ground is every quarter drawn; upstairs (on a slab or on a lower wall) a quarter with no
+    floor beside it stays open, so no floor sticks out past the wall. Rock overhead gets a ceiling. Walls no longer hide neighbours' faces (`Look3::covers`). Wallpaper
     is drawn per piece (`MeshBuf::wall_face`) on absolute along-wall coordinates. Doors are 0.22 deep.
     The simulation is unchanged: a wall still fills its cell.
   - Decor (`src/decor.rs`): `BuildDef::on_wall` buildables (painting, poster, calendar, wall lamp, wall
