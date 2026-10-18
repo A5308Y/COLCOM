@@ -102,6 +102,17 @@ for), and `<` goes back.
   window's Schedule tab: Sleep (to bed even a little tired), Fun (fun until full, no work), Work (no
   stopping for fun) or Anything (work, and fun when bored); by default sleep 22-6, fun 18-22. Hunger,
   exhaustion and health come first. In the Priorities tab, left click raises a priority, right click lowers it.
+- **Expeditions** (Expeditions button): about once a day a mission is offered by, or about, one of three
+  neighbours: Riverford Traders, the Iron Pact (settlers) and the Ash Raiders (bandits). The ten
+  missions are trade caravan, envoy, bandit camp, salvaging ruins, rescue, hunting, prospecting, escort
+  duty, peace talks and a strange signal. Plan one: pick who goes and pack goods from the colony (to
+  sell, give or pay). The squad leaves the map for real game days. When something comes up, such as a
+  toll on the road, an ambush or the mission itself, the journey waits for your choice (an alert and
+  the button show it). Choices give or gain goods, change goodwill, cost days, risk injuries, bring
+  back a recruit, buy a truce from the raiders, or lead to a fight. A fight is a turn-based battle on a
+  small map of its own; afterwards the squad carries on with its wounds and whatever the enemy dropped.
+  At a market you barter what you carry for their stock at their prices (better with more goodwill).
+  The raiders' goodwill spaces out raids, and allies (goodwill 50+) send gifts now and then.
 - **Seasons:** a year has four seasons of 5 days, starting in spring (the top bar shows the season and
   its day). Crops grow in spring and summer, slower in autumn and not at all in winter, and winter's
   first frost kills the ones not yet ripe (an alert warns the day before); wild plants don't grow back
@@ -244,13 +255,14 @@ The simulation is a library with no rendering code, so it can be tested headless
 - `src/jobs.rs`: finding work by priority and carrying out jobs
 - `src/combat.rs`: shooting, injuries, raider AI
 - `src/story.rs`: storyteller events
+- `src/expeditions.rs`: factions, missions, journeys, choices, trading, fights on site maps
 - `src/save.rs`: versioned save format, run-length encoding of per-cell arrays
 - `src/scenarios.rs`: prepared worlds to start in (`--scenario battle`)
 
 The binary (`src/main.rs` and `src/front/`) is the Bevy app: `terrain.rs` (chunked ground, rock and wall
 meshes), `props.rs` (trees, plants, furniture, doors, items), `pawns.rs` (3D figures), `scene.rs`
 (sun, moon, sky), `camera.rs`, `input.rs` (picking, tools, gizmo markers), `audio.rs` (sound effects,
-footsteps, ambience), `build_menu.rs`, `ui.rs` and `overlay.rs`
+footsteps, ambience), `build_menu.rs`, `expeditions_ui.rs`, `ui.rs` and `overlay.rs`
 (egui interface and labels over the 3D view).
 
 ### Adding content

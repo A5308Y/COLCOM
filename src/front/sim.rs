@@ -18,6 +18,9 @@ pub struct Sim {
     pub generation: u64,
     /// The scenario the game started in (`--scenario <name>`); Shift+N restarts it.
     pub scenario: Option<String>,
+    /// While an expedition's fight is played, `world` is its site and the
+    /// colony waits here (with the expedition's id).
+    pub home: Option<(u32, SimWorld)>,
     acc: f32,
 }
 
@@ -25,7 +28,7 @@ impl Sim {
     /// A game in `scenario`, or the last saved game, or a new colony.
     pub fn new(mut scenario: Option<String>) -> Sim {
         let world = start_world(&mut scenario, true);
-        Sim { world, speed: 1, paused: false, generation: 0, scenario, acc: 0.0 }
+        Sim { world, speed: 1, paused: false, generation: 0, scenario, home: None, acc: 0.0 }
     }
 
     /// A new game: the scenario again, or a new colony on a new map (never the save).
@@ -35,6 +38,7 @@ impl Sim {
 
     pub fn replace(&mut self, world: SimWorld) {
         self.world = world;
+        self.home = None;
         self.generation += 1;
         self.acc = 0.0;
     }
@@ -46,6 +50,46 @@ impl Sim {
         } else {
             self.speed
         }
+    }
+
+    /// The colony, also while a fight is played at an expedition's site.
+    pub fn home_world(&self) -> &SimWorld {
+        self.home.as_ref().map_or(&self.world, |h| &h.1)
+    }
+
+    /// The whole game to save: the colony, with a site being played put back into its expedition.
+    pub fn saveable(&self) -> std::borrow::Cow<'_, SimWorld> {
+        match &self.home {
+            Some((id, home)) => {
+                let mut home = home.clone();
+                home.put_site(*id, self.world.clone());
+                std::borrow::Cow::Owned(home)
+            }
+            None => std::borrow::Cow::Borrowed(&self.world),
+        }
+    }
+
+    /// An expedition's fight starts: play its site. It's over: back to the colony.
+    pub fn swap_sites(&mut self) {
+        if self.home.is_some() {
+            if self.world.battle.is_none() {
+                let (id, home) = self.home.take().unwrap();
+                let site = std::mem::replace(&mut self.world, home);
+                self.world.finish_site(id, site);
+                self.generation += 1;
+                self.acc = 0.0;
+            }
+        } else if let Some((id, site)) = self.world.take_site() {
+            let home = std::mem::replace(&mut self.world, site);
+            self.home = Some((id, home));
+            self.generation += 1;
+            self.acc = 0.0;
+        }
+    }
+
+    /// The game is over: no colonists, here or away (never during an expedition's fight).
+    pub fn lost(&self) -> bool {
+        self.home.is_none() && self.world.colony_lost()
     }
 
     pub fn cycle_speed(&mut self) {
@@ -111,7 +155,8 @@ impl Plugin for SimPlugin {
 
 fn step_simulation(time: Res<Time>, mut sim: ResMut<Sim>) {
     let sim = &mut *sim;
-    if sim.paused || sim.world.colony_lost() {
+    sim.swap_sites();
+    if sim.paused || sim.lost() {
         return;
     }
     sim.acc += time.delta_secs().min(0.25) * sim.rate() as f32;
@@ -130,5 +175,40 @@ fn step_simulation(time: Res<Time>, mut sim: ResMut<Sim>) {
     }
     if steps == 40 {
         sim.acc = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use my_world::expeditions::{MissionKind, Offer, Stage};
+    use my_world::DAY_LEN;
+
+    #[test]
+    fn an_expeditions_fight_is_played_in_place_of_the_colony_and_saved_with_it() {
+        let mut world = SimWorld::new(7);
+        world.story.next_raid = f32::MAX;
+        world.offers.push(Offer { id: 500, kind: MissionKind::BanditCamp, faction: 2, days: 1.0, until: world.time + DAY_LEN });
+        let squad: Vec<u32> = world.pawns.iter().filter(|p| p.is_living_colonist()).take(2).map(|p| p.id).collect();
+        world.send_expedition(500, &squad, &[]).unwrap();
+        let id = world.expeditions[0].id;
+        while !matches!(world.expeditions[0].stage, Stage::Decide { .. }) {
+            world.tick(TICK);
+        }
+        world.choose(id, 0).unwrap();
+        let home_w = world.map.w;
+        let mut sim = Sim { world, speed: 1, paused: false, generation: 0, scenario: None, home: None, acc: 0.0 };
+        sim.swap_sites();
+        assert!(sim.home.is_some() && sim.generation == 1, "the site is played");
+        assert!(sim.world.map.w < home_w && sim.world.battle.is_some());
+        assert!(!sim.lost());
+        // A save made now has the site in its expedition, and plays it again when loaded.
+        let saved = SimWorld::load_json(&sim.saveable().save_json().unwrap()).unwrap();
+        assert!(saved.expeditions[0].site.is_some());
+        // The fight ends: back to the colony, with the squad in the expedition again.
+        sim.world.battle = None;
+        sim.swap_sites();
+        assert!(sim.home.is_none() && sim.world.map.w == home_w);
+        assert_eq!(sim.world.expeditions[0].members.len(), 2);
     }
 }

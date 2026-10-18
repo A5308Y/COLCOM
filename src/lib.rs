@@ -6,6 +6,7 @@ pub mod battle_ai;
 pub mod combat;
 pub mod decor;
 pub mod defs;
+pub mod expeditions;
 pub mod graves;
 pub mod health;
 pub mod jobs;

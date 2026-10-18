@@ -60,7 +60,7 @@ impl World {
             return;
         }
         if self.time >= self.story.next_raid {
-            self.story.next_raid = self.time + self.rng.range_f32(1.5, 3.0) * DAY_LEN;
+            self.story.next_raid = self.time + self.rng.range_f32(1.5, 3.0) * DAY_LEN * self.raid_spacing();
             if self.difficulty.raids {
                 self.spawn_raid();
             }

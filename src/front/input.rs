@@ -256,6 +256,8 @@ pub struct UiState {
     pub show_squads: bool,
     /// The themed rooms window.
     pub show_rooms: bool,
+    /// The Expeditions window and what's being planned or traded in it.
+    pub expeditions: super::expeditions_ui::ExpeditionsUi,
     /// The testing window to drop items into the world.
     pub show_spawn: bool,
     /// How many to drop at a time with the spawn tool.
@@ -324,6 +326,7 @@ impl UiState {
             inspector_tab: InspectorTab::Overview,
             show_squads: false,
             show_rooms: false,
+            expeditions: Default::default(),
             show_spawn: false,
             spawn_count: 50,
             save_name: String::new(),
@@ -608,7 +611,7 @@ fn colonists_in_box(sim: &Sim, ui: &UiState, cam: &Camera, gt: &GlobalTransform,
 }
 
 pub fn save(sim: &mut Sim) {
-    let msg = match sim.world.save_json().and_then(|json| {
+    let msg = match sim.saveable().save_json().and_then(|json| {
         std::fs::write(SAVE_PATH, json).map_err(|e| e.to_string())
     }) {
         Ok(()) => format!("Game saved to {}.", SAVE_PATH),
@@ -636,7 +639,7 @@ pub fn save_as(sim: &mut Sim, name: &str) -> bool {
     };
     let result = std::fs::create_dir_all(SAVES_DIR)
         .map_err(|e| e.to_string())
-        .and_then(|_| sim.world.save_json())
+        .and_then(|_| sim.saveable().save_json())
         .and_then(|json| std::fs::write(&path, json).map_err(|e| e.to_string()));
     let msg = match &result {
         Ok(()) => format!("Game saved to {}.", path.display()),
@@ -725,7 +728,7 @@ fn autosave_on_exit(
         return;
     }
     *done = true;
-    match sim.world.save_json().and_then(|json| std::fs::write(AUTOSAVE_PATH, json).map_err(|e| e.to_string())) {
+    match sim.saveable().save_json().and_then(|json| std::fs::write(AUTOSAVE_PATH, json).map_err(|e| e.to_string())) {
         Ok(()) => info!("Saved the game to {} on exit.", AUTOSAVE_PATH),
         Err(e) => error!("Saving on exit failed: {}", e),
     }
@@ -878,7 +881,7 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
     if keys.just_pressed(KeyCode::KeyL) {
         load(&mut sim, &mut ui);
     }
-    if keys.just_pressed(KeyCode::KeyN) && (shift || sim.world.colony_lost()) {
+    if keys.just_pressed(KeyCode::KeyN) && (shift || sim.lost()) {
         new_colony(&mut sim, &mut ui, &mut rig);
     }
 }

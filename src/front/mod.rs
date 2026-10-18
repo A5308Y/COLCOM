@@ -6,6 +6,7 @@ mod battle_ui;
 mod build_menu;
 mod camera;
 mod characters;
+mod expeditions_ui;
 mod info;
 mod input;
 mod look;

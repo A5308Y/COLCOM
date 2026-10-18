@@ -6,6 +6,7 @@ use super::audio::{self, AudioSettings, SoundQueue};
 use super::build_menu;
 use super::info::{self, InfoTarget};
 use super::input::{self, InspectorTab, Selection, UiState};
+use super::expeditions_ui;
 use super::squads_ui;
 use super::look::{pawn_look, Look, Rgb};
 use super::overlay;
@@ -33,7 +34,7 @@ const HELP_ORDERS: [&str; 8] = [
     "",
 ];
 
-const HELP_REST: [&str; 49] = [
+const HELP_REST: [&str; 51] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -69,6 +70,8 @@ const HELP_REST: [&str; 49] = [
     "Wounds bleed and can get infected. Doctors (see P) rescue downed colonists to a bed",
     "and tend them - better with medicine and skill. Click a colonist, then Health for details.",
     "Raids come every few days. Pay what the raiders demand, or fight a turn-based battle (the colony stops).",
+    "Expeditions: pick a mission on offer, choose who goes and what they pack. They leave the map for days;",
+    "      decide what they do when something comes up. Fights are played on a map of their own.",
     "      Squads: in a colonist's Combat tab make them a leader, put others in their squad, set loadouts;",
     "      mark civilians and paint a safe zone. Far-away squad members join their leader a few rounds in.",
     "      Leaders want a decent bedroom of their own: click a bed to choose who sleeps in it.",
@@ -171,6 +174,9 @@ fn draw_ui(
     if st.show_squads {
         squads_ui::squads_window(&ctx, &sim, &mut st);
     }
+    if st.expeditions.open {
+        expeditions_ui::window(&ctx, &mut sim, &mut st.expeditions);
+    }
     if st.show_rooms {
         rooms_window(&ctx, &sim, &mut st, &mut rig);
     }
@@ -197,7 +203,7 @@ fn draw_ui(
             }
         });
     }
-    if sim.world.colony_lost() {
+    if sim.lost() {
         egui::Area::new(egui::Id::new("game_over")).anchor(Align2::CENTER_CENTER, [0.0, -60.0]).show(&ctx, |ui| {
             ui.label(RichText::new("Your colony has perished. Press N to start over.").size(30.0).color(Color32::RED));
         });
@@ -438,6 +444,12 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 ui.separator();
                 if ui.add(egui::Button::new("Squads").selected(st.show_squads)).clicked() {
                     st.show_squads = !st.show_squads;
+                }
+                let wait = expeditions_ui::waiting(sim.home_world());
+                let label = if wait > 0 { format!("Expeditions ({}!)", wait) } else { "Expeditions".to_string() };
+                let exp = egui::Button::new(label).selected(st.expeditions.open);
+                if ui.add(exp).on_hover_text("Send squads on missions: trade, diplomacy, salvage, fights").clicked() {
+                    st.expeditions.open = !st.expeditions.open;
                 }
                 let rooms = egui::Button::new("Rooms").selected(st.show_rooms);
                 if ui.add(rooms).on_hover_text("Themed rooms: what each needs, and yours").clicked() {

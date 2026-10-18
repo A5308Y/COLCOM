@@ -365,7 +365,7 @@ impl World {
     }
 
     /// Remove goods from wherever they lie in the colony.
-    fn take_goods(&mut self, goods: &[Stack]) {
+    pub(crate) fn take_goods(&mut self, goods: &[Stack]) {
         for g in goods {
             let mut left = g.count;
             for i in 0..self.map.len() {

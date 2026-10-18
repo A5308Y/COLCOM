@@ -154,6 +154,13 @@ pub struct World {
     /// furniture, walls or doors), checked once a second. They climb out.
     #[serde(skip)]
     pub trapped: Vec<u32>,
+    /// The neighbouring factions, the missions on offer, and squads away (see `expeditions`).
+    #[serde(default)]
+    pub factions: Vec<crate::expeditions::Faction>,
+    #[serde(default)]
+    pub offers: Vec<crate::expeditions::Offer>,
+    #[serde(default)]
+    pub expeditions: Vec<crate::expeditions::Expedition>,
 }
 
 impl World {
@@ -226,6 +233,9 @@ impl World {
             battle: None,
             sounds: Vec::new(),
             trapped: Vec::new(),
+            factions: crate::expeditions::starting_factions(),
+            offers: Vec::new(),
+            expeditions: Vec::new(),
         }
     }
 
@@ -274,7 +284,7 @@ impl World {
     }
 
     pub fn colony_lost(&self) -> bool {
-        self.colonists_alive() == 0
+        self.colonists_alive() == 0 && self.away() == 0
     }
 
     /// Warnings for the player, `true` = urgent.
@@ -283,6 +293,13 @@ impl World {
         let raiders = self.pawns.iter().filter(|p| p.faction == Faction::Raider && p.active()).count();
         if raiders > 0 {
             out.push((format!("Raid: {} raiders", raiders), true));
+        }
+        for e in &self.expeditions {
+            match e.stage {
+                crate::expeditions::Stage::Decide { .. } => out.push((format!("{}: a decision is waiting (Expeditions)", e.kind.name()), true)),
+                crate::expeditions::Stage::Trading { .. } => out.push((format!("{}: at the market (Expeditions)", e.kind.name()), false)),
+                _ => {}
+            }
         }
         for p in self.trapped.iter().filter_map(|&id| self.pawn(id)) {
             out.push((format!("{} is trapped (climbing out)", p.name), true));
@@ -445,6 +462,7 @@ impl World {
             self.update_squads();
             self.update_graves();
             self.update_trapped();
+            self.update_expeditions();
         }
         self.storyteller_tick();
         let fade = dt / (1.5 * DAY_LEN);

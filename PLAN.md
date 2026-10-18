@@ -945,3 +945,21 @@ real play.
   to fun below `JOY_BORED`. Fun ends when full or in Work/Sleep hours. UI: Fun bar, the Work window's
   Schedule tab (pick a block, click or drag to paint), Info Fun row. `testing::colonist` starts
   entertained with no fixed hours, so other tests time only the work.
+- Expeditions (2026-10-18): `src/expeditions.rs`. `World::factions` (three, `starting_factions`;
+  goodwill -100..100 sets `sell_factor`/`buy_factor`), `offers` (up to 4, about one a day, open 3 days)
+  and `expeditions`, all saved (defaults for old saves). `send_expedition` takes the pawns out of
+  `World::pawns` into `Expedition::members` and the packed goods off the map. Stages: `Out` (halfway:
+  `waylay_event`, toll for Trade or ambush for Escort; then `main_event`), `Decide` (waits for `choose`),
+  `Trading` (`trade(sell, buy)` needs worth*sell_factor >= worth*buy_factor; `leave_market`), `Fighting`,
+  and `Back` (then `come_home` at a map edge, with goods and any recruit). `Effect`s: Goodwill, Gain,
+  Give (out of the cargo; `affords` greys out choices they can't pay), GiveAll (gifts → goodwill by
+  worth), Delay, Injure, Recruit, Trade, Truce (pushes `story.next_raid`), Fight, Chance. Fights:
+  `start_site_fight` builds a 34×24 `World` (road/camp/crash cover), puts the squad on the west edge and
+  calls `start_battle` with raiders from the east; it waits in `Expedition::site`. The front end's
+  `Sim::swap_sites` swaps it in (the colony waits in `Sim::home`) and back when the battle ends, and
+  `finish_site` returns the survivors and the loot (if won). Saves go through `Sim::saveable` (site put
+  back). `raid_spacing` scales the raid interval by the bandits' goodwill (0.7-2x); allies send gifts.
+  `colony_lost` counts colonists away. UI: `front/expeditions_ui.rs` (Offers with planning and packing,
+  Under way with decisions, the market and the journal, Factions); alerts for waiting decisions; the
+  camera re-centres on a site. Possible later: faction raids by other factions, caravans visiting the
+  colony, more varied site maps, a world map.

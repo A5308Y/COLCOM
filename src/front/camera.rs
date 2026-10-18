@@ -198,7 +198,13 @@ fn apply_rig(
     time: Res<Time>,
     mut rig: ResMut<CameraRig>,
     mut camera: Single<&mut Transform, With<MainCamera>>,
+    mut at_site: Local<bool>,
 ) {
+    // Off to an expedition's fight, or back home: look at the colonists there.
+    if *at_site != sim.home.is_some() {
+        *at_site = sim.home.is_some();
+        rig.focus = colony_center(&sim);
+    }
     let m = &sim.world.map;
     rig.focus.x = rig.focus.x.clamp(0.0, m.w as f32 - 0.01);
     rig.focus.z = rig.focus.z.clamp(0.0, m.h as f32 - 0.01);
