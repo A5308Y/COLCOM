@@ -84,7 +84,7 @@ fn help_builds() -> Vec<String> {
         .map(|kind| {
             let def = kind.def();
             let key = def.key.as_deref().unwrap_or("").to_uppercase();
-            format!("{:<5} {} ({} {})", key, def.name, def.cost.count, def.cost.item.name().to_lowercase())
+            format!("{:<5} {} ({})", key, def.name, def.cost_text())
         })
         .collect()
 }
@@ -537,6 +537,14 @@ fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
         .collapsible(false)
         .resizable(false)
         .show(ctx, |ui| {
+            // What the colony's solar panels and batteries could do.
+            let (output, storage) = sim.world.map.feature.iter().filter_map(|f| f.structure()?.power).fold((0.0, 0.0), |a, p| (a.0 + p.output, a.1 + p.storage));
+            if output > 0.0 || storage > 0.0 {
+                ui.label(RichText::new("Power").strong());
+                ui.label(format!("{:.1} kW solar, {:.0} kWh storage", output / 1000.0, storage / 1000.0));
+                ui.label(RichText::new("Nothing uses power yet.").small().weak());
+                ui.add_space(4.0);
+            }
             if categories.is_empty() {
                 ui.label(RichText::new("Nothing yet").weak());
             }
@@ -871,8 +879,18 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32, move_fr
             let what = match m.feature[i] {
                 f @ Feature::Plant { growth, .. } if f.is_crop() => format!("{}, {:.0}% grown", f.name(), growth * 100.0),
                 Feature::Blueprint { kind, delivered, .. } => {
-                    let c = &kind.def().cost;
-                    format!("{} blueprint ({}/{} {})", kind.name(), delivered, c.count, c.item.name().to_lowercase())
+                    let d = kind.def();
+                    match d.missing(delivered) {
+                        Some((item, n)) => format!(
+                            "{} blueprint ({}/{} delivered; needs {} {} next)",
+                            kind.name(),
+                            delivered,
+                            d.total_cost(),
+                            n,
+                            item.name().to_lowercase()
+                        ),
+                        None => format!("{} blueprint (all {} delivered)", kind.name(), d.total_cost()),
+                    }
                 }
                 Feature::None if m.block[i] != Block::Air => m.block[i].name().to_string(),
                 f => {
@@ -898,6 +916,12 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32, move_fr
             }
             if let Some(s) = m.items[i] {
                 ui.label(format!("{} x{}", s.kind.name(), s.count));
+                if let Some(about) = &s.kind.def().about {
+                    ui.label(RichText::new(about).weak());
+                }
+            }
+            if let Some(power) = m.feature[i].structure().and_then(|d| d.power_text()) {
+                ui.label(RichText::new(format!("{} (nothing uses power yet)", power)).weak());
             }
             if let Some(d) = m.desig[i] {
                 ui.label(format!("Designated: {:?}", d));
@@ -1058,7 +1082,12 @@ fn stockpile_settings(ui: &mut egui::Ui, w: &SimWorld, id: u16, actions: &mut Ve
             });
             for k in items.iter().copied() {
                 let mut on = store.accepts(k);
-                if ui.checkbox(&mut on, k.name()).changed() {
+                let check = ui.checkbox(&mut on, k.name());
+                let check = match &k.def().about {
+                    Some(about) => check.on_hover_text(about),
+                    None => check,
+                };
+                if check.changed() {
                     actions.push(Box::new(move |w| w.set_stockpile_allows(id, k, on)));
                 }
             }

@@ -41,12 +41,27 @@
         "healroot": (0.45, 0.72, 0.6),
         "meal": (0.62, 0.42, 0.22),
         "plate": (0.9, 0.9, 0.86),
+        "copper": (0.78, 0.45, 0.25),
+        "copper_ore": (0.33, 0.6, 0.5),
+        "rubber": (0.16, 0.16, 0.17),
+        "latex": (0.93, 0.92, 0.82),
+        "silicon": (0.45, 0.48, 0.56),
+        "circuit": (0.18, 0.48, 0.25),
+        "chem": (0.85, 0.7, 0.2),
+        "optic": (0.45, 0.7, 0.9),
+        "textile": (0.6, 0.5, 0.38),
+        "rust": (0.5, 0.33, 0.22),
+        "plating": (0.36, 0.38, 0.42),
+        "panel": (0.1, 0.16, 0.32),
     },
     // Glowing colours (linear, above 1 blooms). Lamps use these.
     glow: {
         "lamp_glow": (9.0, 6.5, 3.2),
         "ember": (6.0, 2.2, 0.4),
         "flame": (12.0, 5.0, 1.0),
+        "visor": (0.4, 3.0, 5.0),
+        "laser": (7.0, 0.8, 0.6),
+        "led": (0.5, 4.0, 1.0),
     },
     // See-through colours (sRGB and opacity).
     clear: {
@@ -142,6 +157,163 @@
                 (shape: Cube, color: "steel", at: (0.0, 0.04, -0.08), size: (0.4, 0.08, 0.13)),
                 (shape: Cube, color: "steel", at: (0.0, 0.04, 0.08), size: (0.4, 0.08, 0.13)),
                 (shape: Cube, color: "steel", at: (0.0, 0.12, 0.0), size: (0.4, 0.08, 0.13)),
+            ],
+        ),
+        (
+            id: "copper_ore",
+            value: 2.0,
+            name: "Copper ore",
+            category: "Materials",
+            color: "copper_ore",
+            look: [
+                (shape: Sphere, color: "copper_ore", at: (-0.1, 0.1, 0.0), size: (0.24, 0.2, 0.22)),
+                (shape: Sphere, color: "stone", at: (0.12, 0.09, 0.06), size: (0.2, 0.18, 0.2)),
+            ],
+        ),
+        (
+            id: "copper",
+            value: 10.0,
+            name: "Copper",
+            category: "Materials",
+            color: "copper",
+            pods: Some((5, 12)),
+            look: [
+                (shape: Cube, color: "copper", at: (0.0, 0.04, -0.08), size: (0.4, 0.08, 0.13)),
+                (shape: Cube, color: "copper", at: (0.0, 0.04, 0.08), size: (0.4, 0.08, 0.13)),
+            ],
+        ),
+        (
+            id: "latex",
+            value: 2.0,
+            name: "Latex",
+            category: "Materials",
+            color: "latex",
+            look: [
+                (shape: Cylinder, color: "latex", at: (0.0, 0.1, 0.0), size: (0.24, 0.2, 0.24)),
+            ],
+        ),
+        (
+            id: "rubber",
+            value: 6.0,
+            name: "Rubber",
+            category: "Materials",
+            color: "rubber",
+            look: [
+                (shape: Cube, color: "rubber", at: (0.0, 0.05, 0.0), size: (0.36, 0.1, 0.26)),
+            ],
+        ),
+        (
+            id: "silicon",
+            value: 8.0,
+            name: "Silicon",
+            category: "Materials",
+            color: "silicon",
+            look: [
+                (shape: Cube, color: "silicon", at: (0.0, 0.06, 0.0), size: (0.3, 0.12, 0.3)),
+                (shape: Cube, color: "optic", at: (0.0, 0.125, 0.0), size: (0.2, 0.01, 0.2)),
+            ],
+        ),
+        (
+            id: "scrap_metal",
+            value: 3.0,
+            name: "Scrap metal",
+            category: "Scrap",
+            color: "rust",
+            pods: Some((3, 8)),
+            look: [
+                (shape: Cube, color: "rust", at: (-0.08, 0.06, 0.0), size: (0.26, 0.12, 0.2), turn: (0.0, 25.0, 10.0)),
+                (shape: Cylinder, color: "steel", at: (0.12, 0.08, 0.05), size: (0.1, 0.16, 0.1), turn: (80.0, 0.0, 0.0)),
+            ],
+        ),
+        (
+            id: "e_waste",
+            value: 4.0,
+            name: "E-waste",
+            category: "Scrap",
+            color: "circuit",
+            pods: Some((2, 6)),
+            look: [
+                (shape: Cube, color: "circuit", at: (0.0, 0.04, 0.0), size: (0.3, 0.03, 0.22), turn: (0.0, 15.0, 0.0)),
+                (shape: Cube, color: "rubber", at: (0.05, 0.08, 0.02), size: (0.12, 0.05, 0.1)),
+            ],
+        ),
+        (
+            id: "mechanical_components",
+            value: 30.0,
+            name: "Mechanical components",
+            category: "Components",
+            color: "steel",
+            about: Some("Gears, motors and actuators: moving parts."),
+            pods: Some((1, 3)),
+            look: [
+                (shape: Cylinder, color: "steel", at: (-0.08, 0.04, 0.0), size: (0.2, 0.06, 0.2)),
+                (shape: Cylinder, color: "iron", at: (0.1, 0.06, 0.04), size: (0.14, 0.1, 0.14)),
+                (shape: Cylinder, color: "copper", at: (0.04, 0.12, -0.08), size: (0.08, 0.12, 0.08), turn: (90.0, 0.0, 0.0)),
+            ],
+        ),
+        (
+            id: "electrical_components",
+            value: 30.0,
+            name: "Electrical components",
+            category: "Components",
+            color: "circuit",
+            about: Some("Wiring, circuit boards and capacitors."),
+            pods: Some((1, 3)),
+            look: [
+                (shape: Cube, color: "circuit", at: (0.0, 0.03, 0.0), size: (0.32, 0.03, 0.24)),
+                (shape: Cylinder, color: "copper", at: (-0.08, 0.08, 0.05), size: (0.06, 0.08, 0.06)),
+                (shape: Cube, color: "rubber", at: (0.08, 0.06, -0.04), size: (0.1, 0.04, 0.08)),
+            ],
+        ),
+        (
+            id: "optical_components",
+            value: 30.0,
+            name: "Optical components",
+            category: "Components",
+            color: "optic",
+            about: Some("Lenses, cameras and sensors."),
+            look: [
+                (shape: Cylinder, color: "iron", at: (0.0, 0.08, 0.0), size: (0.16, 0.16, 0.16)),
+                (shape: Cylinder, color: "glass", at: (0.0, 0.08, 0.09), size: (0.13, 0.02, 0.13), turn: (90.0, 0.0, 0.0)),
+            ],
+        ),
+        (
+            id: "structural_components",
+            value: 30.0,
+            name: "Structural components",
+            category: "Components",
+            color: "plating",
+            about: Some("Metal plates, frames and armour plating."),
+            pods: Some((1, 3)),
+            look: [
+                (shape: Cube, color: "plating", at: (0.0, 0.03, 0.0), size: (0.4, 0.04, 0.3)),
+                (shape: Cube, color: "steel", at: (0.0, 0.08, 0.0), size: (0.36, 0.04, 0.04)),
+                (shape: Cube, color: "steel", at: (0.0, 0.08, 0.1), size: (0.36, 0.04, 0.04)),
+            ],
+        ),
+        (
+            id: "chemical_components",
+            value: 30.0,
+            name: "Chemical components",
+            category: "Components",
+            color: "chem",
+            about: Some("Batteries, explosives and fuel cells."),
+            look: [
+                (shape: Cylinder, color: "chem", at: (-0.07, 0.1, 0.0), size: (0.12, 0.2, 0.12)),
+                (shape: Cylinder, color: "steel", at: (0.08, 0.08, 0.03), size: (0.1, 0.16, 0.1)),
+                (shape: Cylinder, color: "berry", at: (-0.07, 0.205, 0.0), size: (0.05, 0.02, 0.05)),
+            ],
+        ),
+        (
+            id: "textile_components",
+            value: 30.0,
+            name: "Textile components",
+            category: "Components",
+            color: "textile",
+            about: Some("Tough fabric, insulation and padding."),
+            look: [
+                (shape: Cube, color: "textile", at: (0.0, 0.05, 0.0), size: (0.36, 0.1, 0.28)),
+                (shape: Cube, color: "cloth", at: (0.0, 0.11, 0.0), size: (0.32, 0.03, 0.24)),
             ],
         ),
         (
@@ -280,6 +452,37 @@
             ],
         ),
         (
+            id: "assault_rifle",
+            value: 260.0,
+            name: "Assault rifle",
+            category: "Weapons",
+            color: "plating",
+            weapon: Some((
+                range: 18.0, damage: (9.0, 14.0), kind: Gunshot, cooldown: 1.8, sound: Some("rifle"), shots: 3,
+                held: (shape: Cube, color: "plating", at: (0.15, 0.62, 0.22), size: (0.06, 0.08, 0.56)),
+            )),
+            look: [
+                (shape: Cube, color: "plating", at: (0.05, 0.05, 0.0), size: (0.62, 0.08, 0.07)),
+                (shape: Cube, color: "iron", at: (0.02, 0.0, 0.0), size: (0.08, 0.1, 0.05)),
+            ],
+        ),
+        (
+            id: "laser_rifle",
+            value: 600.0,
+            name: "Laser rifle",
+            category: "Weapons",
+            color: "optic",
+            weapon: Some((
+                range: 22.0, damage: (14.0, 20.0), kind: Burn, cooldown: 1.6, sound: Some("laser"), shots: 1,
+                held: (shape: Cube, color: "white", at: (0.15, 0.62, 0.22), size: (0.07, 0.08, 0.58)),
+            )),
+            look: [
+                (shape: Cube, color: "white", at: (0.05, 0.05, 0.0), size: (0.6, 0.08, 0.08)),
+                (shape: Cube, color: "laser", at: (0.36, 0.05, 0.0), size: (0.04, 0.04, 0.04)),
+                (shape: Cylinder, color: "optic", at: (0.0, 0.11, 0.0), size: (0.06, 0.18, 0.06), turn: (0.0, 0.0, 90.0)),
+            ],
+        ),
+        (
             id: "pistol",
             value: 80.0,
             name: "Pistol",
@@ -382,6 +585,44 @@
                 (shape: Cube, color: "iron", at: (0.0, 0.25, 0.0), size: (0.2, 0.04, 0.2)),
             ],
         ),
+        (
+            id: "powered_armor",
+            value: 1200.0,
+            name: "Powered armour",
+            category: "Apparel",
+            color: "plating",
+            about: Some("Plate armour with motors and a sealed helmet; stops most of every blow."),
+            apparel: Some((slot: Outer, armor: 0.6, mood: 0.0, pieces: [
+                // A heavy cuirass with a power pack on the back and a glowing core.
+                (bone: "spine_03", parts: [
+                    (shape: Cylinder, color: "plating", at: (0.0, 0.0, -0.02), size: (0.48, 0.44, 0.38)),
+                    (shape: Sphere, color: "plating", at: (0.0, 0.05, 0.09), size: (0.44, 0.36, 0.2)),
+                    (shape: Cube, color: "iron", at: (0.0, 0.02, -0.22), size: (0.3, 0.32, 0.12)),
+                    (shape: Sphere, color: "visor", at: (0.0, 0.07, 0.185), size: (0.07, 0.07, 0.04)),
+                    (shape: Cylinder, color: "iron", at: (0.0, -0.22, -0.02), size: (0.49, 0.07, 0.39)),
+                ]),
+                // Big shoulder plates and armoured sleeves (the arm runs along x at rest).
+                (bone: "upperarm_l", parts: [
+                    (shape: Sphere, color: "plating", at: (0.03, 0.05, 0.0), size: (0.24, 0.17, 0.24)),
+                    (shape: Cylinder, color: "plating", at: (0.15, 0.0, 0.0), size: (0.13, 0.22, 0.13), turn: (0.0, 0.0, 90.0)),
+                ]),
+                (bone: "upperarm_r", parts: [
+                    (shape: Sphere, color: "plating", at: (-0.03, 0.05, 0.0), size: (0.24, 0.17, 0.24)),
+                    (shape: Cylinder, color: "plating", at: (-0.15, 0.0, 0.0), size: (0.13, 0.22, 0.13), turn: (0.0, 0.0, 90.0)),
+                ]),
+                // A sealed helmet with a glowing visor.
+                (bone: "Head", hides_hair: true, parts: [
+                    (shape: Sphere, color: "plating", at: (0.0, 0.15, -0.01), size: (0.29, 0.25, 0.3)),
+                    (shape: Cube, color: "visor", at: (0.0, 0.1, 0.13), size: (0.18, 0.035, 0.04)),
+                    (shape: Cylinder, color: "iron", at: (0.0, 0.0, -0.01), size: (0.22, 0.06, 0.23)),
+                ]),
+            ])),
+            look: [
+                (shape: Cylinder, color: "plating", at: (0.0, 0.12, 0.0), size: (0.42, 0.24, 0.3)),
+                (shape: Sphere, color: "plating", at: (0.0, 0.3, 0.0), size: (0.22, 0.18, 0.22)),
+                (shape: Cube, color: "visor", at: (0.0, 0.3, 0.11), size: (0.12, 0.03, 0.02)),
+            ],
+        ),
     ],
 
     // What the colonists land with, dropped in their stockpile.
@@ -394,6 +635,9 @@
     // What mining one cell of rock or ore yields (soil yields nothing).
     rock_drops: ("stone", 6),
     ore_drops: ("iron_ore", 4),
+    copper_drops: ("copper_ore", 4),
+    // Where things made from components are taken apart (salvage recipes are made from their recipes).
+    salvage_bench: Some("salvage_bench"),
 
     // Player-built structures, listed in the toolbar menu named by
     // `category`. `special` marks behaviour the game handles in code: `Floor`
@@ -409,8 +653,11 @@
     // cell. `along_walls`: modelled spanning x, turned to run along the walls
     // beside it (doors, windows). Parts with `link` only show when the
     // neighbour that way is the same structure or a wall. `look: Opening`
-    // is a wall block with a hole (windows), drawn with the walls. Removing a
-    // structure drops `drops`, or half its cost if not given. `look: Block`
+    // is a wall block with a hole (windows), drawn with the walls. `cost` is
+    // one amount or a list, brought in that order. Removing a structure drops
+    // `drops`, or half of each of its costs if not given. `power`: watts made
+    // (`output`) and watt-hours stored (`storage`), shown only for now;
+    // `open_sky`: can't be built under a roof. `look: Block`
     // means it is drawn as a solid block with the terrain (walls); its parts
     // only matter otherwise.
     // `cover` in battle: None, Light, Medium or Heavy (heavy blocks the view;
@@ -863,6 +1110,129 @@
                 (shape: Cube, color: "steel", at: (0.25, 0.6, -0.1), size: (0.18, 0.03, 0.04)),
             ]),
         ),
+        (
+            id: "machinist_bench",
+            cover: Some(Medium),
+            category: "Production",
+            name: "Machinist's bench",
+            cost: [("structural_components", 8), ("steel", 30)],
+            work_time: 12.0,
+            passable: false,
+            look: Parts([
+                (shape: Cube, color: "steel", at: (0.0, 0.5, 0.0), size: (0.92, 0.07, 0.6)),
+                (shape: Cube, color: "iron", at: (0.0, 0.24, 0.0), size: (0.8, 0.48, 0.5)),
+                (shape: Cube, color: "iron", at: (-0.3, 0.6, 0.0), size: (0.12, 0.14, 0.18)),
+                (shape: Cylinder, color: "steel", at: (0.2, 0.62, 0.05), size: (0.18, 0.04, 0.18), turn: (90.0, 0.0, 0.0)),
+            ]),
+        ),
+        (
+            id: "refinery",
+            cover: Some(Medium),
+            category: "Production",
+            name: "Refinery",
+            cost: [("structural_components", 6), ("mechanical_components", 6), ("stone_blocks", 30)],
+            work_time: 14.0,
+            passable: false,
+            look: Parts([
+                (shape: Cylinder, color: "steel", at: (-0.18, 0.45, 0.0), size: (0.5, 0.9, 0.5)),
+                (shape: Cylinder, color: "copper", at: (0.25, 0.3, 0.1), size: (0.26, 0.6, 0.26)),
+                (shape: Cylinder, color: "iron", at: (0.05, 0.75, 0.05), size: (0.06, 0.4, 0.06), turn: (0.0, 0.0, 70.0)),
+                (shape: Cube, color: "ember", at: (-0.18, 0.12, 0.26), size: (0.24, 0.12, 0.02)),
+            ]),
+        ),
+        (
+            id: "chemistry_lab",
+            cover: Some(Medium),
+            category: "Production",
+            name: "Chemistry lab",
+            cost: [("structural_components", 6), ("mechanical_components", 4), ("textile_components", 4), ("copper", 15)],
+            work_time: 12.0,
+            passable: false,
+            look: Parts([
+                (shape: Cube, color: "white", at: (0.0, 0.5, 0.0), size: (0.92, 0.06, 0.6)),
+                (shape: Cube, color: "steel", at: (0.0, 0.24, 0.0), size: (0.84, 0.48, 0.5)),
+                (shape: Sphere, color: "glass", at: (-0.25, 0.62, 0.05), size: (0.16, 0.18, 0.16)),
+                (shape: Cylinder, color: "chem", at: (0.0, 0.62, -0.05), size: (0.08, 0.2, 0.08)),
+                (shape: Cylinder, color: "glass", at: (0.25, 0.64, 0.05), size: (0.1, 0.24, 0.1)),
+            ]),
+        ),
+        (
+            id: "electronics_bench",
+            cover: Some(Medium),
+            category: "Production",
+            name: "Electronics bench",
+            cost: [("structural_components", 8), ("mechanical_components", 6), ("chemical_components", 4), ("copper", 30)],
+            work_time: 14.0,
+            passable: false,
+            look: Parts([
+                (shape: Cube, color: "wood_light", at: (0.0, 0.5, 0.0), size: (0.92, 0.06, 0.6)),
+                (shape: Cube, color: "iron", at: (0.0, 0.24, 0.0), size: (0.84, 0.48, 0.5)),
+                (shape: Cube, color: "iron", at: (0.0, 0.72, -0.2), size: (0.5, 0.3, 0.04)),
+                (shape: Cube, color: "led", at: (0.0, 0.72, -0.175), size: (0.44, 0.24, 0.01)),
+                (shape: Cube, color: "circuit", at: (0.15, 0.545, 0.1), size: (0.26, 0.02, 0.18)),
+            ]),
+        ),
+        (
+            id: "fabricator",
+            cover: Some(Medium),
+            category: "Production",
+            name: "Fabricator",
+            cost: [("structural_components", 14), ("mechanical_components", 10), ("electrical_components", 8), ("optical_components", 6), ("chemical_components", 4)],
+            work_time: 24.0,
+            passable: false,
+            look: Parts([
+                (shape: Cube, color: "plating", at: (0.0, 0.45, 0.0), size: (0.94, 0.9, 0.7)),
+                (shape: Cube, color: "glass", at: (0.0, 0.5, 0.355), size: (0.6, 0.44, 0.01)),
+                (shape: Cylinder, color: "steel", at: (0.0, 0.62, 0.0), size: (0.06, 0.3, 0.06)),
+                (shape: Cube, color: "led", at: (0.35, 0.82, 0.355), size: (0.08, 0.04, 0.01)),
+            ]),
+        ),
+        (
+            id: "salvage_bench",
+            cover: Some(Medium),
+            category: "Production",
+            name: "Salvage bench",
+            cost: [("structural_components", 6), ("mechanical_components", 6)],
+            work_time: 10.0,
+            passable: false,
+            look: Parts([
+                (shape: Cube, color: "rust", at: (0.0, 0.5, 0.0), size: (0.92, 0.07, 0.6)),
+                (shape: Cube, color: "iron", at: (0.0, 0.24, 0.0), size: (0.8, 0.48, 0.5)),
+                (shape: Cube, color: "rust", at: (-0.2, 0.6, 0.05), size: (0.24, 0.12, 0.18), turn: (0.0, 20.0, 8.0)),
+                (shape: Cube, color: "circuit", at: (0.2, 0.555, -0.05), size: (0.2, 0.02, 0.16), turn: (0.0, -15.0, 0.0)),
+            ]),
+        ),
+        (
+            id: "pv_system",
+            cover: Some(Light),
+            category: "Power",
+            name: "PV system",
+            cost: [("structural_components", 2), ("electrical_components", 2), ("optical_components", 3)],
+            work_time: 10.0,
+            passable: false,
+            open_sky: true,
+            power: Some((output: 1000.0)),
+            look: Parts([
+                (shape: Cylinder, color: "steel", at: (0.0, 0.3, 0.0), size: (0.08, 0.6, 0.08)),
+                (shape: Cube, color: "steel", at: (0.0, 0.66, 0.0), size: (0.96, 0.04, 0.8), turn: (25.0, 0.0, 0.0)),
+                (shape: Cube, color: "panel", at: (0.0, 0.685, 0.0), size: (0.9, 0.02, 0.74), turn: (25.0, 0.0, 0.0)),
+            ]),
+        ),
+        (
+            id: "home_battery",
+            cover: Some(Medium),
+            category: "Power",
+            name: "Home battery",
+            cost: [("chemical_components", 4), ("electrical_components", 2), ("structural_components", 2)],
+            work_time: 8.0,
+            passable: false,
+            power: Some((storage: 10000.0)),
+            look: Parts([
+                (shape: Cube, color: "white", at: (0.0, 0.4, 0.1), size: (0.6, 0.8, 0.3)),
+                (shape: Cube, color: "led", at: (0.0, 0.62, -0.055), size: (0.12, 0.03, 0.01)),
+                (shape: Cube, color: "iron", at: (0.0, 0.02, 0.1), size: (0.62, 0.04, 0.32)),
+            ]),
+        ),
     ],
 
     // Plants grow in open cells on soil. `growth` runs from 0 to 1 over
@@ -1057,6 +1427,28 @@
                 ]]),
             ],
         ),
+        (
+            id: "rubber_plant",
+            name: "Rubber plant",
+            passable: true,
+            grow_time: 660.0,
+            sow: Some((work: Growing, skill: Growing, time: 1.5)),
+            harvest: (work: Growing, skill: Growing, time: 2.0, yields: ("latex", 5), verb: "tapping"),
+            stages: [
+                (from: 0.0, variants: [[
+                    (shape: Cylinder, color: "sprout", at: (0.0, 0.08, 0.0), size: (0.05, 0.16, 0.05)),
+                ]]),
+                (from: 0.4, variants: [[
+                    (shape: Cylinder, color: "trunk", at: (0.0, 0.2, 0.0), size: (0.08, 0.4, 0.08)),
+                    (shape: Sphere, color: "leaf", at: (0.0, 0.45, 0.0), size: (0.4, 0.3, 0.4)),
+                ]]),
+                (from: 1.0, variants: [[
+                    (shape: Cylinder, color: "trunk", at: (0.0, 0.3, 0.0), size: (0.1, 0.6, 0.1)),
+                    (shape: Sphere, color: "leaf", at: (0.0, 0.7, 0.0), size: (0.6, 0.45, 0.6)),
+                    (shape: Cylinder, color: "latex", at: (0.06, 0.18, 0.06), size: (0.08, 0.08, 0.08)),
+                ]]),
+            ],
+        ),
     ],
 
     // Themed rooms. An enclosed, roofed room that has everything in `needs`
@@ -1136,7 +1528,8 @@
         ),
         (id: "workshop", name: "Workshop", floor: (0.5, 0.36, 0.22), about: "Sawing, cutting stone and crafting.",
             needs: [
-                (things: ["sawbench", "stonecutter", "crafting_bench"], min: 1),
+                (things: ["sawbench", "stonecutter", "crafting_bench", "machinist_bench", "refinery", "chemistry_lab",
+                    "electronics_bench", "fabricator", "salvage_bench"], min: 1),
                 (things: ["table"], min: 1),
             ],
             effects: (work: 1.2, learn: 1.5),
@@ -1156,16 +1549,38 @@
             ingredients: [("stone", 4)], products: [("stone_blocks", 4)], sound: Some("chisel")),
         (id: "smelt_steel", name: "Smelt steel", bench: "smelter", work: Crafting, skill: Crafting, time: 6.0,
             ingredients: [("iron_ore", 4)], products: [("steel", 3)], sound: Some("furnace")),
+        (id: "smelt_copper", name: "Smelt copper", bench: "smelter", work: Crafting, skill: Crafting, time: 6.0,
+            ingredients: [("copper_ore", 4)], products: [("copper", 3)], sound: Some("furnace")),
+        (id: "refine_silicon", name: "Refine silicon", bench: "refinery", work: Crafting, skill: Crafting, time: 8.0,
+            ingredients: [("stone", 5)], products: [("silicon", 2)], sound: Some("furnace")),
+        (id: "make_rubber", name: "Make rubber", bench: "refinery", work: Crafting, skill: Crafting, time: 6.0,
+            ingredients: [("latex", 4)], products: [("rubber", 3)], sound: Some("sizzle")),
+        // Components: one recipe each (see their `about`).
+        (id: "make_structural", name: "Make structural components", bench: "smithy", work: Crafting, skill: Crafting, time: 8.0,
+            ingredients: [("steel", 5)], products: [("structural_components", 2)], sound: Some("anvil")),
+        (id: "make_textile", name: "Make textile components", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 7.0,
+            ingredients: [("cloth", 3), ("cotton", 2)], products: [("textile_components", 2)]),
+        (id: "make_mechanical", name: "Make mechanical components", bench: "machinist_bench", work: Crafting, skill: Crafting, time: 9.0,
+            ingredients: [("steel", 4), ("copper", 1)], products: [("mechanical_components", 2)], sound: Some("anvil")),
+        (id: "make_chemical", name: "Make chemical components", bench: "chemistry_lab", work: Crafting, skill: Crafting, time: 9.0,
+            ingredients: [("copper", 1), ("silicon", 1), ("wood", 2), ("stone", 2)], products: [("chemical_components", 2)], sound: Some("sizzle")),
+        (id: "make_electrical", name: "Make electrical components", bench: "electronics_bench", work: Crafting, skill: Crafting, time: 9.0,
+            ingredients: [("copper", 3), ("rubber", 1), ("silicon", 1)], products: [("electrical_components", 2)]),
+        (id: "make_optical", name: "Make optical components", bench: "electronics_bench", work: Crafting, skill: Crafting, time: 10.0,
+            ingredients: [("silicon", 3), ("copper", 1)], products: [("optical_components", 1)]),
+        // Gear.
         (id: "make_knife", name: "Make knife", bench: "smithy", work: Crafting, skill: Crafting, time: 6.0,
-            ingredients: [("steel", 3)], products: [("knife", 1)], sound: Some("anvil")),
+            ingredients: [("structural_components", 1), ("planks", 1)], products: [("knife", 1)], sound: Some("anvil")),
         (id: "make_pistol", name: "Make pistol", bench: "smithy", work: Crafting, skill: Crafting, time: 10.0,
-            ingredients: [("steel", 6), ("planks", 2)], products: [("pistol", 1)], sound: Some("anvil")),
+            ingredients: [("mechanical_components", 1), ("structural_components", 1), ("chemical_components", 1)], products: [("pistol", 1)], sound: Some("anvil")),
         (id: "make_rifle", name: "Make rifle", bench: "smithy", work: Crafting, skill: Crafting, time: 14.0,
-            ingredients: [("steel", 10), ("planks", 4)], products: [("rifle", 1)], sound: Some("anvil")),
+            ingredients: [("mechanical_components", 1), ("structural_components", 2), ("chemical_components", 1), ("planks", 2)], products: [("rifle", 1)], sound: Some("anvil")),
+        (id: "make_assault_rifle", name: "Make assault rifle", bench: "smithy", work: Crafting, skill: Crafting, time: 18.0,
+            ingredients: [("mechanical_components", 2), ("structural_components", 2), ("chemical_components", 2)], products: [("assault_rifle", 1)], sound: Some("anvil")),
         (id: "make_helmet", name: "Make steel helmet", bench: "smithy", work: Crafting, skill: Crafting, time: 8.0,
-            ingredients: [("steel", 5)], products: [("steel_helmet", 1)], sound: Some("anvil")),
+            ingredients: [("structural_components", 2), ("textile_components", 1)], products: [("steel_helmet", 1)], sound: Some("anvil")),
         (id: "make_armor", name: "Make steel armour", bench: "smithy", work: Crafting, skill: Crafting, time: 14.0,
-            ingredients: [("steel", 12)], products: [("steel_armor", 1)], sound: Some("anvil")),
+            ingredients: [("structural_components", 4), ("textile_components", 2)], products: [("steel_armor", 1)], sound: Some("anvil")),
         (id: "make_club", name: "Make club", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 4.0,
             ingredients: [("wood", 6)], products: [("club", 1)]),
         (id: "make_herbal_medicine", name: "Make herbal medicine", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 5.0,
@@ -1174,9 +1589,19 @@
             ingredients: [("cotton", 4)], products: [("cloth", 3)]),
         (id: "make_clothes", name: "Make simple clothes", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 8.0,
             ingredients: [("cloth", 5)], products: [("clothes", 1)]),
-        (id: "make_prosthetic_arm", name: "Make prosthetic arm", bench: "smithy", work: Crafting, skill: Crafting, time: 12.0,
-            ingredients: [("steel", 6), ("planks", 2), ("cloth", 2)], products: [("prosthetic_arm", 1)], sound: Some("anvil")),
-        (id: "make_prosthetic_leg", name: "Make prosthetic leg", bench: "smithy", work: Crafting, skill: Crafting, time: 12.0,
-            ingredients: [("steel", 6), ("planks", 2), ("cloth", 2)], products: [("prosthetic_leg", 1)], sound: Some("anvil")),
+        (id: "make_prosthetic_arm", name: "Make prosthetic arm", bench: "machinist_bench", work: Crafting, skill: Crafting, time: 12.0,
+            ingredients: [("mechanical_components", 2), ("structural_components", 1), ("textile_components", 1)], products: [("prosthetic_arm", 1)], sound: Some("anvil")),
+        (id: "make_prosthetic_leg", name: "Make prosthetic leg", bench: "machinist_bench", work: Crafting, skill: Crafting, time: 12.0,
+            ingredients: [("mechanical_components", 2), ("structural_components", 1), ("textile_components", 1)], products: [("prosthetic_leg", 1)], sound: Some("anvil")),
+        // Endgame, at the fabricator.
+        (id: "make_powered_armor", name: "Make powered armour", bench: "fabricator", work: Crafting, skill: Crafting, time: 40.0,
+            ingredients: [("structural_components", 6), ("mechanical_components", 4), ("electrical_components", 3), ("chemical_components", 2), ("textile_components", 2), ("optical_components", 1)], products: [("powered_armor", 1)], sound: Some("anvil")),
+        (id: "make_laser_rifle", name: "Make laser rifle", bench: "fabricator", work: Crafting, skill: Crafting, time: 30.0,
+            ingredients: [("optical_components", 3), ("electrical_components", 3), ("chemical_components", 2), ("structural_components", 1), ("mechanical_components", 1)], products: [("laser_rifle", 1)]),
+        // Salvaging scrap (gear made from components gets salvage recipes by itself).
+        (id: "salvage_scrap_metal", name: "Salvage scrap metal", bench: "salvage_bench", work: Crafting, skill: Crafting, time: 6.0,
+            ingredients: [("scrap_metal", 5)], products: [("steel", 2), ("mechanical_components", 1), ("structural_components", 1)], sound: Some("anvil")),
+        (id: "salvage_e_waste", name: "Salvage e-waste", bench: "salvage_bench", work: Crafting, skill: Crafting, time: 6.0,
+            ingredients: [("e_waste", 5)], products: [("copper", 2), ("electrical_components", 1), ("silicon", 1)]),
     ],
 )

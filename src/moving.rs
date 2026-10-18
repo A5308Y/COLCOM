@@ -97,8 +97,9 @@ impl World {
             self.set_down(mv, mv.from);
         } else {
             let at = self.map.landing(mv.from);
-            let c = &mv.kind.def().cost;
-            self.map.drop_item(at, Stack { kind: c.item, count: c.count });
+            for c in &mv.kind.def().cost {
+                self.map.drop_item(at, Stack { kind: c.item, count: c.count });
+            }
         }
     }
 

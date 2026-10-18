@@ -62,10 +62,21 @@ furniture, light, production), searchable, with costs (red if the colony is shor
   colonist doing a bill fetches what it lacks (haulers help too); right-click a bench with a colonist
   selected to have them do its bill now. Colonists with Cook or Craft work make it, and products get hauled to
   stockpiles. Chains: crops → meals (stove); wood → planks; stone → blocks; healroot → herbal medicine;
-  cotton → cloth → clothes; iron ore (veins in the rock, more of it deeper down) → steel (smelter) →
-  knives, pistols, rifles, steel armour and steel helmets (smithy). Colonists pick up better weapons and
-  apparel by themselves; armour stops part of every blow (and shows: a breastplate with shoulder plates, a
-  helmet), and clothes cheer colonists up.
+  cotton → cloth → clothes; iron ore (veins in the rock, more of it deeper down) → steel (smelter); copper
+  ore (green veins) → copper (smelter); stone → silicon and rubber-plant latex → rubber (refinery).
+  Colonists pick up better weapons and apparel by themselves; armour stops part of every blow (and shows:
+  a breastplate with shoulder plates, a helmet, powered armour's sealed suit), and clothes cheer them up.
+- **Components:** six kinds (mechanical, electrical, optical, structural, chemical, textile; their
+  descriptions say what they stand for: gears, wiring, lenses ...) made at fitting benches: structural at
+  the smithy, textile at the crafting bench, mechanical at the machinist's bench, chemical at the chemistry
+  lab, electrical and optical at the electronics bench. Gear needs them: knives, pistols, rifles, assault
+  rifles, steel armour and helmets (smithy), prosthetics (machinist), and at the **fabricator** powered
+  armour and the laser rifle (its burns don't bleed but hurt more). The benches themselves cost components
+  and climb a ladder (machinist → refinery → chemistry lab → electronics bench → fabricator), each built
+  from what the ones before make. Buildings can cost several materials, brought in order. The **salvage
+  bench** takes component-made gear apart for half its components, and scrap metal (raiders drop it) and
+  e-waste (cargo pods) for materials and components. A **PV system** (open sky only) and a **home battery**
+  can be built from components; the Resources window sums their power, which nothing uses yet.
 - **Stockpiles:** each has a priority (low to critical) and a list of item kinds it takes; things move
   to better stockpiles. Grow zones plant the crop chosen for them (corn, healroot, cotton).
 - **Sound:** footsteps that depend on the ground, chopping, mining, hammering, sawing, cooking and

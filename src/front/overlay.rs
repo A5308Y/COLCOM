@@ -120,7 +120,7 @@ pub fn draw(
                     continue;
                 }
                 if let Some(sp) = to_screen(c + Vec3::Y * 0.9) {
-                    let label = format!("{}/{}", delivered, kind.def().cost.count);
+                    let label = format!("{}/{}", delivered, kind.def().total_cost());
                     shadow_text(&painter, sp, Align2::CENTER_BOTTOM, &label, 12.0, Color32::from_rgb(170, 210, 255));
                 }
             }

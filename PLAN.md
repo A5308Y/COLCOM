@@ -731,3 +731,15 @@ real play.
 - Phase 4 left out ramps on slopes: a ramp would fill half the lower cell where pawns stand, so it needs a
   different terrain model. Pawns hop up and down steps instead.
 - "Covered" (anything solid overhead, e.g. a tunnel) is separate from "roofed" (inside an enclosed room).
+- Components (2026-10-18): three tiers. Materials: steel, cloth, copper (`Block::Copper` veins from their own
+  noise, `copper_drops`, smelted), silicon (refinery: stone), rubber (refinery: latex from the new rubber
+  plant). Six component items (category "Components", `ItemDef::about` names what they stand for); benches:
+  smithy (structural), crafting bench (textile), machinist (mechanical), chemistry lab (chemical),
+  electronics bench (electrical, optical), fabricator (powered armour, laser rifle), salvage bench. Existing
+  gear reworked onto components; new assault rifle. `BuildDef::cost` is a list (single amount still loads),
+  delivered in order; `Blueprint::delivered` counts across it (`BuildDef::missing`, `delivered_split`,
+  `drops` per material). Benches cost components in a ladder (tested: every bench, component and endgame
+  item reachable without salvage, fabricator last). `Defs::add_salvage` generates "Salvage X" for every
+  component-made single item (half of each ingredient back); scrap metal (raiders drop 1–2, pods) and
+  e-waste (pods) have fixed salvage recipes. `BuildDef::power` (shown only) and `open_sky` (PV system);
+  Resources window sums power. `DamageKind::Burn` (laser: no bleeding, more pain). Generated "laser" sound.

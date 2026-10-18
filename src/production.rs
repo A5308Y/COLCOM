@@ -506,9 +506,14 @@ mod tests {
             let d = r.def();
             let mut w = test_world(16, 16);
             let id = colonist(&mut w, (2, 2, Z));
-            // Unarmed, so a weapon that gets made is easy to count.
+            // Unarmed, so a weapon that gets made is easy to count; otherwise
+            // in the best gear, so they don't pick up what's to be taken apart.
             let i = w.pawn_index(id).unwrap();
-            w.pawns[i].weapon = None;
+            let makes = |f: fn(&crate::defs::ItemDef) -> bool| d.products.iter().any(|a| f(a.item.def()));
+            w.pawns[i].weapon = if makes(|d| d.weapon.is_some()) { None } else { Some(item("laser_rifle")) };
+            if !makes(|d| d.apparel.is_some()) {
+                w.pawns[i].apparel = vec![item("clothes"), item("powered_armor"), item("steel_helmet")];
+            }
             let bench = (8, 8, Z);
             place_bench(&mut w, &d.bench.id().def().id, bench);
             for (k, a) in d.ingredients.iter().enumerate() {
@@ -516,12 +521,14 @@ mod tests {
             }
             w.add_bill(bench, r, BillMode::Count(1));
             assert_eq!(w.bench_at(bench).unwrap().bills.len(), 1, "{}: bill added", d.id);
-            run(&mut w, 60.0);
+            // A trip per ingredient, then the work.
+            run(&mut w, 40.0 + 15.0 * d.ingredients.len() as f32 + 2.0 * d.time);
             for a in &d.products {
                 assert_eq!(have(&w, a.item), a.count, "{} makes {}", d.id, a.item.def().id);
             }
+            // (On the map or carried: what the colonist wears isn't an ingredient.)
             for a in &d.ingredients {
-                assert_eq!(have(&w, a.item), 0, "{} uses its {}", d.id, a.item.def().id);
+                assert_eq!(w.item_totals()[a.item.index()], 0, "{} uses its {}", d.id, a.item.def().id);
             }
             assert!(w.bench_at(bench).unwrap().bills.is_empty(), "{}: bill done", d.id);
         }
@@ -756,6 +763,11 @@ mod tests {
         let bones: Vec<String> = pieces("steel_armor").iter().map(|p| p.bone.clone()).collect();
         assert_eq!(bones, ["spine_03", "upperarm_l", "upperarm_r"]);
         assert!(pieces("steel_helmet").iter().any(|p| p.bone == "Head" && p.hides_hair));
+        // Powered armour: plates on the chest and arms, and a sealed helmet with a glowing visor.
+        let powered = pieces("powered_armor");
+        assert!(powered.iter().any(|p| p.bone == "spine_03"));
+        assert!(powered.iter().any(|p| p.bone == "Head" && p.hides_hair && p.parts.iter().any(|q| q.color == "visor")));
+        assert!(item("powered_armor").def().apparel.as_ref().unwrap().armor > item("steel_armor").def().apparel.as_ref().unwrap().armor);
     }
 
     #[test]

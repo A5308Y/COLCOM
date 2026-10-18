@@ -155,6 +155,8 @@ pub enum DamageKind {
     Cut,
     Gunshot,
     Bruise,
+    /// From a laser: seared shut (no bleeding), but it hurts more.
+    Burn,
 }
 
 impl DamageKind {
@@ -163,6 +165,7 @@ impl DamageKind {
             DamageKind::Cut => "Cut",
             DamageKind::Gunshot => "Gunshot",
             DamageKind::Bruise => "Bruise",
+            DamageKind::Burn => "Burn",
         }
     }
 
@@ -170,7 +173,15 @@ impl DamageKind {
     fn bleed(self) -> f32 {
         match self {
             DamageKind::Cut | DamageKind::Gunshot => 0.06,
-            DamageKind::Bruise => 0.0,
+            DamageKind::Bruise | DamageKind::Burn => 0.0,
+        }
+    }
+
+    /// Pain per point of wound severity.
+    fn pain(self) -> f32 {
+        match self {
+            DamageKind::Burn => 0.022,
+            _ => 0.015,
         }
     }
 
@@ -180,6 +191,7 @@ impl DamageKind {
             DamageKind::Gunshot => 0.6,
             DamageKind::Cut => 0.35,
             DamageKind::Bruise => 0.2,
+            DamageKind::Burn => 0.45,
         }
     }
 
@@ -188,6 +200,7 @@ impl DamageKind {
             DamageKind::Gunshot => 0.12,
             DamageKind::Cut => 0.08,
             DamageKind::Bruise => 0.0,
+            DamageKind::Burn => 0.15,
         }
     }
 
@@ -257,7 +270,7 @@ impl Hediff {
 
     pub fn pain(&self) -> f32 {
         match self.kind {
-            HediffKind::Injury { permanent: false, .. } => self.severity * 0.015,
+            HediffKind::Injury { kind, permanent: false } => self.severity * kind.pain(),
             HediffKind::Injury { permanent: true, .. } => self.severity * 0.008,
             HediffKind::Missing => {
                 if self.age < 2.0 * DAY_LEN {

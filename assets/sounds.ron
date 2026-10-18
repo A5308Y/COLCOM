@@ -99,6 +99,11 @@
             files: ["sounds/rifle_1.wav", "sounds/rifle_2.wav", "sounds/rifle_3.wav"],
             volume: 0.8, pitch: (0.92, 1.08), range: 80.0, max: 6, kind: Effect,
         ),
+        // A laser rifle's shot (generated).
+        "laser": (
+            files: ["sounds/laser_1.wav", "sounds/laser_2.wav", "sounds/laser_3.wav"],
+            volume: 0.7, pitch: (0.94, 1.06), range: 80.0, max: 6, kind: Effect,
+        ),
         "pistol": (
             files: ["sounds/pistol_1.wav", "sounds/pistol_2.wav", "sounds/pistol_3.wav"],
             volume: 0.7, pitch: (0.92, 1.08), range: 70.0, max: 6, kind: Effect,

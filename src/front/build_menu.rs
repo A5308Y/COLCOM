@@ -127,7 +127,7 @@ fn search_tools(query: &str) -> Vec<(&'static ToolEntry, Vec<usize>)> {
 fn keywords(e: &ToolEntry) -> String {
     let mut words = vec![e.group.clone()];
     if let Some(d) = build_def(e.tool) {
-        words.push(d.cost.item.name().to_string());
+        words.extend(d.cost.iter().map(|a| a.item.name().to_string()));
         words.extend(d.recipes.iter().map(|r| r.name().to_string()));
         if d.light.is_some() {
             words.push("light".into());
@@ -219,10 +219,8 @@ fn entry(ui: &mut egui::Ui, e: &ToolEntry, st: &mut UiState, totals: &[u32], hit
     let selected = st.tool == e.tool;
     let def = build_def(e.tool);
     let cost = def.map(|d| {
-        let c = &d.cost;
-        let have = totals[c.item.index()];
-        let text = if d.free() { "free".to_string() } else { format!("{} {}", c.count, c.item.name().to_lowercase()) };
-        (text, have >= c.count)
+        let enough = d.cost.iter().all(|c| totals[c.item.index()] >= c.count);
+        (d.cost_text(), enough)
     });
     let visuals = ui.visuals().clone();
     let fill = if selected { visuals.selection.bg_fill } else { Color32::TRANSPARENT };
@@ -291,17 +289,17 @@ fn details(ui: &mut egui::Ui, e: &ToolEntry, def: Option<&BuildDef>, totals: &[u
         ui.label(e.hint);
         return;
     };
-    let c = &d.cost;
     if d.free() {
         ui.label(format!("Free, {:.0} s of work", d.work_time));
     } else {
-        ui.label(format!(
-            "{} {} ({} in the colony), {:.0} s of work",
-            c.count,
-            c.item.name().to_lowercase(),
-            totals[c.item.index()],
-            d.work_time
-        ));
+        for c in &d.cost {
+            let have = totals[c.item.index()];
+            let text = format!("{} {} ({} in the colony)", c.count, c.item.name().to_lowercase(), have);
+            let color = if have >= c.count { Color32::GRAY } else { Color32::from_rgb(255, 140, 100) };
+            ui.label(RichText::new(text).color(color));
+        }
+        let order = if d.cost.len() > 1 { ", brought in this order" } else { "" };
+        ui.label(format!("{:.0} s of work{}", d.work_time, order));
     }
     let mut facts: Vec<String> = Vec::new();
     match d.special {
@@ -320,6 +318,12 @@ fn details(ui: &mut egui::Ui, e: &ToolEntry, def: Option<&BuildDef>, totals: &[u
         Special::Seat => facts.push("Put it beside a table to eat at".into()),
         Special::Grave => facts.push("Dug into soil; haulers bury a dead colonist in it".into()),
         Special::None => {}
+    }
+    if let Some(power) = d.power_text() {
+        facts.push(format!("{} (nothing uses power yet)", power));
+    }
+    if d.open_sky {
+        facts.push("Needs open sky: not under a roof".into());
     }
     if !d.passable && d.special == Special::None {
         facts.push("Blocks the way".into());

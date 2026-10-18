@@ -169,6 +169,9 @@ mod tests {
             for kind in ["steel_armor", "steel_helmet"] {
                 sim.world.pawns[i].apparel.push(my_world::defs::ItemId::named(kind));
             }
+            let i = sim.world.pawn_index(ids[0]).unwrap();
+            sim.world.pawns[i].apparel.push(my_world::defs::ItemId::named("powered_armor"));
+            sim.world.pawns[i].weapon = Some(my_world::defs::ItemId::named("laser_rifle"));
         }
         for _ in 0..3 {
             app.update();

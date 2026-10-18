@@ -898,6 +898,8 @@ impl World {
             Order::Stockpile => {
                 m.standable(p) && (f == Feature::None || f.is_crop()) && m.zone[i].stockpile().is_none()
             }
+            // Solar panels need open sky.
+            Order::Build(kind) if kind.def().open_sky && m.covered(p) => false,
             Order::Build(kind) => {
                 // A blueprint of something else is simply replaced.
                 let replacing = matches!(f, Feature::Blueprint { kind: other, .. } if other != kind);
@@ -951,9 +953,9 @@ impl World {
             Order::Build(kind) => {
                 // Materials already delivered to a replaced blueprint are left for the haulers.
                 if let Feature::Blueprint { kind: old, delivered, .. } = self.map.feature[i] {
-                    if delivered > 0 {
-                        let at = self.map.landing(p);
-                        self.map.drop_item(at, Stack { kind: old.def().cost.item, count: delivered });
+                    let at = self.map.landing(p);
+                    for (item, count) in old.def().delivered_split(delivered) {
+                        self.map.drop_item(at, Stack { kind: item, count });
                     }
                 }
                 self.map.feature[i] = Feature::Blueprint { kind, delivered: 0, dir: 0 };
@@ -963,9 +965,9 @@ impl World {
                 self.cancel_move(p);
                 if let Feature::Blueprint { kind, delivered, .. } = self.map.feature[i] {
                     self.map.feature[i] = Feature::None;
-                    if delivered > 0 {
-                        let at = self.map.landing(p);
-                        self.map.drop_item(at, Stack { kind: kind.def().cost.item, count: delivered });
+                    let at = self.map.landing(p);
+                    for (item, count) in kind.def().delivered_split(delivered) {
+                        self.map.drop_item(at, Stack { kind: item, count });
                     }
                 }
             }
@@ -1002,9 +1004,9 @@ impl World {
             if let Feature::Blueprint { kind, delivered, .. } = m.feature[i] {
                 if kind == roof && !keep {
                     m.feature[i] = Feature::None;
-                    if delivered > 0 {
-                        let at = m.landing(m.pos(i));
-                        m.drop_item(at, Stack { kind: kind.def().cost.item, count: delivered });
+                    let at = m.landing(m.pos(i));
+                    for (item, count) in kind.def().delivered_split(delivered) {
+                        m.drop_item(at, Stack { kind: item, count });
                     }
                 }
             }
@@ -1573,11 +1575,80 @@ mod tests {
     }
 
     #[test]
+    fn benches_are_built_from_several_materials_in_order() {
+        let mut w = test_world(16, 16);
+        colonist(&mut w, (2, 2, Z));
+        let bench = BuildId::named("machinist_bench");
+        let (structural, steel) = (item("structural_components"), item("steel"));
+        assert!(w.apply_order((8, 8, Z), Order::Build(bench)));
+        let i = w.map.idx((8, 8, Z));
+        // Only the steel around: the structural components come first, so nothing happens.
+        w.map.drop_item((3, 3, Z), Stack { kind: steel, count: 30 });
+        run(&mut w, 20.0);
+        assert!(matches!(w.map.feature[i], Feature::Blueprint { delivered: 0, .. }), "waits for the first material");
+        w.map.drop_item((3, 6, Z), Stack { kind: structural, count: 8 });
+        run(&mut w, 90.0);
+        assert_eq!(w.map.feature[i], Feature::built("machinist_bench"), "then built from both");
+        assert_eq!(w.map.count_items(steel) + w.map.count_items(structural), 0);
+
+        // Called off half-way: exactly what was brought comes back.
+        assert!(w.apply_order((12, 12, Z), Order::Build(bench)));
+        let j = w.map.idx((12, 12, Z));
+        w.map.feature[j] = Feature::Blueprint { kind: bench, delivered: 8 + 10, dir: 0 };
+        assert!(w.apply_order((12, 12, Z), Order::Cancel));
+        assert_eq!((w.map.count_items(structural), w.map.count_items(steel)), (8, 10));
+    }
+
+    #[test]
+    fn solar_panels_need_open_sky() {
+        let mut w = test_world(16, 16);
+        let roof = w.map.idx((8, 8, Z + 1));
+        w.map.set_roof(roof, true);
+        assert!(!w.apply_order((8, 8, Z), Order::Build(BuildId::named("pv_system"))), "not under a roof");
+        assert!(w.apply_order((8, 8, Z), Order::Build(BuildId::named("home_battery"))), "a battery is fine");
+        assert!(w.apply_order((4, 4, Z), Order::Build(BuildId::named("pv_system"))), "in the open");
+        let pv = BuildId::named("pv_system").def();
+        assert_eq!(pv.power_text().as_deref(), Some("Makes up to 1 kW in daylight"));
+    }
+
+    #[test]
+    fn copper_is_mined_and_raiders_leave_scrap() {
+        let mut w = test_world(16, 16);
+        let id = colonist(&mut w, (2, 2, Z));
+        w.set_priority(id, WorkType::Mining, 1);
+        let i = w.map.idx((6, 6, Z));
+        w.map.set_block(i, Block::Copper);
+        assert!(w.apply_order((6, 6, Z), Order::Desig(Desig::Mine)));
+        run(&mut w, 30.0);
+        assert_eq!(w.map.count_items(item("copper_ore")), defs().copper_drops.count);
+
+        let r = w.spawn_raider("Vex".into(), (10, 10, Z));
+        let ri = w.pawn_index(r).unwrap();
+        let mut raider = w.pawns[ri].clone();
+        w.kill(&mut raider, "died");
+        assert!((1..=2).contains(&w.map.count_items(item("scrap_metal"))), "scrap where they fell");
+    }
+
+    #[test]
+    fn laser_burns_dont_bleed() {
+        use crate::health::DamageKind;
+        let mut h = crate::health::Health::new();
+        h.injure(crate::health::Part::LeftArm, 10.0, DamageKind::Burn, &mut crate::rng::Rng::new(1));
+        h.recompute();
+        assert_eq!(h.bleed_rate(), 0.0, "seared shut");
+        let mut cut = crate::health::Health::new();
+        cut.injure(crate::health::Part::LeftArm, 10.0, DamageKind::Cut, &mut crate::rng::Rng::new(1));
+        cut.recompute();
+        assert!(h.pain > cut.pain, "but it hurts more");
+        assert_eq!(item("laser_rifle").def().weapon.as_ref().map(|w| w.kind), Some(DamageKind::Burn));
+    }
+
+    #[test]
     fn things_are_built_turned_as_placed() {
         let mut w = test_world(16, 16);
         colonist(&mut w, (2, 2, Z));
         let chair = BuildId::named("chair");
-        w.map.drop_item((3, 3, Z), Stack { kind: chair.def().cost.item, count: 10 });
+        w.map.drop_item((3, 3, Z), Stack { kind: chair.def().cost[0].item, count: 10 });
         assert!(w.apply_order((8, 8, Z), Order::Build(chair)));
         assert!(w.turn_blueprint((8, 8, Z), 3));
         assert!(!w.turn_blueprint((9, 9, Z), 1), "no blueprint there");
@@ -1590,7 +1661,7 @@ mod tests {
             }
         }
         let s = w.map.idx((12, 10, Z));
-        w.map.feature[s] = Feature::Blueprint { kind: stairs, delivered: stairs.def().cost.count, dir: 1 };
+        w.map.feature[s] = Feature::Blueprint { kind: stairs, delivered: stairs.def().total_cost(), dir: 1 };
         run(&mut w, 60.0);
         assert_eq!(w.map.feature[w.map.idx((8, 8, Z))], Feature::Built { kind: chair, dir: 3 });
         assert_eq!(w.map.feature[s], Feature::Built { kind: stairs, dir: 0 }, "a way that works");
@@ -1629,7 +1700,7 @@ mod tests {
         }
         w.map.recompute_rooms();
         let i = w.map.idx((7, 7, Z));
-        w.map.feature[i] = Feature::Blueprint { kind: BuildId::named("stairs"), delivered: BuildId::named("stairs").def().cost.count, dir: 0 };
+        w.map.feature[i] = Feature::Blueprint { kind: BuildId::named("stairs"), delivered: BuildId::named("stairs").def().total_cost(), dir: 0 };
         run(&mut w, 60.0);
         assert!(w.map.feature[i].is_special(Special::Stairs), "built");
         assert!(!w.map.roof[w.map.idx((7, 7, Z + 1))], "no roof over the stairs");
@@ -1804,8 +1875,9 @@ mod tests {
         run(&mut w, 20.0);
         assert_eq!(w.map.feature[i], Feature::None, "builders take it down");
         assert_eq!(w.map.desig[i], None);
-        let (item, count) = BuildId::named("wall").def().drops();
-        assert_eq!(w.map.count_items(item), count);
+        for (item, count) in BuildId::named("wall").def().drops() {
+            assert_eq!(w.map.count_items(item), count);
+        }
     }
 
     #[test]
@@ -1820,8 +1892,8 @@ mod tests {
         assert!(!w.apply_order(at, Order::Build(wall)), "the same thing again changes nothing");
         assert!(w.apply_order(at, Order::Build(door)), "a door replaces the wall blueprint");
         assert_eq!(w.map.feature[i], Feature::Blueprint { kind: door, delivered: 0, dir: 0 });
-        assert_eq!(w.map.count_items(wall.def().cost.item), 3, "what was delivered is left for the haulers");
-        w.map.drop_item((4, 4, Z), Stack { kind: door.def().cost.item, count: door.def().cost.count });
+        assert_eq!(w.map.count_items(wall.def().cost[0].item), 3, "what was delivered is left for the haulers");
+        w.map.drop_item((4, 4, Z), Stack { kind: door.def().cost[0].item, count: door.def().total_cost() });
         run(&mut w, 160.0);
         assert_eq!(w.map.feature[i], Feature::built("door"));
     }
@@ -1884,23 +1956,29 @@ mod tests {
             } else {
                 (8, 8, Z)
             };
-            w.map.drop_item((3, 3, Z), Stack { kind: def.cost.item, count: def.cost.count });
+            for c in &def.cost {
+                w.map.drop_item((3, 3, Z), Stack { kind: c.item, count: c.count });
+            }
             assert!(w.apply_order(at, Order::Build(kind)), "{} can be placed", def.id);
-            run(&mut w, 60.0);
+            // A trip per material, then the work.
+            run(&mut w, 40.0 + 15.0 * def.cost.len() as f32 + 3.0 * def.work_time);
             let i = w.map.idx(at);
             match def.special {
                 Special::Floor => assert!(w.map.floor[i], "{} built", def.id),
                 _ => assert!(matches!(w.map.feature[i], Feature::Built { kind: k, .. } if k == kind), "{} built", def.id),
             }
-            assert_eq!(w.map.count_items(def.cost.item), 0, "{} used its materials", def.id);
+            for c in &def.cost {
+                assert_eq!(w.map.count_items(c.item), 0, "{} used its {}", def.id, c.item.def().id);
+            }
 
             assert!(!w.apply_order(at, Order::Desig(Desig::Mine)), "{} isn't mined", def.id);
             assert!(w.apply_order(at, Order::Desig(Desig::Deconstruct)), "{} can be removed", def.id);
-            run(&mut w, 30.0);
+            run(&mut w, 30.0 + def.work_time);
             assert_eq!(w.map.feature[i], Feature::None, "{} removed", def.id);
             assert!(!w.map.floor[i], "{} removed", def.id);
-            let (item, count) = def.drops();
-            assert_eq!(w.map.count_items(item), count, "{} drops", def.id);
+            for (item, count) in def.drops() {
+                assert_eq!(w.map.count_items(item), count, "{} drops {}", def.id, item.def().id);
+            }
         }
     }
 

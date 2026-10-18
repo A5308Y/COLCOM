@@ -29,6 +29,7 @@ enum Look3 {
     Soil,
     Rock,
     Ore,
+    Copper,
     Wall,
     /// A wall with a hole through it (a window), running along x or y.
     Opening { along_x: bool },
@@ -78,6 +79,7 @@ fn look_at(m: &Map, p: Pos, cut: Cut) -> Look3 {
         (Block::Soil, _) => Look3::Soil,
         (Block::Rock, _) => Look3::Rock,
         (Block::Ore, _) => Look3::Ore,
+        (Block::Copper, _) => Look3::Copper,
         (Block::Water, _) => Look3::Water,
         (Block::Air, f) if f.is_block() => Look3::Wall,
         (Block::Air, f) if f.structure().is_some_and(|d| matches!(d.look, BuildLook::Opening { .. })) => {
@@ -90,7 +92,7 @@ fn look_at(m: &Map, p: Pos, cut: Cut) -> Look3 {
 impl Look3 {
     /// Hides faces above and below it.
     fn opaque(self) -> bool {
-        matches!(self, Look3::Soil | Look3::Rock | Look3::Ore | Look3::Wall | Look3::Opening { .. })
+        matches!(self, Look3::Soil | Look3::Rock | Look3::Ore | Look3::Copper | Look3::Wall | Look3::Opening { .. })
     }
 
     /// Hides the face of a neighbour that meets it going (dx, dz): an
@@ -109,6 +111,7 @@ impl Look3 {
             Look3::Soil => 1,
             Look3::Rock => 2,
             Look3::Ore => 3,
+            Look3::Copper => 8,
             Look3::Wall => 4,
             Look3::Opening { along_x } => 5 + along_x as u8,
             Look3::Water => 7,
@@ -392,7 +395,7 @@ fn ground_color(m: &Map, solid: Pos, look: Look3, cut: Cut) -> Rgb {
         themed_floor(k, x, y, z + 1)
     } else if indoors {
         FLOOR.shade(0.94 + jitter * 0.1)
-    } else if matches!(look, Look3::Rock | Look3::Ore) {
+    } else if matches!(look, Look3::Rock | Look3::Ore | Look3::Copper) {
         ROCK_TOP.shade(0.94 + jitter * 0.1)
     } else {
         let n = noise(x as f32 / 6.0, y as f32 / 6.0, 1) * 0.75 + hash(xi, yi, 2) * 0.25;
@@ -494,6 +497,11 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: Cut) -> (Mesh, Option<Mesh>) 
                     Look3::Ore => {
                         let fleck = hash(xi * 3 + 1, yi * 5 + zi, 41);
                         (ground_color(m, p, look, cut).mix(ORE, 0.35), ROCK_FACE.mix(ORE, 0.45 + 0.3 * fleck).shade(tone))
+                    }
+                    // Green-blue copper streaks.
+                    Look3::Copper => {
+                        let fleck = hash(xi * 5 + 2, yi * 3 + zi, 43);
+                        (ground_color(m, p, look, cut).mix(COPPER, 0.35), ROCK_FACE.mix(COPPER, 0.45 + 0.3 * fleck).shade(tone))
                     }
                     Look3::Wall => (WALL_TOP, WALL_FACE),
                     _ => (ground_color(m, p, look, cut), SOIL.shade(0.78 * tone)),

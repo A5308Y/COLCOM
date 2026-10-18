@@ -50,12 +50,14 @@ pub enum Block {
     Water,
     /// Rock with iron in it (mining yields `ore_drops`).
     Ore,
+    /// Rock with copper in it (mining yields `copper_drops`).
+    Copper,
 }
 
 impl Block {
     /// Solid ground: something to stand on, and impassable.
     pub fn solid(self) -> bool {
-        matches!(self, Block::Soil | Block::Rock | Block::Ore)
+        matches!(self, Block::Soil | Block::Rock | Block::Ore | Block::Copper)
     }
 
     pub fn name(self) -> &'static str {
@@ -65,6 +67,7 @@ impl Block {
             Block::Rock => "Rock",
             Block::Water => "Water",
             Block::Ore => "Iron ore",
+            Block::Copper => "Copper ore",
         }
     }
 }
@@ -802,6 +805,11 @@ impl Map {
                     if m.block[i] == Block::Rock && vein > 0.93 - 0.015 * depth {
                         m.block[i] = Block::Ore;
                     }
+                    // Copper in veins of its own (its own pattern, without drawing another seed).
+                    let copper = noise(fx / 4.0 + z as f32 * 11.7 + 61.0, fy / 4.0 + z as f32 * 3.3, salts[3] ^ 0x9e37_79b9);
+                    if m.block[i] == Block::Rock && copper > 0.94 - 0.012 * depth {
+                        m.block[i] = Block::Copper;
+                    }
                 }
             }
         }
@@ -1087,7 +1095,9 @@ mod tests {
         let water = m.block.iter().filter(|b| **b == Block::Water).count();
         let rock = m.block.iter().filter(|b| **b == Block::Rock).count();
         let ore = m.block.iter().filter(|b| **b == Block::Ore).count();
-        assert!(water > 0 && rock > 0 && ore > 0);
+        let copper = m.block.iter().filter(|b| **b == Block::Copper).count();
+        assert!(water > 0 && rock > 0 && ore > 0 && copper > 0);
         assert!(ore < rock / 10, "ore is rarer than rock ({} vs {})", ore, rock);
+        assert!(copper < rock / 10, "and copper ({} vs {})", copper, rock);
     }
 }

@@ -51,6 +51,13 @@ impl World {
         for item in p.weapon.take().into_iter().chain(p.apparel.drain(..)).chain(stashed) {
             self.map.drop_item(p.pos, Stack { kind: item, count: 1 });
         }
+        // Raiders carry odds and ends worth salvaging.
+        if p.faction == crate::pawn::Faction::Raider {
+            if let Some(scrap) = ItemId::all().find(|k| k.def().id == "scrap_metal") {
+                let count = 1 + self.rng.below(2) as u32;
+                self.map.drop_item(p.pos, Stack { kind: scrap, count });
+            }
+        }
         p.dead = true;
         p.downed = false;
         self.sound("death", Some(p.pos));

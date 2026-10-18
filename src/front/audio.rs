@@ -247,7 +247,7 @@ fn work_sound(w: &my_world::world::World, target: my_world::map::Pos, task: Task
         Task::Fill => "dig",
         Task::Mine => match m.block[i] {
             Block::Soil => "dig",
-            Block::Rock | Block::Ore => "mine",
+            Block::Rock | Block::Ore | Block::Copper => "mine",
             _ => "hammer",
         },
         Task::Construct | Task::Deconstruct | Task::Uninstall => match m.feature[i] {
@@ -293,7 +293,7 @@ fn pawn_sounds(
                 let below = m.below(p.pos).map(|b| m.block[m.idx(b)]);
                 let ground = if m.floor[i] || m.below(p.pos).is_some_and(|b| m.stairs_dir(b).is_some()) {
                     0
-                } else if matches!(below, Some(Block::Rock | Block::Ore)) {
+                } else if matches!(below, Some(Block::Rock | Block::Ore | Block::Copper)) {
                     1
                 } else {
                     2

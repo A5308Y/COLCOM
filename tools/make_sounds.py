@@ -306,6 +306,26 @@ def gunshot(k, pitch=1.0, length=1.0):
                (shaped_noise(0.8 * length, 80, 600, 0.02, 0.25 * length), 0.3, 0.02))
 
 
+def laser(k):
+    """A laser shot: a fast falling sweep with a buzzy edge and a short
+    crackle. Own random numbers, one seed per variant."""
+    r = random.Random(5000 + k)
+    secs = 0.32
+    n = int(secs * RATE)
+    f0, f1 = 2600 * r.uniform(0.9, 1.1), 260 * r.uniform(0.9, 1.1)
+    out, ph = [], 0.0
+    for i in range(n):
+        t = i / n
+        f = f0 * (f1 / f0) ** (t ** 0.6)
+        ph += 2 * math.pi * f / RATE
+        # A sine with a little square in it, for the buzz.
+        v = 0.7 * math.sin(ph) + 0.3 * math.copysign(1.0, math.sin(ph))
+        out.append(v * math.exp(-t * 4.0))
+    crackle = bandpass([r.uniform(-1.0, 1.0) for _ in range(int(0.12 * RATE))], 2000, 8000)
+    crackle = mul(crackle, env(len(crackle), 0.001, 0.025))
+    return mix((out, 1.0, 0), (crackle, 0.35, 0))
+
+
 def swing(k):
     x = noise(0.3)
     out, y = [], 0.0
@@ -456,6 +476,7 @@ def main():
     variants("rifle", 3, lambda k: gunshot(k))
     variants("pistol", 3, lambda k: gunshot(k, pitch=1.3, length=0.7))
     variants("swing", 2, swing)
+    variants("laser", 3, laser)
     variants("hit", 3, hit)
     variants("glance", 2, glance)
     variants("death", 1, death)

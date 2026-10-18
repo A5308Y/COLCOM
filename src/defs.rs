@@ -267,6 +267,9 @@ pub struct ItemDef {
     pub apparel: Option<ApparelDef>,
     #[serde(default)]
     pub prosthetic: Option<ProstheticDef>,
+    /// One line on what it is (components: what they stand for).
+    #[serde(default)]
+    pub about: Option<String>,
     pub look: Vec<Part>,
 }
 
@@ -356,7 +359,10 @@ pub struct BuildDef {
     /// Toolbar shortcut.
     #[serde(default)]
     pub key: Option<String>,
-    pub cost: Amount,
+    /// What it takes, delivered in this order: one amount (`("steel", 4)`) or
+    /// a list (`[("steel", 30), ("structural_components", 8)]`).
+    #[serde(deserialize_with = "cost_list")]
+    pub cost: Vec<Amount>,
     /// Seconds of work at speed 1.
     pub work_time: f32,
     #[serde(default = "construction")]
@@ -376,6 +382,12 @@ pub struct BuildDef {
     pub holds_floors: bool,
     #[serde(default)]
     pub special: Special,
+    /// Makes or stores power (shown; nothing uses power yet).
+    #[serde(default)]
+    pub power: Option<Power>,
+    /// Must stand under open sky (solar panels).
+    #[serde(default)]
+    pub open_sky: bool,
     /// A bed only for treating patients (an operating table): nobody owns
     /// it or sleeps in it.
     #[serde(default)]
@@ -410,11 +422,88 @@ pub struct BuildDef {
     pub recipes: Vec<RecipeId>,
 }
 
+/// What a buildable does for power: watts made at best (solar: at noon),
+/// watt-hours stored.
+#[derive(Clone, Copy, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Power {
+    pub output: f32,
+    pub storage: f32,
+}
+
+fn cost_list<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<Amount>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Cost {
+        One(Amount),
+        Many(Vec<Amount>),
+    }
+    Ok(match Cost::deserialize(d)? {
+        Cost::One(a) => vec![a],
+        Cost::Many(v) => v,
+    })
+}
+
 impl BuildDef {
-    /// What removing it gives back.
     /// Costs nothing to build.
     pub fn free(&self) -> bool {
-        self.cost.count == 0
+        self.total_cost() == 0
+    }
+
+    /// Units of material it takes, all told.
+    pub fn total_cost(&self) -> u32 {
+        self.cost.iter().map(|a| a.count).sum()
+    }
+
+    /// What's still missing once `delivered` units are in (materials come in
+    /// the order of `cost`): the next material and how many of it.
+    pub fn missing(&self, delivered: u32) -> Option<(ItemId, u32)> {
+        let mut left = delivered;
+        for a in &self.cost {
+            if left < a.count {
+                return Some((a.item, a.count - left));
+            }
+            left -= a.count;
+        }
+        None
+    }
+
+    /// What `delivered` units are, material by material (for refunds).
+    pub fn delivered_split(&self, delivered: u32) -> Vec<(ItemId, u32)> {
+        let mut left = delivered;
+        let mut out = Vec::new();
+        for a in &self.cost {
+            let n = left.min(a.count);
+            if n > 0 {
+                out.push((a.item, n));
+            }
+            left -= n;
+        }
+        out
+    }
+
+    /// What it does for power ("Makes up to 1 kW in daylight", "Stores 10 kWh"), if anything.
+    pub fn power_text(&self) -> Option<String> {
+        let p = self.power?;
+        let kilo = |v: f32| if v >= 1000.0 { format!("{:.1} k", v / 1000.0).replace(".0 k", " k") } else { format!("{:.0} ", v) };
+        let mut parts = Vec::new();
+        if p.output > 0.0 {
+            let when = if self.open_sky { " in daylight" } else { "" };
+            parts.push(format!("Makes up to {}W{}", kilo(p.output), when));
+        }
+        if p.storage > 0.0 {
+            parts.push(format!("Stores {}Wh", kilo(p.storage)));
+        }
+        Some(parts.join("; "))
+    }
+
+    /// "30 steel, 8 structural components".
+    pub fn cost_text(&self) -> String {
+        if self.free() {
+            return "free".into();
+        }
+        let parts: Vec<String> = self.cost.iter().map(|a| format!("{} {}", a.count, a.item.name().to_lowercase())).collect();
+        parts.join(", ")
     }
 
     /// A proper bed (not a sleeping spot).
@@ -422,10 +511,11 @@ impl BuildDef {
         self.special == Special::Bed && self.comfort >= 1.0
     }
 
-    pub fn drops(&self) -> (ItemId, u32) {
+    /// What removing it gives back: `drops` if given, else half of each material.
+    pub fn drops(&self) -> Vec<(ItemId, u32)> {
         match &self.drops {
-            Some(a) => (a.item, a.count),
-            None => (self.cost.item, self.cost.count / 2),
+            Some(a) => vec![(a.item, a.count)],
+            None => self.cost.iter().map(|a| (a.item, a.count / 2)).filter(|d| d.1 > 0).collect(),
         }
     }
 
@@ -575,6 +665,11 @@ pub struct Defs {
     pub raider_weapons: Vec<(Ref<ItemId>, f32)>,
     pub rock_drops: Amount,
     pub ore_drops: Amount,
+    /// What mining copper ore gives.
+    pub copper_drops: Amount,
+    /// Where things made from components are taken apart (see `add_salvage`).
+    #[serde(default)]
+    pub salvage_bench: Option<String>,
     pub builds: Vec<BuildDef>,
     pub plants: Vec<PlantDef>,
     #[serde(default)]
@@ -781,6 +876,45 @@ impl Defs {
         Ok(d)
     }
 
+    /// For every recipe that makes one thing out of components (items of the
+    /// "Components" category), a recipe at the salvage bench that takes it
+    /// apart again: half of each ingredient back (at least one of the first
+    /// component), in half the time.
+    fn add_salvage(&mut self) {
+        let Some(bench) = self.salvage_bench.clone() else { return };
+        let component = |name: &str| self.items.iter().any(|i| i.id == name && i.category == "Components");
+        let item_name = |id: &str| self.items.iter().find(|i| i.id == id).map_or(id.to_string(), |i| i.name.clone());
+        let mut salvage = Vec::new();
+        for r in &self.recipes {
+            let [product] = &r.products[..] else { continue };
+            if product.count != 1 || !r.ingredients.iter().any(|a| component(&a.name)) {
+                continue;
+            }
+            let mut back: Vec<Amount> = r
+                .ingredients
+                .iter()
+                .filter(|a| a.count >= 2)
+                .map(|a| Amount::from((a.name.clone(), a.count / 2)))
+                .collect();
+            if back.is_empty() {
+                let first = r.ingredients.iter().find(|a| component(&a.name)).unwrap();
+                back.push(Amount::from((first.name.clone(), 1)));
+            }
+            salvage.push(RecipeDef {
+                id: format!("salvage_{}", product.name),
+                name: format!("Salvage {}", item_name(&product.name).to_lowercase()),
+                bench: Ref::from(bench.clone()),
+                work: WorkType::Crafting,
+                skill: Skill::Crafting,
+                time: (r.time / 2.0).max(1.0),
+                ingredients: vec![Amount::from((product.name.clone(), 1))],
+                products: back,
+                sound: None,
+            });
+        }
+        self.recipes.extend(salvage);
+    }
+
     fn resolve(&mut self) -> Result<(), String> {
         let ids: Vec<String> = self.items.iter().map(|i| i.id.clone()).collect();
         let find = |name: &str, whose: &str| match ids.iter().position(|i| i == name) {
@@ -806,8 +940,11 @@ impl Defs {
         }
         resolve(&mut self.rock_drops, "rock_drops")?;
         resolve(&mut self.ore_drops, "ore_drops")?;
+        resolve(&mut self.copper_drops, "copper_drops")?;
         for b in self.builds.iter_mut() {
-            resolve(&mut b.cost, &b.id)?;
+            for a in b.cost.iter_mut() {
+                resolve(a, &b.id)?;
+            }
             if let Some(a) = b.drops.as_mut() {
                 resolve(a, &b.id)?;
             }
@@ -815,6 +952,7 @@ impl Defs {
         for p in self.plants.iter_mut() {
             resolve(&mut p.harvest.yields, &p.id)?;
         }
+        self.add_salvage();
         for (k, r) in self.recipes.iter_mut().enumerate() {
             for a in r.ingredients.iter_mut().chain(r.products.iter_mut()) {
                 resolve(a, &r.id)?;
@@ -910,6 +1048,9 @@ impl Defs {
         for d in &self.builds {
             if d.medical && d.special != Special::Bed {
                 return Err(format!("{}: only beds can be medical", d.id));
+            }
+            if d.cost.is_empty() {
+                return Err(format!("{}: needs a cost (an amount, or a list of them)", d.id));
             }
             if d.work_time <= 0.0 {
                 return Err(format!("{}: needs a work time", d.id));
@@ -1111,4 +1252,73 @@ mod tests {
             }
         }
     }
+
+    /// Everything that can be had from the land (mined, chopped, grown), then
+    /// made at benches that can themselves be built from what's had so far,
+    /// leaving salvage out: the benches form a ladder, and every component
+    /// and the endgame gear are on it.
+    #[test]
+    fn every_bench_and_component_can_be_reached_without_salvage() {
+        let d = defs();
+        let mut have: Vec<bool> = vec![false; d.items.len()];
+        for a in [&d.rock_drops, &d.ore_drops, &d.copper_drops].into_iter().chain(d.plants.iter().map(|p| &p.harvest.yields)) {
+            have[a.item.index()] = true;
+        }
+        let mut benches: Vec<bool> = vec![false; d.builds.len()];
+        let mut order: Vec<String> = Vec::new();
+        loop {
+            let mut changed = false;
+            for (b, def) in d.builds.iter().enumerate() {
+                if !benches[b] && def.cost.iter().all(|a| have[a.item.index()]) {
+                    benches[b] = true;
+                    changed = true;
+                    if !def.recipes.is_empty() {
+                        order.push(def.id.clone());
+                    }
+                }
+            }
+            for r in d.recipes.iter().filter(|r| !r.id.starts_with("salvage_")) {
+                let ready = benches[r.bench.id().index()] && r.ingredients.iter().all(|a| have[a.item.index()]);
+                for a in r.products.iter().filter(|_| ready) {
+                    if !have[a.item.index()] {
+                        have[a.item.index()] = true;
+                        changed = true;
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        for (b, def) in d.builds.iter().enumerate() {
+            assert!(benches[b] || def.special == Special::Roof, "{} can't be built without salvage", def.id);
+        }
+        for item in d.items.iter().filter(|i| i.category == "Components") {
+            assert!(have[ItemId::named(&item.id).index()], "{} can't be made", item.id);
+        }
+        for id in ["assault_rifle", "powered_armor", "laser_rifle", "silicon", "rubber", "copper"] {
+            assert!(have[ItemId::named(id).index()], "{} can't be made", id);
+        }
+        // The fabricator comes last of the benches: an achievement.
+        assert_eq!(order.last().map(String::as_str), Some("fabricator"), "{:?}", order);
+    }
+
+    #[test]
+    fn gear_made_from_components_can_be_salvaged() {
+        let d = defs();
+        for id in ["laser_rifle", "powered_armor", "rifle", "knife", "steel_armor"] {
+            let item = ItemId::named(id);
+            let made = d.recipes.iter().find(|r| r.products.iter().any(|a| a.item == item)).unwrap();
+            let salvage = d.recipes.iter().find(|r| r.id == format!("salvage_{}", id)).expect("a salvage recipe");
+            assert_eq!(salvage.bench.id(), BuildId::named("salvage_bench"));
+            assert!(!salvage.products.is_empty(), "{}: something back", id);
+            for back in &salvage.products {
+                let put_in = made.ingredients.iter().find(|a| a.item == back.item).map_or(0, |a| a.count);
+                assert!(back.count >= 1 && back.count <= put_in, "{}: {} back of {}", id, back.count, put_in);
+            }
+        }
+        assert!(d.recipes.iter().all(|r| r.id != "salvage_mechanical_components"), "components themselves aren't");
+        assert!(ItemId::named("mechanical_components").def().about.as_deref().is_some_and(|a| a.contains("Gears")));
+    }
+
 }

@@ -252,11 +252,12 @@ impl World {
                 if let Some(mv) = self.move_to(pos) {
                     return if mv.lifted { work(Task::Construct) } else { None };
                 }
-                if delivered >= def.cost.count {
+                // Materials come in the order of the cost list.
+                let Some((material, _)) = def.missing(delivered) else {
                     return work(Task::Construct);
-                }
+                };
                 let (_, d) = df.approach(m, pos, true)?;
-                let (di, from) = nearest_item[def.cost.item.index()]?;
+                let (di, from) = nearest_item[material.index()]?;
                 return Some((d + di, Job::Haul { from, to: pos, deliver: true, picked: false }));
             }
             Feature::None => {
@@ -361,7 +362,7 @@ impl World {
             Task::Construct => match f {
                 Feature::Blueprint { kind, delivered, .. } => match self.move_to(target) {
                     Some(mv) => mv.lifted,
-                    None => delivered >= kind.def().cost.count,
+                    None => delivered >= kind.def().total_cost(),
                 },
                 _ => false,
             },
@@ -417,8 +418,8 @@ impl World {
             return;
         }
         self.map.desig[i] = None;
-        let drop = |m: &mut Map, at: Pos, (kind, count): (ItemId, u32)| {
-            if count > 0 {
+        let drop = |m: &mut Map, at: Pos, drops: Vec<(ItemId, u32)>| {
+            for (kind, count) in drops.into_iter().filter(|d| d.1 > 0) {
                 m.drop_item(at, Stack { kind, count });
             }
         };
@@ -429,7 +430,7 @@ impl World {
                     self.sound(s, Some(target));
                 }
                 let y = &kind.def().harvest.yields;
-                drop(&mut self.map, target, (y.item, y.count));
+                drop(&mut self.map, target, vec![(y.item, y.count)]);
             }
             Task::Sow(kind) => self.map.set_feature(i, Feature::Plant { kind, growth: 0.0 }),
             Task::Fill => {
@@ -452,10 +453,11 @@ impl World {
                     let yields = match dug {
                         Block::Rock => Some(&defs().rock_drops),
                         Block::Ore => Some(&defs().ore_drops),
+                        Block::Copper => Some(&defs().copper_drops),
                         _ => None,
                     };
                     if let Some(r) = yields {
-                        drop(&mut self.map, target, (r.item, r.count));
+                        drop(&mut self.map, target, vec![(r.item, r.count)]);
                     }
                 }
             }
@@ -645,8 +647,7 @@ impl World {
         match self.map.feature[self.map.idx(at)] {
             Feature::Blueprint { .. } if self.move_to(at).is_some() => None,
             Feature::Blueprint { kind, delivered, .. } => {
-                let cost = &kind.def().cost;
-                (delivered < cost.count).then(|| Stack { kind: cost.item, count: cost.count - delivered })
+                kind.def().missing(delivered).map(|(item, count)| Stack { kind: item, count })
             }
             Feature::Built { .. } => self.bench_at(at)?.need(),
             _ => None,
@@ -728,7 +729,7 @@ impl World {
                 let used = if deliver {
                     match self.map.feature[ti] {
                         Feature::Blueprint { kind, delivered, dir } => {
-                            let used = self.delivery_need(to).map_or(0, |n| n.count).min(carry.count);
+                            let used = self.delivery_need(to).filter(|n| n.kind == carry.kind).map_or(0, |n| n.count).min(carry.count);
                             self.map.feature[ti] = Feature::Blueprint { kind, delivered: delivered + used, dir };
                             used
                         }
