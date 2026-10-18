@@ -25,6 +25,13 @@ const PAWN_SOUND_RANGE: f32 = 40.0;
 /// stride (0.65 m) and the jog's (2.5 m), at 0.55 cells a metre.
 const WALK_STRIDE: f32 = 0.36;
 const RUN_STRIDE: f32 = 1.37 * super::characters::RUN_STRIDE;
+/// From this game speed on, footsteps would only run together into a hum: none play.
+const SILENT_STEPS_SPEED: u32 = 5;
+
+/// Whether footsteps play at game speed `speed`.
+fn steps_heard(speed: u32) -> bool {
+    speed < SILENT_STEPS_SPEED
+}
 
 /// Which volume slider a sound follows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Deserialize)]
@@ -284,7 +291,9 @@ fn pawn_sounds(
             continue;
         }
         // A step per stride of the animation: short walking steps, long running ones.
-        if !p.lying() && moved < 1.0 {
+        if !steps_heard(sim.speed) {
+            t.walked = 0.0;
+        } else if !p.lying() && moved < 1.0 {
             t.walked += moved;
             let stride = if p.running { RUN_STRIDE } else { WALK_STRIDE };
             if t.walked >= stride {
@@ -564,6 +573,12 @@ mod tests {
 
     fn exists(file: &str) -> bool {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(file).is_file()
+    }
+
+    #[test]
+    fn footsteps_only_at_normal_speeds() {
+        let heard: Vec<u32> = super::super::sim::SPEEDS.into_iter().filter(|&s| steps_heard(s)).collect();
+        assert_eq!(heard, [1, 2], "not at 5x or 10x");
     }
 
     #[test]

@@ -32,7 +32,7 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 45] = [
+const HELP_REST: [&str; 46] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -50,6 +50,7 @@ const HELP_REST: [&str; 45] = [
     "",
     "Floors are for upper storeys; they need a wall, door, stairs or ground below within 3 cells.",
     "      Walls stack onto walls and doors below, even planned ones, to build several storeys high.",
+    "      Click a wall with a door or window to build it in; the wall stands until it's done.",
     "      Use the layer view to place floors in mid-air: PageDown/PageUp (or [ and ]).",
     "      Shift+R hides roofs, to look into the top room of every building at once.",
     "Stairs rise away from where you walk onto them; you can't walk across them.",
@@ -1007,9 +1008,10 @@ fn tile_inspector(
         .show(ctx, |ui| {
             let what = match m.feature[i] {
                 f @ Feature::Plant { growth, .. } if f.is_crop() => format!("{}, {:.0}% grown", f.name(), growth * 100.0),
-                Feature::Blueprint { kind, delivered, .. } => {
+                Feature::Blueprint { kind, delivered, over, .. } => {
                     let d = kind.def();
-                    match d.missing(delivered) {
+                    let instead = over.map_or(String::new(), |(old, _)| format!(", to replace the {}", old.name().to_lowercase()));
+                    let state = match d.missing(delivered) {
                         Some((item, n)) => format!(
                             "{} blueprint ({}/{} delivered; needs {} {} next)",
                             kind.name(),
@@ -1019,7 +1021,8 @@ fn tile_inspector(
                             item.name().to_lowercase()
                         ),
                         None => format!("{} blueprint (all {} delivered)", kind.name(), d.total_cost()),
-                    }
+                    };
+                    state + &instead
                 }
                 Feature::None if m.block[i] != Block::Air => m.block[i].name().to_string(),
                 f => {

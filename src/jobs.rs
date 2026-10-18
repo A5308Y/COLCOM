@@ -524,7 +524,12 @@ impl World {
             }
             Task::Deconstruct => {
                 if let Some(def) = f.structure() {
-                    self.map.set_feature(i, Feature::None);
+                    // What was to be built over it can now be built from scratch.
+                    let next = match f {
+                        Feature::Blueprint { kind, delivered, dir, .. } => Feature::blueprint(kind, delivered, dir),
+                        _ => Feature::None,
+                    };
+                    self.map.set_feature(i, next);
                     self.sound("built", Some(target));
                     drop(&mut self.map, target, def.drops());
                     if def.storage.is_some() {
@@ -556,7 +561,12 @@ impl World {
                         return;
                     }
                 }
-                if let Feature::Blueprint { kind, dir, .. } = f {
+                if let Feature::Blueprint { kind, dir, over, .. } = f {
+                    // The wall (door, window) it replaces comes down, giving back what it would.
+                    if let Some((old, _)) = over {
+                        drop(&mut self.map, target, old.def().drops());
+                        self.map.rooms_dirty = true;
+                    }
                     match kind.def().special {
                         Special::Floor => {
                             self.map.set_feature(i, Feature::None);
@@ -803,9 +813,9 @@ impl World {
             Step::Arrived => {
                 let used = if deliver {
                     match self.map.feature[ti] {
-                        Feature::Blueprint { kind, delivered, dir } => {
+                        Feature::Blueprint { kind, delivered, dir, over } => {
                             let used = self.delivery_need(to).filter(|n| n.kind == carry.kind).map_or(0, |n| n.count).min(carry.count);
-                            self.map.feature[ti] = Feature::Blueprint { kind, delivered: delivered + used, dir };
+                            self.map.feature[ti] = Feature::Blueprint { kind, delivered: delivered + used, dir, over };
                             used
                         }
                         _ => self.stock_bench(to, carry),

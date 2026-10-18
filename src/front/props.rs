@@ -24,7 +24,8 @@ enum PropKey {
     /// is buried in yet. `links`: bit per
     /// direction (`DIRS`) with a neighbour that linked parts join up with.
     Built { kind: BuildId, dir: u8, owner: Option<u32>, open: bool, links: u8 },
-    Blueprint { kind: BuildId, dir: u8 },
+    /// `over`: around a wall still standing there (a slightly bigger ghost).
+    Blueprint { kind: BuildId, dir: u8, over: bool },
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -252,6 +253,8 @@ fn sync_props(
         let want = match m.feature[i] {
             Feature::None => None,
             Feature::Plant { kind, growth } => Some(PropKey::Plant { kind, stage: kind.def().stage(growth) as u8 }),
+            // To be built over a wall that's drawn with the terrain.
+            Feature::Blueprint { kind, over: Some(_), .. } => Some(PropKey::Blueprint { kind, dir: 0, over: true }),
             // Drawn with the terrain.
             f if f.is_block() => None,
             Feature::Built { kind, dir } => Some({
@@ -283,7 +286,9 @@ fn sync_props(
                 let links = if linked { links(m, pos, kind) } else { 0 };
                 PropKey::Built { kind, dir, owner, open, links }
             }),
-            Feature::Blueprint { kind, dir, .. } => Some(PropKey::Blueprint { kind, dir: if kind.def().turnable() { dir } else { 0 } }),
+            Feature::Blueprint { kind, dir, .. } => {
+                Some(PropKey::Blueprint { kind, dir: if kind.def().turnable() { dir } else { 0 }, over: false })
+            }
         };
         let have = props.features[i].map(|(k, _)| k);
         // A door swinging open.
@@ -463,17 +468,19 @@ fn spawn_feature(
             }
             e
         }
-        PropKey::Blueprint { kind, dir } => match &kind.def().look {
-            BuildLook::Parts(parts) => {
+        PropKey::Blueprint { kind, dir, over } => match &kind.def().look {
+            BuildLook::Parts(parts) if !over => {
                 let pose = Pose { ghost: true, dir, ..default() };
                 spawn_parts(commands, a, base.with_rotation(facing(dir)), parts, pose, &blanket)
             }
-            BuildLook::Block | BuildLook::Opening { .. } => {
+            // Over a standing wall: a shell just around it.
+            _ => {
+                let size = if over { 1.04 } else { 0.98 };
                 let block = Part {
                     shape: Shape::Cube,
                     color: String::new(),
                     at: (0.0, LEVEL_H / 2.0, 0.0),
-                    size: (0.98, LEVEL_H, 0.98),
+                    size: (size, LEVEL_H * if over { 1.02 } else { 1.0 }, size),
                     turn: (0.0, 0.0, 0.0),
                     hinge: false,
                     link: None,

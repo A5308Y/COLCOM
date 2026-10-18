@@ -89,7 +89,7 @@ for), and `<` goes back.
   can be built from components; the Resources window sums their power, which nothing uses yet.
 - **Stockpiles:** each has a priority (low to critical) and a list of item kinds it takes; things move
   to better stockpiles. Grow zones plant the crop chosen for them (corn, healroot, cotton).
-- **Sound:** footsteps that depend on the ground, chopping, mining, hammering, sawing, cooking and
+- **Sound:** footsteps that depend on the ground (silent at 5x and 10x speed), chopping, mining, hammering, sawing, cooking and
   smithing while colonists work, trees crashing down, rock breaking, doors, gunshots, hits and armour
   glancing off, falls, alerts for raids and newcomers, interface clicks, and ambience that fades between
   day, night and caves. Sounds are placed in the world: quieter further from the camera's focus and when
@@ -149,7 +149,9 @@ for), and `<` goes back.
 - **Building upwards:** floors make upper storeys and roofs; each needs a wall, door, stairs or ground
   beneath some cell within 3 steps. Walls, doors and windows stack onto walls, doors and windows below,
   even ones still planned: plan a wall several storeys high and it goes up one level at a time
-  (cancelling the bottom takes the rest along). Stairs, even planned ones, and the cell in front of them get no roof. Stairs connect a cell to the one above; you enter them from their low end
+  (cancelling the bottom takes the rest along). Doors and windows can be built into a standing wall
+  (and walls, doors and windows over each other): the old one stays until the new one is built, then
+  gives back its materials; cancelling leaves it as it was. Stairs, even planned ones, and the cell in front of them get no roof. Stairs connect a cell to the one above; you enter them from their low end
   and can't walk across them. Use the layer view to place floors in mid-air (a faint grid shows the
   cells). Pawns and items with nothing underneath fall, and falls of two levels or more hurt.
 - **Looks:** sun and moon with shadows, dark nights, lamps that light rooms and caves, see-through

@@ -360,6 +360,10 @@ mod tests {
                 let i = w.map.idx((cx - 6 + k, cy + 6, z));
                 w.map.feature[i] = my_world::map::Feature::built(id);
             }
+            // A window to be built into a standing wall.
+            let old_wall = w.map.idx((cx + 3, cy + 6, z));
+            w.map.feature[old_wall] = my_world::map::Feature::built("wall");
+            assert!(w.apply_order((cx + 3, cy + 6, z), my_world::world::Order::Build(my_world::defs::BuildId::named("window"))));
             let shelf = w.map.idx((cx - 1, cy + 6, z));
             // Four different things on it: two on top, two on the lower board.
             let stacks = ["wood", "steel", "copper", "mechanical_components"]

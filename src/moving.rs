@@ -60,7 +60,7 @@ impl World {
         };
         // Moving it instead of taking it down.
         self.map.desig[fi] = None;
-        self.map.feature[ti] = Feature::Blueprint { kind, delivered: 0, dir };
+        self.map.feature[ti] = Feature::blueprint(kind, 0, dir);
         self.moves.push(Move { kind, from, to, lifted: false, bills: Vec::new(), owner: None, dir });
         true
     }

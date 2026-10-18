@@ -915,6 +915,13 @@ impl World {
             }
             // Solar panels need open sky.
             Order::Build(kind) if kind.def().open_sky && m.covered(p) => false,
+            // A wall, door or window can be built over another: the old one stands
+            // until the new one replaces it.
+            Order::Build(kind) if f.structure().is_some_and(|d| d.blocks_room) => {
+                let old = f.structure_id().unwrap();
+                let planned = matches!(f, Feature::Blueprint { kind: k, .. } if k == kind);
+                kind.def().blocks_room && kind != old && !planned
+            }
             Order::Build(kind) => {
                 // A blueprint of something else is simply replaced.
                 let replacing = matches!(f, Feature::Blueprint { kind: other, .. } if other != kind);
@@ -979,7 +986,13 @@ impl World {
                     // Planned stairs keep the roof off (see `recompute_rooms`).
                     self.map.rooms_dirty = true;
                 }
-                self.map.feature[i] = Feature::Blueprint { kind, delivered: 0, dir: 0 };
+                // Built over a standing wall (door, window), or one already being built over.
+                let over = match self.map.feature[i] {
+                    Feature::Built { kind, dir } => Some((kind, dir)),
+                    Feature::Blueprint { over, .. } => over,
+                    _ => None,
+                };
+                self.map.feature[i] = Feature::Blueprint { kind, delivered: 0, dir: 0, over };
             }
             Order::Cancel => {
                 self.map.desig[i] = None;
@@ -991,17 +1004,21 @@ impl World {
     }
 
     /// Take away the blueprint at `p`, dropping what was delivered to it, and
-    /// any walls planned on top of it that are now left hanging.
+    /// any walls planned on top of it that are now left hanging. What it was
+    /// to be built over simply stays.
     fn cancel_blueprint(&mut self, mut p: Pos) {
         let mut i = self.map.idx(p);
-        while let Feature::Blueprint { kind, delivered, .. } = self.map.feature[i] {
+        while let Feature::Blueprint { kind, delivered, over, .. } = self.map.feature[i] {
             if kind.def().special == Special::Stairs {
                 self.map.rooms_dirty = true;
             }
-            self.map.feature[i] = Feature::None;
+            self.map.feature[i] = over.map_or(Feature::None, |(kind, dir)| Feature::Built { kind, dir });
             let at = self.map.landing(p);
             for (item, count) in kind.def().delivered_split(delivered) {
                 self.map.drop_item(at, Stack { kind: item, count });
+            }
+            if over.is_some() {
+                break;
             }
             // Nothing holds up a wall planned on top any more.
             let m = &self.map;
@@ -1022,7 +1039,7 @@ impl World {
         let m = &self.map;
         matches!(m.feature[m.idx(p)], Feature::Blueprint { .. })
             && !m.standable(p)
-            && m.below(p).is_some_and(|b| matches!(m.feature[m.idx(b)], Feature::Blueprint { .. }))
+            && m.below(p).is_some_and(|b| matches!(m.feature[m.idx(b)], Feature::Blueprint { over: None, .. }))
     }
 
     /// Testing: drop `count` of `kind` at `at` (spilling onto the cells around).
@@ -1056,7 +1073,7 @@ impl World {
         for &i in &m.roof_wanted {
             wanted[i] = true;
             if m.feature[i] == Feature::None {
-                m.feature[i] = Feature::Blueprint { kind: roof, delivered: 0, dir: 0 };
+                m.feature[i] = Feature::blueprint(roof, 0, 0);
             }
         }
         for (i, &keep) in wanted.iter().enumerate() {
@@ -1673,7 +1690,7 @@ mod tests {
         // Called off half-way: exactly what was brought comes back.
         assert!(w.apply_order((12, 12, Z), Order::Build(bench)));
         let j = w.map.idx((12, 12, Z));
-        w.map.feature[j] = Feature::Blueprint { kind: bench, delivered: 8 + 10, dir: 0 };
+        w.map.feature[j] = Feature::blueprint(bench, 8 + 10, 0);
         assert!(w.apply_order((12, 12, Z), Order::Cancel));
         assert_eq!((w.map.count_items(structural), w.map.count_items(steel)), (8, 10));
     }
@@ -1740,7 +1757,7 @@ mod tests {
             }
         }
         let s = w.map.idx((12, 10, Z));
-        w.map.feature[s] = Feature::Blueprint { kind: stairs, delivered: stairs.def().total_cost(), dir: 1 };
+        w.map.feature[s] = Feature::blueprint(stairs, stairs.def().total_cost(), 1);
         run(&mut w, 60.0);
         assert_eq!(w.map.feature[w.map.idx((8, 8, Z))], Feature::Built { kind: chair, dir: 3 });
         assert_eq!(w.map.feature[s], Feature::Built { kind: stairs, dir: 0 }, "a way that works");
@@ -1794,7 +1811,7 @@ mod tests {
         }
         w.map.recompute_rooms();
         let i = w.map.idx((7, 7, Z));
-        w.map.feature[i] = Feature::Blueprint { kind: BuildId::named("stairs"), delivered: BuildId::named("stairs").def().total_cost(), dir: 0 };
+        w.map.feature[i] = Feature::blueprint(BuildId::named("stairs"), BuildId::named("stairs").def().total_cost(), 0);
         run(&mut w, 60.0);
         assert!(w.map.feature[i].is_special(Special::Stairs), "built");
         assert!(!w.map.roof[w.map.idx((7, 7, Z + 1))], "no roof over the stairs");
@@ -1879,7 +1896,7 @@ mod tests {
         let mut w = test_world(16, 16);
         house(&mut w, 5, 5, 9, 9);
         let corner = w.map.idx((6, 6, Z + 1));
-        w.map.feature[corner] = Feature::Blueprint { kind: defs().roof().unwrap(), delivered: 1, dir: 0 };
+        w.map.feature[corner] = Feature::blueprint(defs().roof().unwrap(), 1, 0);
         let gap = w.map.idx((9, 7, Z));
         w.map.set_feature(gap, Feature::None);
         w.map.recompute_rooms();
@@ -1984,10 +2001,10 @@ mod tests {
         let at = (10, 10, Z);
         let i = w.map.idx(at);
         assert!(w.apply_order(at, Order::Build(wall)));
-        w.map.feature[i] = Feature::Blueprint { kind: wall, delivered: 3, dir: 0 };
+        w.map.feature[i] = Feature::blueprint(wall, 3, 0);
         assert!(!w.apply_order(at, Order::Build(wall)), "the same thing again changes nothing");
         assert!(w.apply_order(at, Order::Build(door)), "a door replaces the wall blueprint");
-        assert_eq!(w.map.feature[i], Feature::Blueprint { kind: door, delivered: 0, dir: 0 });
+        assert_eq!(w.map.feature[i], Feature::blueprint(door, 0, 0));
         assert_eq!(w.map.count_items(wall.def().cost[0].item), 3, "what was delivered is left for the haulers");
         w.map.drop_item((4, 4, Z), Stack { kind: door.def().cost[0].item, count: door.def().total_cost() });
         run(&mut w, 160.0);
@@ -2010,6 +2027,46 @@ mod tests {
         assert_eq!(w.map.feature[w.map.idx((10, 10, Z + 1))], Feature::built("wall"));
         // And again on top of that (building it needs somewhere to stand up there).
         assert!(w.apply_order((10, 10, Z + 2), Order::Build(wall)));
+    }
+
+    #[test]
+    fn windows_are_built_over_standing_walls() {
+        let mut w = test_world(16, 16);
+        colonist(&mut w, (2, 2, Z));
+        house(&mut w, 5, 5, 9, 9);
+        for y in 6..=8 {
+            for x in 6..=8 {
+                let a = w.map.idx((x, y, Z + 1));
+                w.map.feature[a] = Feature::None;
+                w.map.set_roof(a, true);
+            }
+        }
+        w.map.recompute_rooms();
+        assert!(w.map.roofed((7, 7, Z)));
+        let wall = (7, 5, Z);
+        let i = w.map.idx(wall);
+        let window = BuildId::named("window");
+        assert!(!w.apply_order(wall, Order::Build(BuildId::named("wall"))), "not a wall over itself");
+        assert!(!w.apply_order(wall, Order::Build(BuildId::named("bed"))), "only walls, doors and windows");
+        assert!(w.apply_order(wall, Order::Build(window)));
+        assert!(!w.apply_order(wall, Order::Build(window)), "already planned");
+        // Until it's built the wall stands: still in the way, still closing the room.
+        assert!(!w.map.passable(wall) && w.map.feature[i].blocks_room());
+        w.map.recompute_rooms();
+        assert!(w.map.roofed((7, 7, Z)));
+        // Cancelled, the wall is simply left.
+        assert!(w.apply_order(wall, Order::Cancel));
+        assert_eq!(w.map.feature[i], Feature::built("wall"));
+        // Built: the window replaces it, and the wall's stone comes back.
+        assert!(w.apply_order(wall, Order::Build(window)));
+        for a in &window.def().cost {
+            w.map.drop_item((3, 3, Z), Stack { kind: a.item, count: a.count });
+        }
+        let stone = w.map.count_items(item("stone"));
+        run(&mut w, 120.0);
+        assert_eq!(w.map.feature[i], Feature::built("window"));
+        assert!(w.map.count_items(item("stone")) > stone, "the wall's stone is given back");
+        assert!(w.map.roofed((7, 7, Z)), "still a room");
     }
 
     #[test]

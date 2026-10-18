@@ -496,6 +496,8 @@ pub fn move_target(w: &SimWorld, from: Pos, h: Hover) -> Option<Pos> {
 pub fn order_target(w: &SimWorld, h: Hover, order: Order) -> Pos {
     let first = match order {
         Order::Desig(Desig::Mine) => [h.solid, h.stand],
+        // Doors and windows go into the clicked wall (replacing it) rather than on top.
+        Order::Build(kind) if kind.def().along_walls => [h.solid, h.stand],
         _ => [h.stand, h.solid],
     };
     first.into_iter().find(|&p| w.order_applies(p, order)).unwrap_or(first[0])
@@ -1198,6 +1200,20 @@ mod tests {
     }
 
     #[test]
+    fn windows_go_into_the_clicked_wall_and_walls_on_top() {
+        let mut w = SimWorld::with_map(Map::flat(8, 8), my_world::rng::Rng::new(1));
+        let z = (0..w.map.d).find(|&z| w.map.standable((3, 3, z))).unwrap();
+        let wall = (3, 3, z);
+        let i = w.map.idx(wall);
+        w.map.set_feature(i, my_world::map::Feature::built("wall"));
+        let h = Hover { solid: wall, stand: (3, 3, z + 1) };
+        let build = |id: &str| Order::Build(my_world::defs::BuildId::named(id));
+        assert_eq!(order_target(&w, h, build("window")), wall, "replacing the wall");
+        assert_eq!(order_target(&w, h, build("door")), wall);
+        assert_eq!(order_target(&w, h, build("wall")), (3, 3, z + 1), "stacked on top");
+    }
+
+    #[test]
     fn turning_goes_round_the_compass() {
         let mut d = 0;
         let mut seen = Vec::new();
@@ -1237,7 +1253,7 @@ mod tests {
                 if x == 2 || y == 2 || x == 6 || y == 6 {
                     m.set_feature(i, Feature::built("wall"));
                 } else if (x, y) == (4, 4) {
-                    m.feature[above] = Feature::Blueprint { kind: defs().roof().unwrap(), delivered: 0, dir: 0 };
+                    m.feature[above] = Feature::blueprint(defs().roof().unwrap(), 0, 0);
                 } else if (x, y) != (3, 3) {
                     m.set_roof(above, true);
                 }

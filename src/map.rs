@@ -88,12 +88,16 @@ pub enum Feature {
     /// and the only way in or out at this level is from the foot (the
     /// opposite side).
     Built { kind: BuildId, dir: u8 },
-    /// `dir`: how it's turned once built (as in `Built`).
+    /// `dir`: how it's turned once built (as in `Built`). `over`: a wall,
+    /// door or window still standing here (and turned so) until this
+    /// replaces it; the cell acts as that meanwhile.
     Blueprint {
         kind: BuildId,
         delivered: u32,
         #[serde(default)]
         dir: u8,
+        #[serde(default)]
+        over: Option<(BuildId, u8)>,
     },
 }
 
@@ -108,20 +112,23 @@ impl Feature {
         Feature::Plant { kind: PlantId::named(id), growth: 1.0 }
     }
 
-    /// Which buildable the finished structure here is, if any.
+    /// A blueprint of `kind`, to be built from scratch.
+    pub fn blueprint(kind: BuildId, delivered: u32, dir: u8) -> Feature {
+        Feature::Blueprint { kind, delivered, dir, over: None }
+    }
+
+    /// Which buildable the finished structure here is, if any (one being
+    /// built over counts until it's replaced).
     pub fn structure_id(self) -> Option<BuildId> {
         match self {
-            Feature::Built { kind, .. } => Some(kind),
+            Feature::Built { kind, .. } | Feature::Blueprint { over: Some((kind, _)), .. } => Some(kind),
             _ => None,
         }
     }
 
-    /// The finished structure here, if any.
+    /// The finished structure here, if any (see `structure_id`).
     pub fn structure(self) -> Option<&'static BuildDef> {
-        match self {
-            Feature::Built { kind, .. } => Some(kind.def()),
-            _ => None,
-        }
+        self.structure_id().map(|k| k.def())
     }
 
     /// The structure here, finished or still a blueprint.
@@ -134,6 +141,7 @@ impl Feature {
 
     pub fn passable(self) -> bool {
         match self {
+            Feature::Blueprint { over: Some((kind, _)), .. } => kind.def().passable,
             Feature::None | Feature::Blueprint { .. } => true,
             Feature::Plant { kind, .. } => kind.def().passable,
             Feature::Built { kind, .. } => kind.def().passable,

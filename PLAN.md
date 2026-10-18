@@ -775,3 +775,12 @@ real play.
   button (with search), Info buttons in the cell inspector, colonist gear, Resources rows and right-click in
   the build menu (`UiState::open_info`, with Back). Buildings have no hit points in the simulation, so none
   are shown. Build menu groups start closed.
+- Overbuilding (2026-10-18): `Feature::Blueprint::over` holds the wall, door or window still standing in
+  the cell; `Feature::structure`/`structure_id`/`passable` report it until the blueprint is built, so the
+  cell stays solid and the room closed. Any blocks-room structure can be planned over another kind
+  (`order_applies`); building it drops the old one's `drops()`, cancelling restores it, deconstructing
+  the old one leaves a plain blueprint. Doors and windows target the clicked wall (`order_target`), walls
+  the cell above (stacking). Props draw a slightly bigger ghost shell around the wall.
+  `Feature::blueprint(kind, delivered, dir)` builds plain blueprints.
+- No footsteps at 5x and 10x speed (2026-10-18): they ran together into a constant noise
+  (`audio::steps_heard`, `SILENT_STEPS_SPEED`); work strokes and other sounds still play.
