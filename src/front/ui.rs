@@ -22,12 +22,13 @@ use my_world::rooms::{Progress, RoomStats, TIERS};
 use my_world::world::{Order, World as SimWorld};
 use my_world::DAY_LEN;
 
-const HELP_ORDERS: [&str; 7] = [
+const HELP_ORDERS: [&str; 8] = [
     "You don't control colonists directly - you give orders and they pick up the work.",
     "",
     "Orders (build menu, left): mark trees to chop, rock and soil to mine, berry bushes to forage;",
     "      Backspace: deconstruct. Cancel takes designations and blueprints away.",
-    "Zones: paint stockpile zones (items get hauled there) and grow zones (crops); Clear zone removes them.",
+    "Zones: paint stockpile zones (items get hauled there), grow zones (crops) and quarries (dug out level by level,",
+    "      with steps down along the edge; click one to set its depth). Clear zone removes them.",
     "      Left-drag to paint a rectangle. Right-click (anywhere) goes back to Select.",
     "",
 ];
@@ -1106,6 +1107,9 @@ fn tile_inspector(
                 }
                 Zone::None => {}
             }
+            if let Some(k) = m.quarry_at(t.0, t.1) {
+                quarry_settings(ui, w, k, &mut actions);
+            }
             if let Some(kind) = m.feature[i].structure_id().filter(|k| !k.def().recipes.is_empty()) {
                 bills(ui, w, t, kind, &mut actions);
             }
@@ -1134,6 +1138,35 @@ fn tile_inspector(
         act(&mut sim.world);
     }
     (changed, open)
+}
+
+/// A quarry: how deep it goes, and how far the digging has got.
+fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<Action>) {
+    let q = &w.quarries[k];
+    ui.separator();
+    ui.label(RichText::new(format!("Quarry ({} columns)", q.cols.len())).strong());
+    ui.horizontal(|ui| {
+        ui.label("Dig down");
+        let depth = q.depth;
+        if ui.add_enabled(depth > 1, egui::Button::new("-").small()).clicked() {
+            actions.push(Box::new(move |w| w.set_quarry_depth(k, depth - 1)));
+        }
+        ui.label(format!("{} levels", depth));
+        if ui.add_enabled(depth < my_world::quarry::MAX_DEPTH, egui::Button::new("+").small()).clicked() {
+            actions.push(Box::new(move |w| w.set_quarry_depth(k, depth + 1)));
+        }
+    });
+    let reach = q.reach(&w.map);
+    if reach < q.depth {
+        let why = format!("Only room for steps down {} levels: make it bigger to go deeper.", reach);
+        ui.label(RichText::new(why).color(Color32::from_rgb(255, 190, 110)));
+    }
+    let state = match w.quarry_progress(k) {
+        Some((level, left)) => format!("Digging level {}: {} to go there (down to level {}).", level, left, q.top - reach as usize),
+        None => format!("Dug out down to level {}.", q.top - reach as usize),
+    };
+    ui.label(state);
+    ui.label(RichText::new("Miners dig it top down; the steps down run along its edge (marked).").weak());
 }
 
 /// What hangs on the wall at `t`, side by side, with what's planned:

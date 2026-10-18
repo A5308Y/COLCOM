@@ -57,6 +57,8 @@ pub enum Order {
     Zone(Zone),
     /// Stockpile cells: join a stockpile beside them or start a new one.
     Stockpile,
+    /// Quarry columns: join a quarry beside them or start a new one (see `quarry.rs`).
+    Quarry,
     Build(BuildId),
     Cancel,
 }
@@ -104,6 +106,9 @@ pub struct World {
     /// Furniture being moved (see `moving.rs`).
     #[serde(default)]
     pub moves: Vec<Move>,
+    /// Areas dug out level by level (see `quarry.rs`).
+    #[serde(default)]
+    pub quarries: Vec<crate::quarry::Quarry>,
     /// Counts down to the next once-a-second pass over benches and rooms.
     pub colony_timer: f32,
     /// Quality per room id (index 0 unused). Derived, so not saved.
@@ -182,6 +187,7 @@ impl World {
             benches: Vec::new(),
             stockpiles: Vec::new(),
             moves: Vec::new(),
+            quarries: Vec::new(),
             colony_timer: 0.0,
             room_stats: Vec::new(),
             parley: None,
@@ -388,6 +394,7 @@ impl World {
             self.update_production();
             self.update_moves();
             self.update_decor();
+            self.update_quarries();
             self.update_room_stats();
             self.update_squads();
             self.update_graves();
@@ -905,8 +912,8 @@ impl World {
             // A filled grave stays.
             Order::Desig(Desig::Deconstruct) => m.deconstructable(p) && self.grave_occupant(p).is_none(),
             Order::Desig(d) => f.harvest_desig() == Some(d),
-            // A shelf's own storage goes only with the shelf.
-            Order::Zone(Zone::None) => m.zone[i] != Zone::None && !self.container_at(i),
+            // A shelf's own storage goes only with the shelf. Quarries go too.
+            Order::Zone(Zone::None) => m.zone[i] != Zone::None && !self.container_at(i) || m.quarry_at(p.0, p.1).is_some(),
             Order::Zone(Zone::Stockpile(_)) => false,
             // Safe zones go indoors too, among the furniture (but not over shelves).
             Order::Zone(Zone::Safe) => m.standable(p) && m.zone[i] != Zone::Safe && !self.container_at(i),
@@ -916,6 +923,7 @@ impl World {
             Order::Stockpile => {
                 m.standable(p) && (f == Feature::None || f.is_crop()) && m.zone[i].stockpile().is_none()
             }
+            Order::Quarry => self.quarry_applies(p),
             // Solar panels need open sky.
             Order::Build(kind) if kind.def().open_sky && m.covered(p) => false,
             // Things for walls go into a wall's slots (`order_decor`).
@@ -973,7 +981,14 @@ impl World {
         let i = self.map.idx(p);
         match order {
             Order::Desig(d) => self.map.desig[i] = Some(d),
+            Order::Zone(Zone::None) if self.map.quarry_at(p.0, p.1).is_some() => {
+                self.remove_quarry_column(p.0, p.1);
+                if !self.container_at(i) {
+                    self.map.zone[i] = Zone::None;
+                }
+            }
             Order::Zone(z) => self.map.zone[i] = z,
+            Order::Quarry => self.add_quarry_column(p),
             Order::Stockpile => {
                 let id = self.stockpile_for(p);
                 self.map.zone[i] = Zone::Stockpile(id);
@@ -1140,6 +1155,7 @@ impl World {
     /// Load a save file, refusing other format versions with a readable message.
     pub fn load_json(s: &str) -> Result<World, String> {
         let mut w = crate::save::from_json(s)?;
+        w.index_quarries();
         w.map.recompute_rooms();
         w.mark_roofs();
         w.sync_containers();

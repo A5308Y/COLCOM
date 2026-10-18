@@ -48,6 +48,8 @@ pub const WALL_FACE: Rgb = Rgb(0.6, 0.57, 0.53);
 pub const STOCKPILE: Rgb = Rgb(0.75, 0.75, 0.95);
 /// Tint of safe zones (where civilians shelter in battles).
 pub const SAFE: Rgb = Rgb(0.45, 0.9, 0.55);
+/// Quarry zones (on the ground still to be dug).
+pub const QUARRY: Rgb = Rgb(0.95, 0.7, 0.35);
 pub const BLOOD: Rgb = Rgb(0.45, 0.03, 0.04);
 
 pub const WOOD: Rgb = Rgb(0.55, 0.37, 0.2);

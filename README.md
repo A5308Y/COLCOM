@@ -89,6 +89,12 @@ for), and `<` goes back.
   can be built from components; the Resources window sums their power, which nothing uses yet.
 - **Stockpiles:** each has a priority (low to critical) and a list of item kinds it takes; things move
   to better stockpiles. Grow zones plant the crop chosen for them (corn, healroot, cotton).
+- **Quarries:** paint a Quarry zone over the ground (Zones) and miners dig it out level by level from
+  the top, down to the depth set in its inspector (5 levels to start, up to 12). Along its edge they
+  leave steps cut into the rock, one level each, so everyone can walk down and haulers carry the stone
+  and ore back up; the steps are marked while the tool is out or a quarry cell is selected. A quarry
+  only goes as deep as it has room for steps. Columns with water or buildings are left alone, a rim
+  stays beside water, and trees in the way are cut first. Clear zone takes columns out again.
 - **Sound:** footsteps that depend on the ground (silent at 5x and 10x speed), chopping, mining, hammering, sawing, cooking and
   smithing while colonists work, trees crashing down, rock breaking, doors, gunshots, hits and armour
   glancing off, falls, alerts for raids and newcomers, interface clicks, and ambience that fades between

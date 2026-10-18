@@ -263,6 +263,10 @@ pub struct Map {
     /// in face and slot order (see `decor.rs`).
     #[serde(default)]
     pub decor: BTreeMap<u32, Vec<crate::decor::Decor>>,
+    /// Which quarry each column (y * w + x) is in: 0 none, else index + 1
+    /// into `World::quarries` (rebuilt from those, see `index_quarries`).
+    #[serde(skip)]
+    pub quarry_cols: Vec<u16>,
     #[serde(with = "crate::save::rle")]
     pub desig: Vec<Option<Desig>>,
     #[serde(with = "crate::save::rle")]
@@ -315,6 +319,7 @@ impl Map {
             items: vec![None; n],
             shelved: BTreeMap::new(),
             decor: BTreeMap::new(),
+            quarry_cols: Vec::new(),
             desig: vec![None; n],
             zone: vec![Zone::None; n],
             floor: vec![false; n],

@@ -423,6 +423,33 @@ mod tests {
         app.world_mut().resource_mut::<front::UiState>().show_resources = true;
         app.world_mut().resource_mut::<front::UiState>().show_menu = true;
         app.world_mut().resource_mut::<front::UiState>().show_rooms = true;
+        // A quarry: painted, its steps marked while the tool is out, and its inspector.
+        {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            let w = &mut sim.world;
+            let (cx, cy) = (w.map.w / 2, w.map.h / 2);
+            for y in cy - 6..cy - 3 {
+                for x in cx - 12..cx - 8 {
+                    if let Some(z) = w.map.ground_level(x, y) {
+                        w.apply_order((x, y, z), my_world::world::Order::Quarry);
+                    }
+                }
+            }
+            assert!(!w.quarries.is_empty(), "a quarry");
+        }
+        {
+            let quarry = {
+                let w = &app.world().resource::<front::Sim>().world;
+                let (x, y) = w.quarries[0].cols[0];
+                let (x, y) = (x as usize, y as usize);
+                (x, y, w.map.ground_level(x, y).unwrap_or(0))
+            };
+            let mut ui = app.world_mut().resource_mut::<front::UiState>();
+            ui.tool = front::Tool::Paint(my_world::world::Order::Quarry);
+            ui.selected = Some(front::Selection::Tile(quarry));
+        }
+        app.update();
+        app.update();
         // Hanging a painting: the slot under the cursor is marked, and the wall's inspector lists what's on it.
         {
             let wall = {

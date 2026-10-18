@@ -102,7 +102,9 @@ pub static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(|| {
     }
     let hint = "Civilians shelter here when a battle starts. Raiders can still reach it.";
     tools.push(fixed(Tool::Paint(Order::Zone(Zone::Safe)), "Safe zone", None, "Zones", hint));
-    tools.push(fixed(Tool::Paint(Order::Zone(Zone::None)), "Clear zone", None, "Zones", "Remove stockpile, grow and safe zones."));
+    let hint = "Miners dig the area out level by level, from the top, leaving steps down along its edge. Click it to set how deep.";
+    tools.push(fixed(Tool::Paint(Order::Quarry), "Quarry zone", None, "Zones", hint));
+    tools.push(fixed(Tool::Paint(Order::Zone(Zone::None)), "Clear zone", None, "Zones", "Remove stockpile, grow, safe and quarry zones."));
     // Roofs aren't placed by the player: rooms get them by themselves.
     for kind in BuildId::all().filter(|k| k.def().special != Special::Roof) {
         let def = kind.def();
@@ -1051,8 +1053,14 @@ fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order, hollow: bool, dir: 
             if hollow && x > lx && x < hx && y > ly && y < hy {
                 continue;
             }
-            for dz in [0, 1, -1] {
-                if let Some(p) = w.map.at(x as i32, y as i32, z0 + dz) {
+            // A quarry takes whole columns, wherever their ground is.
+            let surface = (order == Order::Quarry).then(|| w.map.ground_level(x, y)).flatten();
+            let levels: Vec<i32> = match surface {
+                Some(z) => vec![z as i32],
+                None => vec![z0, z0 + 1, z0 - 1],
+            };
+            for z in levels {
+                if let Some(p) = w.map.at(x as i32, y as i32, z) {
                     if w.apply_order(p, order) {
                         if turnable {
                             w.turn_blueprint(p, dir);
@@ -1147,6 +1155,24 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
                 }
             }
             None => floor_outline(&mut gizmos, h.stand, 0.06, Color::srgb(1.0, 0.3, 0.25)),
+        }
+    }
+
+    // Quarries: where the steps down will be, each at the level it's dug to.
+    let quarry_shown = matches!(ui.tool, Tool::Paint(Order::Quarry))
+        || matches!(ui.selected, Some(Selection::Tile(t)) if m.quarry_at(t.0, t.1).is_some());
+    if quarry_shown {
+        for q in &w.quarries {
+            let floors = q.floors(m);
+            let reach = q.reach(m) as usize;
+            for (k, s) in q.steps(m).into_iter().take(reach).enumerate() {
+                let floor = floors.iter().find(|f| f.0 == s).map_or(q.top, |f| f.1);
+                let p = (s.0 as usize, s.1 as usize, floor);
+                if p.2 <= ui.top_at(m, p.0, p.1) {
+                    let shade = 1.0 - 0.6 * k as f32 / reach.max(1) as f32;
+                    floor_outline(&mut gizmos, p, 0.08, Color::srgb(0.95 * shade, 0.7 * shade, 0.35 * shade));
+                }
+            }
         }
     }
 

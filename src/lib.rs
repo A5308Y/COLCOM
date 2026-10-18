@@ -16,6 +16,7 @@ pub mod pathing;
 pub mod pawn;
 pub mod prioritize;
 pub mod production;
+pub mod quarry;
 pub mod rng;
 pub mod rooms;
 pub mod save;

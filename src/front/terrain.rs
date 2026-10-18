@@ -261,6 +261,7 @@ fn signature(m: &Map, cx: usize, cy: usize, cut: Cut) -> u64 {
     for y in y0..y1 {
         for x in x0..x1 {
             mix(cut.top(m, x, y) as u8);
+            mix(m.quarry_at(x, y).is_some() as u8);
         }
     }
     for z in 0..m.d {
@@ -450,6 +451,9 @@ fn ground_color(m: &Map, solid: Pos, look: Look3, cut: Cut) -> Rgb {
         }
         if zone == Zone::Safe {
             c = c.mix(SAFE, 0.25);
+        }
+        if m.quarry_at(x, y).is_some() {
+            c = c.mix(QUARRY, 0.25);
         }
         let blood = blood_level(m, a);
         if blood > 0 {
