@@ -767,3 +767,11 @@ real play.
   be planned on a planned holds-floors structure (`Feature::planned`); such a blueprint waits for the one
   below (`World::stacked_on_plan`, skipped by work search), and cancelling a blueprint takes away the
   blueprints left hanging above it (`cancel_blueprint`).
+- Info window (2026-10-18): `front/info.rs` builds a stat sheet (`Sheet`: sections of label/value rows and
+  "See also" links) for any `InfoTarget` (item, buildable, plant) from the definitions: weapon, apparel,
+  food, medicine, prosthetic stats; recipes that make and use an item; a buildable's cost, work, drops,
+  properties (`BuildDef::cover_kind`/`PlantDef::cover_kind`, now shared with battles), recipes and room
+  themes; a plant's growing time in days (daylight `DAWN`..`DUSK`) and harvest. Opened from a top-bar
+  button (with search), Info buttons in the cell inspector, colonist gear, Resources rows and right-click in
+  the build menu (`UiState::open_info`, with Back). Buildings have no hit points in the simulation, so none
+  are shown. Build menu groups start closed.

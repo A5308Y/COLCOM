@@ -38,8 +38,16 @@ according to their **work priorities** (press `P`).
 | `B` | Blueprint a lamp (3 wood) |
 
 Everything is also in the **build menu** docked on the left: grouped (orders, zones, structure,
-furniture, light, production), searchable, with costs (red if the colony is short) and details on hover.
-`` ` `` (the key left of `1`) hides and shows it. Build shortcuts and costs come from `assets/defs.ron`.
+furniture, light, production; the groups start closed), searchable, with costs (red if the colony is
+short) and details on hover; right-click an entry for its full info. `` ` `` (the key left of `1`) hides
+and shows it. Build shortcuts and costs come from `assets/defs.ron`.
+
+The **Info** window (top bar) shows everything about an item, building or plant: a weapon's damage,
+range and rate of fire; armour; food and medicine; what a workbench makes; what a building costs, gives
+back, and does (cover, light, storage, rooms it counts for); how long a crop takes. Search it for
+anything, or open it with the Info buttons in the cell inspector, from a colonist's gear, or by clicking
+an item in the Resources window. "See also" links lead on (to the bench that makes it, what it's used
+for), and `<` goes back.
 | `PageDown` / `PageUp` (or `[` / `]`) | Layer view: hide everything above a level, and build on that level |
 | `Esc` | Select tool: click colonists or tiles to inspect them |
 | Left drag | Paint the current tool over a rectangle |

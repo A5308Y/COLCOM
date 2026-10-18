@@ -214,7 +214,7 @@ impl World {
 
     pub fn is_night(&self) -> bool {
         let h = self.hour();
-        !(6.0..21.0).contains(&h)
+        !(DAWN..DUSK).contains(&h)
     }
 
     /// 0 at midnight, 1 at noon.
@@ -1137,9 +1137,13 @@ fn old_day_len() -> f32 {
     240.0
 }
 
+/// Hours of the day between which it's light (plants grow, people work).
+pub const DAWN: f32 = 6.0;
+pub const DUSK: f32 = 21.0;
+
 /// Hunger lost per second (100 full, 0 starving): a full stomach lasts a
 /// little over a day.
-pub(crate) const HUNGER_DRAIN: f32 = 0.2;
+pub const HUNGER_DRAIN: f32 = 0.2;
 /// Rest lost per second awake.
 pub(crate) const REST_DRAIN: f32 = 0.165;
 /// Rest gained per second asleep on the ground (a bed adds half again).

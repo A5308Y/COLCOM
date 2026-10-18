@@ -998,22 +998,8 @@ impl World {
             return Cover::Heavy;
         }
         match m.feature[i] {
-            crate::map::Feature::Built { kind, .. } => {
-                let d = kind.def();
-                d.cover.unwrap_or(if d.blocks_sight {
-                    Cover::Heavy
-                } else if d.special == crate::defs::Special::Stairs {
-                    Cover::None
-                } else if !d.passable {
-                    Cover::Medium
-                } else {
-                    Cover::Light
-                })
-            }
-            crate::map::Feature::Plant { kind, .. } => {
-                let d = kind.def();
-                d.cover.unwrap_or(if d.passable { Cover::None } else { Cover::Medium })
-            }
+            crate::map::Feature::Built { kind, .. } => kind.def().cover_kind(),
+            crate::map::Feature::Plant { kind, .. } => kind.def().cover_kind(),
             _ => Cover::None,
         }
     }

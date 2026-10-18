@@ -2,6 +2,7 @@
 //! in-world markers (designations, selection, drag box, gunfire) as gizmos.
 
 use super::audio::SoundQueue;
+use super::info::InfoTarget;
 use super::camera::{colony_center, CameraRig, DragTracker, MainCamera};
 use super::sim::{Sim, SPEEDS};
 use super::terrain::{FLOOR_T, LEVEL_H};
@@ -284,6 +285,12 @@ pub struct UiState {
     pub confirm_new: bool,
     /// Width of the docked build menu last frame (in logical pixels).
     pub dock_width: f32,
+    /// The info window, what it shows, what it showed before (for Back),
+    /// and its search text.
+    pub show_info: bool,
+    pub info: Option<InfoTarget>,
+    pub info_back: Vec<InfoTarget>,
+    pub info_filter: String,
 }
 
 impl UiState {
@@ -321,6 +328,10 @@ impl UiState {
             show_build: true,
             build_filter: String::new(),
             dock_width: 0.0,
+            show_info: false,
+            info: None,
+            info_back: Vec::new(),
+            info_filter: String::new(),
             show_resources: false,
             show_menu: false,
             confirm_new: false,
@@ -344,6 +355,15 @@ impl UiState {
     pub fn select_pawns(&mut self, ids: Vec<u32>) {
         self.selected = ids.first().map(|&id| Selection::Pawn(id));
         self.group = if ids.len() > 1 { ids } else { Vec::new() };
+    }
+
+    /// Show `t` in the info window (what it showed before is kept for Back).
+    pub fn open_info(&mut self, t: InfoTarget) {
+        if let Some(old) = self.info.filter(|&old| old != t) {
+            self.info_back.push(old);
+        }
+        self.info = Some(t);
+        self.show_info = true;
     }
 
     /// Select something else: a single pawn or a cell.

@@ -1,6 +1,7 @@
 //! The build menu: a full-height panel docked on the left with every order,
 //! zone and buildable, grouped, searchable, with costs and details.
 
+use super::info::{purpose, InfoTarget};
 use super::input::{ToolEntry, Tool, UiState, TOOLS};
 use super::sim::Sim;
 use bevy_egui::egui::{self, Color32, RichText};
@@ -93,7 +94,7 @@ fn grouped(ui: &mut egui::Ui, st: &mut UiState, totals: &[u32]) {
         for group in groups {
             let header = egui::CollapsingHeader::new(RichText::new(group).strong())
                 .id_salt(("build_group", group))
-                .default_open(true);
+                .default_open(false);
             header.show(ui, |ui| {
                 for e in TOOLS.iter().filter(|e| e.group == group) {
                     entry(ui, e, st, totals, None);
@@ -272,6 +273,11 @@ fn entry(ui: &mut egui::Ui, e: &ToolEntry, st: &mut UiState, totals: &[u32], hit
         st.tool = e.tool;
         st.drag_start = None;
     }
+    if let Tool::Paint(Order::Build(kind)) = e.tool {
+        if response.secondary_clicked() {
+            st.open_info(InfoTarget::Build(kind));
+        }
+    }
 }
 
 fn build_def(tool: Tool) -> Option<&'static BuildDef> {
@@ -302,23 +308,7 @@ fn details(ui: &mut egui::Ui, e: &ToolEntry, def: Option<&BuildDef>, totals: &[u
         ui.label(format!("{:.0} s of work{}", d.work_time, order));
     }
     let mut facts: Vec<String> = Vec::new();
-    match d.special {
-        Special::Floor => {
-            facts.push("A floor slab for upper storeys: build it in the air, held up by walls or ground within 3 cells".into());
-            facts.push("Roofs come by themselves: builders put one over every room you enclose".into());
-        }
-        Special::Roof => facts.push("Put over enclosed rooms by themselves".into()),
-        Special::Stairs => facts.push("Connects this level with the one above; walk on from the low end".into()),
-        Special::Bed if d.comfort < 1.0 => {
-            facts.push("A place on the ground to sleep and recover: better than nothing, worse than a bed".into())
-        }
-        Special::Bed => facts.push("Colonists sleep and recover here".into()),
-        Special::Door => facts.push("Lets colonists through but closes the room".into()),
-        Special::Table => facts.push("Colonists eat here, sitting on a chair beside it".into()),
-        Special::Seat => facts.push("Put it beside a table to eat at".into()),
-        Special::Grave => facts.push("Dug into soil; haulers bury a dead colonist in it".into()),
-        Special::None => {}
-    }
+    facts.extend(purpose(d).map(String::from));
     if let Some(power) = d.power_text() {
         facts.push(format!("{} (nothing uses power yet)", power));
     }
@@ -357,6 +347,7 @@ fn details(ui: &mut egui::Ui, e: &ToolEntry, def: Option<&BuildDef>, totals: &[u
     for f in facts {
         ui.label(RichText::new(format!("- {}", f)).small());
     }
+    ui.label(RichText::new("Right-click for full details").small().weak());
 }
 
 fn current_hint(tool: Tool) -> String {

@@ -6,6 +6,7 @@ mod battle_ui;
 mod build_menu;
 mod camera;
 mod characters;
+mod info;
 mod input;
 mod look;
 mod overlay;
@@ -23,6 +24,8 @@ use my_world::map::Pos;
 
 #[cfg(test)]
 pub use input::{InspectorTab, JobMenu, Selection, Tool, UiState};
+#[cfg(test)]
+pub use info::InfoTarget;
 #[cfg(test)]
 pub use audio::SoundQueue;
 #[cfg(test)]

@@ -4,6 +4,7 @@
 use super::camera::{CameraRig, MainCamera};
 use super::audio::{self, AudioSettings, SoundQueue};
 use super::build_menu;
+use super::info::{self, InfoTarget};
 use super::input::{self, InspectorTab, Selection, UiState};
 use super::squads_ui;
 use super::look::{pawn_look, Look, Rgb};
@@ -31,7 +32,7 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 44] = [
+const HELP_REST: [&str; 45] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -75,6 +76,7 @@ const HELP_REST: [&str; 44] = [
     "Space: pause   1-4: speed (1x, 2x, 5x, 10x)   P: work priorities   I: resources   C: center camera",
     "Esc: menu (save, load, new game, sound)   K: save   L: load   Shift+N: new colony",
     "",
+    "Info (top bar) looks up any item, building or plant; Info buttons in the inspector open it too.",
     "H or Esc closes this help.",
 ];
 
@@ -137,7 +139,11 @@ fn draw_ui(
         Some(Selection::Pawn(id)) => pawn_inspector(&ctx, &mut sim, &mut st, id, left),
         Some(Selection::Tile(t)) => {
             let mut move_from = None;
-            let (changed, open) = tile_inspector(&ctx, &mut sim, t, left, &mut move_from);
+            let mut look_up = None;
+            let (changed, open) = tile_inspector(&ctx, &mut sim, t, left, &mut move_from, &mut look_up);
+            if let Some(it) = look_up {
+                st.open_info(it);
+            }
             if changed {
                 sounds.play("ui_click", None);
             }
@@ -167,6 +173,7 @@ fn draw_ui(
     if st.show_spawn {
         spawn_window(&ctx, &mut st);
     }
+    info::window(&ctx, &mut st);
     if st.show_menu {
         game_menu(&ctx, &mut sim, &mut st, &mut rig, &mut audio);
     }
@@ -430,6 +437,10 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 if ui.add(egui::Button::new("Work (P)").selected(st.show_work)).clicked() {
                     st.show_work = !st.show_work;
                 }
+                let lookup = egui::Button::new("Info").selected(st.show_info);
+                if ui.add(lookup).on_hover_text("Look up any item, building or plant: stats, costs, what it's for").clicked() {
+                    st.show_info = !st.show_info;
+                }
                 if ui.add(egui::Button::new("Help (H)").selected(st.show_help)).clicked() {
                     st.show_help = !st.show_help;
                 }
@@ -619,6 +630,7 @@ fn item_categories(keep: impl Fn(ItemId) -> bool) -> Vec<&'static str> {
 fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
     let totals = sim.world.item_totals();
     let categories = item_categories(|k| totals[k.index()] > 0);
+    let mut look_up = None;
     egui::Window::new("Resources")
         .open(&mut st.show_resources)
         .anchor(Align2::RIGHT_BOTTOM, [-8.0, -8.0])
@@ -640,7 +652,10 @@ fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
                 ui.label(RichText::new(cat).strong());
                 egui::Grid::new(("resources", cat)).num_columns(2).spacing([24.0, 2.0]).show(ui, |ui| {
                     for k in ItemId::all().filter(|k| k.def().category == cat && totals[k.index()] > 0) {
-                        ui.label(k.name());
+                        let name = ui.add(egui::Label::new(k.name()).sense(egui::Sense::click()));
+                        if name.on_hover_text("Click for details").clicked() {
+                            look_up = Some(InfoTarget::Item(k));
+                        }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(totals[k.index()].to_string());
                         });
@@ -650,6 +665,9 @@ fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
                 ui.add_space(4.0);
             }
         });
+    if let Some(it) = look_up {
+        st.open_info(it);
+    }
 }
 
 /// Inside size of a card in the colonist list: the same for everyone, whatever they're doing.
@@ -735,6 +753,7 @@ fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32,
     let mut actions = Vec::new();
     let mut world_actions: Vec<Action> = Vec::new();
     let title = if p.is_colonist() { p.name.clone() } else { format!("{} (raider)", p.name) };
+    let mut look_up = None;
     let mut open = true;
     egui::Window::new(RichText::new(title).strong())
         .id(egui::Id::new("inspector"))
@@ -761,6 +780,18 @@ fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32,
                 let worn: Vec<&str> = p.apparel.iter().map(|a| a.name()).collect();
                 ui.label(RichText::new(format!("Wearing {}", worn.join(", ").to_lowercase())).weak());
             }
+            // Their gear, to look up.
+            let gear: Vec<ItemId> = p.weapon.into_iter().chain(p.apparel.iter().copied()).collect();
+            if !gear.is_empty() {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new("Info:").small().weak());
+                    for k in gear {
+                        if ui.small_button(k.name()).on_hover_text("Stats of this weapon or apparel").clicked() {
+                            look_up = Some(InfoTarget::Item(k));
+                        }
+                    }
+                });
+            }
             ui.separator();
             match st.inspector_tab {
                 InspectorTab::Overview => overview_tab(ui, p),
@@ -776,6 +807,9 @@ fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32,
     }
     for act in world_actions {
         act(&mut sim.world);
+    }
+    if let Some(it) = look_up {
+        st.open_info(it);
     }
     if !open {
         st.select(None);
@@ -951,7 +985,14 @@ type Action = Box<dyn FnOnce(&mut SimWorld)>;
 /// Returns whether anything was changed in it.
 /// The cell inspector; returns whether something was changed, and whether it's still open.
 /// `move_from` is set if the player chose to move the furniture here.
-fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32, move_from: &mut Option<Pos>) -> (bool, bool) {
+fn tile_inspector(
+    ctx: &egui::Context,
+    sim: &mut Sim,
+    t: Pos,
+    left: f32,
+    move_from: &mut Option<Pos>,
+    look_up: &mut Option<InfoTarget>,
+) -> (bool, bool) {
     let mut actions: Vec<Action> = Vec::new();
     let w = &sim.world;
     let m = &w.map;
@@ -986,7 +1027,17 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32, move_fr
                     format!("{} on {}", f.name(), ground.name().to_lowercase())
                 }
             };
-            ui.label(what);
+            let thing = match m.feature[i] {
+                Feature::Built { kind, .. } | Feature::Blueprint { kind, .. } => Some(InfoTarget::Build(kind)),
+                Feature::Plant { kind, .. } => Some(InfoTarget::Plant(kind)),
+                Feature::None => None,
+            };
+            ui.horizontal(|ui| {
+                ui.label(what);
+                if let Some(it) = thing {
+                    info::button(ui, it, look_up);
+                }
+            });
             if m.floor[i] {
                 ui.label("Built floor");
             }
@@ -1003,7 +1054,10 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32, move_fr
                 ui.label("Covered overhead");
             }
             for s in m.stacks(i) {
-                ui.label(format!("{} x{}", s.kind.name(), s.count));
+                ui.horizontal(|ui| {
+                    ui.label(format!("{} x{}", s.kind.name(), s.count));
+                    info::button(ui, InfoTarget::Item(s.kind), look_up);
+                });
                 if let Some(about) = &s.kind.def().about {
                     ui.label(RichText::new(about).weak());
                 }

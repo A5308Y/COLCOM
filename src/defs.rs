@@ -517,6 +517,20 @@ impl BuildDef {
         parts.join(", ")
     }
 
+    /// Cover it gives in battle: as given, else heavy if it blocks the view,
+    /// none for stairs, medium if it can't be walked through, else light.
+    pub fn cover_kind(&self) -> CoverKind {
+        self.cover.unwrap_or(if self.blocks_sight {
+            CoverKind::Heavy
+        } else if self.special == Special::Stairs {
+            CoverKind::None
+        } else if !self.passable {
+            CoverKind::Medium
+        } else {
+            CoverKind::Light
+        })
+    }
+
     /// A proper bed (not a sleeping spot).
     pub fn proper_bed(&self) -> bool {
         self.special == Special::Bed && self.comfort >= 1.0
@@ -633,6 +647,12 @@ pub struct PlantDef {
 }
 
 impl PlantDef {
+    /// Cover it gives in battle: as given, else medium if it can't be walked
+    /// through (trees), else none.
+    pub fn cover_kind(&self) -> CoverKind {
+        self.cover.unwrap_or(if self.passable { CoverKind::None } else { CoverKind::Medium })
+    }
+
     /// Index of the look stage for a growth value.
     pub fn stage(&self, growth: f32) -> usize {
         self.stages.iter().rposition(|s| growth >= s.from).unwrap_or(0)

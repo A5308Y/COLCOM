@@ -402,6 +402,14 @@ mod tests {
         app.world_mut().resource_mut::<front::UiState>().show_resources = true;
         app.world_mut().resource_mut::<front::UiState>().show_menu = true;
         app.world_mut().resource_mut::<front::UiState>().show_rooms = true;
+        // The info window: a weapon's stats, with the lookup searching.
+        {
+            let mut ui = app.world_mut().resource_mut::<front::UiState>();
+            ui.open_info(front::InfoTarget::Build(my_world::defs::BuildId::named("stove")));
+            ui.open_info(front::InfoTarget::Item(my_world::defs::ItemId::named("rifle")));
+            ui.info_filter = "ri".into();
+            assert_eq!(ui.info_back.len(), 1, "the stove to go back to");
+        }
         // The app runs on real time: give the rooms a moment to be recounted.
         let workshop = |app: &App| {
             let w = &app.world().resource::<front::Sim>().world;
