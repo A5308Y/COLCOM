@@ -784,3 +784,5 @@ real play.
   `Feature::blueprint(kind, delivered, dir)` builds plain blueprints.
 - No footsteps at 5x and 10x speed (2026-10-18): they ran together into a constant noise
   (`audio::steps_heard`, `SILENT_STEPS_SPEED`); work strokes and other sounds still play.
+- No wild plants beside buildings (2026-10-18): regrowth skips cells with a wall, door or window in any
+  of the eight cells around on the same level (`Map::beside_wall`). Plants already there stay until cut.

@@ -519,6 +519,17 @@ impl Map {
             .chain(self.below(p))
     }
 
+    /// A wall, door or window in one of the eight cells around `p` on its level.
+    pub fn beside_wall(&self, p: Pos) -> bool {
+        let (x, y, z) = (p.0 as i32, p.1 as i32, p.2 as i32);
+        (-1..=1).any(|dy| {
+            (-1..=1).any(|dx| {
+                (dx, dy) != (0, 0)
+                    && self.at(x + dx, y + dy, z).is_some_and(|q| self.feature[self.idx(q)].blocks_room())
+            })
+        })
+    }
+
     /// Something a Mine order can dig out: rock, ore or soil.
     pub fn mineable(&self, p: Pos) -> bool {
         self.block[self.idx(p)].solid()

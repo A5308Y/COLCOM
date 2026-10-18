@@ -442,6 +442,8 @@ impl World {
                 && m.zone[i] == Zone::None
                 && m.items[i].is_none()
                 && !m.covered((x, y, z))
+                // Nothing grows up against buildings.
+                && !m.beside_wall((x, y, z))
                 && !self.pawns.iter().any(|p| m.idx(p.pos) == i);
             if free {
                 // Only up to how much of the land it covered when the map was made.
@@ -1383,6 +1385,30 @@ mod tests {
             w.regrow_timer = 0.0;
         }
         assert!(w.wild_count(tree) > 0, "a forest comes back");
+    }
+
+    #[test]
+    fn nothing_grows_back_beside_walls() {
+        let mut w = test_world(12, 12);
+        // A walled hut in the middle, with a door and a window; the rest open soil.
+        house(&mut w, 3, 3, 8, 8);
+        for (at, id) in [((5, 3, Z), "door"), ((8, 5, Z), "window")] {
+            let i = w.map.idx(at);
+            w.map.set_feature(i, Feature::built(id));
+        }
+        let ring: Vec<Pos> = (0..12)
+            .flat_map(|y| (0..12).map(move |x| (x, y, Z)))
+            .filter(|&p| w.map.beside_wall(p) && w.map.feature[w.map.idx(p)] == Feature::None)
+            .collect();
+        assert!(ring.contains(&(4, 2, Z)) && ring.contains(&(9, 9, Z)), "sides and corners");
+        for _ in 0..20_000 {
+            w.grow_plants(4.0);
+            w.regrow_timer = 0.0;
+        }
+        assert!(w.map.feature.iter().any(|f| matches!(f, Feature::Plant { .. })), "plants grow elsewhere");
+        for p in ring {
+            assert_eq!(w.map.feature[w.map.idx(p)], Feature::None, "{:?} is beside a wall", p);
+        }
     }
 
     #[test]
