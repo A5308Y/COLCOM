@@ -47,7 +47,7 @@ const HELP_REST: [&str; 48] = [
     "      colonists sleep or eat there. Click a cell inside a room to see why it's good or bad.",
     "Raw food can cause food poisoning - cook meals at a stove. Mine iron ore deep in the rock,",
     "      smelt it into steel and make weapons and armour at a smithy. Colonists pick up better gear;",
-    "      select one and right-click a weapon or clothes to have them use it (and keep it).",
+    "      select one and right-click a weapon or clothes to put it in their loadout (Combat tab): they fetch and keep it.",
     "",
     "Floors are for upper storeys; they need a wall, door, stairs or ground below within 3 cells.",
     "      Walls stack onto walls and doors below, even planned ones, to build several storeys high.",

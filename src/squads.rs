@@ -1,5 +1,5 @@
-//! Squads, roles and combat loadouts, set up during normal play for the
-//! turn-based battles (`battle.rs`). A squad is a leader and the colonists
+//! Squads, roles and loadouts (the gear each colonist uses), set up during
+//! normal play for the turn-based battles (`battle.rs`). A squad is a leader and the colonists
 //! whose role is `Member(leader)`; they fight as one unit. A squad is either
 //! a ranged or a melee squad: everyone in it, the leader too, fights the
 //! same way (`fights_at_range`), whatever weapon exactly.
@@ -14,7 +14,7 @@ pub const SQUAD_MAX: usize = 4;
 pub const LEADER_ROOM_TIER: u8 = 2;
 
 /// The slot a weapon or piece of apparel takes in a loadout (`None`: the weapon).
-fn loadout_slot(kind: ItemId) -> Option<Option<Slot>> {
+pub(crate) fn loadout_slot(kind: ItemId) -> Option<Option<Slot>> {
     let d = kind.def();
     match (&d.weapon, &d.apparel) {
         (Some(_), _) => Some(None),
@@ -23,8 +23,9 @@ fn loadout_slot(kind: ItemId) -> Option<Option<Slot>> {
     }
 }
 
-/// Whether colonist `p` fights at range in battle: with the weapon in their
-/// loadout, or else the one they carry. Bare hands are melee.
+/// Whether colonist `p` fights at range: with the weapon in their loadout
+/// (what they'll have once they've fetched it), or else the one they carry.
+/// Bare hands are melee.
 pub fn fights_at_range(p: &Pawn) -> bool {
     let weapon = p.loadout.iter().copied().find(|k| k.def().weapon.is_some()).or(p.weapon);
     weapon.and_then(|k| k.def().weapon.as_ref()).is_some_and(|w| w.ranged())
@@ -86,7 +87,23 @@ impl World {
         }
     }
 
-    /// Set colonist `id`'s combat loadout: weapons and apparel only, at most
+    /// Put `kind` in colonist `id`'s loadout, in place of what's there for its
+    /// slot. A squad member taking a weapon of the other kind leaves the squad.
+    pub fn set_loadout_item(&mut self, id: u32, kind: ItemId) {
+        let Some(p) = self.pawn(id) else { return };
+        let mut items = p.loadout.clone();
+        items.push(kind);
+        if self.set_loadout(id, &items).is_err() {
+            if let Some(i) = self.pawn_index(id) {
+                let name = self.pawns[i].name.clone();
+                self.pawns[i].role = Role::Fighter;
+                self.push_log(format!("{} left their squad to fight with {}.", name, kind.name().to_lowercase()));
+            }
+            let _ = self.set_loadout(id, &items);
+        }
+    }
+
+    /// Set colonist `id`'s loadout, the gear they use: weapons and apparel only, at most
     /// one weapon and one piece per apparel slot (later ones win). A squad
     /// member can't take a weapon of the other kind than their squad's; a
     /// leader can, and the members who no longer fit leave the squad.

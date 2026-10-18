@@ -447,12 +447,6 @@ impl World {
             self.pawns.iter().filter(|p| ready(p)).map(|p| (p.id, p.role, p.pos)).collect();
         let leaders: Vec<(u32, Pos)> =
             colonists.iter().filter(|c| c.1 == Role::Leader).map(|c| (c.0, c.2)).collect();
-        // Battle gear first: it decides who fights at range.
-        for &(id, role, _) in &colonists {
-            if role != Role::Civilian {
-                self.gear_up(id);
-            }
-        }
         let ranged = |w: &World, id: u32| w.pawn(id).is_some_and(|p| p.attack().ranged);
         // Members armed the other way than their squad (say their gun wasn't
         // in storage) fight alone this time.
@@ -540,36 +534,8 @@ impl World {
         avg.clamp(35.0, 85.0)
     }
 
-    /// Put on the combat loadout, taking what's missing from storage.
-    fn gear_up(&mut self, id: u32) {
-        let Some(i) = self.pawn_index(id) else { return };
-        let loadout = self.pawns[i].loadout.clone();
-        for kind in loadout {
-            let p = &self.pawns[i];
-            if p.weapon == Some(kind) || p.apparel.contains(&kind) {
-                continue;
-            }
-            let at = p.pos;
-            let nearest = (0..self.map.len())
-                .filter(|&c| self.map.count_in(c, kind) > 0 && self.res_item[c] == 0)
-                .min_by_key(|&c| {
-                    let q = self.map.pos(c);
-                    q.0.abs_diff(at.0) + q.1.abs_diff(at.1) + q.2.abs_diff(at.2)
-                });
-            let Some(c) = nearest else {
-                let msg = format!("{} has no {} to fight with.", self.pawns[i].name, kind.name().to_lowercase());
-                self.push_log(msg);
-                continue;
-            };
-            if self.map.take_item(c, kind, 1).is_some() {
-                let prev = self.pawns[i].wear(kind);
-                self.pawns[i].stash.push((kind, prev));
-            }
-        }
-    }
-
-    /// Take the battle gear off (left at their feet for haulers) and put
-    /// their own things back on.
+    /// Take battle gear off and put their own things back on: only for
+    /// battles saved while battle gear was still put on at their start.
     fn gear_down(&mut self, id: u32) {
         let Some(i) = self.pawn_index(id) else { return };
         let stash: Vec<(ItemId, Option<ItemId>)> = self.pawns[i].stash.drain(..).rev().collect();
@@ -1498,30 +1464,6 @@ mod tests {
         assert!(b.units[b.unit_of(leader).unwrap()].members.contains(&far));
         let (a, l) = (w.pawn(far).unwrap().pos, w.pawn(leader).unwrap().pos);
         assert_eq!(a, l, "arrived on the leader's cell");
-    }
-
-    #[test]
-    fn combat_gear_comes_from_storage_and_goes_back() {
-        let mut w = world(30, 20, 3);
-        let id = colonist(&mut w, (5, 5, Z));
-        let i = w.pawn_index(id).unwrap();
-        w.pawns[i].apparel = vec![item("clothes")];
-        w.pawns[i].weapon = None;
-        w.map.drop_item((8, 8, Z), Stack { kind: item("steel_armor"), count: 1 });
-        w.map.drop_item((9, 8, Z), Stack { kind: item("rifle"), count: 1 });
-        w.set_loadout(id, &[item("rifle"), item("steel_armor")]).unwrap();
-        fight(&mut w, 1, (29, 10, Z));
-        let p = w.pawn(id).unwrap();
-        assert_eq!(p.weapon, Some(item("rifle")));
-        assert!(p.apparel.contains(&item("steel_armor")) && p.apparel.contains(&item("clothes")));
-        assert_eq!(w.map.count_items(item("rifle")) + w.map.count_items(item("steel_armor")), 0, "taken from storage");
-
-        w.end_battle(Outcome::Won);
-        let p = w.pawn(id).unwrap();
-        assert_eq!(p.weapon, None, "back to how they were");
-        assert_eq!(p.apparel, vec![item("clothes")]);
-        assert!(p.stash.is_empty());
-        assert_eq!(w.map.count_items(item("rifle")) + w.map.count_items(item("steel_armor")), 2, "left for the haulers");
     }
 
     #[test]

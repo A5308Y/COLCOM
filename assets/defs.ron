@@ -695,11 +695,9 @@
             holds_floors: true,
             special: Door,
             along_walls: true,
-            look: Parts([
-                (shape: Cube, color: "wall", at: (-0.45, 0.5, 0.0), size: (0.1, 1.0, 0.22)),
-                (shape: Cube, color: "wall", at: (0.45, 0.5, 0.0), size: (0.1, 1.0, 0.22)),
-                (shape: Cube, color: "wall", at: (0.0, 0.97, 0.0), size: (1.0, 0.06, 0.22)),
-                // Swings open around its left edge; fits under the lintel (cells are 1.0 high).
+            // A hole in the wall from the floor up to the lintel, drawn like the walls (papered
+            // in themed rooms); the door in it swings open around its left edge.
+            look: Opening(width: 0.8, bottom: 0.0, top: 0.94, parts: [
                 (shape: Cube, color: "wood_light", at: (0.0, 0.48, 0.0), size: (0.8, 0.92, 0.07), hinge: true),
             ]),
         ),
@@ -957,10 +955,12 @@
             passable: true,
             blocks_room: true,
             blocks_sight: true,
+            holds_floors: true,
             special: Door,
             along_walls: true,
             beauty: 1.0,
-            look: Parts([
+            // Like the wooden door, with a stone frame over the wall around it.
+            look: Opening(width: 0.8, bottom: 0.0, top: 0.94, parts: [
                 (shape: Cube, color: "stone_block", at: (-0.45, 0.5, 0.0), size: (0.1, 1.0, 0.22)),
                 (shape: Cube, color: "stone_block", at: (0.45, 0.5, 0.0), size: (0.1, 1.0, 0.22)),
                 (shape: Cube, color: "stone_block", at: (0.0, 0.97, 0.0), size: (1.0, 0.06, 0.22)),

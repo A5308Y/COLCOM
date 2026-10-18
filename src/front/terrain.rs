@@ -669,9 +669,8 @@ fn floor_around(m: &Map, q: Pos, cut: Cut) -> Option<Rgb> {
 fn under_wall(b: &mut MeshBuf, m: &Map, p: Pos, cut: Cut, lo: f32) {
     let i = m.idx(p);
     let below = m.below(p).map(|q| look_at(m, q, cut));
-    // A door below holds it up like a wall (doors are drawn as props, not here).
-    let door_below = m.below(p).is_some_and(|q| !cut.hides(m, q) && m.feature[m.idx(q)].blocks_room());
-    let on_ground = below.is_some_and(|l| l.opaque()) || door_below;
+    // (Ground, or a wall, window or door below.)
+    let on_ground = below.is_some_and(|l| l.opaque());
     let natural = below.is_some_and(|l| l.opaque() && !l.thin());
     if !m.floor[i] && !on_ground {
         return;
@@ -761,8 +760,10 @@ fn opening(
             b.quad(c, normal(du, 0, 0), WALL_FACE);
         }
     }
-    // Inside the hole: sill, lintel and the two sides.
-    b.quad([world(h0, yb, va), world(h1, yb, va), world(h1, yb, vb), world(h0, yb, vb)], Vec3::Y, reveal);
+    // Inside the hole: sill (not for doors, open to the floor), lintel and the two sides.
+    if yb > lo + 1e-4 {
+        b.quad([world(h0, yb, va), world(h1, yb, va), world(h1, yb, vb), world(h0, yb, vb)], Vec3::Y, reveal);
+    }
     b.quad([world(h0, yt, va), world(h1, yt, va), world(h1, yt, vb), world(h0, yt, vb)], Vec3::NEG_Y, reveal.shade(0.8));
     for (u, du) in [(h0, 1), (h1, -1)] {
         let c = [world(u, yb, va), world(u, yb, vb), world(u, yt, vb), world(u, yt, va)];
@@ -849,6 +850,48 @@ mod tests {
         let window_face = |z: f32| pos.iter().zip(col).filter(move |(p, _)| p[0] > 4.0 && p[0] < 5.0 && (p[2] - z).abs() < 1e-4);
         assert!(window_face(2.0 + WALL_B).any(|(_, c)| c == &accent), "papered on the room's side");
         assert!(!window_face(2.0 + WALL_A).any(|(_, c)| c == &accent), "plain outside");
+    }
+
+    #[test]
+    fn doors_are_papered_like_their_walls_with_the_room_floor_beside_them() {
+        // The roofed room again, door in its west wall at (2, 4).
+        let mut m = Map::flat(10, 10);
+        for y in 2..=6 {
+            for x in 2..=6 {
+                if x == 2 || x == 6 || y == 2 || y == 6 {
+                    let i = m.idx((x, y, Z));
+                    m.set_feature(i, Feature::built(if (x, y) == (2, 4) { "door" } else { "wall" }));
+                }
+                let i = m.idx((x, y, Z + 1));
+                m.set_roof(i, true);
+            }
+        }
+        m.recompute_rooms();
+        let room = m.room[m.idx((4, 4, Z))] as usize;
+        let k = defs().rooms.iter().position(|r| r.id == "workshop").unwrap();
+        let mut kinds = vec![0u8; room + 1];
+        kinds[room] = k as u8 + 1;
+        let cut = Cut { level: Z, columns: &[], kinds: &kinds };
+        let (mesh, _) = build_chunk(&m, 0, 0, cut);
+        let (Some(bevy::mesh::VertexAttributeValues::Float32x3(pos)), Some(bevy::mesh::VertexAttributeValues::Float32x4(col))) =
+            (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.attribute(Mesh::ATTRIBUTE_COLOR))
+        else {
+            panic!("positions and colours")
+        };
+        let paper = defs().rooms[k].wallpaper.as_ref().unwrap();
+        let accent = Rgb(paper.accent.0, paper.accent.1, paper.accent.2).vertex();
+        // The door runs along y: its room side looks +x, at x = 2 + WALL_B.
+        let face = |x: f32| pos.iter().zip(col).filter(move |(p, _)| p[2] > 4.0 && p[2] < 5.0 && (p[0] - x).abs() < 1e-4);
+        assert!(face(2.0 + WALL_B).any(|(_, c)| c == &accent), "papered on the room's side");
+        assert!(!face(2.0 + WALL_A).any(|(_, c)| c == &accent), "plain outside");
+        // The floor in the doorway: on the room's side like the room's floor, outside like the grass.
+        let under = |q: Pos| ground_color(&m, q, Look3::Soil, cut).vertex();
+        let floor_at = |x: f32, z: f32| {
+            pos.iter().zip(col).filter(move |(p, _)| (p[1] - Z as f32 * LEVEL_H).abs() < 1e-4 && (p[0] - x).abs() < 1e-4 && (p[2] - z).abs() < 1e-4).map(|(_, c)| *c)
+        };
+        // (Down the middle of the doorway, where its two halves meet.)
+        assert!(floor_at(2.5, 4.5).any(|c| c == under((3, 4, Z - 1))), "the room's floor reaches into the doorway");
+        assert!(floor_at(2.5, 4.5).any(|c| c == under((1, 4, Z - 1))), "and the grass from outside");
     }
 
     #[test]

@@ -1133,6 +1133,7 @@ impl World {
         if d.weapon.is_none() && d.apparel.is_none() || self.res_item[i] != 0 && self.res_item[i] != id {
             return false;
         }
+        let kind = s.kind;
         let mut ordered = false;
         self.with_pawn(id, |w, p| {
             if p.is_colonist() && p.active() && p.break_timer <= 0.0 {
@@ -1141,6 +1142,10 @@ impl World {
                 ordered = true;
             }
         });
+        // It's theirs to use from now on: in their loadout.
+        if ordered {
+            self.set_loadout_item(id, kind);
+        }
         ordered
     }
 
@@ -1161,6 +1166,16 @@ impl World {
     pub fn load_json(s: &str) -> Result<World, String> {
         let mut w = crate::save::from_json(s)?;
         w.index_quarries();
+        // Gear chosen before that was the loadout: into the loadout, where its slot is free.
+        for i in 0..w.pawns.len() {
+            let chosen = std::mem::take(&mut w.pawns[i].chosen);
+            for k in chosen {
+                let slot = crate::squads::loadout_slot(k);
+                if !w.pawns[i].loadout.iter().any(|&o| crate::squads::loadout_slot(o) == slot) {
+                    w.pawns[i].loadout.push(k);
+                }
+            }
+        }
         w.stairs_to_ladders();
         w.map.recompute_rooms();
         w.mark_roofs();

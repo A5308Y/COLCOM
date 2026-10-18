@@ -861,3 +861,17 @@ real play.
   opposite its `front`), from how far its parts reach; kept in the prop keys so it updates when a wall
   goes up or comes down. Items on such shelves, sleepers in such beds and crafters at their front move
   along (`built_snug`, `pawns::snugged`). Sleepers now lie along the bed as it's turned (`bed_yaw`).
+- Doors drawn like windows (2026-10-18): doors use `BuildLook::Opening` (a hole from the floor to 0.94,
+  no sill when it starts at the floor; passable openings are allowed only for doors), so the terrain
+  draws their wall parts thin and papered per side and `under_wall` gives the doorway the floor of
+  the room on one side and the outside on the other. The door leaf (and a stone door's stone frame)
+  stay props. The stone door now holds floors like the wooden one.
+- One loadout (2026-10-18): everyday gear and the combat loadout were two layers (the battle put the
+  loadout on from storage at once and dropped it afterwards; right-click "kept" gear lived in
+  `Pawn::chosen`). Now `Pawn::loadout` is the gear they use: `equip_candidate` sends them for loadout
+  items they don't have on (walking, as any job), and only for slots the loadout leaves free do they go
+  for upgrades (`wants_upgrade`); `run_equip` takes only what they came for. Right-click Equip sets the
+  loadout slot (`World::set_loadout_item`; a squad member taking the other kind of weapon leaves the
+  squad). Battles no longer swap gear (`gear_up` removed; `gear_down` stays for battles saved mid-way).
+  Loading moves old `chosen` gear into free loadout slots (`chosen` is no longer saved). The Combat tab
+  calls it Loadout and has a helmet slot.

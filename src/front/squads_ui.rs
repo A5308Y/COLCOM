@@ -104,8 +104,9 @@ pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction
     }
 
     ui.separator();
-    ui.label(RichText::new("Combat loadout").strong());
-    ui.label(RichText::new("Put on from storage when a battle starts, taken off afterwards.").small().weak());
+    ui.label(RichText::new("Loadout").strong());
+    let about = "The gear they use: fetched from storage and kept on (right-click gear to set it too). Empty slots: they take the best they find.";
+    ui.label(RichText::new(about).small().weak());
     let style = style_name(fights_at_range(p));
     let rule = match p.role {
         Role::Member(_) => format!("Fights {}, like the whole squad: the weapon must stay {}.", style, style),
@@ -119,7 +120,7 @@ pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction
     if let Some(c) = slot_choice(ui, w, p.id, "Weapon", weapon, |k| k.def().weapon.is_some()) {
         change = Some((None, c));
     }
-    for (slot, label) in [(Slot::Body, "Clothes"), (Slot::Outer, "Armour")] {
+    for (slot, label) in [(Slot::Body, "Clothes"), (Slot::Outer, "Armour"), (Slot::Head, "Helmet")] {
         let fits = |k: ItemId| k.def().apparel.as_ref().is_some_and(|a| a.slot == slot);
         if let Some(c) = slot_choice(ui, w, p.id, label, worn(slot), fits) {
             change = Some((Some(slot), c));

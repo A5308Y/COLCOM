@@ -45,7 +45,6 @@ impl World {
         }
         self.end_job(p);
         // Their gear stays behind for others to use.
-        p.chosen.clear();
         let stashed: Vec<ItemId> = p.stash.drain(..).filter_map(|(_, prev)| prev).collect();
         for item in p.weapon.take().into_iter().chain(p.apparel.drain(..)).chain(stashed) {
             self.map.drop_item(p.pos, Stack { kind: item, count: 1 });

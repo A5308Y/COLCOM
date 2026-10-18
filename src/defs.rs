@@ -1123,8 +1123,9 @@ impl Defs {
             }
             parts(&d.id, d.parts())?;
             if let BuildLook::Opening { width, bottom, top, .. } = d.look {
-                if !(0.0 < width && width < 1.0 && 0.0 <= bottom && bottom < top && top <= 1.0) || d.passable {
-                    return Err(format!("{}: an opening needs 0 < width < 1, 0 <= bottom < top <= 1, not passable", d.id));
+                // Walked through only if it's a door.
+                if !(0.0 < width && width < 1.0 && 0.0 <= bottom && bottom < top && top <= 1.0) || d.passable != (d.special == Special::Door) {
+                    return Err(format!("{}: an opening needs 0 < width < 1, 0 <= bottom < top <= 1, and to be passable only if a door", d.id));
                 }
             }
             if d.is_block() && d.passable {

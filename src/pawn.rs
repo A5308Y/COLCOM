@@ -179,8 +179,9 @@ pub enum Job {
     Rescue { patient: u32, bed: Pos, carrying: bool },
     /// Bring food to a downed colonist.
     Feed { patient: u32, food: Pos, picked: bool },
-    /// Pick up a better weapon or piece of apparel and use it; `chosen` by
-    /// the player rather than by the pawn.
+    /// Pick up a weapon or piece of apparel and use it: their loadout's, or
+    /// a better one for a slot it leaves free; `chosen` by the player (it goes
+    /// into their loadout).
     Equip {
         from: Pos,
         #[serde(default)]
@@ -368,9 +369,9 @@ pub struct Pawn {
     pub weapon: Option<ItemId>,
     /// Worn items, at most one per slot.
     pub apparel: Vec<ItemId>,
-    /// Weapon and apparel the player told them to use: kept even when
-    /// something better turns up.
-    #[serde(default)]
+    /// Gear the player told them to keep, from before that was the loadout:
+    /// moved into the loadout when loading (`World::load_json`), never saved.
+    #[serde(default, skip_serializing)]
     pub chosen: Vec<ItemId>,
     pub cooldown: f32,
     pub downed: bool,
@@ -394,7 +395,9 @@ pub struct Pawn {
     pub break_timer: f32,
     #[serde(default)]
     pub role: Role,
-    /// Weapon and apparel to fight in (at most one weapon, one per slot).
+    /// The gear they use (at most one weapon, one piece per apparel slot):
+    /// they fetch it from storage and keep it on; slots left free they fill
+    /// with the best they find.
     #[serde(default)]
     pub loadout: Vec<ItemId>,
     /// Battle gear taken from storage, each with what it replaced (put
@@ -665,6 +668,11 @@ impl Pawn {
     }
 
     /// Hold a weapon or put on apparel; returns what it replaced.
+    /// Whether they're using `kind` (carrying it as their weapon, or wearing it).
+    pub fn has_on(&self, kind: ItemId) -> bool {
+        self.weapon == Some(kind) || self.apparel.contains(&kind)
+    }
+
     pub fn wear(&mut self, kind: ItemId) -> Option<ItemId> {
         let d = kind.def();
         if d.weapon.is_some() {

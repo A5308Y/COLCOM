@@ -75,8 +75,11 @@ for), and `<` goes back.
   stockpiles. Chains: crops → meals (stove); wood → planks; stone → blocks; healroot → herbal medicine;
   cotton → cloth → clothes; iron ore (veins in the rock, more of it deeper down) → steel (smelter); copper
   ore (green veins) → copper (smelter); stone → silicon and rubber-plant latex → rubber (refinery).
-  Colonists pick up better weapons and apparel by themselves; armour stops part of every blow (and shows:
-  a breastplate with shoulder plates, a helmet, powered armour's sealed suit), and clothes cheer them up.
+  Each colonist has a loadout (Combat tab; right-clicking a weapon or clothes with them selected sets it
+  too): the weapon, clothes, armour and helmet they use. They fetch it from storage and keep it on, in
+  and out of battle; for slots left empty they pick up the best they find. Armour stops part of every
+  blow (and shows: a breastplate with shoulder plates, a helmet, powered armour's sealed suit), and
+  clothes cheer them up.
 - **Components:** six kinds (mechanical, electrical, optical, structural, chemical, textile; their
   descriptions say what they stand for: gears, wiring, lenses ...) made at fitting benches: structural at
   the smithy, textile at the crafting bench, mechanical at the machinist's bench, chemical at the chemistry
@@ -168,7 +171,8 @@ for), and `<` goes back.
   cells). Pawns and items with nothing underneath fall, and falls of two levels or more hurt.
 - **Wall decor:** walls are drawn thin (about 35 cm) through the middle of their cell, so rooms show
   more floor. Furniture with its back to a wall (beds, workbenches, shelves) is drawn pushed back
-  against it, and whoever sleeps or works there with it. Each side of a wall has five places for a painting, poster, calendar (shows the date),
+  against it, and whoever sleeps or works there with it. Windows and doors are drawn as part of their wall: papered
+  like it in themed rooms, with the room's floor running into the doorway. Each side of a wall has five places for a painting, poster, calendar (shows the date),
   wall lamp (lights the room), wall shelf (holds one stack; storage like a shelf) or hanging plant: pick
   one in the build menu's Wall decor, point at a wall (the place under the cursor is marked green, or red
   if it doesn't fit) and click. Builders bring the materials and put it up from in front. It counts

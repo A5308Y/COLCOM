@@ -127,7 +127,7 @@ fn battle_arena() -> World {
     w.update_room_stats();
 
     // The colony: Ada leads a squad of three, one of them 15 cells away;
-    // two lone fighters (one gears up from the stockpile), one civilian.
+    // two lone fighters (one geared up from the stockpile), one civilian.
     let ada = colonist(&mut w, (12, 15), 10, 6, "rifle");
     w.set_role(ada, Role::Leader).unwrap();
     let i = w.pawn_index(ada).unwrap();
@@ -139,6 +139,15 @@ fn battle_arena() -> World {
     colonist(&mut w, (14, 9), 8, 4, "rifle");
     let geared = colonist(&mut w, (14, 21), 6, 6, "knife");
     w.set_loadout(geared, &[item("rifle"), item("steel_armor")]).unwrap();
+    // Already fetched from the stockpile (the knife put down there).
+    let gi = w.pawn_index(geared).unwrap();
+    for kind in [item("rifle"), item("steel_armor")] {
+        let Some(cell) = (0..w.map.len()).find(|&c| w.map.count_in(c, kind) > 0) else { continue };
+        w.map.take_item(cell, kind, 1);
+        if let Some(old) = w.pawns[gi].wear(kind) {
+            w.map.drop_item(w.map.pos(cell), Stack { kind: old, count: 1 });
+        }
+    }
     let civilian = colonist(&mut w, (11, 19), 2, 2, "knife");
     w.set_role(civilian, Role::Civilian).unwrap();
 

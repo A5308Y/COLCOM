@@ -93,6 +93,22 @@ impl Stockpile {
     }
 }
 
+/// Whether `p` would take `kind` up of their own accord: better than what
+/// they have, for a slot their loadout leaves free (they keep their loadout's).
+fn wants_upgrade(p: &Pawn, kind: ItemId) -> bool {
+    let planned = |slot| p.loadout.iter().any(|&k| crate::squads::loadout_slot(k) == Some(slot));
+    let d = kind.def();
+    if let Some(w) = &d.weapon {
+        let current = p.weapon.and_then(|w| w.def().weapon.as_ref()).map_or(0.0, |w| w.score());
+        return !planned(None) && w.score() > current * 1.1;
+    }
+    if let Some(a) = &d.apparel {
+        let worn = p.worn(a.slot).and_then(|k| k.def().apparel.as_ref()).map_or(f32::MIN, |w| w.score());
+        return !planned(Some(a.slot)) && a.score() > worn;
+    }
+    false
+}
+
 impl World {
     // ---------- benches and bills ----------
 
@@ -404,50 +420,44 @@ impl World {
 
     // ---------- gear ----------
 
-    /// The nearest free weapon or apparel better than what `p` has.
+    /// Gear `p` should go and get: what's in their loadout that they don't
+    /// have on (nearest first), or else for a slot their loadout leaves free,
+    /// something better than what they have.
     pub(crate) fn equip_candidate(&self, p: &Pawn, nearest: &[Option<(i32, Pos)>]) -> Option<Job> {
-        let current_weapon = p.weapon.and_then(|w| w.def().weapon.as_ref()).map_or(0.0, |w| w.score());
-        // Gear the player chose stays.
-        let kept = |item: Option<ItemId>| item.is_some_and(|k| p.chosen.contains(&k));
-        let better = |kind: ItemId| {
-            let d = kind.def();
-            if let Some(w) = &d.weapon {
-                return !kept(p.weapon) && w.score() > current_weapon * 1.1;
-            }
-            if let Some(a) = &d.apparel {
-                let worn = p.worn(a.slot).and_then(|k| k.def().apparel.as_ref()).map_or(f32::MIN, |w| w.score());
-                return !kept(p.worn(a.slot)) && a.score() > worn;
-            }
-            false
-        };
+        let missing = p.loadout.iter().copied().filter(|&k| !p.has_on(k)).filter_map(|k| nearest[k.index()]).min_by_key(|(d, _)| *d);
+        if let Some((_, from)) = missing {
+            return Some(Job::Equip { from, chosen: false });
+        }
         ItemId::all()
-            .filter(|&k| better(k))
+            .filter(|&k| wants_upgrade(p, k))
             .filter_map(|k| nearest[k.index()])
             .min_by_key(|(d, _)| *d)
             .map(|(_, from)| Job::Equip { from, chosen: false })
     }
 
     pub(crate) fn run_equip(&mut self, p: &mut Pawn, from: Pos, chosen: bool, dt: f32) {
+        // (Told to by the player: `order_equip` has put it in their loadout.)
         let there = self.walk_to(p, from, false, dt);
         if p.job.is_none() && chosen {
             self.push_log(format!("{} can't reach that.", p.name));
         }
         if there {
             let i = self.map.idx(from);
-            // The first weapon or piece of apparel here (a shelf may hold several things).
-            let kind = self.map.stacks(i).map(|s| s.kind).find(|k| k.def().is_gear());
+            // What they came for: their loadout's, else (gone already) an
+            // upgrade for a slot it leaves free. Told to by the player: the
+            // first weapon or piece of apparel here (a shelf may hold several things).
+            let gear: Vec<ItemId> = self.map.stacks(i).map(|s| s.kind).filter(|k| k.def().is_gear()).collect();
+            let kind = gear
+                .iter()
+                .copied()
+                .find(|&k| p.loadout.contains(&k) && !p.has_on(k))
+                .or_else(|| gear.iter().copied().find(|&k| wants_upgrade(p, k)))
+                .or(gear.first().copied().filter(|_| chosen));
             if let Some(s) = kind.and_then(|k| self.map.take_item(i, k, 1)) {
                 self.res_item[i] = 0;
                 let d = s.kind.def();
-                let old = p.wear(s.kind);
-                if let Some(old) = old {
+                if let Some(old) = p.wear(s.kind) {
                     self.map.drop_item(p.pos, Stack { kind: old, count: 1 });
-                    if let Some(k) = p.chosen.iter().position(|&c| c == old) {
-                        p.chosen.remove(k);
-                    }
-                }
-                if chosen {
-                    p.chosen.push(s.kind);
                 }
                 self.push_log(format!("{} picked up {}.", p.name, d.name.to_lowercase()));
             }
@@ -606,7 +616,65 @@ mod tests {
         run(&mut w, 40.0);
         let p = w.pawn(id).unwrap();
         assert_eq!(p.weapon, Some(item("rifle")));
-        assert_eq!(p.chosen, vec![item("rifle")]);
+        assert_eq!(p.loadout, vec![item("rifle")], "what they were told is their loadout");
+    }
+
+    #[test]
+    fn gear_kept_in_old_saves_moves_into_the_loadout() {
+        let mut w = test_world(12, 12);
+        let id = colonist(&mut w, (2, 2, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].loadout = vec![item("steel_armor")];
+        let mut v: serde_json::Value = serde_json::from_str(&w.save_json().unwrap()).unwrap();
+        // As saved before: the player's kept rifle and armour (the loadout's armour slot is taken).
+        let pawn = v["world"]["pawns"].as_array_mut().unwrap().iter_mut().find(|p| p["id"] == id).unwrap();
+        pawn["chosen"] = serde_json::json!(["rifle", "powered_armor"]);
+        let loaded = World::load_json(&v.to_string()).unwrap();
+        let p = loaded.pawn(id).unwrap();
+        assert_eq!(p.loadout, vec![item("steel_armor"), item("rifle")]);
+        assert!(p.chosen.is_empty());
+    }
+
+    #[test]
+    fn fetching_their_loadout_they_take_nothing_else() {
+        let mut w = test_world(20, 20);
+        let id = colonist(&mut w, (2, 2, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].weapon = Some(item("rifle"));
+        // A shelf with a club and the laser rifle the loadout asks for.
+        place_bench(&mut w, "shelf", (12, 12, Z));
+        w.sync_containers();
+        let shelf = w.map.idx((12, 12, Z));
+        w.map.set_stacks(shelf, vec![Stack { kind: item("club"), count: 1 }, Stack { kind: item("laser_rifle"), count: 1 }]);
+        w.set_loadout(id, &[item("laser_rifle")]).unwrap();
+        run(&mut w, 2.0);
+        assert!(matches!(w.pawn(id).unwrap().job, Some(Job::Equip { .. })), "on the way");
+        // Someone else takes the laser rifle first.
+        w.map.take_item(shelf, item("laser_rifle"), 1);
+        run(&mut w, 60.0);
+        assert_eq!(w.pawn(id).unwrap().weapon, Some(item("rifle")), "not the club instead");
+        assert_eq!(w.map.count_in(shelf, item("club")), 1);
+    }
+
+    #[test]
+    fn colonists_fetch_their_loadout_and_keep_it() {
+        let mut w = test_world(20, 20);
+        let id = colonist(&mut w, (2, 2, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].apparel = vec![item("clothes")];
+        w.pawns[i].weapon = Some(item("knife"));
+        w.map.drop_item((8, 8, Z), Stack { kind: item("steel_armor"), count: 1 });
+        w.map.drop_item((9, 8, Z), Stack { kind: item("club"), count: 1 });
+        w.map.drop_item((10, 8, Z), Stack { kind: item("rifle"), count: 1 });
+        // Their loadout: the club, though the rifle is better. Armour isn't in it.
+        w.set_loadout(id, &[item("club")]).unwrap();
+        run(&mut w, 120.0);
+        let p = w.pawn(id).unwrap();
+        assert_eq!(p.weapon, Some(item("club")), "the loadout's weapon, not the better one");
+        assert!(p.apparel.contains(&item("steel_armor")), "a free slot: the best they find");
+        assert!(p.apparel.contains(&item("clothes")));
+        assert_eq!(w.map.count_items(item("rifle")), 1, "left alone");
+        assert_eq!(w.map.count_items(item("knife")), 1, "what the club replaced is put down");
     }
 
     #[test]
