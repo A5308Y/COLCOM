@@ -416,6 +416,13 @@ pub struct Pawn {
     /// A dead colonist lies unburied somewhere (updated once a second).
     #[serde(skip)]
     pub unburied_dead: bool,
+    /// The temperature they feel (°C, updated every tick; see `temperature.rs`).
+    #[serde(skip, default = "mild")]
+    pub felt: f32,
+}
+
+fn mild() -> f32 {
+    20.0
 }
 
 impl Pawn {
@@ -464,6 +471,7 @@ impl Pawn {
             poor_quarters: false,
             buried: false,
             unburied_dead: false,
+            felt: mild(),
         }
     }
 
@@ -626,6 +634,14 @@ impl Pawn {
         }
         if self.health.has_disease() {
             t.push(("Sick", -5.0));
+        }
+        use crate::temperature::{COLD, FREEZING, HOT};
+        if self.felt < FREEZING {
+            t.push(("Freezing", -12.0));
+        } else if self.felt < COLD {
+            t.push(("Cold", -4.0));
+        } else if self.felt > HOT {
+            t.push(("Hot", -4.0));
         }
         for m in self.memories.iter().filter(|m| m.kind.mood() != 0.0) {
             t.push((m.kind.label(), m.kind.mood()));

@@ -1131,6 +1131,7 @@
         ),
         (
             id: "torch",
+            heat: 3.0,
             any_way: true,
             cover: Some(None),
             name: "Torch",
@@ -1147,10 +1148,31 @@
                 (shape: Cone, color: "flame", at: (0.0, 0.82, 0.0), size: (0.12, 0.2, 0.12)),
             ]),
         ),
+        (
+            id: "fireplace",
+            heat: 16.0,
+            cover: Some(Medium),
+            name: "Fireplace",
+            category: "Light",
+            cost: ("stone_blocks", 8),
+            work_time: 6.0,
+            passable: false,
+            beauty: 2.0,
+            // The fire faces +y (its front), the chimney against the wall behind it.
+            light: Some((color: (1.0, 0.58, 0.28), intensity: 120000.0, range: 6.0, at: (0.0, 0.25, 0.2), flicker: true)),
+            look: Parts([
+                (shape: Cube, color: "stone_block", at: (0.0, 0.3, -0.05), size: (0.8, 0.6, 0.5)),
+                (shape: Cube, color: "stone_block", at: (0.0, 0.74, -0.18), size: (0.42, 0.28, 0.24)),
+                (shape: Cube, color: "iron", at: (0.0, 0.2, 0.13), size: (0.42, 0.34, 0.16)),
+                (shape: Cone, color: "flame", at: (0.0, 0.16, 0.16), size: (0.22, 0.22, 0.14)),
+                (shape: Cube, color: "wood", at: (0.0, 0.62, 0.19), size: (0.9, 0.05, 0.14)),
+            ]),
+        ),
         // Workbenches: recipes below name them. Colonists work them from the front (+y as
         // modelled, turned with the bench; from beside if that is blocked).
         (
             id: "stove",
+            heat: 8.0,
             cover: Some(Medium),
             category: "Production",
             name: "Stove",
@@ -1204,6 +1226,7 @@
         ),
         (
             id: "smelter",
+            heat: 12.0,
             cover: Some(Medium),
             category: "Production",
             name: "Smelter",
@@ -1219,6 +1242,7 @@
         ),
         (
             id: "smithy",
+            heat: 10.0,
             cover: Some(Medium),
             category: "Production",
             name: "Smithy",

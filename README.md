@@ -99,6 +99,14 @@ for), and `<` goes back.
   its day). Crops grow in spring and summer, slower in autumn and not at all in winter, and winter's
   first frost kills the ones not yet ripe (an alert warns the day before); wild plants don't grow back
   in winter. Grass turns golden in autumn and snowy in winter. So: sow in time, and stock up for winter.
+- **Temperature:** outdoors it follows the year (spring starts mild, warmest around the start of
+  summer, coldest around the start of winter, below freezing at night then) and the day (top bar).
+  Rooms keep warmth: they follow the outdoors slowly (bigger rooms slower, doors faster) and are warmed
+  by what burns in them: torches, stoves, smelters, smithies and the fireplace (8 stone blocks, warms a
+  small room by about 16°C). Colonists feel where they are: below 10°C cold, below 0°C freezing and
+  hypothermia builds up (they slow down, collapse at 70%, die at 100%; it wears off when warm), above
+  30°C hot. The cell inspector shows a room's temperature; the Health tab hypothermia; an alert says
+  who's freezing.
 - **Quarries:** paint a Quarry zone over the ground (Zones) and miners dig it out level by level from
   the top, down to the depth set in its inspector (5 levels below the ground at its entrance to start,
   up to 12). The way down is a ladder in one edge column, on the side your colonists come from

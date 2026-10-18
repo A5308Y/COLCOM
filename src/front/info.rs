@@ -296,6 +296,9 @@ fn build_sheet(k: BuildId) -> Sheet {
     if let Some(l) = &d.light {
         props.push(row("Light", format!("lights up {:.0} cells around", l.range)));
     }
+    if d.heat > 0.0 {
+        props.push(row("Heat", format!("warms its room by about {:.0}°C (less in a big room)", d.heat)));
+    }
     if let Some(st) = &d.storage {
         props.push(row("Storage", format!("{} stacks of up to {} (different things)", st.slots, STACK_MAX)));
     }

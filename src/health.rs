@@ -342,6 +342,9 @@ pub struct Hit {
     pub destroyed: bool,
 }
 
+/// Hypothermia from which someone collapses.
+pub const HYPOTHERMIA_DOWN: f32 = 0.7;
+
 /// Circumstances that affect healing.
 #[derive(Clone, Copy, Debug)]
 pub struct TickCtx {
@@ -350,6 +353,8 @@ pub struct TickCtx {
     pub fed: bool,
     /// Wounds heal this much faster (a hospital bed).
     pub care: f32,
+    /// The temperature they feel (°C).
+    pub felt: f32,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -359,6 +364,9 @@ pub struct Health {
     pub blood_loss: f32,
     /// 0..1; fatal at 1.
     pub malnutrition: f32,
+    /// From the cold, 0..1: slows them, downs them from `HYPOTHERMIA_DOWN`, fatal at 1.
+    #[serde(default)]
+    pub hypothermia: f32,
     /// Derived from the hediffs by `recompute`.
     #[serde(skip)]
     pub caps: Capacities,
@@ -389,7 +397,7 @@ fn pick(options: &[(Part, f32)], rng: &mut Rng) -> Option<Part> {
 
 impl Health {
     pub fn new() -> Health {
-        let mut h = Health { hediffs: Vec::new(), blood_loss: 0.0, malnutrition: 0.0, caps: Capacities::default(), pain: 0.0 };
+        let mut h = Health { hediffs: Vec::new(), blood_loss: 0.0, malnutrition: 0.0, hypothermia: 0.0, caps: Capacities::default(), pain: 0.0 };
         h.recompute();
         h
     }
@@ -492,6 +500,8 @@ impl Health {
             Some("unconscious")
         } else if self.caps.moving < 0.16 {
             Some("unable to move")
+        } else if self.hypothermia >= HYPOTHERMIA_DOWN {
+            Some("hypothermia")
         } else {
             None
         }
@@ -515,6 +525,9 @@ impl Health {
         }
         if self.malnutrition >= 1.0 {
             return Some("starved to death".into());
+        }
+        if self.hypothermia >= 1.0 {
+            return Some("froze to death".into());
         }
         if self.caps.breathing <= 0.0 {
             return Some("suffocated".into());
@@ -542,7 +555,7 @@ impl Health {
 
         let mut con = e(Part::Brain) * (1.0 - 0.35 * pain);
         con -= (self.blood_loss - 0.15).max(0.0) * 1.1;
-        con -= 0.3 * self.malnutrition + 0.1 * flu + 0.25 * infection + 0.15 * poisoned;
+        con -= 0.3 * self.malnutrition + 0.1 * flu + 0.25 * infection + 0.15 * poisoned + 0.4 * self.hypothermia;
         con *= (0.4 + 0.6 * pumping) * (0.4 + 0.6 * breathing) * (0.7 + 0.3 * filtration);
         let con = con.clamp(0.0, 1.0);
 
@@ -569,11 +582,12 @@ impl Health {
         let spine = e(Part::Spine);
         let spine_factor = if spine <= 0.0 { 0.0 } else { 0.5 + 0.5 * spine };
 
-        let manipulation = (arms * con - 0.05 * flu - 0.1 * poisoned).max(0.0);
+        let manipulation = (arms * con - 0.05 * flu - 0.1 * poisoned - 0.3 * self.hypothermia).max(0.0);
         let moving = (legs * spine_factor * con * (0.5 + 0.5 * pumping) * (0.5 + 0.5 * breathing)
             - 0.1 * flu
             - 0.2 * poisoned
-            - 0.3 * self.malnutrition)
+            - 0.3 * self.malnutrition
+            - 0.3 * self.hypothermia)
             .max(0.0);
         let caps = Capacities {
             consciousness: con,
@@ -713,6 +727,16 @@ impl Health {
         } else {
             self.malnutrition += 0.6 * days;
         }
+        // Below freezing hypothermia sets in, the faster the colder; warm, it wears off.
+        let below = crate::temperature::FREEZING - ctx.felt;
+        self.hypothermia = if below > 0.0 {
+            self.hypothermia + 0.08 * below * days
+        } else if ctx.felt >= crate::temperature::FREEZING + 5.0 {
+            self.hypothermia - 1.0 * days
+        } else {
+            self.hypothermia - 0.3 * days
+        }
+        .clamp(0.0, 1.0);
         let nourished = if self.malnutrition > 0.3 { 0.6 } else { 1.0 };
         let heal = nourished * ctx.care * if ctx.in_bed { 1.6 } else if ctx.resting { 1.2 } else { 1.0 };
         let immunity_gain = nourished * if ctx.in_bed { 1.2 } else { 1.0 };
@@ -826,7 +850,7 @@ mod tests {
         }
     }
 
-    const AWAKE: TickCtx = TickCtx { in_bed: false, resting: false, fed: true, care: 1.0 };
+    const AWAKE: TickCtx = TickCtx { in_bed: false, resting: false, fed: true, care: 1.0, felt: 20.0 };
 
     #[test]
     fn healthy_body_has_full_capacities() {
@@ -922,7 +946,7 @@ mod tests {
         let mut rng = Rng::new(9);
         let mut h = Health::new();
         h.add_flu();
-        let ctx = TickCtx { in_bed: true, resting: true, fed: true, care: 1.0 };
+        let ctx = TickCtx { in_bed: true, resting: true, fed: true, care: 1.0, felt: 20.0 };
         for _ in 0..12 {
             h.tend(0.8, 1);
             run(&mut h, DISEASE_TEND_TIME, ctx, &mut rng);
@@ -938,7 +962,7 @@ mod tests {
     fn starving_leads_to_malnutrition() {
         let mut rng = Rng::new(1);
         let mut h = Health::new();
-        let hungry = TickCtx { in_bed: false, resting: false, fed: false, care: 1.0 };
+        let hungry = TickCtx { in_bed: false, resting: false, fed: false, care: 1.0, felt: 20.0 };
         run(&mut h, DAY_LEN, hungry, &mut rng);
         assert!(h.malnutrition > 0.5);
         assert!(h.caps.consciousness < 1.0);

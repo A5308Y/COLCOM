@@ -32,6 +32,11 @@ pub struct RoomStats {
     /// Middle of its floor (cell coordinates) and its level, for labels.
     pub centre: (f32, f32),
     pub level: usize,
+    /// What burns in it (sum of `BuildDef::heat`), and its doors.
+    pub heat: f32,
+    pub doors: u32,
+    /// Its temperature (°C; see `temperature.rs`).
+    pub temp: f32,
 }
 
 /// How far a room is from being one kind of themed room.
@@ -160,6 +165,7 @@ impl World {
             if let Some(d) = here {
                 st.beauty += d.beauty;
                 st.lit |= d.light.is_some();
+                st.heat += d.heat;
             }
             if let Some(k) = m.feature[i].structure_id() {
                 st.counts[k.index()] += 1;
@@ -173,6 +179,7 @@ impl World {
                 let ni = m.idx(nb);
                 if let Some(d) = m.feature[ni].structure().filter(|d| d.blocks_room) {
                     if borders.insert((r, ni)) {
+                        st.doors += (d.special == crate::defs::Special::Door) as u32;
                         st.beauty += d.beauty;
                         st.lit |= d.daylight || d.light.is_some();
                         if let Some(k) = m.feature[ni].structure_id() {
@@ -202,6 +209,8 @@ impl World {
             st.kind = defs().rooms.iter().position(|room| st.progress(room).done());
         }
         self.room_stats = stats;
+        // Their temperatures, from where their cells were.
+        self.update_temperatures(0.0);
     }
 }
 

@@ -442,6 +442,9 @@ pub struct BuildDef {
     /// Adds to the beauty of the room it's in (or borders, for walls and windows).
     #[serde(default)]
     pub beauty: f32,
+    /// Warms the room it's in (°C for a small room, less in bigger ones): what burns.
+    #[serde(default)]
+    pub heat: f32,
     #[serde(default)]
     pub storage: Option<Storage>,
     pub look: BuildLook,

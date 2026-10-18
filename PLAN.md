@@ -904,3 +904,15 @@ real play.
   Front end: the season in the HUD, grass tinted by season (`terrain::Cut::season`, golden/snow), a
   Seasons row on crops' Info sheets. Next steps: temperature (rooms keep warmth by walls, roof, doors;
   mood and health), clothing warmth, then heaters and coolers using power.
+- Seasons, step 2: temperature (2026-10-18): `src/temperature.rs`. `outdoor_at(t)`: yearly cosine
+  (mean 11, ±16, warmest a quarter-season into summer so spring starts mild and winter starts cold) plus
+  ±4 over the day (warmest 15:00). Rooms: `RoomStats::{heat, doors, temp}`; once a second
+  `update_temperatures` moves each room's temperature towards outdoor + 3 * heat / sqrt(size) with a
+  lag of 0.2 days * max(1, sqrt(size)/3) / (1 + doors/2); `World::cell_temp` (not saved) carries it
+  over when rooms are recounted. `BuildDef::heat`: torch 3, stove 8, smithy 10, smelter 12, the new
+  fireplace 16. Colonists: `Pawn::felt` each tick; thoughts Cold (< 10), Freezing (< 0), Hot (> 30);
+  `Health::hypothermia` grows 0.08 a day per degree below 0, falls 1 a day from 5 (0.3 between),
+  lowers consciousness, moving and manipulation, downs at 0.7, kills at 1 ("froze to death"). UI: outside
+  temperature in the HUD, temperatures in the inspector, hypothermia in the Health tab, a freezing
+  alert, a Heat row in Info. Not yet: colonists don't seek warmth by themselves; clothing warmth (step 3)
+  and powered heaters and coolers (step 4).

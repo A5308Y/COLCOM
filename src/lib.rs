@@ -25,6 +25,7 @@ pub mod seasons;
 pub mod squads;
 pub mod story;
 pub mod surgery;
+pub mod temperature;
 #[cfg(test)]
 mod testing;
 pub mod world;

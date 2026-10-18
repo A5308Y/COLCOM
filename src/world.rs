@@ -117,6 +117,10 @@ pub struct World {
     /// Furniture being moved (see `moving.rs`).
     #[serde(default)]
     pub moves: Vec<Move>,
+    /// Each cell's room temperature as last worked out (NaN outside rooms;
+    /// not saved: rooms start from the outdoor temperature). See `temperature.rs`.
+    #[serde(skip)]
+    pub cell_temp: Vec<f32>,
     /// Areas dug out level by level (see `quarry.rs`).
     #[serde(default)]
     pub quarries: Vec<crate::quarry::Quarry>,
@@ -203,6 +207,7 @@ impl World {
             stockpiles: Vec::new(),
             moves: Vec::new(),
             quarries: Vec::new(),
+            cell_temp: Vec::new(),
             quarry_unreachable: Vec::new(),
             colony_timer: 0.0,
             room_stats: Vec::new(),
@@ -301,6 +306,9 @@ impl World {
         }
         if !colonists.iter().any(|p| p.active() && p.priorities[WorkType::Doctor as usize] > 0) {
             out.push(("No doctor available".into(), needs_tending));
+        }
+        for p in colonists.iter().filter(|p| p.health.hypothermia > 0.05) {
+            out.push((format!("{} is freezing (hypothermia {:.0}%)", p.name, p.health.hypothermia * 100.0), true));
         }
         let doomed = self.crops_frost_will_kill();
         if doomed > 0 && self.season_left() < 1.5 * DAY_LEN {
@@ -418,6 +426,7 @@ impl World {
             self.update_decor();
             self.update_quarries();
             self.update_room_stats();
+            self.update_temperatures(1.0);
             self.update_squads();
             self.update_graves();
             self.update_trapped();
@@ -597,7 +606,9 @@ impl World {
         let in_bed = lying && self.map.feature[self.map.idx(p.pos)].structure().is_some_and(|d| d.proper_bed());
         // A hospital bed heals faster.
         let care = if in_bed { self.room_effects(p.pos).map_or(1.0, |(_, e)| e.heal) } else { 1.0 };
-        let ctx = TickCtx { in_bed, resting: lying, fed: !p.is_colonist() || p.hunger > 0.0, care };
+        // Raiders come dressed for the weather.
+        let felt = if p.is_colonist() { p.felt } else { 20.0 };
+        let ctx = TickCtx { in_bed, resting: lying, fed: !p.is_colonist() || p.hunger > 0.0, care, felt };
         let events = p.health.tick(dt, ctx, &mut self.rng);
         p.health.recompute();
         for e in events {
@@ -630,6 +641,7 @@ impl World {
     }
 
     fn update_needs(&mut self, p: &mut Pawn, dt: f32) {
+        p.felt = self.temperature_at(p.pos);
         p.hunger = (p.hunger - HUNGER_DRAIN * dt).max(0.0);
         if !p.sleeping {
             p.rest = (p.rest - REST_DRAIN * dt).max(0.0);

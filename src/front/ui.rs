@@ -392,7 +392,7 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 hour as u32,
                 ((hour - hour.floor()) * 60.0) as u32
             );
-            let colonists = format!("Colonists {}", w.colonists_alive());
+            let colonists = format!("Colonists {}   Outside {:.0}°C", w.colonists_alive(), w.outdoor_temperature());
             ui.horizontal(|ui| {
                 ui.label(RichText::new(clock).strong());
                 ui.separator();
@@ -941,6 +941,10 @@ fn health_tab(ui: &mut egui::Ui, p: &Pawn) {
             ui.label(RichText::new("Not bleeding").weak());
         }
     }
+    if h.hypothermia > 0.01 {
+        let text = format!("Hypothermia {:.0}% (collapses at 70%, fatal at 100%): get them somewhere warm", h.hypothermia * 100.0);
+        ui.label(RichText::new(text).color(Color32::from_rgb(140, 190, 255)));
+    }
     if h.blood_loss > 0.01 || h.malnutrition > 0.01 {
         let text = format!("Blood loss {:.0}%     Malnutrition {:.0}%", h.blood_loss * 100.0, h.malnutrition * 100.0);
         ui.label(RichText::new(text).color(Color32::from_rgb(240, 160, 60)));
@@ -1094,6 +1098,9 @@ fn tile_inspector(
                 Some(r) => {
                     let tier = TIERS[r.tier() as usize];
                     ui.label(format!("Indoors: {} room, {} tiles (quality {:+.1})", tier.to_lowercase(), r.size, r.score()));
+                    let heat = if r.heat > 0.0 { ", warmed by what burns in it" } else { "" };
+                    let text = format!("{:.0}°C (outside {:.0}°C){}", r.temp, w.outdoor_temperature(), heat);
+                    ui.label(RichText::new(text).color(temp_color(r.temp)));
                     let parts = format!(
                         "space {:+.1}, beauty {:+.1}, cleanliness {:+.1}, light {:+.1}",
                         r.space_points(),
@@ -1108,7 +1115,8 @@ fn tile_inspector(
                     ui.label("Indoors");
                 }
                 None => {
-                    ui.label("Outdoors");
+                    let t = w.outdoor_temperature();
+                    ui.label(RichText::new(format!("Outdoors, {:.0}°C", t)).color(temp_color(t)));
                 }
             }
             match m.zone[i] {
@@ -1193,6 +1201,20 @@ fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<
             let why = "No way in: no ground to walk on beside it, so only what's above the ground is dug.";
             ui.label(RichText::new(why).color(Color32::from_rgb(255, 190, 110)));
         }
+    }
+}
+
+/// Blue when cold, orange when hot, plain in between (see `temperature.rs`).
+fn temp_color(t: f32) -> Color32 {
+    use my_world::temperature::{COLD, FREEZING, HOT};
+    if t < FREEZING {
+        Color32::from_rgb(120, 170, 255)
+    } else if t < COLD {
+        Color32::from_rgb(170, 205, 255)
+    } else if t > HOT {
+        Color32::from_rgb(255, 170, 100)
+    } else {
+        Color32::LIGHT_GRAY
     }
 }
 
