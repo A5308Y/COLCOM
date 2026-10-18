@@ -2,6 +2,7 @@
 /.claude
 savegame.json
 autosave.json
+/saves
 # Original asset downloads (FBX, OBJ, .blend): large, and re-downloadable. See assets/CREDITS.md.
 /asset-sources
 .DS_Store

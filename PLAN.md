@@ -743,3 +743,7 @@ real play.
   component-made single item (half of each ingredient back); scrap metal (raiders drop 1–2, pods) and
   e-waste (pods) have fixed salvage recipes. `BuildDef::power` (shown only) and `open_sky` (PV system);
   Resources window sums power. `DamageKind::Burn` (laser: no bleeding, more pain). Generated "laser" sound.
+- Save as and spawning (2026-10-18): the Menu saves under a name to `saves/<name>.json` (`input::save_as`,
+  names cleaned to letters, digits, spaces, - and _; git-ignored) and lists them newest first to load
+  (`named_saves`, `load_file`); K/L still quick-save. "Spawn items (testing)" opens a window to pick an item
+  and amount; `Tool::Spawn` drops it where clicked (`World::spawn_items`, logged).

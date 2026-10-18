@@ -54,6 +54,8 @@ furniture, light, production), searchable, with costs (red if the colony is shor
 | Mouse wheel | Zoom |
 | `P` / `I` / `H` / `C` | Work priorities / resources (what the colony has) / help / center camera |
 | `K` / `L` | Save / load (`savegame.json`; saves from other versions are refused with a message) |
+| Menu (`Esc`) → Save as | Save under a name (in `saves/`); the list below loads any of them |
+| Menu → Spawn items (testing) | Pick an item and an amount, then click on the map to drop it there |
 | `Shift+N` | New colony |
 
 ### Systems

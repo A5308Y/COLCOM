@@ -19,6 +19,8 @@ use std::sync::LazyLock;
 pub const SAVE_PATH: &str = "savegame.json";
 /// Written when the game is closed (the manual save above stays as it was).
 pub const AUTOSAVE_PATH: &str = "autosave.json";
+/// Where games saved under a name go ("Save as").
+pub const SAVES_DIR: &str = "saves";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
@@ -26,6 +28,8 @@ pub enum Tool {
     Paint(Order),
     /// Move furniture: first which (`None`), then where it goes.
     Move(Option<Pos>),
+    /// Testing: drop `UiState::spawn_count` of this item where clicked.
+    Spawn(my_world::defs::ItemId),
 }
 
 /// One tool in the build menu.
@@ -246,6 +250,12 @@ pub struct UiState {
     pub show_squads: bool,
     /// The themed rooms window.
     pub show_rooms: bool,
+    /// The testing window to drop items into the world.
+    pub show_spawn: bool,
+    /// How many to drop at a time with the spawn tool.
+    pub spawn_count: u32,
+    /// Name typed in for "Save as".
+    pub save_name: String,
     /// Layer view: hide everything above this level (None = show all).
     pub view_level: Option<usize>,
     /// Hide built roofs: each column over a roofed room is cut off above
@@ -298,6 +308,9 @@ impl UiState {
             inspector_tab: InspectorTab::Overview,
             show_squads: false,
             show_rooms: false,
+            show_spawn: false,
+            spawn_count: 50,
+            save_name: String::new(),
             view_level: None,
             hide_roofs: false,
             roof_cut: Vec::new(),
@@ -521,6 +534,67 @@ pub fn save(sim: &mut Sim) {
         Err(e) => format!("Saving failed: {}", e),
     };
     sim.world.push_log(msg);
+}
+
+/// A save name as a file in `SAVES_DIR`: letters, digits, spaces, - and _ (the rest dropped).
+pub fn save_file(name: &str) -> Option<std::path::PathBuf> {
+    save_file_in(std::path::Path::new(SAVES_DIR), name)
+}
+
+fn save_file_in(dir: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+    let clean: String = name.chars().filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_')).collect();
+    let clean = clean.trim();
+    (!clean.is_empty()).then(|| dir.join(format!("{}.json", clean)))
+}
+
+/// Save the game under `name` (in `SAVES_DIR`), replacing a save of that name.
+pub fn save_as(sim: &mut Sim, name: &str) -> bool {
+    let Some(path) = save_file(name) else {
+        sim.world.push_log("A save needs a name (letters, digits, spaces).".into());
+        return false;
+    };
+    let result = std::fs::create_dir_all(SAVES_DIR)
+        .map_err(|e| e.to_string())
+        .and_then(|_| sim.world.save_json())
+        .and_then(|json| std::fs::write(&path, json).map_err(|e| e.to_string()));
+    let msg = match &result {
+        Ok(()) => format!("Game saved to {}.", path.display()),
+        Err(e) => format!("Saving failed: {}", e),
+    };
+    sim.world.push_log(msg);
+    result.is_ok()
+}
+
+/// The games saved under a name, newest first: name and file.
+pub fn named_saves() -> Vec<(String, std::path::PathBuf)> {
+    saves_in(std::path::Path::new(SAVES_DIR))
+}
+
+fn saves_in(dir: &std::path::Path) -> Vec<(String, std::path::PathBuf)> {
+    let Ok(dir) = std::fs::read_dir(dir) else { return Vec::new() };
+    let mut saves: Vec<(std::time::SystemTime, String, std::path::PathBuf)> = dir
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .filter_map(|p| {
+            let when = std::fs::metadata(&p).and_then(|m| m.modified()).ok()?;
+            Some((when, p.file_stem()?.to_string_lossy().into_owned(), p))
+        })
+        .collect();
+    saves.sort_by_key(|s| std::cmp::Reverse(s.0));
+    saves.into_iter().map(|(_, name, path)| (name, path)).collect()
+}
+
+/// Load a game saved under a name.
+pub fn load_file(sim: &mut Sim, ui: &mut UiState, path: &std::path::Path) {
+    match std::fs::read_to_string(path).map_err(|e| e.to_string()).and_then(|s| SimWorld::load_json(&s)) {
+        Ok(w) => {
+            sim.replace(w);
+            ui.select(None);
+            sim.world.push_log(format!("Loaded {}.", path.display()));
+        }
+        Err(e) => sim.world.push_log(format!("Loading {} failed: {}", path.display(), e)),
+    }
 }
 
 /// The newer of the manual save and the autosave from exiting, loaded, with
@@ -795,6 +869,14 @@ fn mouse(
                     }
                 }
                 ui.drag_start = None;
+            }
+        }
+        Tool::Spawn(kind) => {
+            if buttons.just_released(MouseButton::Left) && !over_ui {
+                if let Some(h) = hover {
+                    sim.world.spawn_items(h.stand, kind, ui.spawn_count);
+                    sounds.play("ui_place", None);
+                }
             }
         }
         Tool::Move(from) => {
@@ -1073,6 +1155,25 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(&b, "b").unwrap();
         assert_eq!(newer_file(&a, &b), Some(b.clone()), "the autosave is newer");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn saves_have_names() {
+        let dir = std::env::temp_dir().join(format!("my-world-named-saves-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(save_file_in(&dir, "  "), None, "a name is needed");
+        assert_eq!(save_file_in(&dir, "Test ground/../x?"), Some(dir.join("Test groundx.json")), "only safe characters");
+        let w = SimWorld::with_map(Map::flat(8, 8), my_world::rng::Rng::new(1));
+        for name in ["older", "Test ground"] {
+            std::fs::write(save_file_in(&dir, name).unwrap(), w.save_json().unwrap()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let saves = saves_in(&dir);
+        let names: Vec<&str> = saves.iter().map(|s| s.0.as_str()).collect();
+        assert_eq!(names, ["Test ground", "older"], "newest first");
+        let loaded = SimWorld::load_json(&std::fs::read_to_string(&saves[0].1).unwrap()).unwrap();
+        assert_eq!(loaded.map.len(), w.map.len());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

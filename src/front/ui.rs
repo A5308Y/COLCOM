@@ -163,6 +163,9 @@ fn draw_ui(
     if st.show_rooms {
         rooms_window(&ctx, &sim, &mut st, &mut rig);
     }
+    if st.show_spawn {
+        spawn_window(&ctx, &mut st);
+    }
     if st.show_menu {
         game_menu(&ctx, &mut sim, &mut st, &mut rig, &mut audio);
     }
@@ -227,6 +230,7 @@ fn tool_at_cursor(ctx: &egui::Context, st: &UiState) {
         input::Tool::Select => return,
         input::Tool::Move(None) => "Move furniture: which?",
         input::Tool::Move(Some(_)) => "Move furniture: where to?",
+        input::Tool::Spawn(_) => "Drop items (testing)",
         tool => input::TOOLS.iter().find(|e| e.tool == tool).map_or("Tool", |e| e.name.as_str()),
     };
     let Some(at) = ctx.pointer_hover_pos() else { return };
@@ -484,6 +488,39 @@ fn game_menu(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut Cam
                 });
             }
             ui.separator();
+            ui.separator();
+            ui.label(RichText::new("Save as").strong());
+            ui.horizontal(|ui| {
+                ui.add(egui::TextEdit::singleline(&mut st.save_name).hint_text("name").desired_width(160.0));
+                let exists = input::save_file(&st.save_name).is_some_and(|p| p.exists());
+                let label = if exists { "Overwrite" } else { "Save" };
+                if ui.add_enabled(input::save_file(&st.save_name).is_some(), egui::Button::new(label)).clicked() {
+                    input::save_as(sim, &st.save_name.clone());
+                }
+            });
+            let saves = input::named_saves();
+            if !saves.is_empty() {
+                egui::ScrollArea::vertical().max_height(140.0).id_salt("saves").show(ui, |ui| {
+                    for (name, path) in saves {
+                        ui.horizontal(|ui| {
+                            if ui.small_button("Load").clicked() {
+                                input::load_file(sim, st, &path);
+                                st.show_menu = false;
+                            }
+                            // Click the name to save over it.
+                            if ui.selectable_label(st.save_name == name, &name).on_hover_text("Use this name").clicked() {
+                                st.save_name = name.clone();
+                            }
+                        });
+                    }
+                });
+            }
+            ui.label(RichText::new(format!("Saved games are kept in the {} folder.", input::SAVES_DIR)).small().weak());
+            ui.separator();
+            if ui.button("Spawn items (testing)").clicked() {
+                st.show_spawn = true;
+                st.show_menu = false;
+            }
             if difficulty_ui(ui, sim) {
                 // Out of the way of the raiders' demand.
                 st.show_menu = false;
@@ -495,6 +532,55 @@ fn game_menu(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut Cam
     if !open {
         st.show_menu = false;
         st.confirm_new = false;
+    }
+}
+
+/// Testing: pick an item and an amount, then click on the map to drop it.
+fn spawn_window(ctx: &egui::Context, st: &mut UiState) {
+    let mut open = true;
+    egui::Window::new("Spawn items (testing)").open(&mut open).anchor(Align2::RIGHT_TOP, [-8.0, 92.0]).collapsible(false).resizable(false).show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Amount");
+            ui.add(egui::DragValue::new(&mut st.spawn_count).range(1..=500));
+            for n in [1, 10, 50, 200] {
+                if ui.small_button(n.to_string()).clicked() {
+                    st.spawn_count = n;
+                }
+            }
+        });
+        ui.label(RichText::new("Pick an item, then click on the map to drop it (again and again). Right-click: stop.").small().weak());
+        egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+            let mut categories: Vec<&str> = Vec::new();
+            for k in ItemId::all() {
+                if !categories.contains(&k.def().category.as_str()) {
+                    categories.push(&k.def().category);
+                }
+            }
+            for cat in categories {
+                egui::CollapsingHeader::new(cat).id_salt(("spawn", cat)).default_open(cat == "Materials" || cat == "Components").show(ui, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        for k in ItemId::all().filter(|k| k.def().category == cat) {
+                            let chosen = st.tool == input::Tool::Spawn(k);
+                            let button = ui.add(egui::Button::new(k.name()).selected(chosen));
+                            let button = match &k.def().about {
+                                Some(about) => button.on_hover_text(about),
+                                None => button,
+                            };
+                            if button.clicked() {
+                                st.tool = input::Tool::Spawn(k);
+                                st.drag_start = None;
+                            }
+                        }
+                    });
+                });
+            }
+        });
+    });
+    if !open {
+        st.show_spawn = false;
+        if matches!(st.tool, input::Tool::Spawn(_)) {
+            st.tool = input::Tool::Select;
+        }
     }
 }
 

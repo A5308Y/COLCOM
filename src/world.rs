@@ -975,6 +975,15 @@ impl World {
         true
     }
 
+    /// Testing: drop `count` of `kind` at `at` (spilling onto the cells around).
+    pub fn spawn_items(&mut self, at: Pos, kind: crate::defs::ItemId, count: u32) {
+        if count == 0 {
+            return;
+        }
+        self.map.drop_item(at, Stack { kind, count });
+        self.push_log(format!("Dropped {} {} (testing).", count, kind.name().to_lowercase()));
+    }
+
     /// Turn the blueprint at `p` to face `dir` once built. Returns false if there's none.
     pub fn turn_blueprint(&mut self, p: Pos, dir: u8) -> bool {
         let i = self.map.idx(p);
@@ -1572,6 +1581,16 @@ mod tests {
         assert_eq!(w.map.feature[i], Feature::built("sleeping_spot"), "built without materials");
         assert_eq!(w.find_bed(w.pawn(id).unwrap()), Some((8, 8, Z)), "a place to sleep");
         assert!(!w.alerts().iter().any(|a| a.0.starts_with("Need beds")));
+    }
+
+    #[test]
+    fn items_can_be_dropped_for_testing() {
+        let mut w = test_world(16, 16);
+        w.spawn_items((8, 8, Z), item("copper"), 120);
+        assert_eq!(w.map.count_items(item("copper")), 120);
+        let cells = w.map.items.iter().flatten().filter(|s| s.kind == item("copper")).count();
+        assert_eq!(cells, 3, "spread over cells of 50");
+        assert!(w.log.iter().any(|l| l.contains("Dropped 120 copper")));
     }
 
     #[test]

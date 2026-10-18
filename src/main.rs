@@ -176,6 +176,20 @@ mod tests {
         for _ in 0..3 {
             app.update();
         }
+        // The testing window to drop items, with its tool in hand.
+        {
+            let mut ui = app.world_mut().resource_mut::<front::UiState>();
+            ui.show_spawn = true;
+            ui.tool = front::Tool::Spawn(my_world::defs::ItemId::named("copper"));
+        }
+        for _ in 0..3 {
+            app.update();
+        }
+        {
+            let mut ui = app.world_mut().resource_mut::<front::UiState>();
+            ui.show_spawn = false;
+            ui.tool = front::Tool::Select;
+        }
         // The right-click menu: equip a rifle lying beside them, then pick it.
         {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();

@@ -369,6 +369,7 @@ fn current_hint(tool: Tool) -> String {
         Tool::Paint(_) => format!("{}: left-drag over an area. Right-click to stop.", name),
         Tool::Move(None) => "Move furniture: click the furniture to move. Right-click to stop.".into(),
         Tool::Move(Some(_)) => "Move furniture: click where it should go. Right-click to stop.".into(),
+        Tool::Spawn(kind) => format!("Testing: click to drop {} there. Right-click to stop.", kind.name().to_lowercase()),
     }
 }
 
