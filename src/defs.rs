@@ -201,6 +201,9 @@ pub struct ApparelDef {
     pub armor: f32,
     /// Mood while worn.
     pub mood: f32,
+    /// How fast the wearer walks (and moves in battle) with it on: 1 unchanged.
+    #[serde(default = "full")]
+    pub speed: f32,
     /// What shows on the wearer: shapes fixed to the character's bones.
     #[serde(default)]
     pub pieces: Vec<WornPiece>,

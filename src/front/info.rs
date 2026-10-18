@@ -164,6 +164,9 @@ fn item_sheet(k: ItemId) -> Sheet {
         if a.mood != 0.0 {
             rows.push(row("Mood", format!("{:+.0} while worn", a.mood)));
         }
+        if a.speed != 1.0 {
+            rows.push(row("Speed", format!("{:+.0}% walking, and in battle per action point", (a.speed - 1.0) * 100.0)));
+        }
         s.section("Apparel", rows);
     }
 

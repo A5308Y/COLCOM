@@ -138,7 +138,7 @@ impl World {
         let df = self.battle_field(unit.side, lead.pos);
         // `path_to` runs from the goal back to the start.
         let path = df.path_to(edge);
-        let steps = (unit.ap / AP_MOVE) as usize;
+        let steps = (unit.ap / self.step_ap(u)) as usize;
         match path.len() {
             n if n == 0 || steps == 0 => BattleOrder::End,
             n => BattleOrder::Move(path[n - steps.min(n)]),
@@ -154,8 +154,9 @@ impl World {
         let lead = self.pawn(*unit.members.first()?)?;
         let enemies: Vec<_> = self.enemies_of(unit.side).into_iter().filter_map(|e| self.pawn(e)).collect();
         let weapon = lead.attack();
-        let reach = unit.ap / AP_MOVE;
-        let reach_and_attack = (unit.ap - AP_ATTACK).max(0) / AP_MOVE;
+        let step = self.step_ap(u);
+        let reach = unit.ap / step;
+        let reach_and_attack = (unit.ap - AP_ATTACK).max(0) / step;
         let near = enemies.iter().min_by_key(|e| e.pos.0.abs_diff(lead.pos.0) + e.pos.1.abs_diff(lead.pos.1))?;
         // Walking distance to the nearest enemy, so units go round obstacles.
         let to_enemy = bfs(&self.map, near.pos);

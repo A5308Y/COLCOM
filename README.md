@@ -79,7 +79,9 @@ for), and `<` goes back.
   too): the weapon, clothes, armour and helmet they use. They fetch it from storage and keep it on, in
   and out of battle; for slots left empty they pick up the best they find. Armour stops part of every
   blow (and shows: a breastplate with shoulder plates, a helmet, powered armour's sealed suit), and
-  clothes cheer them up.
+  clothes cheer them up. Powered armour's motors make its wearer a quarter faster, on foot and in
+  battle (a squad moves at its slowest member's pace). Pinned down in battle, a unit has 60% of its
+  action points and each step costs twice as much.
 - **Components:** six kinds (mechanical, electrical, optical, structural, chemical, textile; their
   descriptions say what they stand for: gears, wiring, lenses ...) made at fitting benches: structural at
   the smithy, textile at the crafting bench, mechanical at the machinist's bench, chemical at the chemistry

@@ -595,7 +595,8 @@
             category: "Apparel",
             color: "plating",
             about: Some("Plate armour with motors and a sealed helmet; stops most of every blow."),
-            apparel: Some((slot: Outer, armor: 0.6, mood: 0.0, pieces: [
+            // Its motors carry the weight and then some: a quarter faster.
+            apparel: Some((slot: Outer, armor: 0.6, mood: 0.0, speed: 1.25, pieces: [
                 // A heavy cuirass with a power pack on the back and a glowing core.
                 (bone: "spine_03", parts: [
                     (shape: Cylinder, color: "plating", at: (0.0, 0.0, -0.02), size: (0.48, 0.44, 0.38)),

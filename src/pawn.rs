@@ -558,7 +558,12 @@ impl Pawn {
     /// Cells per second: a brisk walk around the colony, running in battle.
     pub fn move_speed(&self) -> f32 {
         let base = if self.running { RUN_SPEED } else { WALK_SPEED };
-        base * self.health.caps.moving.clamp(0.15, 1.0)
+        base * self.health.caps.moving.clamp(0.15, 1.0) * self.gear_speed()
+    }
+
+    /// How much what they wear speeds them up or slows them down (1: not at all).
+    pub fn gear_speed(&self) -> f32 {
+        self.apparel.iter().filter_map(|k| k.def().apparel.as_ref()).map(|a| a.speed).product()
     }
 
     /// Add experience; returns true if the skill levelled up.

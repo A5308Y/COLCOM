@@ -37,6 +37,9 @@ pub const TURN_SECS: f32 = 6.0;
 pub const CELLS_PER_ROUND: usize = (AP_MAX / AP_MOVE) as usize;
 /// Members within this many cells of their leader start the battle with them.
 const WITH_LEADER: usize = 2;
+/// Suppression from which a unit is pinned down (less AP, worse aim, and
+/// moving costs `PINNED_MOVE` times as much).
+pub const PINNED_MOVE: i32 = 2;
 /// Suppression from which a unit is pinned down (less AP, worse aim).
 pub const PINNED: f32 = 50.0;
 /// Morale below which a unit breaks: raiders flee, colonists cower.
@@ -144,6 +147,12 @@ impl Unit {
 
     pub fn pinned(&self) -> bool {
         self.suppression >= PINNED
+    }
+
+    /// Started this round pinned down (fewer AP, slower going), whatever
+    /// its suppression has dropped to since.
+    pub fn held_down(&self) -> bool {
+        self.ap_start < AP_MAX
     }
 
     pub fn broken(&self) -> bool {
@@ -716,7 +725,18 @@ impl World {
         if d == 0 {
             return Err("already there".into());
         }
-        Ok(d * AP_MOVE)
+        Ok(d * self.step_ap(u))
+    }
+
+    /// AP unit `u` spends per cell it moves: `AP_MOVE`, less for the
+    /// speed of the slowest member's gear (powered armour), and
+    /// `PINNED_MOVE` times as much while pinned down.
+    pub fn step_ap(&self, u: usize) -> i32 {
+        let Some(unit) = self.battle.as_ref().and_then(|b| b.units.get(u)) else { return AP_MOVE };
+        let speed = unit.members.iter().filter_map(|&id| self.pawn(id)).map(|p| p.gear_speed()).fold(f32::MAX, f32::min);
+        let speed = if speed == f32::MAX { 1.0 } else { speed.max(0.25) };
+        let pinned = if unit.held_down() { PINNED_MOVE } else { 1 };
+        ((AP_MOVE as f32 / speed).round() as i32).max(1) * pinned
     }
 
     /// Walking distances from `from` for side `side` in the battle: nobody
@@ -1209,7 +1229,7 @@ impl World {
         }
         let b = self.battle.as_ref().unwrap();
         if let Some(u) = b.active {
-            if b.units[u].out() || b.units[u].ap < AP_MOVE {
+            if b.units[u].out() || b.units[u].ap < self.step_ap(u) {
                 self.end_activation();
                 return;
             }
@@ -1702,6 +1722,7 @@ mod tests {
         w.battle.as_mut().unwrap().units[u].suppression = 80.0;
         w.new_round();
         assert_eq!(battle(&w).units[u].ap, AP_MAX * 6 / 10, "pinned: fewer action points");
+        assert_eq!(w.step_ap(u), AP_MOVE * PINNED_MOVE, "and moving costs more");
 
         let before = battle(&w).units[u].morale;
         let i = w.pawn_index(leader).unwrap();
@@ -2035,6 +2056,26 @@ mod tests {
         if let Some(b) = &w.battle {
             assert!(!b.units[t].pinned(), "one volley doesn't pin: {}", b.units[t].suppression);
         }
+    }
+
+    #[test]
+    fn powered_armour_moves_faster_but_a_squad_keeps_together() {
+        let mut w = world(40, 20, 7);
+        let leader = colonist(&mut w, (5, 10, Z));
+        let member = colonist(&mut w, (6, 10, Z));
+        let lone = colonist(&mut w, (5, 15, Z));
+        for id in [leader, lone] {
+            let i = w.pawn_index(id).unwrap();
+            w.pawns[i].wear(item("powered_armor"));
+        }
+        let walk = w.pawn(member).unwrap().move_speed();
+        assert!((w.pawn(lone).unwrap().move_speed() - walk * 1.25).abs() < 1e-4, "a quarter faster on foot");
+        w.set_role(leader, Role::Leader).unwrap();
+        w.set_role(member, Role::Member(leader)).unwrap();
+        fight(&mut w, 1, (39, 10, Z));
+        let unit = |id| battle(&w).unit_of(id).unwrap();
+        assert_eq!(w.step_ap(unit(lone)), 8, "fewer AP a step");
+        assert_eq!(w.step_ap(unit(leader)), AP_MOVE, "the squad goes at its slowest member's pace");
     }
 
     #[test]

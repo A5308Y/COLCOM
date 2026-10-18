@@ -878,3 +878,8 @@ real play.
 - Hit chances in the Combat tab (2026-10-18): `battle::base_hit_chance` (skill, distance, sight and
   manipulation) is shared by `hit_chance_from` and the tab's new Fighting section (Shooting and Melee
   levels, chances with the weapon they have: shots at 3 cells and at its range, or blows).
+- Movement in battle (2026-10-18): `World::step_ap` is what a unit pays per cell: `AP_MOVE` divided by
+  the slowest member's `Pawn::gear_speed` (product of `ApparelDef::speed`; powered armour 1.25, so 8),
+  times `PINNED_MOVE` (2) for a unit that started the round pinned (`Unit::held_down`: its AP were cut,
+  even if its suppression has halved since). Used by orders, the AI and the move preview. Everyday
+  walking (`Pawn::move_speed`) uses `gear_speed` too.

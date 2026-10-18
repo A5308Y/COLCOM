@@ -16,7 +16,7 @@ use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 use bevy_egui::egui::{self, Align2, Color32, ProgressBar, RichText};
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
-use my_world::battle::{Battle, BattleOrder, Cover, Unit, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MAX, AP_MOVE, BROKEN, PINNED};
+use my_world::battle::{Battle, BattleOrder, Cover, Unit, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MAX, BROKEN, PINNED};
 use my_world::map::{Pos, DIRS};
 use my_world::pawn::Faction;
 use my_world::world::World as SimWorld;
@@ -122,7 +122,7 @@ fn morale_color(morale: f32) -> Color32 {
 const MORALE_HINT: &str = "How much fight is left in them. Each fallen member costs 20 (losing the leader 20 more); \
 +5 every round while not pinned. Below 25 the unit breaks: colonists are shaken, raiders flee.";
 const SUPPRESSION_HINT: &str = "How hard they're being shot at: +15 per attack on them, +10 per hit; halves every round. \
-From 50 they're pinned: 60% AP next round, worse aim, and no morale recovery.";
+From 50 they're pinned: 60% AP next round, moving costs twice as much, worse aim, and no morale recovery.";
 
 /// Morale and suppression bars with their thresholds, and the state chips, for the panel.
 fn unit_state(panel: &mut egui::Ui, unit: &Unit) {
@@ -295,7 +295,7 @@ fn update_reach(mut commands: Commands, sim: Res<Sim>, ui: Res<UiState>, mut are
     let (mut pos, mut col, mut idx) = (Vec::new(), Vec::new(), Vec::new());
     for &i in &df.order {
         let Some(d) = df.dist_i(i) else { continue };
-        let cost = d * AP_MOVE;
+        let cost = d * w.step_ap(u);
         if cost > ap {
             break;
         }
@@ -914,15 +914,15 @@ fn battle_panels(
                         .text(format!("{} action points", unit.ap))
                         .fill(Color32::from_rgb(90, 160, 230)),
                 );
-                if unit.ap_start < AP_MAX {
-                    let text = format!("Pinned down: only {} AP this round", unit.ap_start);
+                if unit.held_down() {
+                    let text = format!("Pinned down: only {} AP this round, {} AP a step", unit.ap_start, sim.world.step_ap(u));
                     panel.label(RichText::new(text).color(SUPPRESSION_COLOR));
                 }
                 unit_state(panel, unit);
                 panel.label(
                     RichText::new(format!(
                         "Click a cell to move ({} AP a step), an enemy to attack ({} AP).",
-                        AP_MOVE, AP_ATTACK
+                        sim.world.step_ap(u), AP_ATTACK
                     ))
                     .small()
                     .weak(),
