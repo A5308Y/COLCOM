@@ -259,6 +259,10 @@ pub struct Map {
     /// while that cell's `items` is empty).
     #[serde(default)]
     pub shelved: BTreeMap<u32, Vec<Stack>>,
+    /// What hangs on walls (or is planned there), by the wall's cell index,
+    /// in face and slot order (see `decor.rs`).
+    #[serde(default)]
+    pub decor: BTreeMap<u32, Vec<crate::decor::Decor>>,
     #[serde(with = "crate::save::rle")]
     pub desig: Vec<Option<Desig>>,
     #[serde(with = "crate::save::rle")]
@@ -310,6 +314,7 @@ impl Map {
             feature: vec![Feature::None; n],
             items: vec![None; n],
             shelved: BTreeMap::new(),
+            decor: BTreeMap::new(),
             desig: vec![None; n],
             zone: vec![Zone::None; n],
             floor: vec![false; n],
@@ -413,7 +418,7 @@ impl Map {
 
     /// Storage furniture nobody walks onto (shelves): worked from beside.
     pub fn storage_furniture(&self, i: usize) -> bool {
-        self.feature[i].structure().is_some_and(|d| d.storage.is_some() && !d.passable)
+        self.feature[i].structure().is_some_and(|d| d.storage.is_some() && !d.passable) || self.wall_shelves(i) > 0
     }
 
     /// Shelves and the like beside `p` (same level), reached from `p` without stepping on them.
@@ -702,7 +707,10 @@ impl Map {
 
     /// How many stacks cell `i` holds: a shelf's slots, else one.
     pub fn slots(&self, i: usize) -> usize {
-        self.feature[i].structure().and_then(|d| d.storage.as_ref()).map_or(1, |s| s.slots as usize)
+        match self.wall_shelves(i) {
+            0 => self.feature[i].structure().and_then(|d| d.storage.as_ref()).map_or(1, |s| s.slots as usize),
+            shelves => shelves,
+        }
     }
 
     /// Every stack in cell `i` (a shelf's in slot order).

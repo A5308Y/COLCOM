@@ -360,6 +360,23 @@ mod tests {
                 let i = w.map.idx((cx - 6 + k, cy + 6, z));
                 w.map.feature[i] = my_world::map::Feature::built(id);
             }
+            // A wall with things on it: up, planned, and a wall shelf holding wood.
+            for x in cx + 6..=cx + 8 {
+                let i = w.map.idx((x, cy + 8, z));
+                w.map.feature[i] = my_world::map::Feature::built("wall");
+            }
+            let decor_wall = w.map.idx((cx + 7, cy + 8, z));
+            let up = |id: &str, face, slot, built| my_world::decor::Decor {
+                kind: my_world::defs::BuildId::named(id),
+                face,
+                slot,
+                delivered: 0,
+                built,
+                remove: false,
+            };
+            let things = vec![up("painting", 2, 0, true), up("wall_lamp", 2, 2, true), up("wall_shelf", 2, 4, true), up("poster", 3, 1, false)];
+            w.map.decor.insert(decor_wall as u32, things);
+            w.map.set_stacks(decor_wall, vec![my_world::map::Stack { kind: my_world::defs::ItemId::named("wood"), count: 20 }]);
             // A window to be built into a standing wall.
             let old_wall = w.map.idx((cx + 3, cy + 6, z));
             w.map.feature[old_wall] = my_world::map::Feature::built("wall");
@@ -406,6 +423,20 @@ mod tests {
         app.world_mut().resource_mut::<front::UiState>().show_resources = true;
         app.world_mut().resource_mut::<front::UiState>().show_menu = true;
         app.world_mut().resource_mut::<front::UiState>().show_rooms = true;
+        // Hanging a painting: the slot under the cursor is marked, and the wall's inspector lists what's on it.
+        {
+            let wall = {
+                let w = &app.world().resource::<front::Sim>().world;
+                let (cx, cy) = (w.map.w / 2, w.map.h / 2);
+                (cx + 7, cy + 8, w.map.surface(cx, cy).unwrap())
+            };
+            let mut ui = app.world_mut().resource_mut::<front::UiState>();
+            ui.tool = front::Tool::Paint(my_world::world::Order::Build(my_world::defs::BuildId::named("painting")));
+            ui.wall_slot = Some((wall, 2, 1));
+            ui.selected = Some(front::Selection::Tile(wall));
+        }
+        app.update();
+        app.world_mut().resource_mut::<front::UiState>().tool = front::Tool::Select;
         // The info window: a weapon's stats, with the lookup searching.
         {
             let mut ui = app.world_mut().resource_mut::<front::UiState>();

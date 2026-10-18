@@ -124,6 +124,8 @@ pub enum Task {
     Craft,
     /// Pack up furniture that is being moved (see `moving.rs`).
     Uninstall,
+    /// Put up (or take down) the next thing for the wall here (see `decor.rs`).
+    Decorate,
 }
 
 impl Task {
@@ -137,6 +139,7 @@ impl Task {
             Task::Deconstruct => "deconstructing",
             Task::Craft => "crafting",
             Task::Uninstall => "packing up",
+            Task::Decorate => "hanging up",
         }
     }
 }

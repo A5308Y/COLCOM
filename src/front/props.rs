@@ -45,6 +45,16 @@ struct Props {
     /// Spawned objects per cell (flat arrays: cheaper than maps when scanning every cell each frame).
     features: Vec<Option<(PropKey, Entity)>>,
     items: Vec<Option<(ItemsKey, Entity)>>,
+    /// What hangs on walls, by wall cell, face and slot.
+    decor: HashMap<(u32, u8, u8), (DecorKey, Entity)>,
+}
+
+/// Something on a wall as drawn: up or planned, and what stands on it (a wall shelf).
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct DecorKey {
+    kind: BuildId,
+    built: bool,
+    item: Option<ItemKey>,
 }
 
 /// Shared unit meshes and materials for props (and carried items on pawns).
@@ -220,6 +230,9 @@ fn sync_props(
         for (_, e) in props.items.drain(..).flatten() {
             commands.entity(e).despawn();
         }
+        for (_, (_, e)) in props.decor.drain() {
+            commands.entity(e).despawn();
+        }
         props.features = vec![None; m.len()];
         props.items = vec![None; m.len()];
         props.generation = Some(sim.generation);
@@ -233,6 +246,10 @@ fn sync_props(
             for e in [props.features[i].map(|f| f.1), props.items[i].map(|f| f.1)].into_iter().flatten() {
                 commands.entity(e).insert(vis);
             }
+        }
+        for (&(i, _, _), &(_, e)) in &props.decor {
+            let vis = if hidden(m.pos(i as usize)) { Visibility::Hidden } else { Visibility::Inherited };
+            commands.entity(e).insert(vis);
         }
         props.view = Some(view);
     }
@@ -323,7 +340,8 @@ fn sync_props(
         for (slot, s) in want.iter_mut().zip(m.stacks(i)) {
             *slot = Some(ItemKey { kind: s.kind, big: s.count >= 25 });
         }
-        let want_item = want[0].is_some().then_some(want);
+        // What wall shelves hold is drawn on them (with the rest of the wall's things).
+        let want_item = (want[0].is_some() && m.wall_shelves(i) == 0).then_some(want);
         let have_item = props.items[i].map(|(k, _)| k);
         if want_item != have_item {
             if let Some((_, e)) = props.items[i].take() {
@@ -343,6 +361,76 @@ fn sync_props(
             }
         }
     }
+
+    // What hangs on walls: each wall shelf holds the next of its wall's stacks.
+    let mut want: HashMap<(u32, u8, u8), DecorKey> = HashMap::new();
+    for (&i, list) in &m.decor {
+        let mut stacks = m.stacks(i as usize);
+        for d in list {
+            let shelf = d.built && d.kind.def().storage.is_some();
+            let item = if shelf { stacks.next().map(|s| ItemKey { kind: s.kind, big: s.count >= 25 }) } else { None };
+            want.insert((i, d.face, d.slot), DecorKey { kind: d.kind, built: d.built, item });
+        }
+    }
+    let stale: Vec<(u32, u8, u8)> = props.decor.iter().filter(|(k, (key, _))| want.get(*k) != Some(key)).map(|(k, _)| *k).collect();
+    for k in stale {
+        if let Some((_, e)) = props.decor.remove(&k) {
+            commands.entity(e).despawn();
+        }
+    }
+    for (k, key) in want {
+        if props.decor.contains_key(&k) {
+            continue;
+        }
+        let pos = m.pos(k.0 as usize);
+        let lift = if m.floor[k.0 as usize] { FLOOR_T } else { 0.0 };
+        let e = spawn_decor(&mut commands, &assets, key, pos, k.1, k.2, lift);
+        if hidden(pos) {
+            commands.entity(e).insert(Visibility::Hidden);
+        }
+        props.decor.insert(k, (key, e));
+    }
+}
+
+/// Where slot `slot` on face `face` of the wall at `pos` is: on the face
+/// (half a wall's thickness out from the middle of the cell), turned so the
+/// model's +z looks out of the wall and +x runs along it.
+pub fn decor_transform(pos: Pos, face: u8, slot: u8, lift: f32) -> Transform {
+    let (nx, ny) = DIRS[face as usize % 4];
+    let n = Vec3::new(nx as f32, 0.0, ny as f32);
+    let (_, plus) = my_world::decor::slot_axis(face);
+    let (ux, uy) = DIRS[plus];
+    let u = Vec3::new(ux as f32, 0.0, uy as f32);
+    let (s0, s1) = my_world::decor::slot_span(slot);
+    let at = tile_center(pos) + n * (my_world::decor::WALL_T / 2.0) + u * ((s0 + s1) / 2.0 - 0.5) + Vec3::Y * lift;
+    let x = Vec3::Y.cross(n);
+    Transform::from_translation(at).with_rotation(Quat::from_mat3(&Mat3::from_cols(x, Vec3::Y, n)))
+}
+
+/// Something on a wall (or the ghost of one planned), with its light and
+/// what stands on it.
+fn spawn_decor(commands: &mut Commands, a: &PropAssets, key: DecorKey, pos: Pos, face: u8, slot: u8, lift: f32) -> Entity {
+    let def = key.kind.def();
+    let root = decor_transform(pos, face, slot, lift);
+    let pose = Pose { ghost: !key.built, ..default() };
+    let e = spawn_parts(commands, a, root, def.parts(), pose, &a.blanket_free);
+    if let Some(l) = def.light.as_ref().filter(|_| key.built) {
+        let light = PointLight {
+            color: Color::srgb(l.color.0, l.color.1, l.color.2),
+            intensity: l.intensity,
+            range: l.range,
+            shadow_maps_enabled: false,
+            ..default()
+        };
+        commands.entity(e).with_child((light, Transform::from_xyz(l.at.0, l.at.1, l.at.2)));
+    }
+    if let (Some(item), Some(st)) = (key.item, def.storage.as_ref()) {
+        let s = if item.big { 0.34 } else { 0.28 };
+        let t = Transform::from_xyz(0.0, st.height, 0.06).with_scale(Vec3::splat(s));
+        let on = spawn_parts(commands, a, t, &item.kind.def().look, Pose::default(), &a.blanket_free);
+        commands.entity(on).insert(ChildOf(e));
+    }
+    e
 }
 
 /// How to show a set of parts.
@@ -517,6 +605,22 @@ fn spawn_item(commands: &mut Commands, a: &PropAssets, key: ItemKey, pos: Pos, l
 mod tests {
     use super::*;
     use my_world::map::FLAT_Z as Z;
+
+    #[test]
+    fn decor_sits_on_its_wall_face() {
+        let wall = (3, 3, Z);
+        // The +y face (world +z), first slot: towards -x, a wall's half thickness out.
+        let t = decor_transform(wall, 2, 0, 0.0);
+        let c = tile_center(wall);
+        assert!((t.translation.z - (c.z + my_world::decor::WALL_T / 2.0)).abs() < 1e-4);
+        assert!((t.translation.x - (c.x - 0.4)).abs() < 1e-4);
+        assert!((t.rotation * Vec3::Z - Vec3::Z).length() < 1e-4, "looking out of the wall");
+        // The -x face: looking -x, its slots running along +z.
+        let t = decor_transform(wall, 1, 4, 0.0);
+        assert!((t.rotation * Vec3::Z - Vec3::NEG_X).length() < 1e-4);
+        assert!((t.translation.z - (c.z + 0.4)).abs() < 1e-4);
+        assert!((t.rotation * Vec3::Y - Vec3::Y).length() < 1e-4, "upright");
+    }
 
     #[test]
     fn turning_matches_how_models_are_turned() {

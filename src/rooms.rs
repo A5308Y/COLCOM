@@ -182,6 +182,21 @@ impl World {
                 }
             }
         }
+        // What hangs on walls counts for the room it faces.
+        for (&wall, list) in &m.decor {
+            let p = m.pos(wall as usize);
+            for d in list.iter().filter(|d| d.built) {
+                let Some(front) = m.decor_front(p, d.face, d.slot) else { continue };
+                let r = m.room.get(m.idx(front)).copied().unwrap_or(0) as usize;
+                if r == 0 || r >= stats.len() {
+                    continue;
+                }
+                let def = d.kind.def();
+                stats[r].beauty += def.beauty;
+                stats[r].lit |= def.light.is_some();
+                stats[r].counts[d.kind.index()] += 1;
+            }
+        }
         for st in stats.iter_mut().filter(|s| s.size > 0) {
             st.centre = (st.centre.0 / st.size as f32, st.centre.1 / st.size as f32);
             st.kind = defs().rooms.iter().position(|room| st.progress(room).done());

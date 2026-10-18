@@ -507,7 +507,7 @@ pub fn activity(p: &Pawn, w: &SimWorld, armed: bool) -> Anim {
                 Feature::Blueprint { kind, .. } | Feature::Built { kind, .. } if kind.def().is_block() => Anim::Interact,
                 _ => Anim::Kneel,
             },
-            Task::Craft => Anim::Interact,
+            Task::Craft | Task::Decorate => Anim::Interact,
         },
         Some(Job::Eat { picked: true, seat, .. }) if arrived => {
             if seat == Some(p.pos) {

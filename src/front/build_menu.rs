@@ -309,6 +309,9 @@ fn details(ui: &mut egui::Ui, e: &ToolEntry, def: Option<&BuildDef>, totals: &[u
     }
     let mut facts: Vec<String> = Vec::new();
     facts.extend(purpose(d).map(String::from));
+    if d.on_wall {
+        facts.push("Hangs on a wall, in one of five places on either side; counts for the room it faces".into());
+    }
     if let Some(power) = d.power_text() {
         facts.push(format!("{} (nothing uses power yet)", power));
     }
@@ -354,6 +357,9 @@ fn current_hint(tool: Tool) -> String {
     let name = TOOLS.iter().find(|e| e.tool == tool).map_or("", |e| e.name.as_str());
     match tool {
         Tool::Select => "Click colonists or cells to inspect them.".into(),
+        Tool::Paint(Order::Build(kind)) if kind.def().on_wall => {
+            format!("{}: point at a wall and click to hang it in the marked place (five on each side). Right-click to stop.", name)
+        }
         Tool::Paint(Order::Build(kind)) if kind.def().is_block() => {
             format!("{}: left-drag a rectangle to wall it in (Shift fills it). Right-click to stop.", name)
         }

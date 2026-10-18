@@ -795,3 +795,26 @@ real play.
   arrow (`input::front_arrow`) points at the front, also while moving furniture: `,`/`.` turn it there
   (`UiState::start_move` starts from how it stands, `UiState::turning`, `World::order_move_facing`;
   `Move::dir` keeps how it stood, for when a move is called off).
+- Thin walls and wall decor (2026-10-18):
+  - Look: walls and windows are drawn `decor::WALL_T` (0.2 cell) thick through the middle of their cell:
+    a core plus an arm towards each side `Map::wall_links` joins (walls, doors, windows, natural rock and
+    soil). `terrain::thin_wall`/`opening`; `under_wall` draws the floor beneath in quarters coloured
+    like the floor beside each (indoors/outdoors), on a slab when standing on a built floor; a wall with
+    something on top gets a ceiling. Walls no longer hide neighbours' faces (`Look3::covers`). Wallpaper
+    is drawn per piece (`MeshBuf::wall_face`) on absolute along-wall coordinates. Doors are 0.22 deep.
+    The simulation is unchanged: a wall still fills its cell.
+  - Decor (`src/decor.rs`): `BuildDef::on_wall` buildables (painting, poster, calendar, wall lamp, wall
+    shelf, hanging plant; category "Wall decor") hang in one of `SLOTS` (5) places per face.
+    `Map::decor` (cell -> `Vec<Decor>` {kind, face, slot, delivered, built, remove}, saved).
+    `Map::decor_front` says whether a slot is usable (the wall's body spans it; beside a wall running off
+    the face it looks at the diagonal cell) and which cell it faces. `World::order_decor`/`cancel_decor`
+    (plans are called off, things up are marked to come down, toggled); haulers and builders deliver
+    via `delivery_need`/`stock_decor`; `Task::Decorate` puts up or takes down the next ready one from
+    its front cell. `update_decor` (once a second) drops decor whose wall or front is gone. Room stats
+    count built decor for the room its front cell is in (beauty, light, counts). Wall shelves make the
+    wall cell storage (`Map::wall_shelves`, `slots`, `storage_furniture`, `storage_kind` in
+    `sync_containers`); their stacks are drawn on the shelves; losing the last shelf puts its items down.
+  - Front end: `UiState::wall_slot` from `input::wall_slot_at` (the face plane the cursor ray meets);
+    clicking with a wall item's tool calls `order_decor`; a gizmo marks the slot (green/red).
+    `props::decor_transform`/`spawn_decor` draw them (ghosts while planned, lamps lit, shelf items).
+    Inspector lists a wall's decor (Cancel / Take down / Keep; the calendar shows the date).

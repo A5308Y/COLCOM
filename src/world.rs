@@ -387,6 +387,7 @@ impl World {
             self.sync_containers();
             self.update_production();
             self.update_moves();
+            self.update_decor();
             self.update_room_stats();
             self.update_squads();
             self.update_graves();
@@ -917,6 +918,8 @@ impl World {
             }
             // Solar panels need open sky.
             Order::Build(kind) if kind.def().open_sky && m.covered(p) => false,
+            // Things for walls go into a wall's slots (`order_decor`).
+            Order::Build(kind) if kind.def().on_wall => false,
             // A wall, door or window can be built over another: the old one stands
             // until the new one replaces it.
             Order::Build(kind) if f.structure().is_some_and(|d| d.blocks_room) => {
@@ -2156,6 +2159,28 @@ mod tests {
             if def.special == Special::Roof {
                 continue; // rooms get them by themselves (`roofs_*` tests)
             }
+            for c in &def.cost {
+                w.map.drop_item((3, 3, Z), Stack { kind: c.item, count: c.count });
+            }
+            if def.on_wall {
+                // Hung on a wall, then taken down again.
+                let wall = (8, 8, Z);
+                let i = w.map.idx(wall);
+                w.map.set_feature(i, Feature::built("wall"));
+                assert!(w.order_decor(wall, 2, 2, kind), "{} can be hung", def.id);
+                run(&mut w, 40.0 + 15.0 * def.cost.len() as f32 + 3.0 * def.work_time);
+                assert!(w.map.decor(i).iter().all(|d| d.built), "{} put up", def.id);
+                for c in &def.cost {
+                    assert_eq!(w.map.count_items(c.item), 0, "{} used its {}", def.id, c.item.def().id);
+                }
+                assert!(w.cancel_decor(wall, 2, 2));
+                run(&mut w, 30.0 + def.work_time);
+                assert!(w.map.decor(i).is_empty(), "{} taken down", def.id);
+                for (item, count) in def.drops() {
+                    assert_eq!(w.map.count_items(item), count, "{} drops {}", def.id, item.def().id);
+                }
+                continue;
+            }
             let at = if def.special == Special::Floor {
                 // Floors go in the air, held up by rock nearby.
                 let rock = w.map.idx((8, 8, Z));
@@ -2164,9 +2189,6 @@ mod tests {
             } else {
                 (8, 8, Z)
             };
-            for c in &def.cost {
-                w.map.drop_item((3, 3, Z), Stack { kind: c.item, count: c.count });
-            }
             assert!(w.apply_order(at, Order::Build(kind)), "{} can be placed", def.id);
             // A trip per material, then the work.
             run(&mut w, 40.0 + 15.0 * def.cost.len() as f32 + 3.0 * def.work_time);

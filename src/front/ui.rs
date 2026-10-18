@@ -32,7 +32,7 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 47] = [
+const HELP_REST: [&str; 48] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -57,6 +57,7 @@ const HELP_REST: [&str; 47] = [
     "While placing or moving furniture , and . turn it; the arrow points to its front, where it's used from.",
     "Lamps light up rooms and caves - nights are dark.",
     "",
+    "Wall decor (build menu): point at a wall and click to hang it; five places on each side of a wall.",
     "A room needs walls and a roof. Enclose an area with walls and doors and it gets a roof by itself:",
     "      builders put it up with wood. A roof needs a wall within 3 cells, like floors: red crosses mark",
     "      where it can't reach. Sleeping in a roofed bedroom makes colonists happier.",
@@ -1069,6 +1070,7 @@ fn tile_inspector(
                 let used = m.stacks(i).count();
                 ui.label(RichText::new(format!("{} of {} shelf slots used (50 each)", used, m.slots(i))).weak());
             }
+            wall_decor(ui, w, t, look_up, &mut actions);
             if let Some(power) = m.feature[i].structure().and_then(|d| d.power_text()) {
                 ui.label(RichText::new(format!("{} (nothing uses power yet)", power)).weak());
             }
@@ -1132,6 +1134,57 @@ fn tile_inspector(
         act(&mut sim.world);
     }
     (changed, open)
+}
+
+/// What hangs on the wall at `t`, side by side, with what's planned:
+/// calling plans off, taking things down.
+fn wall_decor(ui: &mut egui::Ui, w: &SimWorld, t: Pos, look_up: &mut Option<InfoTarget>, actions: &mut Vec<Action>) {
+    let m = &w.map;
+    let list = m.decor(m.idx(t));
+    if !m.feature[m.idx(t)].is_block() {
+        return;
+    }
+    ui.separator();
+    if list.is_empty() {
+        ui.label(RichText::new("Nothing on this wall. Wall decor (build menu) hangs in five places on each side.").weak());
+        return;
+    }
+    for d in list {
+        let (face, slot) = (d.face, d.slot);
+        let side = match m.decor_front(t, face, slot).and_then(|f| w.room_at(f)) {
+            Some(r) => r.kind_name().map_or("indoors".to_string(), |k| k.to_lowercase()),
+            None => "outside".to_string(),
+        };
+        ui.horizontal(|ui| {
+            let state = if !d.built {
+                match d.kind.def().missing(d.delivered) {
+                    Some((item, n)) => format!(" (planned: needs {} {})", n, item.name().to_lowercase()),
+                    None => " (planned: ready to put up)".to_string(),
+                }
+            } else if d.remove {
+                " (to be taken down)".to_string()
+            } else {
+                String::new()
+            };
+            ui.label(format!("{}{} - place {} facing {}", d.kind.name(), state, slot + 1, side));
+            info::button(ui, InfoTarget::Build(d.kind), look_up);
+            let (label, hint) = match (d.built, d.remove) {
+                (false, _) => ("Cancel", "Call it off; what was brought is put down"),
+                (true, false) => ("Take down", "A builder takes it down and gets half its materials back"),
+                (true, true) => ("Keep", "Leave it up after all"),
+            };
+            if ui.small_button(label).on_hover_text(hint).clicked() {
+                actions.push(Box::new(move |w| {
+                    w.cancel_decor(t, face, slot);
+                }));
+            }
+        });
+        if d.built && d.kind.def().id == "calendar" {
+            let hour = w.hour();
+            let date = format!("Day {}, {:02}:{:02}", w.day(), hour as u32, ((hour - hour.floor()) * 60.0) as u32);
+            ui.label(RichText::new(format!("    It says: {}", date)).weak());
+        }
+    }
 }
 
 /// Moving the furniture here, or how its move is going.

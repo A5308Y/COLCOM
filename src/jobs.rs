@@ -77,7 +77,8 @@ fn harvestable(m: &Map, i: usize) -> Option<PlantId> {
 fn from_beside(task: Task) -> bool {
     match task {
         Task::Harvest(kind) => !kind.def().passable,
-        Task::Sow(_) => false,
+        // From in front of the wall, in the cell the slot looks into.
+        Task::Sow(_) | Task::Decorate => false,
         Task::Mine | Task::Fill | Task::Construct | Task::Deconstruct | Task::Craft | Task::Uninstall => true,
     }
 }
@@ -221,11 +222,11 @@ impl World {
                     });
                     return to.map(|to| (d, Job::Haul { from: pos, to, deliver: false, picked: false }));
                 }
-                // Ingredients to a workbench.
+                // Ingredients to a workbench, materials to what's planned for a wall.
                 if self.res_target[i] != 0 && !forced || !matches!(m.feature[i], Feature::Built { .. }) {
                     return None;
                 }
-                let need = self.bench_at(pos)?.need()?;
+                let need = self.delivery_need(pos)?;
                 let (_, d) = df.approach(m, pos, true)?;
                 let (di, from) = nearest_item[need.kind.index()]?;
                 return Some((d + di, Job::Haul { from, to: pos, deliver: true, picked: false }));
@@ -280,6 +281,16 @@ impl World {
                 }
             }
             Feature::Built { kind, .. } => {
+                // Things for the wall: builders bring what they need, then put them up.
+                if wt == WorkType::Construction && !m.decor(i).is_empty() {
+                    if let Some((_, front)) = self.decor_job(pos) {
+                        return df.dist(front).map(|d| (d, Job::Work { target: pos, task: Task::Decorate }));
+                    }
+                    let need = self.decor_need(pos)?;
+                    let (_, d) = df.approach(m, pos, true)?;
+                    let (di, from) = nearest_item[need.kind.index()]?;
+                    return Some((d + di, Job::Haul { from, to: pos, deliver: true, picked: false }));
+                }
                 if kind.def().recipes.is_empty() {
                     return None;
                 }
@@ -388,6 +399,13 @@ impl World {
             // At a workbench's front, unless that turned out to be out of reach
             // (then walking to beside it is under way).
             Task::Craft if p.path_goal != Some(target) => self.map.front_cell(target).unwrap_or(target),
+            Task::Decorate => match self.decor_job(target) {
+                Some((_, front)) => front,
+                None => {
+                    self.end_job(p);
+                    return;
+                }
+            },
             _ => target,
         };
         if goal != target && task == Task::Craft {
@@ -444,6 +462,7 @@ impl World {
             Task::Uninstall => {
                 self.move_from(target).is_some_and(|mv| !mv.lifted && f.structure_id() == Some(mv.kind))
             }
+            Task::Decorate => self.decor_job(target).is_some(),
         }
     }
 
@@ -476,6 +495,11 @@ impl World {
             Task::Uninstall => {
                 let kind = self.move_from(target)?.kind;
                 Some((Skill::Construction, (kind.def().work_time * MOVE_SHARE).max(1.0)))
+            }
+            Task::Decorate => {
+                let (d, _) = self.decor_job(target)?;
+                let share = if d.built { DECONSTRUCT_SHARE } else { 1.0 };
+                Some((d.kind.def().skill, (d.kind.def().work_time * share).max(1.0)))
             }
         }
     }
@@ -569,6 +593,10 @@ impl World {
             }
             Task::Craft => {}
             Task::Uninstall => self.lift(target),
+            Task::Decorate => {
+                self.finish_decor(target);
+                self.sound("built", Some(target));
+            }
             Task::Construct => {
                 if let Feature::Blueprint { .. } = f {
                     if self.finish_move(target) {
@@ -749,7 +777,7 @@ impl World {
             Feature::Blueprint { kind, delivered, .. } => {
                 kind.def().missing(delivered).map(|(item, count)| Stack { kind: item, count })
             }
-            Feature::Built { .. } => self.bench_at(at)?.need(),
+            Feature::Built { .. } => self.bench_at(at).and_then(|b| b.need()).or_else(|| self.decor_need(at)),
             _ => None,
         }
     }
@@ -833,7 +861,8 @@ impl World {
                             self.map.feature[ti] = Feature::Blueprint { kind, delivered: delivered + used, dir, over };
                             used
                         }
-                        _ => self.stock_bench(to, carry),
+                        _ if self.bench_at(to).is_some() => self.stock_bench(to, carry),
+                        _ => self.stock_decor(to, carry),
                     }
                 } else {
                     self.map.add_to_cell(ti, carry)

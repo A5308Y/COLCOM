@@ -1,5 +1,9 @@
 //! Soil, rock, water and walls as chunked meshes with vertex colours.
 //!
+//! Walls (and windows) are drawn thin through the middle of their cell
+//! (`decor::WALL_T`), joined to what's beside them, with the floor showing
+//! around them in the colour of the room on each side.
+//!
 //! The map is split into 16×16-column chunks covering every level. Only faces
 //! between a solid cell and an open one are emitted. Each frame a signature of
 //! every chunk is compared with the last one, and only changed chunks are
@@ -12,7 +16,8 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use my_world::defs::{defs, BuildLook, Wallpaper};
-use my_world::map::{Block, Map, Pos, Zone};
+use my_world::decor::{WALL_A, WALL_B};
+use my_world::map::{Block, Map, Pos, Zone, DIRS};
 
 const CHUNK: usize = 16;
 /// World units per level.
@@ -95,13 +100,18 @@ impl Look3 {
         matches!(self, Look3::Soil | Look3::Rock | Look3::Ore | Look3::Copper | Look3::Wall | Look3::Opening { .. })
     }
 
-    /// Hides the face of a neighbour that meets it going (dx, dz): an
-    /// opening's ends are solid, its front and back have the hole.
-    fn covers(self, dx: i32, dz: i32) -> bool {
+    /// Hides the face of a neighbour that meets it going (dx, dz). Walls and
+    /// windows are thin, so they hide nothing beside them.
+    fn covers(self, _dx: i32, _dz: i32) -> bool {
         match self {
-            Look3::Opening { along_x } => (dx != 0) == along_x && (dz != 0) != along_x,
+            Look3::Wall | Look3::Opening { .. } => false,
             l => l.opaque(),
         }
+    }
+
+    /// Drawn thin through its cell (walls, windows).
+    fn thin(self) -> bool {
+        matches!(self, Look3::Wall | Look3::Opening { .. })
     }
 
     /// Small number for chunk signatures.
@@ -259,6 +269,9 @@ fn signature(m: &Map, cx: usize, cy: usize, cut: Cut) -> u64 {
                 let p = (x, y, z);
                 let look = look_at(m, p, cut);
                 mix(look.code());
+                if look.thin() {
+                    mix(m.floor[m.idx(p)] as u8);
+                }
                 if look == Look3::Open && !cut.hides(m, p) {
                     // Open cells colour the ground below them, or carry a floor.
                     let i = m.idx(p);
@@ -323,40 +336,47 @@ impl MeshBuf {
         self.quad(c, Vec3::new(dx as f32, 0.0, dz as f32), color);
     }
 
-    /// A wall's face on the cell edge in direction (dx, dz) papered with
-    /// `paper`: 8 squares across and 8 up, the bottom row a skirting board.
-    /// The pattern runs on along the wall from cell to cell.
+    /// A vertical wall face looking (dx, dz), from `a` to `b` (x, z) along
+    /// the wall, spanning lo..hi: plain `face`, or papered with `paper` in
+    /// squares of an eighth of a cell, the bottom row a skirting board. The
+    /// pattern runs on along the wall from piece to piece and cell to cell.
     #[allow(clippy::too_many_arguments)]
-    fn papered(&mut self, x: f32, z: f32, dx: i32, dz: i32, lo: f32, hi: f32, paper: &Wallpaper) {
-        const N: i64 = 8;
-        let (ax, az, bx, bz) = match (dx, dz) {
-            (1, 0) => (x + 1.0, z, x + 1.0, z + 1.0),
-            (-1, 0) => (x, z, x, z + 1.0),
-            (0, 1) => (x, z + 1.0, x + 1.0, z + 1.0),
-            _ => (x, z, x + 1.0, z),
+    fn wall_face(&mut self, a: (f32, f32), b: (f32, f32), (dx, dz): (i32, i32), lo: f32, hi: f32, face: Rgb, paper: Option<&Wallpaper>) {
+        let normal = Vec3::new(dx as f32, 0.0, dz as f32);
+        let corners = |u0: f32, u1: f32, y0: f32, y1: f32| {
+            let at = |u: f32, y: f32| if dx != 0 { Vec3::new(a.0, y, u) } else { Vec3::new(u, y, a.1) };
+            [at(u0, y0), at(u1, y0), at(u1, y1), at(u0, y1)]
         };
         // Along the wall: z for faces looking along x, else x.
-        let along = if dx != 0 { z } else { x } as i64;
+        let (s, e) = if dx != 0 { (a.1.min(b.1), a.1.max(b.1)) } else { (a.0.min(b.0), a.0.max(b.0)) };
+        let Some(paper) = paper else {
+            self.quad(corners(s, e, lo, hi), normal, face);
+            return;
+        };
+        const N: f32 = 8.0;
         let (base, accent) = (Rgb(paper.base.0, paper.base.1, paper.base.2), Rgb(paper.accent.0, paper.accent.1, paper.accent.2));
-        let normal = Vec3::new(dx as f32, 0.0, dz as f32);
-        for k in 0..N {
-            let (t0, t1) = (k as f32 / N as f32, (k + 1) as f32 / N as f32);
-            let (x0, z0) = (ax + (bx - ax) * t0, az + (bz - az) * t0);
-            let (x1, z1) = (ax + (bx - ax) * t1, az + (bz - az) * t1);
-            for j in 0..N {
-                let (y0, y1) = (lo + (hi - lo) * j as f32 / N as f32, lo + (hi - lo) * (j + 1) as f32 / N as f32);
-                let u = along * N + k;
+        let mut k = (s * N + 1e-3).floor() as i64;
+        while (k as f32) < e * N - 1e-3 {
+            let (u0, u1) = ((k as f32 / N).max(s), ((k + 1) as f32 / N).min(e));
+            for j in 0..N as i64 {
+                let (y0, y1) = (lo + (hi - lo) * j as f32 / N, lo + (hi - lo) * (j + 1) as f32 / N);
                 let color = if j == 0 {
                     accent.shade(0.7)
-                } else if paper.pattern.accent(u, j) {
+                } else if paper.pattern.accent(k, j) {
                     accent
                 } else {
-                    base.shade(paper.pattern.tone(u, j))
+                    base.shade(paper.pattern.tone(k, j))
                 };
-                let c = [Vec3::new(x0, y0, z0), Vec3::new(x1, y0, z1), Vec3::new(x1, y1, z1), Vec3::new(x0, y1, z0)];
-                self.quad(c, normal, color);
+                self.quad(corners(u0, u1, y0, y1), normal, color);
             }
+            k += 1;
         }
+    }
+
+    /// A horizontal rectangle from (x0, z0) to (x1, z1) at height `y`.
+    fn rect(&mut self, (x0, z0): (f32, f32), (x1, z1): (f32, f32), y: f32, normal: Vec3, color: Rgb) {
+        let c = [Vec3::new(x0, y, z0), Vec3::new(x0, y, z1), Vec3::new(x1, y, z1), Vec3::new(x1, y, z0)];
+        self.quad(c, normal, color);
     }
 
     fn into_mesh(self) -> Mesh {
@@ -478,16 +498,26 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: Cut) -> (Mesh, Option<Mesh>) 
                     continue;
                 }
 
-                if let Look3::Opening { along_x } = look {
-                    let BuildLook::Opening { width, bottom, top, .. } = m.feature[m.idx(p)].structure().unwrap().look else {
-                        continue;
-                    };
-                    let hole = (width, lo + bottom * LEVEL_H, lo + top * LEVEL_H);
-                    let face_open = |dx: i32, dz: i32| !look_off(xi + dx, yi + dz, zi).is_some_and(|l| l.covers(-dx, -dz));
+                if look.thin() {
                     let top_open = !above.is_some_and(|a| a.opaque());
-                    let below_open = z > 0 && !look_off(xi, yi, zi - 1).is_some_and(|l| l.opaque());
-                    let top_color = if sliced { WALL_TOP.shade(0.55) } else { WALL_TOP };
-                    opening(&mut b, (fx, fz, lo, hi), along_x, hole, top_color, &face_open, top_open, below_open);
+                    let top_color = top_open.then_some(if sliced { WALL_TOP.shade(0.55) } else { WALL_TOP });
+                    under_wall(&mut b, m, p, cut, lo);
+                    if !top_open {
+                        // Something on top (a wall above, rock): its underside is the ceiling here.
+                        b.flat(fx, fz, hi, Vec3::NEG_Y, WALL_FACE.shade(0.7));
+                    }
+                    match look {
+                        Look3::Opening { along_x } => {
+                            let BuildLook::Opening { width, bottom, top, .. } = m.feature[m.idx(p)].structure().unwrap().look else {
+                                continue;
+                            };
+                            let hole = (width, lo + bottom * LEVEL_H, lo + top * LEVEL_H);
+                            let links = m.wall_links(p);
+                            let end_open = |dx: i32, dz: i32| !DIRS.iter().position(|&d| d == (dx, dz)).is_some_and(|k| links[k]);
+                            opening(&mut b, (fx, fz, lo, hi), along_x, hole, top_color, &end_open);
+                        }
+                        _ => thin_wall(&mut b, m, p, cut, (lo, hi), top_color),
+                    }
                     continue;
                 }
                 let tone = 0.95 + hash(xi, yi + 31 * zi, 31) * 0.08;
@@ -503,7 +533,6 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: Cut) -> (Mesh, Option<Mesh>) 
                         let fleck = hash(xi * 5 + 2, yi * 3 + zi, 43);
                         (ground_color(m, p, look, cut).mix(COPPER, 0.35), ROCK_FACE.mix(COPPER, 0.45 + 0.3 * fleck).shade(tone))
                     }
-                    Look3::Wall => (WALL_TOP, WALL_FACE),
                     _ => (ground_color(m, p, look, cut), SOIL.shade(0.78 * tone)),
                 };
                 if !above.is_some_and(|a| a.opaque()) {
@@ -515,18 +544,8 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: Cut) -> (Mesh, Option<Mesh>) 
                 }
                 for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
                     let beside = look_off(xi + dx, yi + dz, zi);
-                    if beside.is_some_and(|l| l.covers(-dx, -dz)) {
-                        continue;
-                    }
-                    // A wall facing into a themed room is papered on that side.
-                    let paper = (look == Look3::Wall)
-                        .then(|| m.at(xi + dx, yi + dz, zi))
-                        .flatten()
-                        .and_then(|q| cut.kind(m, m.idx(q)))
-                        .and_then(|k| defs().rooms[k].wallpaper.as_ref());
-                    match paper {
-                        Some(paper) => b.papered(fx, fz, dx, dz, lo, hi, paper),
-                        None => b.side(fx, fz, dx, dz, lo, hi, face),
+                    if !beside.is_some_and(|l| l.covers(-dx, -dz)) {
+                        b.side(fx, fz, dx, dz, lo, hi, face);
                     }
                 }
             }
@@ -536,21 +555,135 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: Cut) -> (Mesh, Option<Mesh>) 
     (b.into_mesh(), water)
 }
 
-/// A wall cell with a hole through it, like the wall blocks beside it.
-/// `cell` is (x, y, bottom, top) in world units; `hole` is (width as a share
-/// of the cell, bottom, top). Coordinates below are local: `u` runs along the
-/// wall, `v` through it.
-#[allow(clippy::too_many_arguments)]
+/// The wallpaper of the themed room cell `q` is in, if any.
+fn paper_at(m: &Map, q: Option<Pos>, cut: Cut) -> Option<&'static Wallpaper> {
+    let k = cut.kind(m, m.idx(q?))?;
+    defs().rooms[k].wallpaper.as_ref()
+}
+
+/// The cell a piece of the wall at `p` looks into going `n` (a `DIRS`
+/// index): straight across, or, past a wall running off that way, the cell
+/// diagonally in front on the `side` the piece is on.
+fn facing_cell(m: &Map, p: Pos, links: &[bool; 4], n: usize, side: Option<usize>) -> Option<Pos> {
+    let (nx, ny) = DIRS[n];
+    let (x, y, z) = (p.0 as i32 + nx, p.1 as i32 + ny, p.2 as i32);
+    match side.filter(|_| links[n]) {
+        Some(s) => m.at(x + DIRS[s].0, y + DIRS[s].1, z),
+        None => m.at(x, y, z),
+    }
+}
+
+/// A wall through the middle of its cell: a square core with an arm out to
+/// each side it joins (`Map::wall_links`), papered where it faces a themed room.
+fn thin_wall(b: &mut MeshBuf, m: &Map, p: Pos, cut: Cut, (lo, hi): (f32, f32), top: Option<Rgb>) {
+    let (x, z) = (p.0 as f32, p.1 as f32);
+    let links = m.wall_links(p);
+    let at = |u: f32, v: f32| (x + u, z + v);
+    let (a, c) = (WALL_A, WALL_B);
+    let face = |b: &mut MeshBuf, from: (f32, f32), to: (f32, f32), n: usize, side: Option<usize>| {
+        let paper = paper_at(m, facing_cell(m, p, &links, n, side), cut);
+        b.wall_face(from, to, DIRS[n], lo, hi, WALL_FACE, paper);
+    };
+    // The core: its own sides where nothing joins.
+    for (n, from, to) in [(0, at(c, a), at(c, c)), (1, at(a, a), at(a, c)), (2, at(a, c), at(c, c)), (3, at(a, a), at(c, a))] {
+        if !links[n] {
+            face(b, from, to, n, None);
+        }
+    }
+    if let Some(t) = top {
+        b.rect(at(a, a), at(c, c), hi, Vec3::Y, t);
+    }
+    // The arms, each with a side looking either way.
+    for d in (0..4).filter(|&d| links[d]) {
+        let (s, e) = match d {
+            0 | 2 => (c, 1.0),
+            _ => (0.0, a),
+        };
+        let (lo_corner, hi_corner, sides) = if d < 2 {
+            (at(s, a), at(e, c), [(3, at(s, a), at(e, a)), (2, at(s, c), at(e, c))])
+        } else {
+            (at(a, s), at(c, e), [(1, at(a, s), at(a, e)), (0, at(c, s), at(c, e))])
+        };
+        for (n, from, to) in sides {
+            face(b, from, to, n, Some(d));
+        }
+        if let Some(t) = top {
+            b.rect(lo_corner, hi_corner, hi, Vec3::Y, t);
+        }
+    }
+}
+
+/// What the floor looks like in cell `q` (a built floor, or the ground
+/// under it), if there's one to see.
+fn floor_around(m: &Map, q: Pos, cut: Cut) -> Option<Rgb> {
+    if cut.hides(m, q) {
+        return None;
+    }
+    if m.floor[m.idx(q)] {
+        return Some(floor_color(m, q, cut));
+    }
+    let below = m.below(q)?;
+    let look = look_at(m, below, cut);
+    matches!(look, Look3::Soil | Look3::Rock | Look3::Ore | Look3::Copper).then(|| ground_color(m, below, look, cut))
+}
+
+/// The floor around a thin wall or window at `p` (bottom `lo`): each
+/// quarter of the cell in the colour of the floor beside it on that side
+/// (indoors on one side, grass on the other), on a slab if the wall stands on a built floor.
+fn under_wall(b: &mut MeshBuf, m: &Map, p: Pos, cut: Cut, lo: f32) {
+    let i = m.idx(p);
+    let on_ground = m.below(p).is_some_and(|q| look_at(m, q, cut).opaque());
+    if !m.floor[i] && !on_ground {
+        return;
+    }
+    let y = if m.floor[i] && !on_ground { lo + FLOOR_T } else { lo };
+    let (x, z, zi) = (p.0 as f32, p.1 as f32, p.2 as i32);
+    let links = m.wall_links(p);
+    let cell = |d: (i32, i32)| m.at(p.0 as i32 + d.0, p.1 as i32 + d.1, zi);
+    let fallback = m.below(p).filter(|_| on_ground).map_or(FLOOR, |q| ground_color(m, q, look_at(m, q, cut), cut));
+    for (xs, ys) in [(0, 2), (1, 2), (0, 3), (1, 3)] {
+        let (ax, ay) = (DIRS[xs], DIRS[ys]);
+        let mut candidates = Vec::new();
+        if !links[ys] {
+            candidates.push(cell(ay));
+        }
+        if !links[xs] {
+            candidates.push(cell(ax));
+        }
+        candidates.push(cell((ax.0 + ay.0, ax.1 + ay.1)));
+        let color = candidates.into_iter().flatten().find_map(|q| floor_around(m, q, cut)).unwrap_or(fallback);
+        let (u0, u1) = if ax.0 > 0 { (0.5, 1.0) } else { (0.0, 0.5) };
+        let (v0, v1) = if ay.1 > 0 { (0.5, 1.0) } else { (0.0, 0.5) };
+        b.rect((x + u0, z + v0), (x + u1, z + v1), y, Vec3::Y, color);
+    }
+    if y > lo {
+        b.flat(x, z, lo, Vec3::NEG_Y, FLOOR.shade(0.6));
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let open = m.at(p.0 as i32 + dx, p.1 as i32 + dz, zi).is_none_or(|q| {
+                let l = look_at(m, q, cut);
+                !m.floor[m.idx(q)] && !l.opaque()
+            });
+            if open {
+                b.side(x, z, dx, dz, lo, y, FLOOR.shade(0.7));
+            }
+        }
+    }
+}
+
+/// A window: a thin wall with a hole through it. `cell` is (x, y, bottom,
+/// top) in world units; `hole` is (width as a share of the cell, bottom,
+/// top). Coordinates below are local: `u` runs along the wall, `v` through
+/// it (only its middle, as thick as the walls). The ends are drawn where
+/// `end_open` says nothing joins.
 fn opening(
     b: &mut MeshBuf,
     (x, z, lo, hi): (f32, f32, f32, f32),
     along_x: bool,
     (width, yb, yt): (f32, f32, f32),
-    top_color: Rgb,
-    face_open: &dyn Fn(i32, i32) -> bool,
-    top_open: bool,
-    below_open: bool,
+    top_color: Option<Rgb>,
+    end_open: &dyn Fn(i32, i32) -> bool,
 ) {
+    let (va, vb) = (WALL_A, WALL_B);
     let world = |u: f32, y: f32, v: f32| if along_x { Vec3::new(x + u, y, z + v) } else { Vec3::new(x + v, y, z + u) };
     let dir = |du: i32, dv: i32| if along_x { (du, dv) } else { (dv, du) };
     let normal = |du: i32, dy: i32, dv: i32| {
@@ -564,35 +697,29 @@ fn opening(
         let c = [world(u0, y0, v), world(u1, y0, v), world(u1, y1, v), world(u0, y1, v)];
         b.quad(c, normal(0, 0, dv), WALL_FACE);
     };
-    for (v, dv) in [(0.0, -1), (1.0, 1)] {
-        let (dx, dz) = dir(0, dv);
-        if face_open(dx, dz) {
-            across(b, v, dv, 0.0, 1.0, lo, yb);
-            across(b, v, dv, 0.0, 1.0, yt, hi);
-            across(b, v, dv, 0.0, h0, yb, yt);
-            across(b, v, dv, h1, 1.0, yb, yt);
-        }
+    for (v, dv) in [(va, -1), (vb, 1)] {
+        across(b, v, dv, 0.0, 1.0, lo, yb);
+        across(b, v, dv, 0.0, 1.0, yt, hi);
+        across(b, v, dv, 0.0, h0, yb, yt);
+        across(b, v, dv, h1, 1.0, yb, yt);
     }
-    // The ends, where it meets the walls beside it.
+    // The ends, unless they meet the walls beside it.
     for (u, du) in [(0.0, -1), (1.0, 1)] {
         let (dx, dz) = dir(du, 0);
-        if face_open(dx, dz) {
-            let c = [world(u, lo, 0.0), world(u, lo, 1.0), world(u, hi, 1.0), world(u, hi, 0.0)];
+        if end_open(dx, dz) {
+            let c = [world(u, lo, va), world(u, lo, vb), world(u, hi, vb), world(u, hi, va)];
             b.quad(c, normal(du, 0, 0), WALL_FACE);
         }
     }
     // Inside the hole: sill, lintel and the two sides.
-    b.quad([world(h0, yb, 0.0), world(h1, yb, 0.0), world(h1, yb, 1.0), world(h0, yb, 1.0)], Vec3::Y, reveal);
-    b.quad([world(h0, yt, 0.0), world(h1, yt, 0.0), world(h1, yt, 1.0), world(h0, yt, 1.0)], Vec3::NEG_Y, reveal.shade(0.8));
+    b.quad([world(h0, yb, va), world(h1, yb, va), world(h1, yb, vb), world(h0, yb, vb)], Vec3::Y, reveal);
+    b.quad([world(h0, yt, va), world(h1, yt, va), world(h1, yt, vb), world(h0, yt, vb)], Vec3::NEG_Y, reveal.shade(0.8));
     for (u, du) in [(h0, 1), (h1, -1)] {
-        let c = [world(u, yb, 0.0), world(u, yb, 1.0), world(u, yt, 1.0), world(u, yt, 0.0)];
+        let c = [world(u, yb, va), world(u, yb, vb), world(u, yt, vb), world(u, yt, va)];
         b.quad(c, normal(du, 0, 0), reveal);
     }
-    if top_open {
-        b.flat(x, z, hi, Vec3::Y, top_color);
-    }
-    if below_open {
-        b.flat(x, z, lo, Vec3::NEG_Y, WALL_FACE.shade(0.7));
+    if let Some(top) = top_color {
+        b.quad([world(0.0, hi, va), world(1.0, hi, va), world(1.0, hi, vb), world(0.0, hi, vb)], Vec3::Y, top);
     }
 }
 
@@ -635,6 +762,29 @@ mod tests {
         let accent = Rgb(paper.accent.0, paper.accent.1, paper.accent.2).vertex();
         assert!(papered.iter().any(|c| c == &accent), "in its colours");
         assert!(!plain.iter().any(|c| c == &accent));
+    }
+
+    #[test]
+    fn walls_are_thin_with_the_floor_showing_around_them() {
+        // One straight wall along x at y = 4, standing on the ground.
+        let mut m = Map::flat(10, 10);
+        for x in 2..=6 {
+            let i = m.idx((x, 4, Z));
+            m.set_feature(i, Feature::built("wall"));
+        }
+        let (mesh, _) = build_chunk(&m, 0, 0, Cut::NONE);
+        let Some(bevy::mesh::VertexAttributeValues::Float32x3(pos)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) else {
+            panic!("positions")
+        };
+        let (lo, hi) = (Z as f32 * LEVEL_H, (Z + 1) as f32 * LEVEL_H);
+        // Everything standing up in the middle cell lies within the wall's thickness.
+        let upright: Vec<&[f32; 3]> = pos.iter().filter(|p| p[1] > lo + 0.01 && (4.0..=5.0).contains(&p[0]) && (4.0..=5.0).contains(&p[2])).collect();
+        assert!(!upright.is_empty());
+        assert!(upright.iter().all(|p| (4.0 + WALL_A - 1e-4..=4.0 + WALL_B + 1e-4).contains(&p[2])), "thin");
+        assert!(upright.iter().any(|p| (p[1] - hi).abs() < 1e-4), "with a top");
+        // And the ground under it is drawn all across the cell.
+        let ground = pos.iter().filter(|p| (p[1] - lo).abs() < 1e-4 && (4.0..=5.0).contains(&p[0]) && (p[2] - 4.0).abs() < 1e-4).count();
+        assert!(ground > 0, "the floor shows at the cell's edge");
     }
 
     #[test]

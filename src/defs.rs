@@ -424,6 +424,11 @@ pub struct BuildDef {
     /// Looks the same from every side (a lamp, a table): no front, nothing to turn.
     #[serde(default)]
     pub any_way: bool,
+    /// Hung on a wall (a painting, a wall lamp) in one of its slots rather
+    /// than standing in a cell (see `decor.rs`). Modelled with x along the
+    /// wall, y up from the floor and z out of the wall's face.
+    #[serde(default)]
+    pub on_wall: bool,
     /// Lets daylight into rooms it borders (windows).
     #[serde(default)]
     pub daylight: bool,
@@ -554,6 +559,7 @@ impl BuildDef {
     pub fn turnable(&self) -> bool {
         matches!(self.look, BuildLook::Parts(_))
             && !self.any_way
+            && !self.on_wall
             && !self.along_walls
             && !matches!(self.special, Special::Floor | Special::Roof | Special::Grave)
     }
@@ -1098,6 +1104,12 @@ impl Defs {
             }
             if d.front > 3 {
                 return Err(format!("{}: front must be 0 to 3", d.id));
+            }
+            if d.on_wall && (!matches!(d.look, BuildLook::Parts(_)) || d.blocks_room || d.special != Special::None) {
+                return Err(format!("{}: things on walls are modelled parts, nothing more", d.id));
+            }
+            if d.on_wall && d.storage.as_ref().is_some_and(|s| s.slots != 1) {
+                return Err(format!("{}: a wall shelf holds one stack", d.id));
             }
             if !(d.comfort > 0.0 && d.comfort <= 1.0) {
                 return Err(format!("{}: comfort must be above 0 and up to 1", d.id));

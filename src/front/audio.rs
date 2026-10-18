@@ -261,6 +261,7 @@ fn work_sound(w: &my_world::world::World, target: my_world::map::Pos, task: Task
             Feature::Blueprint { kind, .. } | Feature::Built { kind, .. } => kind.def().sound.as_deref().unwrap_or("hammer"),
             _ => "hammer",
         },
+        Task::Decorate => "hammer",
         Task::Craft => w
             .bench_at(target)
             .and_then(|b| b.current)

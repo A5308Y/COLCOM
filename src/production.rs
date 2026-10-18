@@ -322,6 +322,15 @@ impl World {
     /// stockpile gets settings of its own, shared with the same furniture
     /// beside it that has its own. Where the furniture is gone, its storage
     /// goes too, and whatever no longer fits the cell spills over.
+    /// What makes cell `i` storage by itself: its furniture (a shelf), or the
+    /// shelves on its wall.
+    fn storage_kind(&self, i: usize) -> Option<crate::defs::BuildId> {
+        if self.map.wall_shelves(i) > 0 {
+            return self.map.decor(i).iter().find(|d| d.built && d.kind.def().storage.is_some()).map(|d| d.kind);
+        }
+        self.map.feature[i].structure_id().filter(|k| k.def().storage.is_some())
+    }
+
     pub(crate) fn sync_containers(&mut self) {
         for i in 0..self.map.len() {
             // Most cells have neither furniture nor storage: skip them quickly.
@@ -329,18 +338,17 @@ impl World {
             if !zoned && !matches!(self.map.feature[i], Feature::Built { .. }) {
                 continue;
             }
-            let def = self.map.feature[i].structure();
-            let storage = def.is_some_and(|d| d.storage.is_some());
+            let kind = self.storage_kind(i);
+            let storage = kind.is_some();
             let p = self.map.pos(i);
             if storage && self.map.zone[i].stockpile().is_none() {
-                let kind = self.map.feature[i].structure_id();
                 let next = self.map.neighbors(p).find_map(|nb| {
                     let ni = self.map.idx(nb);
                     let id = self.map.zone[ni].stockpile()?;
-                    (self.is_container(id) && self.map.feature[ni].structure_id() == kind).then_some(id)
+                    (self.is_container(id) && self.storage_kind(ni) == kind).then_some(id)
                 });
                 let id = next.unwrap_or_else(|| {
-                    let name = def.map_or("Storage", |d| d.name.as_str());
+                    let name = kind.map_or("Storage", |k| k.name());
                     let number = self.stockpiles.iter().filter(|s| s.container && s.name.starts_with(name)).count() + 1;
                     // Preferred, so things move onto shelves from plain stockpiles.
                     let store = Stockpile { name: format!("{} {}", name, number), priority: 3, container: true, ..Stockpile::new(0) };

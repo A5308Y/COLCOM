@@ -285,6 +285,8 @@ pub struct UiState {
     pub confirm_new: bool,
     /// Width of the docked build menu last frame (in logical pixels).
     pub dock_width: f32,
+    /// The wall face and slot under the cursor (wall cell, face, slot), when it points at a wall.
+    pub wall_slot: Option<(Pos, u8, u8)>,
     /// The info window, what it shows, what it showed before (for Back),
     /// and its search text.
     pub show_info: bool,
@@ -328,6 +330,7 @@ impl UiState {
             show_build: true,
             build_filter: String::new(),
             dock_width: 0.0,
+            wall_slot: None,
             show_info: false,
             info: None,
             info_back: Vec::new(),
@@ -531,7 +534,39 @@ fn update_hover(
     let Ok(ray) = cam.viewport_to_world(gt, cursor) else { return };
     if let Some(h) = pick(&sim.world.map, ray, &ui) {
         ui.hover = Some(h);
+        let m = &sim.world.map;
+        ui.wall_slot = m.feature[m.idx(h.solid)].is_block().then(|| wall_slot_at(ray, h.solid)).flatten().map(|(f, s)| (h.solid, f, s));
     }
+}
+
+/// The face of the wall at `wall` the ray meets first, and the slot on it
+/// (faces turned away from the camera don't count).
+fn wall_slot_at(ray: Ray3d, wall: Pos) -> Option<(u8, u8)> {
+    use my_world::decor::{SLOTS, WALL_A, WALL_B};
+    let (o, d) = (ray.origin, *ray.direction);
+    let (x, y) = (wall.0 as f32, wall.1 as f32);
+    let (lo, hi) = (wall.2 as f32 * LEVEL_H, (wall.2 + 1) as f32 * LEVEL_H);
+    let mut best: Option<(f32, u8, u8)> = None;
+    for face in 0..4u8 {
+        let (nx, ny) = DIRS[face as usize];
+        if nx as f32 * d.x + ny as f32 * d.z >= 0.0 {
+            continue;
+        }
+        let off = if nx + ny > 0 { WALL_B } else { WALL_A };
+        // Faces looking along x sit at a fixed x and run along z; the others the other way.
+        let (plane, o_n, d_n) = if face < 2 { (x + off, o.x, d.x) } else { (y + off, o.z, d.z) };
+        let t = (plane - o_n) / d_n;
+        let hit = o + d * t;
+        let along = if face < 2 { hit.z - y } else { hit.x - x };
+        if t <= 0.0 || !(0.0..1.0).contains(&along) || !(lo..hi).contains(&hit.y) {
+            continue;
+        }
+        let slot = ((along * SLOTS as f32) as u8).min(SLOTS - 1);
+        if best.is_none_or(|b| t < b.0) {
+            best = Some((t, face, slot));
+        }
+    }
+    best.map(|(_, f, s)| (f, s))
 }
 
 /// Pawn nearest to a cell (living ones preferred), if close enough.
@@ -894,6 +929,16 @@ fn mouse(
                 }
             }
         }
+        // Things for walls go into the slot under the cursor, one per click.
+        Tool::Paint(Order::Build(kind)) if kind.def().on_wall => {
+            if buttons.just_released(MouseButton::Left) && !over_ui {
+                if let Some((wall, face, slot)) = ui.wall_slot {
+                    if sim.world.order_decor(wall, face, slot, kind) {
+                        sounds.play("ui_place", None);
+                    }
+                }
+            }
+        }
         Tool::Paint(order) => {
             if buttons.just_pressed(MouseButton::Left) && !over_ui {
                 ui.drag_start = hover.map(|h| order_target(&sim.world, h, order));
@@ -1125,6 +1170,17 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
         gizmos.grid(iso, UVec2::splat(9), Vec2::ONE, Color::srgba(1.0, 1.0, 1.0, 0.18));
     }
 
+    // Something for a wall: the slot under the cursor, green if it fits there.
+    if let (Some((wall, face, slot)), Tool::Paint(Order::Build(kind))) = (ui.wall_slot, ui.tool) {
+        if kind.def().on_wall {
+            let ok = w.decor_ok(wall, face, slot, kind);
+            let lift = if m.floor[m.idx(wall)] { FLOOR_T } else { 0.0 };
+            let t = super::props::decor_transform(wall, face, slot, lift);
+            let c = [(-0.1, 0.3), (0.1, 0.3), (0.1, 0.9), (-0.1, 0.9)].map(|(x, y)| t.transform_point(Vec3::new(x * 0.95, y, 0.01)));
+            let color = if ok { Color::srgb(0.4, 1.0, 0.45) } else { Color::srgb(1.0, 0.3, 0.25) };
+            gizmos.linestrip([c[0], c[1], c[2], c[3], c[0]], color);
+        }
+    }
     // What's being placed: an arrow to its front.
     if let (Some(h), Tool::Paint(order @ Order::Build(kind))) = (ui.hover, ui.tool) {
         if kind.def().turnable() {
@@ -1233,6 +1289,16 @@ mod tests {
         assert_eq!(order_target(&w, h, build("window")), wall, "replacing the wall");
         assert_eq!(order_target(&w, h, build("door")), wall);
         assert_eq!(order_target(&w, h, build("wall")), (3, 3, z + 1), "stacked on top");
+    }
+
+    #[test]
+    fn the_cursor_picks_a_wall_face_and_slot() {
+        // Looking at the wall at (3, 3) from +z (map +y), down a little, aimed at x = 3.9.
+        let wall = (3, 3, 1);
+        let ray = |x: f32| Ray3d::new(Vec3::new(x, 1.8, 8.0), Dir3::new(Vec3::new(0.0, -0.3, -5.0)).unwrap());
+        assert_eq!(wall_slot_at(ray(3.9), wall), Some((2, 4)), "the +y face, last slot");
+        assert_eq!(wall_slot_at(ray(3.05), wall), Some((2, 0)));
+        assert_eq!(wall_slot_at(ray(5.5), wall), None, "missed");
     }
 
     #[test]

@@ -234,6 +234,12 @@ fn build_sheet(k: BuildId) -> Sheet {
     let d = k.def();
     let mut s = Sheet::new(&d.name, &d.category);
     s.about.extend(purpose(d).map(String::from));
+    if d.on_wall {
+        s.about.push("Hangs on a wall: in one of five places on either side, counting for the room it faces.".into());
+        if d.id == "calendar" {
+            s.about.push("Shows the day and time (click its wall).".into());
+        }
+    }
     if !d.recipes.is_empty() {
         s.about.push("A workbench: click it in the world to add bills.".into());
         if d.turnable() {
@@ -259,8 +265,12 @@ fn build_sheet(k: BuildId) -> Sheet {
     } else {
         "no, it blocks the way"
     };
-    props.push(row("Walk through", walk));
-    props.push(row("Cover in battle", format!("{:?}", d.cover_kind())));
+    if d.on_wall {
+        props.push(row("Placement", "on a wall, one of five places per side"));
+    } else {
+        props.push(row("Walk through", walk));
+        props.push(row("Cover in battle", format!("{:?}", d.cover_kind())));
+    }
     if d.blocks_room && d.special != Special::Door {
         props.push(row("Rooms", "encloses them"));
     }
@@ -473,6 +483,14 @@ mod tests {
         // And the things it makes point back at it.
         let product = bench.def().recipes[0].def().products[0].item;
         assert!(sheet(InfoTarget::Item(product)).links.contains(&InfoTarget::Build(bench)));
+    }
+
+    #[test]
+    fn wall_decor_says_where_it_goes() {
+        let lamp = sheet(InfoTarget::Build(BuildId::named("wall_lamp")));
+        assert!(lamp.row("Placement").is_some_and(|p| p.contains("wall")));
+        assert!(lamp.row("Light").is_some() && lamp.row("Walk through").is_none());
+        assert!(sheet(InfoTarget::Build(BuildId::named("wall_shelf"))).row("Storage").is_some());
     }
 
     #[test]

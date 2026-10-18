@@ -154,6 +154,13 @@ for), and `<` goes back.
   gives back its materials; cancelling leaves it as it was. Stairs, even planned ones, and the cell in front of them get no roof. Stairs connect a cell to the one above; you enter them from their low end
   and can't walk across them. Use the layer view to place floors in mid-air (a faint grid shows the
   cells). Pawns and items with nothing underneath fall, and falls of two levels or more hurt.
+- **Wall decor:** walls are drawn thin (about 35 cm) through the middle of their cell, so rooms show
+  more floor. Each side of a wall has five places for a painting, poster, calendar (shows the date),
+  wall lamp (lights the room), wall shelf (holds one stack; storage like a shelf) or hanging plant: pick
+  one in the build menu's Wall decor, point at a wall (the place under the cursor is marked green, or red
+  if it doesn't fit) and click. Builders bring the materials and put it up from in front. It counts
+  for the room it faces (beauty, light). Click the wall to see what's on it, call plans off or have
+  things taken down; anything on a wall comes down with the wall.
 - **Looks:** sun and moon with shadows, dark nights, lamps that light rooms and caves, see-through
   glossy water, distance haze, ambient occlusion and bloom. Pawns swing their arms and legs as they walk,
   hop when they step up or down a level, and drop when they fall. Gunfire flashes and kicks up dust.
