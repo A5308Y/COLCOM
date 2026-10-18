@@ -26,8 +26,7 @@ impl World {
         let mut jobs: Vec<Job> = Vec::new();
 
         // Gear lying here.
-        let gear = |k: crate::defs::ItemId| k.def().weapon.is_some() || k.def().apparel.is_some();
-        if (self.res_item[i] == 0 || self.res_item[i] == p.id) && m.stacks(i).any(|s| gear(s.kind)) {
+        if (self.res_item[i] == 0 || self.res_item[i] == p.id) && m.stacks(i).any(|s| s.kind.def().is_gear()) {
             jobs.push(Job::Equip { from: at, chosen: true });
         }
         // Work of every type, whether or not it's switched on for them.
@@ -38,7 +37,7 @@ impl World {
         }
         // Colonists here who need a doctor, or an operation.
         let (medicine, food) = scan.medicine_and_food();
-        for o in self.pawns.iter().filter(|o| o.is_colonist() && !o.dead && o.pos == at) {
+        for o in self.pawns.iter().filter(|o| o.is_living_colonist() && o.pos == at) {
             if o.id == p.id {
                 if o.health.needs_tending() {
                     jobs.push(self.self_tend_job(p));
@@ -92,7 +91,7 @@ impl World {
         let who = |id: u32| self.pawn(id).map_or("someone".to_string(), |o| o.name.clone());
         let item = |p: Pos| self.map.stacks(self.map.idx(p)).next().map_or("it".to_string(), |s| s.kind.name().to_lowercase());
         let gear = |p: Pos| {
-            let first = self.map.stacks(self.map.idx(p)).find(|s| s.kind.def().weapon.is_some() || s.kind.def().apparel.is_some());
+            let first = self.map.stacks(self.map.idx(p)).find(|s| s.kind.def().is_gear());
             first.map_or("it".to_string(), |s| s.kind.name().to_lowercase())
         };
         // What a delivery brings: what's needed there (a shelf may hold other things too).
@@ -186,33 +185,16 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{content_colonist as colonist, quiet_world, run};
     use crate::defs::{BuildId, ItemId};
-    use crate::map::{Map, Stack, FLAT_Z as Z};
+    use crate::map::{Stack, FLAT_Z as Z};
     use crate::rng::Rng;
-    use crate::TICK;
 
     fn test_world() -> World {
-        let mut w = World::with_map(Map::flat(24, 24), Rng::new(4));
-        w.story.next_raid = f32::MAX;
-        w.story.next_event = f32::MAX;
-        w.regrow_timer = f32::MAX;
-        w
+        quiet_world(24, 24, 4)
     }
 
-    fn colonist(w: &mut World, at: Pos) -> u32 {
-        let id = w.spawn_colonist(at);
-        let i = w.pawn_index(id).unwrap();
-        w.pawns[i].hunger = 100.0;
-        w.pawns[i].rest = 100.0;
-        w.pawns[i].mood = 60.0;
-        id
-    }
 
-    fn run(w: &mut World, secs: f32) {
-        for _ in 0..(secs / TICK) as usize {
-            w.tick(TICK);
-        }
-    }
 
     #[test]
     fn a_prioritized_grave_gets_dug_first() {

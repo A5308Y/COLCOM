@@ -148,9 +148,7 @@ impl World {
         };
         self.map.set_feature(i, Feature::Built { kind: mv.kind, dir });
         // Shove anything lying here out of the way.
-        for s in self.map.take_all(i) {
-            self.map.drop_item(at, s);
-        }
+        self.map.move_items(i, at);
         if !mv.bills.is_empty() {
             if let Some(b) = self.bench_mut(at) {
                 b.bills = mv.bills.clone();
@@ -187,30 +185,16 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::{Map, FLAT_Z as Z};
+    use crate::testing::{build, quiet_world, run};
+    use crate::map::FLAT_Z as Z;
     use crate::production::BillMode;
     use crate::defs::RecipeId;
-    use crate::rng::Rng;
-    use crate::TICK;
 
     fn test_world() -> World {
-        let mut w = World::with_map(Map::flat(16, 16), Rng::new(3));
-        w.story.next_raid = f32::MAX;
-        w.story.next_event = f32::MAX;
-        w.regrow_timer = f32::MAX;
-        w
+        quiet_world(16, 16, 3)
     }
 
-    fn run(w: &mut World, secs: f32) {
-        for _ in 0..(secs / TICK) as usize {
-            w.tick(TICK);
-        }
-    }
 
-    fn put(w: &mut World, at: Pos, id: &str) {
-        let i = w.map.idx(at);
-        w.map.set_feature(i, Feature::built(id));
-    }
 
     fn feature(w: &World, at: Pos) -> Feature {
         w.map.feature[w.map.idx(at)]
@@ -224,7 +208,7 @@ mod tests {
         w.pawns[i].hunger = 100.0;
         w.pawns[i].rest = 100.0;
         let (from, to) = ((5, 5, Z), (10, 9, Z));
-        put(&mut w, from, "bed");
+        build(&mut w, from, "bed");
         assert!(w.assign_bed(from, Some(id)));
         assert!(!w.order_move(from, from), "not onto itself");
         assert!(w.order_move(from, to));
@@ -243,7 +227,7 @@ mod tests {
         let mut w = test_world();
         w.spawn_colonist((2, 2, Z));
         let (from, to) = ((5, 5, Z), (10, 9, Z));
-        put(&mut w, from, "stove");
+        build(&mut w, from, "stove");
         let cook = RecipeId::named("cook_meal");
         w.add_bill(from, cook, BillMode::Count(3));
         assert!(w.order_move(from, to));
@@ -270,9 +254,9 @@ mod tests {
     #[test]
     fn walls_and_occupied_cells_cant_be_used() {
         let mut w = test_world();
-        put(&mut w, (5, 5, Z), "wall");
-        put(&mut w, (6, 6, Z), "table");
-        put(&mut w, (7, 7, Z), "chair");
+        build(&mut w, (5, 5, Z), "wall");
+        build(&mut w, (6, 6, Z), "table");
+        build(&mut w, (7, 7, Z), "chair");
         assert!(w.movable((5, 5, Z)).is_none(), "walls stay");
         assert!(!w.order_move((6, 6, Z), (7, 7, Z)), "something is there");
         assert!(w.order_move((6, 6, Z), (8, 8, Z)));
@@ -282,7 +266,7 @@ mod tests {
     fn cancelling_puts_things_back() {
         let mut w = test_world();
         let (from, to) = ((5, 5, Z), (10, 9, Z));
-        put(&mut w, from, "table");
+        build(&mut w, from, "table");
         assert!(w.order_move(from, to));
         w.lift(from);
         assert_eq!(feature(&w, from), Feature::None, "packed up");
@@ -302,7 +286,7 @@ mod tests {
     fn building_over_the_blueprint_calls_the_move_off() {
         let mut w = test_world();
         let (from, to) = ((5, 5, Z), (10, 9, Z));
-        put(&mut w, from, "table");
+        build(&mut w, from, "table");
         assert!(w.order_move(from, to));
         w.lift(from);
         assert!(w.apply_order(to, Order::Build(BuildId::named("chair"))));

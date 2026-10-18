@@ -381,11 +381,8 @@ fn spawn_parts(
                 "owner" => owner.clone(),
                 color => a.paint(color),
             };
-            let (tx, ty, tz) = p.turn;
             let at = Vec3::new(p.at.0, p.at.1, p.at.2);
-            let mut t = Transform::from_translation(at)
-                .with_rotation(Quat::from_euler(EulerRot::XYZ, tx.to_radians(), ty.to_radians(), tz.to_radians()))
-                .with_scale(Vec3::new(p.size.0, p.size.1, p.size.2));
+            let mut t = part_transform(p);
             if p.hinge && open {
                 // A quarter turn around its left edge.
                 t.rotate_around(at - Vec3::X * p.size.0 / 2.0, Quat::from_rotation_y(-FRAC_PI_2));
@@ -396,6 +393,15 @@ fn spawn_parts(
     e.id()
 }
 
+/// Where a part of a look sits: placed at `at`, turned by `turn` (degrees
+/// around x, up and y), scaled to `size`.
+pub fn part_transform(p: &Part) -> Transform {
+    let (tx, ty, tz) = p.turn;
+    Transform::from_xyz(p.at.0, p.at.1, p.at.2)
+        .with_rotation(Quat::from_euler(EulerRot::XYZ, tx.to_radians(), ty.to_radians(), tz.to_radians()))
+        .with_scale(Vec3::new(p.size.0, p.size.1, p.size.2))
+}
+
 /// Worn armour: `parts` (in metres from the bone, in the character's own
 /// frame) under a root turned by `turn` (undoing the bone's own rest turn),
 /// in polished metal.
@@ -403,10 +409,7 @@ pub fn spawn_worn(commands: &mut Commands, a: &PropAssets, turn: Quat, parts: &[
     let mut e = commands.spawn((Transform::from_rotation(turn), Visibility::default()));
     e.with_children(|c| {
         for p in parts {
-            let (tx, ty, tz) = p.turn;
-            let t = Transform::from_xyz(p.at.0, p.at.1, p.at.2)
-                .with_rotation(Quat::from_euler(EulerRot::XYZ, tx.to_radians(), ty.to_radians(), tz.to_radians()))
-                .with_scale(Vec3::new(p.size.0, p.size.1, p.size.2));
+            let t = part_transform(p);
             let mat = a.metals.get(&p.color).cloned().unwrap_or_else(|| a.paint(&p.color));
             c.spawn((Mesh3d(a.mesh(p.shape).clone()), MeshMaterial3d(mat), t));
         }

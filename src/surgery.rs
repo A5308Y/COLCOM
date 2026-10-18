@@ -265,38 +265,17 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::{Feature, Map, Stack, FLAT_Z as Z};
+    use crate::testing::{build, content_colonist as colonist, quiet_world, run};
+    use crate::map::{Stack, FLAT_Z as Z};
     use crate::pawn::WorkType;
     use crate::rng::Rng;
-    use crate::TICK;
 
     fn test_world() -> World {
-        let mut w = World::with_map(Map::flat(20, 20), Rng::new(9));
-        w.story.next_raid = f32::MAX;
-        w.story.next_event = f32::MAX;
-        w.regrow_timer = f32::MAX;
-        w
+        quiet_world(20, 20, 9)
     }
 
-    fn colonist(w: &mut World, at: Pos) -> u32 {
-        let id = w.spawn_colonist(at);
-        let i = w.pawn_index(id).unwrap();
-        w.pawns[i].hunger = 100.0;
-        w.pawns[i].rest = 100.0;
-        w.pawns[i].mood = 60.0;
-        id
-    }
 
-    fn put(w: &mut World, at: Pos, id: &str) {
-        let i = w.map.idx(at);
-        w.map.set_feature(i, Feature::built(id));
-    }
 
-    fn run(w: &mut World, secs: f32) {
-        for _ in 0..(secs / TICK) as usize {
-            w.tick(TICK);
-        }
-    }
 
     /// Patient `id` lost their left leg a while ago (the stump has healed).
     fn lose_leg(w: &mut World, id: u32) {
@@ -321,7 +300,7 @@ mod tests {
         w.pawns[pt].priorities[WorkType::Doctor as usize] = 0;
         lose_leg(&mut w, patient);
         let walk = w.pawn(patient).unwrap().health.caps.moving;
-        put(&mut w, (10, 10, Z), "operating_table");
+        build(&mut w, (10, 10, Z), "operating_table");
         let leg = ItemId::named("prosthetic_leg");
         w.map.drop_item((8, 3, Z), Stack { kind: leg, count: 1 });
         // Nothing happens until the player orders it.
@@ -372,10 +351,10 @@ mod tests {
     fn nobody_sleeps_on_an_operating_table() {
         let mut w = test_world();
         let id = colonist(&mut w, (3, 3, Z));
-        put(&mut w, (6, 6, Z), "operating_table");
+        build(&mut w, (6, 6, Z), "operating_table");
         assert!(w.find_bed(w.pawn(id).unwrap()).is_none(), "not a bed to sleep in");
         assert_eq!(w.find_patient_bed(w.pawn(id).unwrap()), Some((6, 6, Z)), "patients may lie on it, if nothing else");
-        put(&mut w, (9, 9, Z), "bed");
+        build(&mut w, (9, 9, Z), "bed");
         assert_eq!(w.find_patient_bed(w.pawn(id).unwrap()), Some((9, 9, Z)), "an ordinary bed first");
     }
 
@@ -384,14 +363,14 @@ mod tests {
         for y in 5..=9 {
             for x in 5..=9 {
                 if x == 5 || x == 9 || y == 5 || y == 9 {
-                    put(w, (x, y, Z), if (x, y) == (5, 7) { "door" } else { "wall" });
+                    build(w, (x, y, Z), if (x, y) == (5, 7) { "door" } else { "wall" });
                 }
                 let i = w.map.idx((x, y, Z + 1));
                 w.map.set_roof(i, true);
             }
         }
         for &((x, y), id) in things {
-            put(w, (x, y, Z), id);
+            build(w, (x, y, Z), id);
         }
         w.map.recompute_rooms();
         w.update_room_stats();
@@ -401,7 +380,7 @@ mod tests {
     fn hospitals_keep_their_beds_for_patients_and_heal_faster() {
         let mut w = test_world();
         let id = colonist(&mut w, (2, 2, Z));
-        put(&mut w, (2, 12, Z), "bed");
+        build(&mut w, (2, 12, Z), "bed");
         let hospital = [((6, 6), "bed"), ((8, 6), "bed"), ((6, 8), "medical_cabinet"), ((8, 8), "lamp"), ((7, 5), "window"), ((7, 9), "window")];
         room(&mut w, &hospital);
         assert_eq!(w.room_at((7, 7, Z)).and_then(|r| r.kind_name()), Some("Hospital"));
@@ -438,19 +417,19 @@ mod tests {
         for y in 5..=9 {
             for x in 5..=9 {
                 if x == 5 || x == 9 || y == 5 || y == 9 {
-                    put(&mut w, (x, y, Z), if (x, y) == (5, 7) { "door" } else { "wall" });
+                    build(&mut w, (x, y, Z), if (x, y) == (5, 7) { "door" } else { "wall" });
                 }
                 let i = w.map.idx((x, y, Z + 1));
                 w.map.set_roof(i, true);
             }
         }
-        put(&mut w, (7, 7, Z), "operating_table");
+        build(&mut w, (7, 7, Z), "operating_table");
         w.map.recompute_rooms();
         w.update_room_stats();
         let doctor = w.pawn(id).unwrap().clone();
         let plain = w.surgery_chance(&doctor, (7, 7, Z));
-        put(&mut w, (6, 6, Z), "lamp");
-        put(&mut w, (8, 6, Z), "medical_cabinet");
+        build(&mut w, (6, 6, Z), "lamp");
+        build(&mut w, (8, 6, Z), "medical_cabinet");
         w.update_room_stats();
         assert_eq!(w.room_at((7, 7, Z)).and_then(|r| r.kind_name()), Some("Surgery room"));
         assert!(w.surgery_chance(&doctor, (7, 7, Z)) > plain + 0.2);

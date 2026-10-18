@@ -216,7 +216,7 @@ impl World {
     }
 
     pub fn colonists_alive(&self) -> usize {
-        self.pawns.iter().filter(|p| p.is_colonist() && !p.dead).count()
+        self.pawns.iter().filter(|p| p.is_living_colonist()).count()
     }
 
     pub fn colony_lost(&self) -> bool {
@@ -233,7 +233,7 @@ impl World {
         for p in self.trapped.iter().filter_map(|&id| self.pawn(id)) {
             out.push((format!("{} is trapped (climbing out)", p.name), true));
         }
-        let colonists: Vec<&Pawn> = self.pawns.iter().filter(|p| p.is_colonist() && !p.dead).collect();
+        let colonists: Vec<&Pawn> = self.pawns.iter().filter(|p| p.is_living_colonist()).collect();
         let mut needs_tending = false;
         for p in &colonists {
             let h = &p.health;
@@ -482,9 +482,7 @@ impl World {
                 self.map.set_feature(i, Feature::None);
             }
             let land = self.map.landing(p);
-            for s in self.map.take_all(i) {
-                self.map.drop_item(land, s);
-            }
+            self.map.move_items(i, land);
         }
     }
 
@@ -1036,8 +1034,7 @@ impl World {
     pub fn order_equip(&mut self, id: u32, at: Pos) -> bool {
         let i = self.map.idx(at);
         // The first weapon or piece of apparel here (a shelf may hold several things).
-        let gear = |k: crate::defs::ItemId| k.def().weapon.is_some() || k.def().apparel.is_some();
-        let Some(s) = self.map.stacks(i).find(|s| gear(s.kind)) else { return false };
+        let Some(s) = self.map.stacks(i).find(|s| s.kind.def().is_gear()) else { return false };
         let d = s.kind.def();
         if d.weapon.is_none() && d.apparel.is_none() || self.res_item[i] != 0 && self.res_item[i] != id {
             return false;
@@ -1116,21 +1113,15 @@ fn move_towards(p: &mut Pawn, t: Pos, dt: f32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::defs::ItemId;
+    use crate::testing::{colonist, item, quiet_world, run};
     use crate::TICK;
 
     const Z: usize = crate::map::FLAT_Z;
 
-    fn item(id: &str) -> ItemId {
-        ItemId::named(id)
-    }
 
     fn test_world(w: usize, h: usize) -> World {
-        let mut world = World::with_map(Map::flat(w, h), Rng::new(7));
+        let mut world = quiet_world(w, h, 7);
         world.stockpiles.push(Stockpile::new(1));
-        world.story.next_raid = f32::MAX;
-        world.story.next_event = f32::MAX;
-        world.regrow_timer = f32::MAX;
         world
     }
 
@@ -1140,19 +1131,7 @@ mod tests {
         w.pawns[i].think_timer = f32::MAX;
     }
 
-    fn colonist(world: &mut World, pos: Pos) -> u32 {
-        let id = world.spawn_colonist(pos);
-        let i = world.pawn_index(id).unwrap();
-        world.pawns[i].hunger = 100.0;
-        world.pawns[i].rest = 100.0;
-        id
-    }
 
-    fn run(world: &mut World, secs: f32) {
-        for _ in 0..(secs / TICK) as usize {
-            world.tick(TICK);
-        }
-    }
 
     #[test]
     fn hauling_moves_items_into_the_stockpile() {

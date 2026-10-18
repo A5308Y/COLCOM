@@ -738,6 +738,13 @@ impl Map {
         stacks
     }
 
+    /// Everything in cell `i`, put down at `to` instead (spilling around it).
+    pub fn move_items(&mut self, i: usize, to: Pos) {
+        for s in self.take_all(i) {
+            self.drop_item(to, s);
+        }
+    }
+
     /// Cell `i` holding more than it can (a shelf taken away, an old save):
     /// what doesn't fit is put down nearby.
     pub fn settle_cell(&mut self, i: usize) {

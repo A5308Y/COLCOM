@@ -109,33 +109,16 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{colonist, quiet_world, run};
     use crate::defs::{BuildId, ItemId};
-    use crate::map::{Block, Desig, Map, Stack, FLAT_Z as Z};
-    use crate::rng::Rng;
+    use crate::map::{Block, Desig, Stack, FLAT_Z as Z};
     use crate::world::Order;
-    use crate::TICK;
 
     fn world() -> World {
-        let mut w = World::with_map(Map::flat(20, 20), Rng::new(5));
-        w.story.next_raid = f32::MAX;
-        w.story.next_event = f32::MAX;
-        w.regrow_timer = f32::MAX;
-        w
+        quiet_world(20, 20, 5)
     }
 
-    fn colonist(w: &mut World, at: Pos) -> u32 {
-        let id = w.spawn_colonist(at);
-        let i = w.pawn_index(id).unwrap();
-        w.pawns[i].hunger = 100.0;
-        w.pawns[i].rest = 100.0;
-        id
-    }
 
-    fn run(w: &mut World, secs: f32) {
-        for _ in 0..(secs / TICK) as usize {
-            w.tick(TICK);
-        }
-    }
 
     fn die(w: &mut World, id: u32) {
         let i = w.pawn_index(id).unwrap();

@@ -438,14 +438,14 @@ impl World {
             Task::Sow(kind) => self.map.set_feature(i, Feature::Plant { kind, growth: 0.0 }),
             Task::Fill => {
                 // Anything lying here is pushed up onto the new ground.
-                let stacks = self.map.take_all(i);
                 self.map.set_block(i, Block::Soil);
                 self.map.zone[i] = Zone::None;
                 self.map.blood[i] = 0.0;
                 self.sound("dig", Some(target));
-                if let Some(up) = self.map.above(target) {
-                    for s in stacks {
-                        self.map.drop_item(up, s);
+                match self.map.above(target) {
+                    Some(up) => self.map.move_items(i, up),
+                    None => {
+                        self.map.take_all(i);
                     }
                 }
             }
@@ -530,9 +530,7 @@ impl World {
                     }
                     self.sound("built", Some(target));
                     // Shove anything lying here out of the way (onto the shelf, if it is one).
-                    for s in self.map.take_all(i) {
-                        self.map.drop_item(target, s);
-                    }
+                    self.map.move_items(i, target);
                     if kind.def().storage.is_some() {
                         self.sync_containers();
                     }
@@ -927,7 +925,7 @@ impl World {
             return false;
         }
         if let Some(id) = owner {
-            if !self.pawn(id).is_some_and(|p| p.is_colonist() && !p.dead) {
+            if !self.pawn(id).is_some_and(|p| p.is_living_colonist()) {
                 return false;
             }
         }

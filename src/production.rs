@@ -431,7 +431,7 @@ impl World {
             Step::Arrived => {
                 let i = self.map.idx(from);
                 // The first weapon or piece of apparel here (a shelf may hold several things).
-                let kind = self.map.stacks(i).map(|s| s.kind).find(|k| k.def().weapon.is_some() || k.def().apparel.is_some());
+                let kind = self.map.stacks(i).map(|s| s.kind).find(|k| k.def().is_gear());
                 if let Some(s) = kind.and_then(|k| self.map.take_item(i, k, 1)) {
                     self.res_item[i] = 0;
                     let d = s.kind.def();
@@ -456,38 +456,19 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{colonist, item, quiet_world, run};
     use crate::defs::PlantId;
-    use crate::map::{Block, Desig, Map, FLAT_Z as Z};
+    use crate::map::{Block, Desig, FLAT_Z as Z};
     use crate::pawn::Memory;
-    use crate::rng::Rng;
     use crate::world::Order;
     use crate::TICK;
 
-    fn item(id: &str) -> ItemId {
-        ItemId::named(id)
-    }
 
     fn test_world(w: usize, h: usize) -> World {
-        let mut world = World::with_map(Map::flat(w, h), Rng::new(7));
-        world.story.next_raid = f32::MAX;
-        world.story.next_event = f32::MAX;
-        world.regrow_timer = f32::MAX;
-        world
+        quiet_world(w, h, 7)
     }
 
-    fn colonist(world: &mut World, pos: Pos) -> u32 {
-        let id = world.spawn_colonist(pos);
-        let i = world.pawn_index(id).unwrap();
-        world.pawns[i].hunger = 100.0;
-        world.pawns[i].rest = 100.0;
-        id
-    }
 
-    fn run(world: &mut World, secs: f32) {
-        for _ in 0..(secs / TICK) as usize {
-            world.tick(TICK);
-        }
-    }
 
     /// On the map, carried, or worn.
     fn have(w: &World, kind: ItemId) -> u32 {

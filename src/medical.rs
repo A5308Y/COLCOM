@@ -12,6 +12,12 @@ const TEND_TIME: f32 = 3.0;
 /// Conditions treated per tending session.
 const TEND_BATCH: usize = 3;
 
+/// The first of `kinds` that isn't raw food, else the first of them.
+fn cooked_first(kinds: impl Iterator<Item = ItemId>) -> Option<ItemId> {
+    let kinds: Vec<ItemId> = kinds.collect();
+    kinds.iter().copied().find(|k| !k.def().raw).or(kinds.first().copied())
+}
+
 impl World {
     pub(crate) fn in_bed(&self, p: &Pawn) -> bool {
         self.map.feature[self.map.idx(p.pos)].is_bed()
@@ -51,9 +57,8 @@ impl World {
                 continue;
             }
             // Cooked food first, wherever it is among a shelf's stacks.
-            let food: Vec<Stack> = self.map.stacks(i).filter(|s| defs().is_food(s.kind)).collect();
-            let Some(s) = food.iter().find(|s| !s.kind.def().raw).or(food.first()) else { continue };
-            if !s.kind.def().raw {
+            let Some(kind) = cooked_first(self.map.stacks(i).map(|s| s.kind).filter(|&k| defs().is_food(k))) else { continue };
+            if !kind.def().raw {
                 return Some(self.map.pos(i));
             }
             raw = raw.or(Some(self.map.pos(i)));
@@ -76,8 +81,7 @@ impl World {
     /// Take one unit of whatever item in cell `i` passes `is`.
     pub(crate) fn take_one(&mut self, i: usize, is: fn(&Defs, ItemId) -> bool) -> Option<Stack> {
         // Cooked before raw, if it's food (a shelf may hold both).
-        let kinds: Vec<ItemId> = self.map.stacks(i).map(|s| s.kind).filter(|&k| is(defs(), k)).collect();
-        let kind = *kinds.iter().find(|k| !k.def().raw).or(kinds.first())?;
+        let kind = cooked_first(self.map.stacks(i).map(|s| s.kind).filter(|&k| is(defs(), k)))?;
         self.map.take_item(i, kind, 1)
     }
 

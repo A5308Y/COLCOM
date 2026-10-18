@@ -635,6 +635,11 @@ impl Pawn {
         (50.0 + sum).clamp(0.0, 100.0)
     }
 
+    /// A colonist who hasn't died (they may still be downed or away).
+    pub fn is_living_colonist(&self) -> bool {
+        self.is_colonist() && !self.dead
+    }
+
     pub fn status(&self) -> String {
         if self.dead {
             return "dead".into();

@@ -228,6 +228,13 @@ pub struct ProstheticDef {
     pub efficiency: f32,
 }
 
+impl ItemDef {
+    /// Something to use or wear: a weapon or apparel.
+    pub fn is_gear(&self) -> bool {
+        self.weapon.is_some() || self.apparel.is_some()
+    }
+}
+
 impl ApparelDef {
     /// To compare apparel for the same slot.
     pub fn score(&self) -> f32 {

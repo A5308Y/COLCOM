@@ -176,7 +176,7 @@ fn rounds_away(a: &Pawn, b: &Pawn) -> usize {
 /// Overview of squads, fighters and civilians; clicking a name selects them.
 pub fn squads_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
     let w = &sim.world;
-    let colonists: Vec<&Pawn> = w.pawns.iter().filter(|p| p.is_colonist() && !p.dead).collect();
+    let colonists: Vec<&Pawn> = w.pawns.iter().filter(|p| p.is_living_colonist()).collect();
     let mut select = None;
     let mut open = st.show_squads;
     let name = |ui: &mut egui::Ui, p: &Pawn, extra: String, select: &mut Option<u32>| {

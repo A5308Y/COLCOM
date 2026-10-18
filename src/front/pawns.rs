@@ -200,9 +200,7 @@ fn spawn_pawn(
 /// character's right hand), from its definition, with its mesh and material.
 fn weapon_pose(w: ItemId, props: &PropAssets, in_hand: bool) -> Option<(Transform, Handle<Mesh>, Handle<StandardMaterial>)> {
     let h = &w.def().weapon.as_ref()?.held;
-    let (tx, ty, tz) = h.turn;
-    let turn = Quat::from_euler(EulerRot::XYZ, tx.to_radians(), ty.to_radians(), tz.to_radians());
-    let size = Vec3::new(h.size.0, h.size.1, h.size.2);
+    let Transform { rotation: turn, scale: size, .. } = props::part_transform(h);
     let tf = if in_hand {
         characters::hand_pose(size, turn, SCALE)
     } else {

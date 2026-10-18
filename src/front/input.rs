@@ -517,7 +517,7 @@ fn colonists_in_box(sim: &Sim, ui: &UiState, cam: &Camera, gt: &GlobalTransform,
     sim.world
         .pawns
         .iter()
-        .filter(|p| p.is_colonist() && !p.dead && !p.left && ui.shows_at(m, p.x, p.y, p.z))
+        .filter(|p| p.is_living_colonist() && !p.left && ui.shows_at(m, p.x, p.y, p.z))
         .filter(|p| {
             let at = tile_point(p.x, p.y, p.z) + Vec3::Y * 0.5;
             cam.world_to_viewport(gt, at).is_ok_and(|v| rect.contains(v))

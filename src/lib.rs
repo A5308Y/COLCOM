@@ -22,6 +22,8 @@ pub mod scenarios;
 pub mod squads;
 pub mod story;
 pub mod surgery;
+#[cfg(test)]
+mod testing;
 pub mod world;
 
 /// Game seconds in one in-game day.

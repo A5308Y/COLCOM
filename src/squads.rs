@@ -170,13 +170,10 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::{Feature, Map, FLAT_Z as Z};
-    use crate::rng::Rng;
+    use crate::map::{Feature, FLAT_Z as Z};
 
     fn world() -> (World, Vec<u32>) {
-        let mut w = World::with_map(Map::flat(20, 20), Rng::new(3));
-        w.story.next_raid = f32::MAX;
-        w.story.next_event = f32::MAX;
+        let mut w = crate::testing::quiet_world(20, 20, 3);
         let ids = (0..7).map(|k| w.spawn_colonist((2 + k, 2, Z))).collect();
         (w, ids)
     }

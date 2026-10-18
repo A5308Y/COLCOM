@@ -550,13 +550,7 @@ fn spawn_window(ctx: &egui::Context, st: &mut UiState) {
         });
         ui.label(RichText::new("Pick an item, then click on the map to drop it (again and again). Right-click: stop.").small().weak());
         egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-            let mut categories: Vec<&str> = Vec::new();
-            for k in ItemId::all() {
-                if !categories.contains(&k.def().category.as_str()) {
-                    categories.push(&k.def().category);
-                }
-            }
-            for cat in categories {
+            for cat in item_categories(|_| true) {
                 egui::CollapsingHeader::new(cat).id_salt(("spawn", cat)).default_open(cat == "Materials" || cat == "Components").show(ui, |ui| {
                     ui.horizontal_wrapped(|ui| {
                         for k in ItemId::all().filter(|k| k.def().category == cat) {
@@ -609,14 +603,21 @@ fn difficulty_ui(ui: &mut egui::Ui, sim: &mut Sim) -> bool {
     raided
 }
 
-fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
-    let totals = sim.world.item_totals();
-    let mut categories: Vec<&str> = Vec::new();
-    for k in ItemId::all() {
-        if totals[k.index()] > 0 && !categories.contains(&k.def().category.as_str()) {
+/// Item categories in the order they first appear in the definitions, of
+/// the items that pass `keep`.
+fn item_categories(keep: impl Fn(ItemId) -> bool) -> Vec<&'static str> {
+    let mut categories: Vec<&'static str> = Vec::new();
+    for k in ItemId::all().filter(|&k| keep(k)) {
+        if !categories.contains(&k.def().category.as_str()) {
             categories.push(&k.def().category);
         }
     }
+    categories
+}
+
+fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
+    let totals = sim.world.item_totals();
+    let categories = item_categories(|k| totals[k.index()] > 0);
     egui::Window::new("Resources")
         .open(&mut st.show_resources)
         .anchor(Align2::RIGHT_BOTTOM, [-8.0, -8.0])
@@ -726,7 +727,7 @@ fn alerts(ctx: &egui::Context, sim: &Sim) {
 
 fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32, left: f32) {
     let Some(p) = sim.world.pawn(id) else { return };
-    let combat = p.is_colonist() && !p.dead;
+    let combat = p.is_living_colonist();
     if !combat && st.inspector_tab == InspectorTab::Combat {
         st.inspector_tab = InspectorTab::Overview;
     }
@@ -808,7 +809,7 @@ fn overview_tab(ui: &mut egui::Ui, p: &Pawn) {
         let color = if value >= 0.0 { Color32::from_rgb(110, 200, 110) } else { Color32::from_rgb(255, 120, 100) };
         ui.label(RichText::new(format!("{:+}  {}", value as i32, label)).color(color));
     }
-    if p.is_colonist() && !p.dead {
+    if p.is_living_colonist() {
         ui.label(RichText::new("Right-click a cell: prioritize a job there, or equip gear   Combat tab: squad and loadout").small().weak());
     }
 }
@@ -1118,7 +1119,7 @@ fn bed_owner(ui: &mut egui::Ui, w: &SimWorld, t: Pos, actions: &mut Vec<Action>)
                     w.assign_bed(t, None);
                 }));
             }
-            for p in w.pawns.iter().filter(|p| p.is_colonist() && !p.dead) {
+            for p in w.pawns.iter().filter(|p| p.is_living_colonist()) {
                 let id = p.id;
                 if ui.selectable_label(owner.is_some_and(|o| o.id == id), label(p)).clicked() {
                     actions.push(Box::new(move |w| {
@@ -1150,14 +1151,7 @@ fn stockpile_settings(ui: &mut egui::Ui, w: &SimWorld, id: u16, actions: &mut Ve
             }
         }
     });
-    // Categories in the order they first appear in the definitions.
-    let mut categories: Vec<&str> = Vec::new();
-    for k in ItemId::all() {
-        if !categories.contains(&k.def().category.as_str()) {
-            categories.push(&k.def().category);
-        }
-    }
-    for cat in categories {
+    for cat in item_categories(|_| true) {
         let items: Vec<ItemId> = ItemId::all().filter(|k| k.def().category == cat).collect();
         let allowed = items.iter().filter(|&&k| store.accepts(k)).count();
         let header = format!("{} ({}/{})", cat, allowed, items.len());
@@ -1282,7 +1276,7 @@ fn work_panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState) {
         .world
         .pawns
         .iter()
-        .filter(|p| p.is_colonist() && !p.dead)
+        .filter(|p| p.is_living_colonist())
         .map(|p| (p.id, p.name.clone(), p.priorities, p.skills))
         .collect();
     egui::Window::new("Work priorities")

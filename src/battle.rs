@@ -592,7 +592,7 @@ impl World {
         for p in self.pawns.iter_mut() {
             p.running = false;
         }
-        let colonists: Vec<u32> = self.pawns.iter().filter(|p| p.is_colonist() && !p.dead).map(|p| p.id).collect();
+        let colonists: Vec<u32> = self.pawns.iter().filter(|p| p.is_living_colonist()).map(|p| p.id).collect();
         for &id in &colonists {
             self.gear_down(id);
         }
@@ -600,7 +600,7 @@ impl World {
             Outcome::Won => Memory::WonBattle,
             Outcome::Lost => Memory::LostBattle,
         };
-        for p in self.pawns.iter_mut().filter(|p| p.is_colonist() && !p.dead) {
+        for p in self.pawns.iter_mut().filter(|p| p.is_living_colonist()) {
             p.add_memory(memory);
         }
         match outcome {
@@ -1379,30 +1379,15 @@ fn clear_line(m: &crate::map::Map, a: Pos, b: Pos) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::{Feature, Map, FLAT_Z as Z};
-    use crate::rng::Rng;
+    use crate::testing::{content_colonist as colonist, item, quiet_world};
+    use crate::map::{Feature, FLAT_Z as Z};
     use crate::TICK;
 
-    fn item(id: &str) -> ItemId {
-        ItemId::named(id)
-    }
 
     fn world(w: usize, h: usize, seed: u64) -> World {
-        let mut world = World::with_map(Map::flat(w, h), Rng::new(seed));
-        world.story.next_raid = f32::MAX;
-        world.story.next_event = f32::MAX;
-        world.regrow_timer = f32::MAX;
-        world
+        quiet_world(w, h, seed)
     }
 
-    fn colonist(w: &mut World, at: Pos) -> u32 {
-        let id = w.spawn_colonist(at);
-        let i = w.pawn_index(id).unwrap();
-        w.pawns[i].hunger = 100.0;
-        w.pawns[i].rest = 100.0;
-        w.pawns[i].mood = 60.0;
-        id
-    }
 
     fn fight(w: &mut World, raiders: usize, entry: Pos) {
         w.start_battle(Parley { squads: vec![raiders], entry, demand: Vec::new() });

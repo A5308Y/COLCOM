@@ -94,7 +94,7 @@ fn spawn_camera(mut commands: Commands, mut rig: ResMut<CameraRig>, sim: Res<Sim
 /// Average position of living colonists (or the map centre).
 pub fn colony_center(sim: &Sim) -> Vec3 {
     let living: Vec<(f32, f32, f32)> =
-        sim.world.pawns.iter().filter(|p| p.is_colonist() && !p.dead).map(|p| (p.x, p.y, p.z)).collect();
+        sim.world.pawns.iter().filter(|p| p.is_living_colonist()).map(|p| (p.x, p.y, p.z)).collect();
     if living.is_empty() {
         let m = &sim.world.map;
         return Vec3::new(m.w as f32 / 2.0, 0.0, m.h as f32 / 2.0);

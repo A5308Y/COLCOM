@@ -181,7 +181,7 @@ impl World {
     }
 
     fn cargo_pods(&mut self) {
-        let colonists: Vec<Pos> = self.pawns.iter().filter(|p| p.is_colonist() && !p.dead).map(|p| p.pos).collect();
+        let colonists: Vec<Pos> = self.pawns.iter().filter(|p| p.is_living_colonist()).map(|p| p.pos).collect();
         if colonists.is_empty() {
             return;
         }
@@ -205,15 +205,12 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::{Map, FLAT_Z as Z};
-    use crate::rng::Rng;
+    use crate::map::FLAT_Z as Z;
     use crate::TICK;
 
     fn test_world() -> World {
-        let mut w = World::with_map(Map::flat(24, 24), Rng::new(6));
+        let mut w = crate::testing::quiet_world(24, 24, 6);
         w.spawn_colonist((5, 5, Z));
-        w.story.next_event = f32::MAX;
-        w.regrow_timer = f32::MAX;
         w
     }
 
