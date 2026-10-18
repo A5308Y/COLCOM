@@ -38,7 +38,7 @@ impl World {
         let df = bfs(&self.map, from);
         df.order
             .iter()
-            .find(|&&i| self.item_free(i) && self.map.items[i].is_some_and(|s| is(defs(), s.kind)))
+            .find(|&&i| self.item_free(i) && self.map.stacks(i).any(|s| is(defs(), s.kind)))
             .map(|&i| self.map.pos(i))
     }
 
@@ -47,7 +47,12 @@ impl World {
         let df = bfs(&self.map, from);
         let mut raw = None;
         for &i in &df.order {
-            let Some(s) = self.map.items[i].filter(|s| self.item_free(i) && defs().is_food(s.kind)) else { continue };
+            if !self.item_free(i) {
+                continue;
+            }
+            // Cooked food first, wherever it is among a shelf's stacks.
+            let food: Vec<Stack> = self.map.stacks(i).filter(|s| defs().is_food(s.kind)).collect();
+            let Some(s) = food.iter().find(|s| !s.kind.def().raw).or(food.first()) else { continue };
             if !s.kind.def().raw {
                 return Some(self.map.pos(i));
             }
@@ -70,7 +75,9 @@ impl World {
 
     /// Take one unit of whatever item in cell `i` passes `is`.
     pub(crate) fn take_one(&mut self, i: usize, is: fn(&Defs, ItemId) -> bool) -> Option<Stack> {
-        let kind = self.map.items[i].map(|s| s.kind).filter(|&k| is(defs(), k))?;
+        // Cooked before raw, if it's food (a shelf may hold both).
+        let kinds: Vec<ItemId> = self.map.stacks(i).map(|s| s.kind).filter(|&k| is(defs(), k)).collect();
+        let kind = *kinds.iter().find(|k| !k.def().raw).or(kinds.first())?;
         self.map.take_item(i, kind, 1)
     }
 

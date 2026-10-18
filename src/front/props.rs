@@ -11,7 +11,7 @@ use super::sim::Sim;
 use super::terrain::{FLOOR_T, LEVEL_H};
 use super::tile_center;
 use bevy::prelude::*;
-use my_world::defs::{defs, BuildId, BuildLook, ItemId, Part, PlantId, Shape, Special};
+use my_world::defs::{defs, BuildId, BuildLook, ItemId, Part, PlantId, Shape, Special, Storage};
 use my_world::map::{Feature, Map, Pos, DIRS};
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::{FRAC_PI_2, TAU};
@@ -33,6 +33,9 @@ struct ItemKey {
     big: bool,
 }
 
+/// What lies in a cell, slot by slot (a shelf holds up to four).
+type ItemsKey = [Option<ItemKey>; 4];
+
 #[derive(Resource, Default)]
 struct Props {
     generation: Option<u64>,
@@ -40,7 +43,7 @@ struct Props {
     view: Option<(usize, u64)>,
     /// Spawned objects per cell (flat arrays: cheaper than maps when scanning every cell each frame).
     features: Vec<Option<(PropKey, Entity)>>,
-    items: Vec<Option<(ItemKey, Entity)>>,
+    items: Vec<Option<(ItemsKey, Entity)>>,
 }
 
 /// Shared unit meshes and materials for props (and carried items on pawns).
@@ -314,16 +317,23 @@ fn sync_props(
             }
         }
 
-        let want_item = m.items[i].map(|s| ItemKey { kind: s.kind, big: s.count >= 25 });
+        let mut want: ItemsKey = [None; 4];
+        for (slot, s) in want.iter_mut().zip(m.stacks(i)) {
+            *slot = Some(ItemKey { kind: s.kind, big: s.count >= 25 });
+        }
+        let want_item = want[0].is_some().then_some(want);
         let have_item = props.items[i].map(|(k, _)| k);
         if want_item != have_item {
             if let Some((_, e)) = props.items[i].take() {
                 commands.entity(e).despawn();
             }
             if let Some(key) = want_item {
-                let shelf = m.feature[i].structure().and_then(|d| d.storage.as_ref()).map_or(0.0, |s| s.height);
-                let lift = if m.floor[i] { FLOOR_T } else { 0.0 } + shelf;
-                let e = spawn_item(&mut commands, &assets, key, pos, lift);
+                let storage = m.feature[i].structure().and_then(|d| d.storage.as_ref());
+                let lift = if m.floor[i] { FLOOR_T } else { 0.0 };
+                let e = match storage {
+                    Some(st) if st.slots > 1 => spawn_shelf_items(&mut commands, &assets, key, pos, lift, st),
+                    _ => spawn_item(&mut commands, &assets, key[0].unwrap(), pos, lift + storage.map_or(0.0, |s| s.height)),
+                };
                 if hidden(pos) {
                     commands.entity(e).insert(Visibility::Hidden);
                 }
@@ -470,6 +480,21 @@ fn spawn_feature(
             }
         },
     }
+}
+
+/// A shelf's stacks: two side by side on the top board, two on the lower one, smaller than on the ground.
+fn spawn_shelf_items(commands: &mut Commands, a: &PropAssets, key: ItemsKey, pos: Pos, lift: f32, st: &Storage) -> Entity {
+    let root = commands.spawn((Transform::from_translation(tile_center(pos) + Vec3::Y * lift), Visibility::default())).id();
+    for (k, item) in key.iter().enumerate() {
+        let Some(item) = item else { continue };
+        let x = if k % 2 == 0 { -0.22 } else { 0.22 };
+        let y = if k < 2 { st.height } else { st.lower.unwrap_or(st.height) };
+        let s = if item.big { 0.62 } else { 0.5 };
+        let t = Transform::from_xyz(x, y, 0.0).with_scale(Vec3::splat(s));
+        let e = spawn_parts(commands, a, t, &item.kind.def().look, Pose::default(), &a.blanket_free);
+        commands.entity(e).insert(ChildOf(root));
+    }
+    root
 }
 
 fn spawn_item(commands: &mut Commands, a: &PropAssets, key: ItemKey, pos: Pos, lift: f32) -> Entity {

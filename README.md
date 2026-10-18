@@ -87,7 +87,7 @@ furniture, light, production), searchable, with costs (red if the colony is shor
   day, night and caves. Sounds are placed in the world: quieter further from the camera's focus and when
   zoomed out, panned left and right. The **Sound** button opens volume sliders.
 - **Furniture and rooms:** tables and chairs (colonists eat sitting at a table, and dislike eating
-  without one), shelves (four stacks per cell; nobody walks through them, they're stocked from beside; a colonist shut in by furniture gets an alert and climbs out over it), windows, fences that join up, flickering torches, stone
+  without one), shelves (four different things per shelf, 50 of each, shown two on top and two on the middle board; nobody walks through them, they're stocked from beside; a colonist shut in by furniture gets an alert and climbs out over it), windows, fences that join up, flickering torches, stone
   doors. Each room has a quality from its size, the beauty of its furniture, doors and windows, its
   cleanliness (blood, clutter) and light; sleeping and eating in better rooms lifts mood more. Click a
   cell in a room to see the breakdown.

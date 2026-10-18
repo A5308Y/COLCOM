@@ -1000,11 +1000,15 @@ fn tile_inspector(ctx: &egui::Context, sim: &mut Sim, t: Pos, left: f32, move_fr
             if m.covered(t) && !m.roofed(t) {
                 ui.label("Covered overhead");
             }
-            if let Some(s) = m.items[i] {
+            for s in m.stacks(i) {
                 ui.label(format!("{} x{}", s.kind.name(), s.count));
                 if let Some(about) = &s.kind.def().about {
                     ui.label(RichText::new(about).weak());
                 }
+            }
+            if m.slots(i) > 1 {
+                let used = m.stacks(i).count();
+                ui.label(RichText::new(format!("{} of {} shelf slots used (50 each)", used, m.slots(i))).weak());
             }
             if let Some(power) = m.feature[i].structure().and_then(|d| d.power_text()) {
                 ui.label(RichText::new(format!("{} (nothing uses power yet)", power)).weak());

@@ -551,7 +551,7 @@ impl World {
             }
             let at = p.pos;
             let nearest = (0..self.map.len())
-                .filter(|&c| self.map.items[c].is_some_and(|s| s.kind == kind) && self.res_item[c] == 0)
+                .filter(|&c| self.map.count_in(c, kind) > 0 && self.res_item[c] == 0)
                 .min_by_key(|&c| {
                     let q = self.map.pos(c);
                     q.0.abs_diff(at.0) + q.1.abs_diff(at.1) + q.2.abs_diff(at.2)

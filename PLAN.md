@@ -747,3 +747,9 @@ real play.
   names cleaned to letters, digits, spaces, - and _; git-ignored) and lists them newest first to load
   (`named_saves`, `load_file`); K/L still quick-save. "Spawn items (testing)" opens a window to pick an item
   and amount; `Tool::Spawn` drops it where clicked (`World::spawn_items`, logged).
+- Four-slot shelves (2026-10-18): `Storage { slots, height, lower }` (shelf: 4 slots of 50, two shown on top,
+  two on the middle board). A cell's first stack stays in `Map::items` (save layout unchanged), stacks 2–4 in
+  `Map::shelved`. All code goes through `Map::stacks`/`cell_stacks`/`set_stacks`/`count_in`/`room_in`/
+  `add_to_cell`/`take_item`/`take_all`/`settle_cell`; hauling picks what to take from a mixed cell
+  (`pick_up_kind`). Shelf sync settles over-full cells (old saves' one big stack becomes 4×50; a removed shelf
+  spills). Props draw a shelf's slots small at x ±0.22.

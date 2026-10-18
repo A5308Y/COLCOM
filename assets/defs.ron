@@ -649,8 +649,9 @@
     // soil; a dead colonist is buried in it; parts with `filled` show only
     // while it is or isn't filled).
     // `beauty` counts towards the quality of the room it's in (or borders);
-    // `daylight` lights the rooms it borders; `storage` holds more items per
-    // cell. `along_walls`: modelled spanning x, turned to run along the walls
+    // `daylight` lights the rooms it borders; `storage` holds `slots` stacks
+    // (of up to 50 each, usually different things) per cell, shown at
+    // `height` (and `lower` for slots 3 and 4). `along_walls`: modelled spanning x, turned to run along the walls
     // beside it (doors, windows). Parts with `link` only show when the
     // neighbour that way is the same structure or a wall. `look: Opening`
     // is a wall block with a hole (windows), drawn with the walls. `cost` is
@@ -929,7 +930,8 @@
             cost: ("planks", 6),
             work_time: 3.0,
             passable: false,
-            storage: Some((stack_limit: 200, height: 0.62)),
+            // Four stacks of different things: two on top, two on the middle board.
+            storage: Some((slots: 4, height: 0.62, lower: Some(0.32))),
             look: Parts([
                 (shape: Cube, color: "wood", at: (-0.44, 0.35, -0.3), size: (0.06, 0.7, 0.06)),
                 (shape: Cube, color: "wood", at: (0.44, 0.35, -0.3), size: (0.06, 0.7, 0.06)),

@@ -320,10 +320,14 @@ pub struct Light {
 /// Storage furniture: holds more of an item in its cell.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Storage {
-    /// How many of one item the cell holds.
-    pub stack_limit: u32,
-    /// Height items are shown at.
+    /// How many stacks (of up to `STACK_MAX` each, usually of different
+    /// items) the cell holds: shown two on top, two below.
+    pub slots: u32,
+    /// Height items are shown at (the top shelf).
     pub height: f32,
+    /// Height of a lower shelf for slots 3 and 4.
+    #[serde(default)]
+    pub lower: Option<f32>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1073,8 +1077,8 @@ impl Defs {
             if d.category.is_empty() {
                 return Err(format!("{}: needs a category", d.id));
             }
-            if d.storage.as_ref().is_some_and(|s| s.stack_limit < crate::map::STACK_MAX) {
-                return Err(format!("{}: storage must hold at least {}", d.id, crate::map::STACK_MAX));
+            if d.storage.as_ref().is_some_and(|s| !(1..=4).contains(&s.slots)) {
+                return Err(format!("{}: storage holds 1 to 4 stacks", d.id));
             }
             if d.special == Special::Seat && !d.passable {
                 return Err(format!("{}: seats must be passable", d.id));

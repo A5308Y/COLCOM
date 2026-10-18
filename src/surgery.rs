@@ -111,7 +111,7 @@ impl World {
     pub(crate) fn nearest_prosthetic(&self, p: &Pawn, df: &DistField) -> Option<Pos> {
         df.order
             .iter()
-            .find(|&&i| self.res_item[i] == 0 && self.map.items[i].is_some_and(|s| Self::fits(p, s.kind).is_some()))
+            .find(|&&i| self.res_item[i] == 0 && self.map.stacks(i).any(|s| Self::fits(p, s.kind).is_some()))
             .map(|&i| self.map.pos(i))
     }
 

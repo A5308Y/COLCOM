@@ -26,11 +26,9 @@ impl World {
         let mut jobs: Vec<Job> = Vec::new();
 
         // Gear lying here.
-        if let Some(s) = m.items[i].filter(|_| self.res_item[i] == 0 || self.res_item[i] == p.id) {
-            let d = s.kind.def();
-            if d.weapon.is_some() || d.apparel.is_some() {
-                jobs.push(Job::Equip { from: at, chosen: true });
-            }
+        let gear = |k: crate::defs::ItemId| k.def().weapon.is_some() || k.def().apparel.is_some();
+        if (self.res_item[i] == 0 || self.res_item[i] == p.id) && m.stacks(i).any(|s| gear(s.kind)) {
+            jobs.push(Job::Equip { from: at, chosen: true });
         }
         // Work of every type, whether or not it's switched on for them.
         for wt in WorkType::ALL.into_iter().filter(|&wt| wt != WorkType::Doctor) {
@@ -92,9 +90,15 @@ impl World {
             f => f.name().to_string(),
         };
         let who = |id: u32| self.pawn(id).map_or("someone".to_string(), |o| o.name.clone());
-        let item = |p: Pos| self.map.items[self.map.idx(p)].map_or("it".to_string(), |s| s.kind.name().to_lowercase());
+        let item = |p: Pos| self.map.stacks(self.map.idx(p)).next().map_or("it".to_string(), |s| s.kind.name().to_lowercase());
+        let gear = |p: Pos| {
+            let first = self.map.stacks(self.map.idx(p)).find(|s| s.kind.def().weapon.is_some() || s.kind.def().apparel.is_some());
+            first.map_or("it".to_string(), |s| s.kind.name().to_lowercase())
+        };
+        // What a delivery brings: what's needed there (a shelf may hold other things too).
+        let needed = |from: Pos, to: Pos| self.delivery_need(to).map_or_else(|| item(from), |n| n.kind.name().to_lowercase());
         match job {
-            Job::Equip { from, .. } => format!("Equip {}", item(from).to_lowercase()),
+            Job::Equip { from, .. } => format!("Equip {}", gear(from)),
             Job::Work { task: Task::Sow(kind), .. } => format!("Prioritize planting {}", kind.def().name.to_lowercase()),
             Job::Work { target, task: Task::Craft } => match self.bench_at(target).and_then(|b| b.current) {
                 Some(r) => format!("Prioritize {} at {}", r.def().name.to_lowercase(), thing(target)),
@@ -104,11 +108,11 @@ impl World {
             // Ingredients for a bill: the bill is what's being prioritized.
             Job::Haul { from, to, deliver: true, .. } if matches!(at(to), Feature::Built { .. }) => {
                 match self.bench_at(to).and_then(|b| b.current) {
-                    Some(r) => format!("Prioritize {} at {} (bringing {} first)", r.def().name.to_lowercase(), thing(to), item(from)),
+                    Some(r) => format!("Prioritize {} at {} (bringing {} first)", r.def().name.to_lowercase(), thing(to), needed(from, to)),
                     None => format!("Prioritize delivering {} to {}", item(from), thing(to)),
                 }
             }
-            Job::Haul { from, to, deliver: true, .. } => format!("Prioritize delivering {} to {}", item(from), thing(to)),
+            Job::Haul { from, to, deliver: true, .. } => format!("Prioritize delivering {} to {}", needed(from, to), thing(to)),
             Job::Haul { from, .. } => format!("Prioritize hauling {}", item(from)),
             Job::Tend { patient, .. } => format!("Prioritize tending {}", who(patient)),
             Job::Rescue { patient, .. } => format!("Prioritize rescuing {}", who(patient)),

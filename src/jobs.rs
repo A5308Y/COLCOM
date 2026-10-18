@@ -114,7 +114,7 @@ impl World {
         for &i in &df.order {
             let pos = m.pos(i);
             let Some(d) = df.dist(pos) else { continue };
-            if let Some(s) = m.items[i] {
+            for s in m.stacks(i) {
                 let k = s.kind.index();
                 if self.item_free(i) && nearest_item[k].map_or(true, |(bd, _)| d < bd) {
                     nearest_item[k] = Some((d, pos));
@@ -198,15 +198,18 @@ impl World {
             // Handled per patient in `doctor_candidate`.
             WorkType::Doctor => return None,
             WorkType::Hauling => {
-                if let Some(s) = m.items[i].filter(|_| self.res_item[i] == 0) {
-                    // Into a stockpile that takes it, preferring higher priorities
-                    // (and only to better ones if it's already stored).
-                    let here = self.storage_priority(i, s.kind).unwrap_or(0) as usize;
+                if self.res_item[i] == 0 && m.has_items(i) {
                     let d = df.dist(pos)?;
-                    let to = (here + 1..=4).rev().find_map(|prio| nearest_cell[s.kind.index()][prio]).map(|(_, to)| to);
-                    // Refused where it's stored, and no stockpile takes it: out onto open ground.
-                    let refused = m.zone[i].stockpile().is_some() && here == 0;
-                    let to = to.or_else(|| refused.then(|| self.dump_spot(pos, s.kind, df)).flatten());
+                    // The first stack here with somewhere better to go (a shelf may hold several).
+                    let to = m.stacks(i).find_map(|s| {
+                        // Into a stockpile that takes it, preferring higher priorities
+                        // (and only to better ones if it's already stored).
+                        let here = self.storage_priority(i, s.kind).unwrap_or(0) as usize;
+                        let to = (here + 1..=4).rev().find_map(|prio| nearest_cell[s.kind.index()][prio]).map(|(_, to)| to);
+                        // Refused where it's stored, and no stockpile takes it: out onto open ground.
+                        let refused = m.zone[i].stockpile().is_some() && here == 0;
+                        to.or_else(|| refused.then(|| self.dump_spot(pos, s.kind, df)).flatten())
+                    });
                     return to.map(|to| (d, Job::Haul { from: pos, to, deliver: false, picked: false }));
                 }
                 // Ingredients to a workbench.
@@ -435,13 +438,15 @@ impl World {
             Task::Sow(kind) => self.map.set_feature(i, Feature::Plant { kind, growth: 0.0 }),
             Task::Fill => {
                 // Anything lying here is pushed up onto the new ground.
-                let stack = self.map.items[i].take();
+                let stacks = self.map.take_all(i);
                 self.map.set_block(i, Block::Soil);
                 self.map.zone[i] = Zone::None;
                 self.map.blood[i] = 0.0;
                 self.sound("dig", Some(target));
-                if let (Some(s), Some(up)) = (stack, self.map.above(target)) {
-                    self.map.drop_item(up, s);
+                if let Some(up) = self.map.above(target) {
+                    for s in stacks {
+                        self.map.drop_item(up, s);
+                    }
                 }
             }
             Task::Mine => {
@@ -524,8 +529,8 @@ impl World {
                         _ => self.map.set_feature(i, Feature::Built { kind, dir }),
                     }
                     self.sound("built", Some(target));
-                    // Shove anything lying here out of the way.
-                    if let Some(s) = self.map.items[i].take() {
+                    // Shove anything lying here out of the way (onto the shelf, if it is one).
+                    for s in self.map.take_all(i) {
                         self.map.drop_item(target, s);
                     }
                     if kind.def().storage.is_some() {
@@ -548,7 +553,7 @@ impl World {
             m.zone[i] == Zone::None
                 && m.feature[i] == Feature::None
                 && self.res_cell[i] == 0
-                && m.items[i].is_none_or(|s| s.kind == kind)
+                && m.stacks(i).all(|s| s.kind == kind)
                 && m.can_accept(i, kind)
                 && df.dist(p).is_some()
         };
@@ -562,11 +567,30 @@ impl World {
         })
     }
 
+    /// What to pick up in cell `fi` for a haul to `to`: what's already in
+    /// hand, what the blueprint or bench needs, or else the first thing here
+    /// that `to` takes and that belongs there more than here (or that's
+    /// refused here, to be cleared out).
+    fn pick_up_kind(&self, fi: usize, to: Pos, deliver: bool, carrying: Option<Stack>) -> Option<ItemId> {
+        let m = &self.map;
+        let ti = m.idx(to);
+        if let Some(c) = carrying {
+            return (m.count_in(fi, c.kind) > 0).then_some(c.kind);
+        }
+        if deliver {
+            return self.delivery_need(to).map(|n| n.kind).filter(|&k| m.count_in(fi, k) > 0);
+        }
+        m.stacks(fi).map(|s| s.kind).find(|&k| {
+            let here = self.storage_priority(fi, k);
+            let there = self.storage_priority(ti, k);
+            m.can_accept(ti, k) && (there > here.or(Some(0)) || here.is_none() && m.zone[fi].stockpile().is_some())
+        })
+    }
+
     /// How many of `kind` fit in stockpile cell `to` (at most a stack).
     fn room_for(&self, to: Pos, kind: ItemId) -> u32 {
         let i = self.map.idx(to);
-        let have = self.map.items[i].map_or(0, |s| if s.kind == kind { s.count } else { self.map.capacity(i) });
-        self.map.capacity(i).saturating_sub(have).min(STACK_MAX)
+        self.map.room_in(i, kind).min(STACK_MAX)
     }
 
     /// The nearest free stack of `kind` within `NEARBY_STEPS` of `from` that
@@ -584,7 +608,7 @@ impl World {
             .find(|&&i| {
                 i != ti
                     && self.res_item[i] == 0
-                    && self.map.items[i].is_some_and(|s| s.kind == kind)
+                    && self.map.count_in(i, kind) > 0
                     && self.storage_priority(i, kind).unwrap_or(0) < target
             })
             .map(|&i| self.map.pos(i))
@@ -635,7 +659,7 @@ impl World {
     /// it, or there's more than one, so others can share it (whoever comes
     /// too late just looks again).
     pub(crate) fn item_free(&self, i: usize) -> bool {
-        self.res_item[i] == 0 || self.map.items[i].is_some_and(|s| s.count > 1)
+        self.res_item[i] == 0 || self.map.stacks(i).map(|s| s.count).sum::<u32>() > 1
     }
 
     /// Someone (alive, not buried) is in cell `p`.
@@ -643,7 +667,7 @@ impl World {
         self.pawns.iter().any(|o| !o.dead && !o.left && o.pos == p)
     }
 
-    fn delivery_need(&self, at: Pos) -> Option<Stack> {
+    pub(crate) fn delivery_need(&self, at: Pos) -> Option<Stack> {
         match self.map.feature[self.map.idx(at)] {
             Feature::Blueprint { .. } if self.move_to(at).is_some() => None,
             Feature::Blueprint { kind, delivered, .. } => {
@@ -663,7 +687,7 @@ impl World {
                     let fi = self.map.idx(from);
                     self.res_item[fi] = 0;
                     let carried = p.carrying.map_or(0, |c| c.count);
-                    let here = self.map.items[fi].map(|s| s.kind);
+                    let here = self.pick_up_kind(fi, to, deliver, p.carrying);
                     // Gone, or not what's already in hand: carry on with what we have.
                     let Some(kind) = here.filter(|&k| p.carrying.is_none_or(|c| c.kind == k)) else {
                         if carried > 0 {
@@ -736,10 +760,7 @@ impl World {
                         _ => self.stock_bench(to, carry),
                     }
                 } else {
-                    let have = self.map.items[ti].map_or(0, |s| s.count);
-                    let put = (self.map.capacity(ti) - have).min(carry.count);
-                    self.map.items[ti] = Some(Stack { kind: carry.kind, count: have + put });
-                    put
+                    self.map.add_to_cell(ti, carry)
                 };
                 p.carrying = (carry.count > used).then(|| Stack { kind: carry.kind, count: carry.count - used });
                 // The rest to the next blueprint nearby that needs it.

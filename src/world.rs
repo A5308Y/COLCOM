@@ -481,8 +481,8 @@ impl World {
             if matches!(self.map.feature[i], Feature::Plant { .. }) {
                 self.map.set_feature(i, Feature::None);
             }
-            if let Some(s) = self.map.items[i].take() {
-                let land = self.map.landing(p);
+            let land = self.map.landing(p);
+            for s in self.map.take_all(i) {
                 self.map.drop_item(land, s);
             }
         }
@@ -1035,7 +1035,9 @@ impl World {
     /// it, keeping it even when something better turns up.
     pub fn order_equip(&mut self, id: u32, at: Pos) -> bool {
         let i = self.map.idx(at);
-        let Some(s) = self.map.items[i] else { return false };
+        // The first weapon or piece of apparel here (a shelf may hold several things).
+        let gear = |k: crate::defs::ItemId| k.def().weapon.is_some() || k.def().apparel.is_some();
+        let Some(s) = self.map.stacks(i).find(|s| gear(s.kind)) else { return false };
         let d = s.kind.def();
         if d.weapon.is_none() && d.apparel.is_none() || self.res_item[i] != 0 && self.res_item[i] != id {
             return false;

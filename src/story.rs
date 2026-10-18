@@ -73,7 +73,7 @@ impl World {
 
     /// Rough colony value; bigger colonies attract bigger raids.
     pub fn wealth(&self) -> u32 {
-        let items: u32 = self.map.items.iter().flatten().map(|s| s.count).sum();
+        let items: u32 = self.map.count_items_where(|_| true);
         let structures = self.map.feature.iter().filter(|f| f.structure().is_some()).count() as u32;
         items + structures * 10
     }

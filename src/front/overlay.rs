@@ -109,9 +109,11 @@ pub fn draw(
                 continue;
             }
             let c = tile_center(pos) + Vec3::Y * 0.45;
-            if let Some(s) = m.items[i] {
+            if m.has_items(i) {
+                // All of it (a shelf's stacks together).
+                let total: u32 = m.stacks(i).map(|s| s.count).sum();
                 if let Some(sp) = to_screen(c) {
-                    shadow_text(&painter, sp, Align2::CENTER_BOTTOM, &s.count.to_string(), 12.0, Color32::WHITE);
+                    shadow_text(&painter, sp, Align2::CENTER_BOTTOM, &total.to_string(), 12.0, Color32::WHITE);
                 }
             }
             // Roofs are many cheap cells: their counts would only clutter the view.

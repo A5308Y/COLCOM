@@ -361,7 +361,10 @@ mod tests {
                 w.map.feature[i] = my_world::map::Feature::built(id);
             }
             let shelf = w.map.idx((cx - 1, cy + 6, z));
-            w.map.items[shelf] = Some(my_world::map::Stack { kind: my_world::defs::ItemId::named("wood"), count: 120 });
+            // Four different things on it: two on top, two on the lower board.
+            let stacks = ["wood", "steel", "copper", "mechanical_components"]
+                .map(|id| my_world::map::Stack { kind: my_world::defs::ItemId::named(id), count: 30 });
+            w.map.set_stacks(shelf, stacks.to_vec());
             // A bed given to a squad leader.
             let bed = (cx + 5, cy - 5, z);
             let i = w.map.idx(bed);

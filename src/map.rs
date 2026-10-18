@@ -10,7 +10,7 @@
 use crate::defs::{BuildDef, BuildId, ItemId, PlantId, Special};
 use crate::rng::Rng;
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 /// (x, y, level). Level 0 is the bottom of the world.
 pub type Pos = (usize, usize, usize);
@@ -224,8 +224,15 @@ pub struct Map {
     pub block: Vec<Block>,
     #[serde(with = "crate::save::rle")]
     pub feature: Vec<Feature>,
+    /// The (first) stack in each cell. Cells that hold several (shelves:
+    /// `Storage::slots`) keep the rest in `shelved`; go through `stacks`,
+    /// `add_to_cell`, `take_item` and friends rather than these directly.
     #[serde(with = "crate::save::rle")]
     pub items: Vec<Option<Stack>>,
+    /// Further stacks of cells holding several, by cell index (never set
+    /// while that cell's `items` is empty).
+    #[serde(default)]
+    pub shelved: BTreeMap<u32, Vec<Stack>>,
     #[serde(with = "crate::save::rle")]
     pub desig: Vec<Option<Desig>>,
     #[serde(with = "crate::save::rle")]
@@ -276,6 +283,7 @@ impl Map {
             block: vec![Block::Air; n],
             feature: vec![Feature::None; n],
             items: vec![None; n],
+            shelved: BTreeMap::new(),
             desig: vec![None; n],
             zone: vec![Zone::None; n],
             floor: vec![false; n],
@@ -631,27 +639,120 @@ impl Map {
         })
     }
 
-    /// How many of one item cell `i` holds: more on shelves.
-    pub fn capacity(&self, i: usize) -> u32 {
-        self.feature[i].structure().and_then(|d| d.storage.as_ref()).map_or(STACK_MAX, |s| s.stack_limit)
+    /// How many stacks cell `i` holds: a shelf's slots, else one.
+    pub fn slots(&self, i: usize) -> usize {
+        self.feature[i].structure().and_then(|d| d.storage.as_ref()).map_or(1, |s| s.slots as usize)
+    }
+
+    /// Every stack in cell `i` (a shelf's in slot order).
+    pub fn stacks(&self, i: usize) -> impl Iterator<Item = Stack> + '_ {
+        self.items[i].into_iter().chain(self.shelved.get(&(i as u32)).into_iter().flatten().copied())
+    }
+
+    /// The stacks of cell `i` as a list.
+    pub fn cell_stacks(&self, i: usize) -> Vec<Stack> {
+        self.stacks(i).collect()
+    }
+
+    /// Replace what's in cell `i` (empty stacks left out).
+    pub fn set_stacks(&mut self, i: usize, stacks: Vec<Stack>) {
+        let mut rest = stacks.into_iter().filter(|s| s.count > 0);
+        self.items[i] = rest.next();
+        let more: Vec<Stack> = rest.collect();
+        if more.is_empty() {
+            self.shelved.remove(&(i as u32));
+        } else {
+            self.shelved.insert(i as u32, more);
+        }
+    }
+
+    /// How many of `kind` are in cell `i`.
+    pub fn count_in(&self, i: usize, kind: ItemId) -> u32 {
+        self.stacks(i).filter(|s| s.kind == kind).map(|s| s.count).sum()
+    }
+
+    /// Anything in cell `i`?
+    pub fn has_items(&self, i: usize) -> bool {
+        self.items[i].is_some()
+    }
+
+    /// How many more of `kind` cell `i` has room for: topping up its stacks of
+    /// it, and in its empty slots (a stack each).
+    pub fn room_in(&self, i: usize, kind: ItemId) -> u32 {
+        let stacks = self.cell_stacks(i);
+        let topping: u32 = stacks.iter().filter(|s| s.kind == kind).map(|s| STACK_MAX.saturating_sub(s.count)).sum();
+        let free = self.slots(i).saturating_sub(stacks.len()) as u32;
+        topping + free * STACK_MAX
     }
 
     /// Whether `kind` can be put down in cell `i`.
     pub fn can_accept(&self, i: usize, kind: ItemId) -> bool {
         (self.standable(self.pos(i)) || self.storage_furniture(i))
             && !matches!(self.feature[i], Feature::Blueprint { .. })
-            && self.items[i].map_or(true, |s| s.kind == kind && s.count < self.capacity(i))
+            && self.room_in(i, kind) > 0
+    }
+
+    /// Put as much of `stack` into cell `i` as fits (topping up its stacks of
+    /// that kind first, then empty slots). Returns how many went in.
+    pub fn add_to_cell(&mut self, i: usize, stack: Stack) -> u32 {
+        let mut stacks = self.cell_stacks(i);
+        let mut left = stack.count;
+        for s in stacks.iter_mut().filter(|s| s.kind == stack.kind) {
+            let put = STACK_MAX.saturating_sub(s.count).min(left);
+            s.count += put;
+            left -= put;
+        }
+        while left > 0 && stacks.len() < self.slots(i) {
+            let put = left.min(STACK_MAX);
+            stacks.push(Stack { kind: stack.kind, count: put });
+            left -= put;
+        }
+        self.set_stacks(i, stacks);
+        stack.count - left
     }
 
     /// Take up to `max` of `kind` from cell `i`.
     pub fn take_item(&mut self, i: usize, kind: ItemId, max: u32) -> Option<Stack> {
-        let s = self.items[i]?;
-        if s.kind != kind || max == 0 {
+        if max == 0 {
             return None;
         }
-        let n = max.min(s.count);
-        self.items[i] = if s.count > n { Some(Stack { kind, count: s.count - n }) } else { None };
-        Some(Stack { kind, count: n })
+        let mut stacks = self.cell_stacks(i);
+        let mut taken = 0;
+        // From the last stack of it first, so the first slots stay filled.
+        for s in stacks.iter_mut().rev().filter(|s| s.kind == kind) {
+            let n = (max - taken).min(s.count);
+            s.count -= n;
+            taken += n;
+        }
+        if taken == 0 {
+            return None;
+        }
+        self.set_stacks(i, stacks);
+        Some(Stack { kind, count: taken })
+    }
+
+    /// Everything in cell `i`, taken out.
+    pub fn take_all(&mut self, i: usize) -> Vec<Stack> {
+        let stacks = self.cell_stacks(i);
+        self.set_stacks(i, Vec::new());
+        stacks
+    }
+
+    /// Cell `i` holding more than it can (a shelf taken away, an old save):
+    /// what doesn't fit is put down nearby.
+    pub fn settle_cell(&mut self, i: usize) {
+        let stacks = self.take_all(i);
+        let mut spill = Vec::new();
+        for s in stacks {
+            let put = self.add_to_cell(i, s);
+            if put < s.count {
+                spill.push(Stack { kind: s.kind, count: s.count - put });
+            }
+        }
+        let at = self.pos(i);
+        for s in spill {
+            self.drop_item(at, s);
+        }
     }
 
     /// Put a stack down at `start`, spilling onto the nearest free cells a pawn could walk to.
@@ -663,9 +764,7 @@ impl Map {
         while let Some(p) = q.pop_front() {
             let i = self.idx(p);
             if self.can_accept(i, stack.kind) {
-                let have = self.items[i].map_or(0, |s| s.count);
-                let put = (self.capacity(i) - have).min(stack.count);
-                self.items[i] = Some(Stack { kind: stack.kind, count: have + put });
+                let put = self.add_to_cell(i, stack);
                 stack.count -= put;
                 if stack.count == 0 {
                     return;
@@ -688,7 +787,8 @@ impl Map {
 
     /// Total of all items whose kind passes `f` (all food, say).
     pub fn count_items_where(&self, f: impl Fn(ItemId) -> bool) -> u32 {
-        self.items.iter().flatten().filter(|s| f(s.kind)).map(|s| s.count).sum()
+        let shelved = self.shelved.values().flatten();
+        self.items.iter().flatten().chain(shelved).filter(|s| f(s.kind)).map(|s| s.count).sum()
     }
 
     /// Flood-fill each level's open cells, bounded by walls, doors and solid
@@ -1100,4 +1200,33 @@ mod tests {
         assert!(ore < rock / 10, "ore is rarer than rock ({} vs {})", ore, rock);
         assert!(copper < rock / 10, "and copper ({} vs {})", copper, rock);
     }
+
+    #[test]
+    fn shelves_have_four_slots() {
+        let mut m = Map::flat(8, 8);
+        let i = m.idx((4, 4, Z));
+        m.set_feature(i, Feature::built("shelf"));
+        let (wood, stone, steel, copper, cloth) =
+            (ItemId::named("wood"), ItemId::named("stone"), ItemId::named("steel"), ItemId::named("copper"), ItemId::named("cloth"));
+        assert_eq!(m.slots(i), 4);
+        assert_eq!(m.room_in(i, wood), 4 * STACK_MAX);
+        assert_eq!(m.add_to_cell(i, Stack { kind: wood, count: 70 }), 70, "a stack and then some");
+        assert_eq!(m.count_in(i, wood), 70);
+        assert_eq!(m.cell_stacks(i).len(), 2, "50 and 20");
+        for kind in [stone, steel] {
+            assert_eq!(m.add_to_cell(i, Stack { kind, count: 10 }), 10);
+        }
+        assert!(!m.can_accept(i, copper), "all four slots used");
+        assert_eq!(m.add_to_cell(i, Stack { kind: wood, count: 40 }), 30, "wood tops up its stacks only");
+        assert_eq!(m.take_item(i, wood, 100).map(|s| s.count), Some(100));
+        assert_eq!(m.cell_stacks(i).iter().map(|s| s.kind).collect::<Vec<_>>(), vec![stone, steel], "emptied slots close up");
+        assert!(m.can_accept(i, cloth));
+        assert_eq!(m.count_items(stone) + m.count_items(steel), 20);
+        // Off the shelf, everything lies on the ground: one stack per cell.
+        m.set_feature(i, Feature::None);
+        m.settle_cell(i);
+        assert_eq!(m.cell_stacks(i).len(), 1);
+        assert_eq!(m.count_items(stone) + m.count_items(steel), 20, "the other spilled nearby");
+    }
+
 }

@@ -161,7 +161,8 @@ impl World {
     /// (bench stock doesn't count; it's spoken for).
     pub fn item_totals(&self) -> Vec<u32> {
         let mut totals = vec![0; defs().items.len()];
-        for s in self.map.items.iter().flatten().chain(self.pawns.iter().filter_map(|p| p.carrying.as_ref())) {
+        let shelved = self.map.shelved.values().flatten();
+        for s in self.map.items.iter().flatten().chain(shelved).chain(self.pawns.iter().filter_map(|p| p.carrying.as_ref())) {
             totals[s.kind.index()] += s.count;
         }
         totals
@@ -349,13 +350,12 @@ impl World {
                 self.map.zone[i] = Zone::Stockpile(id);
             } else if !storage && self.container_at(i) {
                 self.map.zone[i] = Zone::None;
-                if let Some(s) = self.map.items[i] {
-                    let over = s.count.saturating_sub(self.map.capacity(i));
-                    if over > 0 {
-                        self.map.items[i] = Some(Stack { kind: s.kind, count: s.count - over });
-                        self.map.drop_item(p, Stack { kind: s.kind, count: over });
-                    }
-                }
+            }
+            // More than fits (the shelf went, or a shelf from an old save with one
+            // big stack): into the slots it has, the rest put down nearby.
+            let stacks = self.map.cell_stacks(i);
+            if stacks.len() > self.map.slots(i) || stacks.iter().any(|s| s.count > crate::map::STACK_MAX) {
+                self.map.settle_cell(i);
             }
         }
     }
@@ -430,7 +430,8 @@ impl World {
             }
             Step::Arrived => {
                 let i = self.map.idx(from);
-                let kind = self.map.items[i].map(|s| s.kind);
+                // The first weapon or piece of apparel here (a shelf may hold several things).
+                let kind = self.map.stacks(i).map(|s| s.kind).find(|k| k.def().weapon.is_some() || k.def().apparel.is_some());
                 if let Some(s) = kind.and_then(|k| self.map.take_item(i, k, 1)) {
                     self.res_item[i] = 0;
                     let d = s.kind.def();
@@ -883,16 +884,33 @@ mod tests {
     }
 
     #[test]
-    fn shelves_hold_more() {
+    fn a_shelf_holds_four_different_things() {
         let mut w = test_world(16, 16);
         colonist(&mut w, (2, 2, Z));
-        assert!(w.apply_order((5, 5, Z), Order::Stockpile));
         place_bench(&mut w, "shelf", (5, 5, Z));
+        w.sync_containers();
         let shelf = w.map.idx((5, 5, Z));
-        assert_eq!(w.map.capacity(shelf), 4 * crate::map::STACK_MAX);
-        w.map.drop_item((12, 12, Z), Stack { kind: item("wood"), count: 120 });
-        run(&mut w, 240.0);
-        assert_eq!(w.map.items[shelf].map(|s| s.count), Some(120), "all on the one shelf");
+        assert_eq!(w.map.slots(shelf), 4);
+        // Five kinds lying about: four fit on the shelf, a stack each.
+        for (k, (id, n)) in [("wood", 50), ("stone", 40), ("steel", 30), ("copper", 20), ("cloth", 10)].into_iter().enumerate() {
+            w.map.drop_item((10 + k % 3, 10 + k / 3, Z), Stack { kind: item(id), count: n });
+        }
+        run(&mut w, 300.0);
+        let on: Vec<Stack> = w.map.cell_stacks(shelf);
+        assert_eq!(on.len(), 4, "four slots used: {:?}", on);
+        let kinds: std::collections::HashSet<_> = on.iter().map(|s| s.kind).collect();
+        assert_eq!(kinds.len(), 4, "four different things");
+        assert!(on.iter().all(|s| s.count <= crate::map::STACK_MAX));
+        assert_eq!(w.map.count_items_where(|_| true), 150, "nothing lost (one kind waits on the ground)");
+        // A cook takes raw food from among other things.
+        let shelf2 = (12, 5, Z);
+        place_bench(&mut w, "shelf", shelf2);
+        w.sync_containers();
+        let s2 = w.map.idx(shelf2);
+        w.map.set_stacks(s2, vec![Stack { kind: item("stone"), count: 10 }, Stack { kind: item("raw_food"), count: 20 }]);
+        assert_eq!(w.map.take_item(s2, item("raw_food"), 5).map(|s| s.count), Some(5));
+        assert_eq!(w.map.count_in(s2, item("raw_food")), 15);
+        assert_eq!(w.nearest_food((2, 2, Z)), Some(shelf2), "food on a mixed shelf is found");
     }
 
     #[test]
@@ -917,9 +935,25 @@ mod tests {
             w.tick(TICK);
             assert!(w.pawns.iter().all(|p| ![5, 6, 10].contains(&p.pos.0) || p.pos.1 != 5), "on a shelf");
         }
-        let on = |w: &World, x: usize| w.map.items[w.map.idx((x, 5, Z))].map_or(0, |s| s.count);
+        let on = |w: &World, x: usize| w.map.count_in(w.map.idx((x, 5, Z)), item("wood"));
         assert_eq!((on(&w, 5) + on(&w, 6), on(&w, 10)), (200, 0));
         assert!(on(&w, 5).max(on(&w, 6)) > crate::map::STACK_MAX, "they hold more than the ground");
+    }
+
+    #[test]
+    fn old_shelves_with_one_big_stack_settle_into_slots() {
+        let mut w = test_world(16, 16);
+        place_bench(&mut w, "shelf", (5, 5, Z));
+        let i = w.map.idx((5, 5, Z));
+        // As saves from before had it: 200 stone in one stack.
+        w.map.items[i] = Some(Stack { kind: item("stone"), count: 200 });
+        w.sync_containers();
+        let on = w.map.cell_stacks(i);
+        assert_eq!(on.len(), 4);
+        assert!(on.iter().all(|s| s.kind == item("stone") && s.count == crate::map::STACK_MAX));
+        // Saved and loaded, the slots stay.
+        let back = crate::save::from_json(&crate::save::to_json(&w).unwrap()).unwrap();
+        assert_eq!(back.map.cell_stacks(i), on);
     }
 
     #[test]

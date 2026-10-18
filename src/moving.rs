@@ -148,7 +148,7 @@ impl World {
         };
         self.map.set_feature(i, Feature::Built { kind: mv.kind, dir });
         // Shove anything lying here out of the way.
-        if let Some(s) = self.map.items[i].take() {
+        for s in self.map.take_all(i) {
             self.map.drop_item(at, s);
         }
         if !mv.bills.is_empty() {
