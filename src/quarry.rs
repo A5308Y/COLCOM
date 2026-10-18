@@ -4,13 +4,13 @@
 //! what to dig next with ordinary Mine designations, so miners, yields and
 //! markers work as for any digging.
 //!
-//! The way down is a shaft of stairs in one column at the quarry's edge
-//! (`Quarry::shaft`), on the side colonists come from. Stairs lead straight
-//! up into the cell above, so stairs stacked in a column make a ladder from
-//! the bottom up to the ground outside (`Quarry::ground`, where depths count
-//! from). Each layer starts with the shaft: its cell is dug and stairs are put
-//! there (6 wood) before the rest of the layer is marked, so nobody is ever
-//! shut in down there.
+//! The way down is a shaft in one column at the quarry's edge
+//! (`Quarry::shaft`), on the side colonists come from, with a ladder up its
+//! outer side: ladders (a kind of stairs) lead straight up into the cell
+//! above, so stacked in a column they reach from the bottom up to the ground
+//! outside (`Quarry::ground`, where depths count from). Each layer starts with
+//! the shaft: its cell is dug and a ladder put there (3 wood) before the rest
+//! of the layer is marked, so nobody is ever shut in down there.
 //!
 //! Ground higher than the entrance (a hill top in the zone) is dug alongside.
 //! Columns with water or anything built in them are left alone, a rim is
@@ -302,7 +302,7 @@ impl World {
     /// Once a second: mark what each quarry digs next, put up the stairs down,
     /// and mark plants in the way for cutting.
     pub(crate) fn update_quarries(&mut self) {
-        let Some(stairs_kind) = defs().stairs() else { return };
+        let Some(stairs_kind) = defs().ladder().or(defs().stairs()) else { return };
         // Where the colonists can get to, to tell the player about cells out of reach.
         let reach = (!self.quarries.is_empty())
             .then(|| self.pawns.iter().find(|p| p.is_living_colonist()).map(|p| crate::pathing::bfs(&self.map, p.pos)))
@@ -475,6 +475,7 @@ mod tests {
             if (x as u16, y as u16) == shaft {
                 for z in q.bottom()..q.ground {
                     assert!(w.map.is_stairs((x, y, z)), "stairs at level {}", z);
+                    assert_eq!(w.map.feature[w.map.idx((x, y, z))].structure_id(), defs().ladder(), "a ladder");
                 }
             } else {
                 assert!(w.map.standable((x, y, q.bottom())), "({}, {}) dug down", x, y);

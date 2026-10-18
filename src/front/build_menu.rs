@@ -363,6 +363,9 @@ fn current_hint(tool: Tool) -> String {
         Tool::Paint(Order::Build(kind)) if kind.def().is_block() => {
             format!("{}: left-drag a rectangle to wall it in (Shift fills it). Right-click to stop.", name)
         }
+        Tool::Paint(Order::Build(kind)) if kind.def().climb => {
+            format!("{}: left-drag to place blueprints; , and . turn them (the arrow: the wall it leans on). Right-click to stop.", name)
+        }
         Tool::Paint(Order::Build(kind)) if kind.def().special == Special::Stairs => {
             format!("{}: left-drag to place blueprints; , and . turn them (the arrow: the way up). Right-click to stop.", name)
         }

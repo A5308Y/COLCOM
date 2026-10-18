@@ -806,6 +806,30 @@
                 (shape: Cube, color: "wood_light", at: (0.375, 0.5, 0.0), size: (0.25, 1.0, 0.9)),
             ]),
         ),
+        (
+            id: "ladder",
+            front: 0,
+            cover: Some(None),
+            category: "Structure",
+            name: "Ladder",
+            cost: ("wood", 3),
+            work_time: 2.0,
+            passable: true,
+            holds_floors: true,
+            special: Stairs,
+            climb: true,
+            // Against the +x side (turned to the wall it leans on), climbed from the open side.
+            // Ladders stacked in a column make one long ladder.
+            look: Parts([
+                (shape: Cube, color: "wood", at: (0.4, 0.5, -0.16), size: (0.04, 1.0, 0.04)),
+                (shape: Cube, color: "wood", at: (0.4, 0.5, 0.16), size: (0.04, 1.0, 0.04)),
+                (shape: Cube, color: "wood_light", at: (0.4, 0.1, 0.0), size: (0.03, 0.03, 0.32)),
+                (shape: Cube, color: "wood_light", at: (0.4, 0.3, 0.0), size: (0.03, 0.03, 0.32)),
+                (shape: Cube, color: "wood_light", at: (0.4, 0.5, 0.0), size: (0.03, 0.03, 0.32)),
+                (shape: Cube, color: "wood_light", at: (0.4, 0.7, 0.0), size: (0.03, 0.03, 0.32)),
+                (shape: Cube, color: "wood_light", at: (0.4, 0.9, 0.0), size: (0.03, 0.03, 0.32)),
+            ]),
+        ),
         // Hung on walls, in one of five slots across each face (see `on_wall`):
         // x along the wall (a slot is 0.2 wide), y up from the floor, z out of the wall.
         (

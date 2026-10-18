@@ -218,6 +218,7 @@ pub fn purpose(d: &BuildDef) -> Option<&'static str> {
     Some(match d.special {
         Special::Floor => "A floor slab for upper storeys: build it in the air, held up by walls, doors or ground within 3 cells",
         Special::Roof => "Put over enclosed rooms by themselves",
+        Special::Stairs if d.climb => "Connects this level with the one above: climbed from its open side (stacked, one long ladder)",
         Special::Stairs => "Connects this level with the one above; walk on from the low end",
         Special::Bed if d.medical => "For patients and operations: nobody sleeps here",
         Special::Bed if d.comfort < 1.0 => "A place on the ground to sleep and recover: better than nothing, worse than a bed",

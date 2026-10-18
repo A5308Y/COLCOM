@@ -28,7 +28,7 @@ const HELP_ORDERS: [&str; 8] = [
     "Orders (build menu, left): mark trees to chop, rock and soil to mine, berry bushes to forage;",
     "      Backspace: deconstruct. Cancel takes designations and blueprints away.",
     "Zones: paint stockpile zones (items get hauled there), grow zones (crops) and quarries (dug out level by level,",
-    "      with stairs down at the edge; click one to set its depth). Clear zone removes them.",
+    "      with a ladder down at the edge; click one to set its depth). Clear zone removes them.",
     "      Left-drag to paint a rectangle. Right-click (anywhere) goes back to Select.",
     "",
 ];
@@ -76,7 +76,7 @@ const HELP_REST: [&str; 48] = [
     "      Over each unit: health per member, then morale and suppression (the tick is where it breaks or",
     "      gets pinned). Hover the bars in the battle panel to see what they do.",
     "",
-    "Camera: WASD/arrows pan, Q/E rotate, wheel zooms, right-drag orbits, middle-drag pans.",
+    "Camera: WASD/arrows pan, Q/E rotate, wheel zooms, right-drag orbits, middle-drag pans. Double click a colonist card to center them.",
     "Space: pause   1-4: speed (1x, 2x, 5x, 10x)   P: work priorities   I: resources   C: center camera",
     "Esc: menu (save, load, new game, sound)   K: save   L: load   Shift+N: new colony",
     "",
@@ -137,7 +137,7 @@ fn draw_ui(
     tool_at_cursor(&ctx, &st, &sim.world);
     job_menu(&ctx, &mut sim, &mut st, &mut sounds);
     hud(&ctx, &mut sim, &mut st, &mut rig, left);
-    colonist_bar(&ctx, &sim, &mut st, left);
+    colonist_bar(&ctx, &sim, &mut st, &mut rig, left);
     alerts(&ctx, &sim);
     match st.selected {
         Some(Selection::Pawn(id)) => pawn_inspector(&ctx, &mut sim, &mut st, id, left),
@@ -680,7 +680,7 @@ const CARD_MARGIN: f32 = 6.0;
 /// the inspectors open to its right.
 const COLONIST_LIST_W: f32 = 8.0 + CARD.x + 2.0 * CARD_MARGIN + 4.0;
 
-fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, left: f32) {
+fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, rig: &mut CameraRig, left: f32) {
     // Leave room for the HUD at the bottom; scroll if there are more.
     let room = (ctx.viewport_rect().height() - 90.0).max(CARD.y * 2.0);
     egui::Area::new(egui::Id::new("colonists")).anchor(Align2::LEFT_TOP, [left + 8.0, 8.0]).show(ctx, |ui| {
@@ -720,7 +720,11 @@ fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, left: f32) {
                     })
                     .response
                     .interact(egui::Sense::click());
-                if resp.clicked() {
+                if resp.double_clicked() {
+                    // Double click: select them and bring them into view.
+                    st.select(Some(Selection::Pawn(p.id)));
+                    input::center_on_selection(sim, st, rig);
+                } else if resp.clicked() {
                     if ui.input(|i| i.modifiers.shift) {
                         st.toggle_pawn(p.id);
                     } else {
@@ -1160,7 +1164,7 @@ fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<
     let bottom = q.bottom();
     let state = match w.quarry_state(k) {
         QuarryState::Digging { level, left } => format!("Digging level {}: {} to go there (down to level {}).", level, left, bottom),
-        QuarryState::Stairs { level } => format!("Waiting for the stairs down to level {} (6 wood; builders put them up).", level),
+        QuarryState::Stairs { level } => format!("Waiting for the ladder down to level {} (3 wood; builders put it up).", level),
         QuarryState::Done => format!("Dug out down to level {}.", bottom),
     };
     ui.label(state);
@@ -1174,7 +1178,7 @@ fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<
     }
     match q.shaft {
         Some((x, y)) => {
-            let text = format!("Stairs down at {}, {} from the ground at level {} (marked).", x, y, q.ground);
+            let text = format!("Ladder down at {}, {} from the ground at level {} (marked).", x, y, q.ground);
             ui.label(RichText::new(text).weak());
         }
         None => {

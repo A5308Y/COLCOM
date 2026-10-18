@@ -669,7 +669,9 @@ fn floor_around(m: &Map, q: Pos, cut: Cut) -> Option<Rgb> {
 fn under_wall(b: &mut MeshBuf, m: &Map, p: Pos, cut: Cut, lo: f32) {
     let i = m.idx(p);
     let below = m.below(p).map(|q| look_at(m, q, cut));
-    let on_ground = below.is_some_and(|l| l.opaque());
+    // A door below holds it up like a wall (doors are drawn as props, not here).
+    let door_below = m.below(p).is_some_and(|q| !cut.hides(m, q) && m.feature[m.idx(q)].blocks_room());
+    let on_ground = below.is_some_and(|l| l.opaque()) || door_below;
     let natural = below.is_some_and(|l| l.opaque() && !l.thin());
     if !m.floor[i] && !on_ground {
         return;
@@ -905,6 +907,31 @@ mod tests {
             let inside = pos.iter().filter(|p| (p[1] - lo).abs() < FLOOR_T + 1e-3 && p[0] > 4.0 && p[0] < 5.0 && p[2] > 4.0 + WALL_B);
             assert!(inside.count() > 0, "the room's floor reaches the wall (stacked: {})", stacked);
         }
+    }
+
+    #[test]
+    fn a_wall_over_a_door_has_the_floor_beside_it() {
+        // A wall along x at y = 4 a storey up, over a door at (4, 4); the room's floor on its +y side.
+        let mut m = Map::flat(10, 10);
+        for x in 2..=6 {
+            let below = m.idx((x, 4, Z));
+            m.set_feature(below, Feature::built(if x == 4 { "door" } else { "wall" }));
+            let up = m.idx((x, 4, Z + 1));
+            m.set_feature(up, Feature::built("wall"));
+            for y in 5..=6 {
+                let i = m.idx((x, y, Z + 1));
+                m.set_floor(i, true);
+            }
+        }
+        let (mesh, _) = build_chunk(&m, 0, 0, Cut::NONE);
+        let Some(bevy::mesh::VertexAttributeValues::Float32x3(pos)) = mesh.attribute(Mesh::ATTRIBUTE_POSITION) else {
+            panic!("positions")
+        };
+        let lo = (Z + 1) as f32 * LEVEL_H;
+        // Over the door, on the room's side of the wall: floor, no hole.
+        // (The floor's quarter of the wall's cell on that side starts halfway across it.)
+        let quarter = |p: &&[f32; 3]| (p[1] - lo).abs() < 1e-3 && (p[0] - 4.5).abs() < 1e-3 && (p[2] - 4.5).abs() < 1e-3;
+        assert!(pos.iter().filter(quarter).count() > 0, "the room's floor reaches the wall over the door");
     }
 
     #[test]

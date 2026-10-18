@@ -801,7 +801,8 @@ real play.
     soil). `terrain::thin_wall`/`opening`; `under_wall` draws the floor beneath in quarters coloured
     like the floor beside each (indoors/outdoors), on a slab when standing on a built floor. Only on
     natural ground is every quarter drawn; upstairs (on a slab or on a lower wall) a quarter with no
-    floor beside it stays open, so no floor sticks out past the wall. Rock overhead gets a ceiling. Walls no longer hide neighbours' faces (`Look3::covers`). Wallpaper
+    floor beside it stays open, so no floor sticks out past the wall. A door below counts like a wall below
+    (doors are props, not terrain), so a wall over a door has the room's floor beside it. Rock overhead gets a ceiling. Walls no longer hide neighbours' faces (`Look3::covers`). Wallpaper
     is drawn per piece (`MeshBuf::wall_face`, `wall_part` for part of the height) on absolute along-wall
     coordinates, windows included (around the hole, on each side facing a themed room). Doors are 0.22 deep.
     The simulation is unchanged: a wall still fills its cell.
@@ -840,3 +841,11 @@ real play.
   - Front end: Quarry zone tool, ground tint (`QUARRY`), the shaft marked (outline, arrow out, line down
     to the bottom) while the tool is out or a quarry is selected, inspector with depth -/+ and state.
   - Prospecting (hidden ore found by digging) is a possible later step.
+- Stairs are built as their blueprint faces (2026-10-18): before, a builder re-chose the direction when
+  the placed one couldn't be climbed yet (`stairs_fit`/`stairs_facing`), so finished stairs could face
+  differently from their blueprint. Now only a quarry's shaft overrides it (`quarry_stairs_dir`); the
+  placement arrow is orange where the stairs couldn't be climbed that way (`input::front_arrow`).
+- Ladders (2026-10-18): `ladder` is stairs (`special: Stairs`, so movement, support and quarry code
+  treat it the same) with `BuildDef::climb` set: modelled as rails and rungs against its +x side,
+  so stacked ones make one long ladder; 3 wood. `Defs::ladder()`/`stairs()` tell them apart.
+  Quarries put ladders in their shaft (`update_quarries`), stairs already built there stay.

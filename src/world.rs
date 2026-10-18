@@ -1798,7 +1798,7 @@ mod tests {
         assert!(w.apply_order((8, 8, Z), Order::Build(chair)));
         assert!(w.turn_blueprint((8, 8, Z), 3));
         assert!(!w.turn_blueprint((9, 9, Z), 1), "no blueprint there");
-        // Stairs with a platform to the east: turned west they couldn't be climbed, so they rise east.
+        // Stairs with a platform to the east, turned west (where they can't be climbed): still built as placed.
         let stairs = BuildId::named("stairs");
         for x in 13..16 {
             for y in 9..12 {
@@ -1810,7 +1810,7 @@ mod tests {
         w.map.feature[s] = Feature::blueprint(stairs, stairs.def().total_cost(), 1);
         run(&mut w, 60.0);
         assert_eq!(w.map.feature[w.map.idx((8, 8, Z))], Feature::Built { kind: chair, dir: 3 });
-        assert_eq!(w.map.feature[s], Feature::Built { kind: stairs, dir: 0 }, "a way that works");
+        assert_eq!(w.map.feature[s], Feature::Built { kind: stairs, dir: 1 }, "as the blueprint shows");
     }
 
     #[test]

@@ -453,12 +453,10 @@ impl Map {
     }
 
     /// Where stairs at `p`, built or planned, are walked onto: the cell at
-    /// their low end. Planned ones go the way they'll be built (see `stairs_fit`).
+    /// their low end (planned ones are built facing as their blueprint does).
     pub fn stairs_foot(&self, p: Pos) -> Option<Pos> {
         let (dx, dy) = match self.feature[self.idx(p)] {
-            Feature::Blueprint { kind, dir, .. } if kind.def().special == Special::Stairs => {
-                DIRS[if self.stairs_fit(p, dir) { dir } else { self.stairs_facing(p) } as usize % 4]
-            }
+            Feature::Blueprint { kind, dir, .. } if kind.def().special == Special::Stairs => DIRS[dir as usize % 4],
             _ => self.stairs_dir(p)?,
         };
         self.at(p.0 as i32 - dx, p.1 as i32 - dy, p.2 as i32)

@@ -102,7 +102,7 @@ pub static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(|| {
     }
     let hint = "Civilians shelter here when a battle starts. Raiders can still reach it.";
     tools.push(fixed(Tool::Paint(Order::Zone(Zone::Safe)), "Safe zone", None, "Zones", hint));
-    let hint = "Miners dig the area out level by level from the top, with stairs down at its edge (6 wood a level). Click it to set how deep.";
+    let hint = "Miners dig the area out level by level from the top, with a ladder down at its edge (3 wood a level). Click it to set how deep.";
     tools.push(fixed(Tool::Paint(Order::Quarry), "Quarry zone", None, "Zones", hint));
     tools.push(fixed(Tool::Paint(Order::Zone(Zone::None)), "Clear zone", None, "Zones", "Remove stockpile, grow, safe and quarry zones."));
     // Roofs aren't placed by the player: rooms get them by themselves.
@@ -1097,10 +1097,13 @@ pub fn floor_outline(gizmos: &mut Gizmos, t: Pos, inset: f32, color: Color) {
 /// Box outline around a whole (solid) cell.
 /// An arrow from cell `at` towards the front of `kind` turned to `dir`:
 /// where it's used from (stairs: the way up).
-fn front_arrow(gizmos: &mut Gizmos, at: Pos, kind: BuildId, dir: u8) {
+/// Stairs that couldn't be climbed that way (yet) get an orange arrow.
+fn front_arrow(gizmos: &mut Gizmos, m: &Map, at: Pos, kind: BuildId, dir: u8) {
     let (dx, dy) = DIRS[super::props::turned(kind.def().front, dir) as usize];
     let c = tile_center(at) + Vec3::Y * 0.1;
-    gizmos.arrow(c, c + Vec3::new(dx as f32, 0.0, dy as f32) * 0.6, Color::srgb(1.0, 0.85, 0.3));
+    let blocked = kind.def().special == Special::Stairs && !m.stairs_fit(at, dir);
+    let color = if blocked { Color::srgb(1.0, 0.45, 0.15) } else { Color::srgb(1.0, 0.85, 0.3) };
+    gizmos.arrow(c, c + Vec3::new(dx as f32, 0.0, dy as f32) * 0.6, color);
 }
 
 /// A line a little above the floor from cell `a` to cell `b`, with an arrowhead at `b`.
@@ -1151,7 +1154,7 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
                 floor_outline(&mut gizmos, to, 0.06, Color::srgb(0.4, 1.0, 0.45));
                 move_arrow(&mut gizmos, from, to, Color::srgb(0.4, 1.0, 0.45));
                 if let Some(kind) = ui.turning(w) {
-                    front_arrow(&mut gizmos, to, kind, ui.place_dir);
+                    front_arrow(&mut gizmos, m, to, kind, ui.place_dir);
                 }
             }
             None => floor_outline(&mut gizmos, h.stand, 0.06, Color::srgb(1.0, 0.3, 0.25)),
@@ -1211,7 +1214,7 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
     // What's being placed: an arrow to its front.
     if let (Some(h), Tool::Paint(order @ Order::Build(kind))) = (ui.hover, ui.tool) {
         if kind.def().turnable() {
-            front_arrow(&mut gizmos, order_target(w, h, order), kind, ui.place_dir);
+            front_arrow(&mut gizmos, m, order_target(w, h, order), kind, ui.place_dir);
         }
     }
     if let Some(h) = ui.hover {

@@ -52,7 +52,7 @@ for), and `<` goes back.
 | `Esc` | Select tool: click colonists or tiles to inspect them |
 | Left drag | Paint the current tool over a rectangle |
 | Left drag with walls | Wall in a rectangle: only its outline (`Shift` fills it) |
-| `,` / `.` while placing or moving | Turn furniture or stairs a quarter turn. The arrow points to the front, where it's used from: crafters stand there at workbenches (beside it if that's blocked). For stairs it shows the way up; they only turn where both ends can be walked on. Chairs next to a table face it by themselves; things that look the same from every side (tables, lamps) don't turn |
+| `,` / `.` while placing or moving | Turn furniture or stairs a quarter turn. The arrow points to the front, where it's used from: crafters stand there at workbenches (beside it if that's blocked). For stairs it shows the way up, orange if they couldn't be climbed that way (yet); they're built exactly as placed. Chairs next to a table face it by themselves; things that look the same from every side (tables, lamps) don't turn |
 | `F` | Draft the selected colonist (or everyone if nothing is selected) |
 | Right click | With a drafted colonist: move there, or attack the clicked raider |
 | Right click with a colonist selected | Menu of what they could do there: prioritize building this grave, tending this colonist, hauling this stack, equipping this rifle... They do it now (even work they're not assigned to), then finish everything there |
@@ -61,6 +61,7 @@ for), and `<` goes back.
 | `Q` / `E`, right-drag | Rotate and tilt the camera |
 | Mouse wheel | Zoom |
 | `P` / `I` / `H` / `C` | Work priorities / resources (what the colony has) / help / center camera |
+| Double click a colonist card | Select that colonist and center the camera on them |
 | `K` / `L` | Save / load (`savegame.json`; saves from other versions are refused with a message) |
 | Menu (`Esc`) → Save as | Save under a name (in `saves/`); the list below loads any of them |
 | Menu → Spawn items (testing) | Pick an item and an amount, then click on the map to drop it there |
@@ -91,12 +92,13 @@ for), and `<` goes back.
   to better stockpiles. Grow zones plant the crop chosen for them (corn, healroot, cotton).
 - **Quarries:** paint a Quarry zone over the ground (Zones) and miners dig it out level by level from
   the top, down to the depth set in its inspector (5 levels below the ground at its entrance to start,
-  up to 12). The way down is a shaft of stairs in one edge column, on the side your colonists come
-  from (marked while the tool is out or a quarry cell is selected): each layer starts with the shaft
-  cell and its stairs (6 wood), and the rest of the layer is only dug once those stairs are in, so
-  nobody gets shut in. Everything in the zone is dug, ore included; ground higher than the entrance is
+  up to 12). The way down is a ladder in one edge column, on the side your colonists come from
+  (marked while the tool is out or a quarry cell is selected): each layer starts with the shaft cell
+  and its piece of ladder (3 wood), and the rest of the layer is only dug once that's in, so nobody
+  gets shut in. Ladders (Structure) can be built anywhere: like stairs, but climbed straight up,
+  leaning on the side the arrow points to. Everything in the zone is dug, ore included; ground higher than the entrance is
   dug alongside. Columns with water or buildings are left alone, a rim stays beside water, and trees in
-  the way are cut first. The inspector tells you when it waits for stairs, and about cells nobody can
+  the way are cut first. The inspector tells you when it waits for the ladder, and about cells nobody can
   reach. Clear zone takes columns out again.
 - **Sound:** footsteps that depend on the ground (silent at 5x and 10x speed), chopping, mining, hammering, sawing, cooking and
   smithing while colonists work, trees crashing down, rock breaking, doors, gunshots, hits and armour

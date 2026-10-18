@@ -424,6 +424,10 @@ pub struct BuildDef {
     /// Looks the same from every side (a lamp, a table): no front, nothing to turn.
     #[serde(default)]
     pub any_way: bool,
+    /// A ladder: stairs (the same way on, straight up into the cell above)
+    /// that look like a ladder against the side they rise towards.
+    #[serde(default)]
+    pub climb: bool,
     /// Hung on a wall (a painting, a wall lamp) in one of its slots rather
     /// than standing in a cell (see `decor.rs`). Modelled with x along the
     /// wall, y up from the floor and z out of the wall's face.
@@ -1105,6 +1109,9 @@ impl Defs {
             if d.front > 3 {
                 return Err(format!("{}: front must be 0 to 3", d.id));
             }
+            if d.climb && d.special != Special::Stairs {
+                return Err(format!("{}: a ladder is a kind of stairs (special: Stairs)", d.id));
+            }
             if d.on_wall && (!matches!(d.look, BuildLook::Parts(_)) || d.blocks_room || d.special != Special::None) {
                 return Err(format!("{}: things on walls are modelled parts, nothing more", d.id));
             }
@@ -1205,7 +1212,11 @@ impl Defs {
 
     /// The buildable that makes roofs, if any.
     pub fn stairs(&self) -> Option<BuildId> {
-        self.builds.iter().position(|d| d.special == Special::Stairs).map(|i| BuildId(i as u16))
+        self.builds.iter().position(|d| d.special == Special::Stairs && !d.climb).map(|i| BuildId(i as u16))
+    }
+
+    pub fn ladder(&self) -> Option<BuildId> {
+        self.builds.iter().position(|d| d.special == Special::Stairs && d.climb).map(|i| BuildId(i as u16))
     }
 
     pub fn roof(&self) -> Option<BuildId> {
@@ -1233,6 +1244,15 @@ impl Defs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ladders_are_stairs_that_look_different() {
+        let (ladder, stairs) = (defs().ladder().unwrap(), defs().stairs().unwrap());
+        assert_ne!(ladder, stairs);
+        assert_eq!(ladder.def().special, Special::Stairs);
+        assert!(ladder.def().climb && !stairs.def().climb);
+        assert!(ladder.def().total_cost() < stairs.def().total_cost(), "cheaper");
+    }
 
     #[test]
     fn furniture_fronts_make_sense() {
