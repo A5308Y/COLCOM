@@ -28,7 +28,7 @@ const HELP_ORDERS: [&str; 8] = [
     "Orders (build menu, left): mark trees to chop, rock and soil to mine, berry bushes to forage;",
     "      Backspace: deconstruct. Cancel takes designations and blueprints away.",
     "Zones: paint stockpile zones (items get hauled there), grow zones (crops) and quarries (dug out level by level,",
-    "      with steps down along the edge; click one to set its depth). Clear zone removes them.",
+    "      with stairs down at the edge; click one to set its depth). Clear zone removes them.",
     "      Left-drag to paint a rectangle. Right-click (anywhere) goes back to Select.",
     "",
 ];
@@ -1156,17 +1156,32 @@ fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<
             actions.push(Box::new(move |w| w.set_quarry_depth(k, depth + 1)));
         }
     });
-    let reach = q.reach();
-    if reach < q.depth {
-        let why = format!("Only room for steps down {} levels: make it bigger to go deeper.", reach);
-        ui.label(RichText::new(why).color(Color32::from_rgb(255, 190, 110)));
-    }
-    let state = match w.quarry_progress(k) {
-        Some((level, left)) => format!("Digging level {}: {} to go there (down to level {}).", level, left, q.top - reach as usize),
-        None => format!("Dug out down to level {}.", q.top - reach as usize),
+    use my_world::quarry::QuarryState;
+    let bottom = q.bottom();
+    let state = match w.quarry_state(k) {
+        QuarryState::Digging { level, left } => format!("Digging level {}: {} to go there (down to level {}).", level, left, bottom),
+        QuarryState::Stairs { level } => format!("Waiting for the stairs down to level {} (6 wood; builders put them up).", level),
+        QuarryState::Done => format!("Dug out down to level {}.", bottom),
     };
     ui.label(state);
-    ui.label(RichText::new("Miners dig it top down; the steps down run along its edge (marked).").weak());
+    let stuck = w.quarry_unreachable.get(k).copied().unwrap_or(0);
+    if stuck > 0 {
+        let why = format!(
+            "{} cell(s) to dig that nobody can get to (cut off on a ledge or cliff): take those columns out with Clear zone, or build a way up.",
+            stuck
+        );
+        ui.label(RichText::new(why).color(Color32::from_rgb(255, 190, 110)));
+    }
+    match q.shaft {
+        Some((x, y)) => {
+            let text = format!("Stairs down at {}, {} from the ground at level {} (marked).", x, y, q.ground);
+            ui.label(RichText::new(text).weak());
+        }
+        None => {
+            let why = "No way in: no ground to walk on beside it, so only what's above the ground is dug.";
+            ui.label(RichText::new(why).color(Color32::from_rgb(255, 190, 110)));
+        }
+    }
 }
 
 /// What hangs on the wall at `t`, side by side, with what's planned:

@@ -399,6 +399,9 @@ impl Map {
         self.on_ground(p)
             || self.floor[self.idx(p)]
             || self.below(p).is_some_and(|b| self.stairs_dir(b).is_some())
+            // Stairs on stairs still being built under them (a quarry's shaft going down).
+            || self.stairs_dir(p).is_some()
+                && self.below(p).is_some_and(|b| self.feature[self.idx(b)].planned().is_some_and(|d| d.special == Special::Stairs))
     }
 
     /// Open and supported: a pawn can stand here.

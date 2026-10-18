@@ -1204,6 +1204,10 @@ impl Defs {
     }
 
     /// The buildable that makes roofs, if any.
+    pub fn stairs(&self) -> Option<BuildId> {
+        self.builds.iter().position(|d| d.special == Special::Stairs).map(|i| BuildId(i as u16))
+    }
+
     pub fn roof(&self) -> Option<BuildId> {
         self.builds.iter().position(|d| d.special == Special::Roof).map(|i| BuildId(i as u16))
     }

@@ -820,16 +820,23 @@ real play.
     clicking with a wall item's tool calls `order_decor`; a gizmo marks the slot (green/red).
     `props::decor_transform`/`spawn_decor` draw them (ghosts while planned, lamps lit, shelf items).
     Inspector lists a wall's decor (Cancel / Take down / Keep; the calendar shows the date).
-- Quarries (2026-10-18): `src/quarry.rs`. `World::quarries` (saved) of `Quarry { cols, top, depth }`;
-  `Map::quarry_cols` (not saved, `index_quarries`) maps columns to them. `Order::Quarry` paints columns
-  (at each column's own surface, `paint_box`), joining or merging neighbouring quarries; Clear zone takes
-  them out (and the Mine marks they made). `Quarry::steps` is a path along the edge (outermost ring
-  first, straight on, else right), laid out only when the shape changes (`lay_out`; kept and saved so
-  steps don't move while digging), from the edge column with the longest run of steps the ground allows
-  (`top` is that entrance's level); `floors` digs step k down to `top - k` and the rest to `top - reach` (`reach`: depth, at most the number of steps, never level 0), leaving
-  one-level natural steps, which pawns already walk. Once a second `update_quarries` marks the top
-  remaining layer below the entrance with Mine (ground above the entrance, a hill top in the zone, is
-  dug alongside, `quarry_layer`) (columns with water or anything built left alone, cells beside water kept
-  as a rim, plants on top marked for cutting first). Front end: Quarry zone tool, ground tint
-  (`QUARRY`), step outlines while the tool is out or a quarry is selected, inspector with depth -/+ and
-  progress. Prospecting (hidden ore found by digging) is a possible later step.
+- Quarries (2026-10-18): `src/quarry.rs`. `World::quarries` (saved) of `Quarry { cols, depth, ground,
+  shaft, out }`; `Map::quarry_cols` (not saved, `index_quarries`) maps columns to them. `Order::Quarry`
+  paints columns (at each column's own ground level, `Map::ground_level`, trees and all), joining or
+  merging neighbouring quarries; Clear zone takes them out (and the Mine marks they made). A first
+  version carved natural steps along the edge; it was replaced because the step path moved as digging
+  changed the ground, depth counted from the highest column, and steps left ore behind.
+  - Layout (`lay_out_quarry`, only when the shape changes or `ground` is 0, e.g. old saves): the shaft
+    is the edge column whose outside neighbour is nearest the colonists by path; `ground` is that
+    neighbour's level, `out` the way to it. `bottom()` = `ground - depth` (never level 0).
+  - Digging (`quarry_plan`, once a second in `update_quarries`): ground above the entrance is marked
+    whenever; below it, layer by layer, the shaft cell first, then a stairs blueprint there (6 wood,
+    facing `out`, kept by `quarry_stairs_dir` when built), then the rest of the layer once those stairs
+    are built. Stairs stacked in a column lead straight up; `Map::supported` also counts stairs resting
+    on stairs still being built, so the shaft stays usable while the next stairs go in. Columns with
+    water or anything built (but stairs) are left alone, cells beside water kept as a rim, plants on top
+    marked for cutting first. `quarry_state` (Digging / Stairs / Done) and `quarry_unreachable` (marked
+    cells no colonist can get to, counted once a second) feed the inspector.
+  - Front end: Quarry zone tool, ground tint (`QUARRY`), the shaft marked (outline, arrow out, line down
+    to the bottom) while the tool is out or a quarry is selected, inspector with depth -/+ and state.
+  - Prospecting (hidden ore found by digging) is a possible later step.

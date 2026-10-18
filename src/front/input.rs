@@ -102,7 +102,7 @@ pub static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(|| {
     }
     let hint = "Civilians shelter here when a battle starts. Raiders can still reach it.";
     tools.push(fixed(Tool::Paint(Order::Zone(Zone::Safe)), "Safe zone", None, "Zones", hint));
-    let hint = "Miners dig the area out level by level, from the top, leaving steps down along its edge. Click it to set how deep.";
+    let hint = "Miners dig the area out level by level from the top, with stairs down at its edge (6 wood a level). Click it to set how deep.";
     tools.push(fixed(Tool::Paint(Order::Quarry), "Quarry zone", None, "Zones", hint));
     tools.push(fixed(Tool::Paint(Order::Zone(Zone::None)), "Clear zone", None, "Zones", "Remove stockpile, grow, safe and quarry zones."));
     // Roofs aren't placed by the player: rooms get them by themselves.
@@ -1158,21 +1158,22 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
         }
     }
 
-    // Quarries: where the steps down will be, each at the level it's dug to.
+    // Quarries: where the stairs go down, from the ground outside to the bottom.
     let quarry_shown = matches!(ui.tool, Tool::Paint(Order::Quarry))
         || matches!(ui.selected, Some(Selection::Tile(t)) if m.quarry_at(t.0, t.1).is_some());
     if quarry_shown {
+        let amber = Color::srgb(0.95, 0.7, 0.35);
         for q in &w.quarries {
-            let floors = q.floors();
-            let reach = q.reach() as usize;
-            for (k, &s) in q.steps.iter().take(reach).enumerate() {
-                let floor = floors.iter().find(|f| f.0 == s).map_or(q.top, |f| f.1);
-                let p = (s.0 as usize, s.1 as usize, floor);
-                if p.2 <= ui.top_at(m, p.0, p.1) {
-                    let shade = 1.0 - 0.6 * k as f32 / reach.max(1) as f32;
-                    floor_outline(&mut gizmos, p, 0.08, Color::srgb(0.95 * shade, 0.7 * shade, 0.35 * shade));
-                }
+            let Some((x, y)) = q.shaft else { continue };
+            let top = (x as usize, y as usize, q.ground);
+            if top.2 > ui.top_at(m, top.0, top.1) {
+                continue;
             }
+            floor_outline(&mut gizmos, top, 0.06, amber);
+            let c = tile_center(top) + Vec3::Y * 0.1;
+            let (dx, dy) = DIRS[q.out as usize];
+            gizmos.arrow(c, c + Vec3::new(dx as f32, 0.0, dy as f32) * 0.7, amber);
+            gizmos.line(c, Vec3::new(c.x, q.bottom() as f32 * LEVEL_H + 0.1, c.z), amber);
         }
     }
 

@@ -109,6 +109,10 @@ pub struct World {
     /// Areas dug out level by level (see `quarry.rs`).
     #[serde(default)]
     pub quarries: Vec<crate::quarry::Quarry>,
+    /// Per quarry, how many of the cells marked to dig nobody can get to
+    /// (counted once a second in `update_quarries`).
+    #[serde(skip)]
+    pub quarry_unreachable: Vec<usize>,
     /// Counts down to the next once-a-second pass over benches and rooms.
     pub colony_timer: f32,
     /// Quality per room id (index 0 unused). Derived, so not saved.
@@ -188,6 +192,7 @@ impl World {
             stockpiles: Vec::new(),
             moves: Vec::new(),
             quarries: Vec::new(),
+            quarry_unreachable: Vec::new(),
             colony_timer: 0.0,
             room_stats: Vec::new(),
             parley: None,

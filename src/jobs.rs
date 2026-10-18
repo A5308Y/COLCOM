@@ -622,7 +622,12 @@ impl World {
                         }
                         Special::Stairs => {
                             // The way the player turned them, if they can climb that way.
-                            let dir = if self.map.stairs_fit(target, dir) { dir } else { self.map.stairs_facing(target) };
+                            // A quarry's stairs face out of their shaft.
+                            let dir = match self.quarry_stairs_dir(target) {
+                                Some(out) => out,
+                                None if self.map.stairs_fit(target, dir) => dir,
+                                None => self.map.stairs_facing(target),
+                            };
                             self.map.set_feature(i, Feature::Built { kind, dir });
                             // A roof over them or where they're walked onto would block the way up:
                             // take it down.
