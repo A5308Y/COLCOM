@@ -15,7 +15,7 @@
 use crate::defs::{Defs, ItemId};
 use crate::health::{DamageKind, Part};
 use crate::map::Pos;
-use crate::pathing::{bfs, DistField};
+use crate::pathing::{bfs, DistField, ANY_DISTANCE};
 use crate::pawn::{Job, Pawn, Skill};
 use crate::world::{Step, World};
 use serde::{Deserialize, Serialize};
@@ -63,11 +63,10 @@ impl World {
     pub(crate) fn find_patient_bed(&self, p: &Pawn) -> Option<Pos> {
         let df = bfs(&self.map, p.pos);
         let free = |pos: Pos| self.care_bed(pos) && !self.bed_taken(pos, p.id);
-        let cells = || df.order.iter().map(|&i| self.map.pos(i));
-        cells()
-            .find(|&b| free(b) && !self.medical_bed(b))
+        let nearest = |test: &dyn Fn(Pos) -> bool| df.nearest(ANY_DISTANCE, |i| test(self.map.pos(i))).map(|i| self.map.pos(i));
+        nearest(&|b| free(b) && !self.medical_bed(b))
             .or_else(|| self.find_bed(p))
-            .or_else(|| cells().find(|&b| free(b)))
+            .or_else(|| nearest(&free))
     }
 
     /// Prosthetics that could replace `part`.
@@ -109,10 +108,7 @@ impl World {
 
     /// The nearest free prosthetic that fits `p`, by distance field `df`.
     pub(crate) fn nearest_prosthetic(&self, p: &Pawn, df: &DistField) -> Option<Pos> {
-        df.order
-            .iter()
-            .find(|&&i| self.res_item[i] == 0 && self.map.stacks(i).any(|s| Self::fits(p, s.kind).is_some()))
-            .map(|&i| self.map.pos(i))
+        self.nearest_stack(df, ANY_DISTANCE, |i, s| self.res_item[i] == 0 && Self::fits(p, s.kind).is_some())
     }
 
     /// A free operating table for colonist `p` to lie on for an ordered
@@ -123,7 +119,8 @@ impl World {
         }
         let df = bfs(&self.map, p.pos);
         self.nearest_prosthetic(p, &df)?;
-        df.order.iter().map(|&i| self.map.pos(i)).find(|&t| self.medical_bed(t) && !self.bed_taken(t, p.id))
+        let table = df.nearest(ANY_DISTANCE, |i| self.medical_bed(self.map.pos(i)) && !self.bed_taken(self.map.pos(i), p.id));
+        table.map(|i| self.map.pos(i))
     }
 
     /// The patient: lie on the table and wait for the doctor.

@@ -162,11 +162,7 @@ impl World {
         let df = self.battle_field(unit.side, lead.pos);
         let taken = |c: Pos| self.pawns.iter().any(|p| p.active() && p.pos == c && !unit.members.contains(&p.id));
         let mut best: Option<(Pos, f32)> = None;
-        for &i in &df.order {
-            let Some(d) = df.dist_i(i) else { continue };
-            if d > reach {
-                break;
-            }
+        for (i, d) in df.nearest_first(reach) {
             let c = self.map.pos(i);
             if d == 0 || taken(c) {
                 continue;

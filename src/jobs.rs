@@ -3,7 +3,7 @@
 use crate::defs::{defs, Defs, ItemId, PlantId, Special};
 use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone, STACK_MAX};
 use crate::moving::MOVE_SHARE;
-use crate::pathing::{bfs, DistField};
+use crate::pathing::{bfs, DistField, ANY_DISTANCE};
 use crate::pawn::{Job, Memory, Pawn, Skill, Task, WorkType};
 use crate::world::{Step, World};
 
@@ -599,17 +599,9 @@ impl World {
         }
         let ti = self.map.idx(to);
         let target = self.storage_priority(ti, kind).unwrap_or(0);
-        let df = bfs(&self.map, from);
-        df.order
-            .iter()
-            .take_while(|&&i| df.dist_i(i).is_some_and(|d| d <= NEARBY_STEPS))
-            .find(|&&i| {
-                i != ti
-                    && self.res_item[i] == 0
-                    && self.map.count_in(i, kind) > 0
-                    && self.storage_priority(i, kind).unwrap_or(0) < target
-            })
-            .map(|&i| self.map.pos(i))
+        self.nearest_stack(&bfs(&self.map, from), NEARBY_STEPS, |i, s| {
+            i != ti && s.kind == kind && self.res_item[i] == 0 && self.storage_priority(i, kind).unwrap_or(0) < target
+        })
     }
 
     /// Blueprints within `NEARBY_STEPS` of `from` that need `kind`, nearest
@@ -619,8 +611,7 @@ impl World {
         let m = &self.map;
         // Blueprints aren't walked onto, so look at the cells beside reachable ones too.
         let mut found: Vec<(i32, Pos, u32)> = Vec::new();
-        for &i in df.order.iter().take_while(|&&i| df.dist_i(i).is_some_and(|d| d <= NEARBY_STEPS)) {
-            let d = df.dist_i(i).unwrap_or(0);
+        for (i, d) in df.nearest_first(NEARBY_STEPS) {
             for c in std::iter::once(m.pos(i)).chain(m.neighbors(m.pos(i))) {
                 let ci = m.idx(c);
                 if !matches!(m.feature[ci], Feature::Blueprint { .. }) || found.iter().any(|f| f.1 == c) {
@@ -887,12 +878,10 @@ impl World {
         let taken = |s: Pos| {
             self.pawns.iter().any(|o| o.id != me && matches!(o.job, Some(Job::Eat { seat: Some(t), .. }) if t == s))
         };
-        let df = bfs(&self.map, near);
-        df.order
-            .iter()
-            .map(|&i| self.map.pos(i))
-            .take_while(|&s| df.dist(s).is_some_and(|d| d <= MAX_WALK))
-            .find(|&s| self.is_seat(s) && !taken(s))
+        self.nearest_cell(near, MAX_WALK, |i| {
+            let s = self.map.pos(i);
+            self.is_seat(s) && !taken(s)
+        })
     }
 
     /// The pawn's own bed, or the nearest unclaimed one (not an operating
@@ -903,12 +892,9 @@ impl World {
                 return Some(b);
             }
         }
-        // Reachable cells come nearest first, so the first free bed wins.
-        let df = bfs(&self.map, p.pos);
-        df.order.iter().map(|&i| self.map.pos(i)).find(|&pos| {
-            self.map.feature[self.map.idx(pos)].is_bed()
-                && !self.care_bed(pos)
-                && !self.pawns.iter().any(|o| o.id != p.id && !o.dead && o.bed == Some(pos))
+        self.nearest_cell(p.pos, ANY_DISTANCE, |i| {
+            let pos = self.map.pos(i);
+            self.map.feature[i].is_bed() && !self.care_bed(pos) && !self.pawns.iter().any(|o| o.id != p.id && !o.dead && o.bed == Some(pos))
         })
     }
 
@@ -943,7 +929,7 @@ impl World {
     pub(crate) fn start_wander(&mut self, p: &mut Pawn, radius: i32) {
         let df = bfs(&self.map, p.pos);
         let options: Vec<usize> =
-            df.order.iter().copied().filter(|&i| df.dist_i(i).is_some_and(|d| d > 0 && d <= radius)).collect();
+            df.nearest_first(radius).filter(|&(_, d)| d > 0).map(|(i, _)| i).collect();
         if options.is_empty() {
             return;
         }

@@ -3,7 +3,7 @@
 
 use crate::defs::{defs, Defs, ItemId};
 use crate::map::{Pos, Stack};
-use crate::pathing::{bfs, DistField};
+use crate::pathing::{bfs, DistField, ANY_DISTANCE};
 use crate::pawn::{Job, Memory, Pawn, Skill, WorkType};
 use crate::world::{Step, World};
 
@@ -40,30 +40,18 @@ impl World {
 
     /// Nearest unreserved stack of any item that `is` (food, medicine).
     pub(crate) fn nearest_free_item(&self, from: Pos, is: fn(&Defs, ItemId) -> bool) -> Option<Pos> {
-        // Reachable cells come nearest first.
-        let df = bfs(&self.map, from);
-        df.order
-            .iter()
-            .find(|&&i| self.item_free(i) && self.map.stacks(i).any(|s| is(defs(), s.kind)))
-            .map(|&i| self.map.pos(i))
+        self.nearest_stack(&bfs(&self.map, from), ANY_DISTANCE, |i, s| self.item_free(i) && is(defs(), s.kind))
     }
 
     /// Nearest reachable free food, cooked food first.
     pub(crate) fn nearest_food(&self, from: Pos) -> Option<Pos> {
         let df = bfs(&self.map, from);
-        let mut raw = None;
-        for &i in &df.order {
-            if !self.item_free(i) {
-                continue;
-            }
-            // Cooked food first, wherever it is among a shelf's stacks.
-            let Some(kind) = cooked_first(self.map.stacks(i).map(|s| s.kind).filter(|&k| defs().is_food(k))) else { continue };
-            if !kind.def().raw {
-                return Some(self.map.pos(i));
-            }
-            raw = raw.or(Some(self.map.pos(i)));
-        }
-        raw
+        let food = |raw_too: bool| {
+            self.nearest_stack(&df, ANY_DISTANCE, |i, s| {
+                self.item_free(i) && defs().is_food(s.kind) && (raw_too || !s.kind.def().raw)
+            })
+        };
+        food(false).or_else(|| food(true))
     }
 
     /// `p` eats one `kind`: nutrition, how it felt, and maybe food poisoning.

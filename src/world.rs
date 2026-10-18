@@ -6,7 +6,7 @@ use crate::defs::{defs, BuildId, PlantId, Special};
 use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone};
 use crate::moving::Move;
 use crate::pawn::{Faction, Job, Memory, Pawn, WorkType};
-use crate::pathing::bfs;
+use crate::pathing::{bfs, DistField};
 use crate::production::{Bench, Stockpile};
 use crate::rooms::RoomStats;
 use crate::rng::Rng;
@@ -187,6 +187,17 @@ impl World {
     }
 
     // ---------- queries ----------
+
+    /// The nearest cell `from` can walk to, within `max` steps, that passes `test`.
+    pub(crate) fn nearest_cell(&self, from: Pos, max: i32, test: impl FnMut(usize) -> bool) -> Option<Pos> {
+        bfs(&self.map, from).nearest(max, test).map(|i| self.map.pos(i))
+    }
+
+    /// The nearest cell in `df` (within `max` steps) holding a stack that
+    /// passes `test(cell, stack)`, looking at every stack of a shelf.
+    pub(crate) fn nearest_stack(&self, df: &DistField, max: i32, test: impl Fn(usize, Stack) -> bool) -> Option<Pos> {
+        df.nearest(max, |i| self.map.stacks(i).any(|s| test(i, s))).map(|i| self.map.pos(i))
+    }
 
     pub fn day(&self) -> u32 {
         (self.time / DAY_LEN) as u32 + 1
@@ -606,10 +617,11 @@ impl World {
     /// Whether someone at `p` can walk to the edge of the map.
     fn reaches_edge(&self, p: Pos) -> bool {
         let m = &self.map;
-        bfs(m, p).order.iter().any(|&i| {
+        self.nearest_cell(p, crate::pathing::ANY_DISTANCE, |i| {
             let (x, y, _) = m.pos(i);
             (x == 0 || y == 0 || x == m.w - 1 || y == m.h - 1) && m.standable(m.pos(i))
         })
+        .is_some()
     }
 
     /// Once a second: who is shut in.
@@ -632,13 +644,13 @@ impl World {
         let m = &self.map;
         let inside = bfs(m, p);
         let climbing = crate::pathing::bfs_climbing(m, p);
-        climbing
-            .order
-            .iter()
-            .map(|&i| m.pos(i))
+        let out = climbing
+            .nearest_first(crate::pathing::ANY_DISTANCE)
+            .map(|(i, _)| m.pos(i))
             .filter(|&c| inside.dist(c).is_none() && m.standable(c))
             .take(6)
-            .find(|&c| self.reaches_edge(c))
+            .find(|&c| self.reaches_edge(c));
+        out
     }
 
     fn colonist_think(&mut self, p: &mut Pawn, dt: f32) {

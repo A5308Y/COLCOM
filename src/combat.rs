@@ -3,7 +3,6 @@
 use crate::defs::ItemId;
 use crate::health::DamageKind;
 use crate::map::{Pos, Stack};
-use crate::pathing::bfs;
 use crate::pawn::{Memory, Pawn};
 use crate::world::World;
 
@@ -73,13 +72,11 @@ impl World {
 
     /// The nearest map-edge cell `from` can walk to (where raiders flee).
     pub(crate) fn nearest_edge(&self, from: Pos) -> Pos {
-        // Reachable cells come nearest first.
-        let df = bfs(&self.map, from);
         let (w, h) = (self.map.w, self.map.h);
-        df.order
-            .iter()
-            .map(|&i| self.map.pos(i))
-            .find(|p| p.0 == 0 || p.1 == 0 || p.0 == w - 1 || p.1 == h - 1)
-            .unwrap_or(from)
+        self.nearest_cell(from, crate::pathing::ANY_DISTANCE, |i| {
+            let p = self.map.pos(i);
+            p.0 == 0 || p.1 == 0 || p.0 == w - 1 || p.1 == h - 1
+        })
+        .unwrap_or(from)
     }
 }

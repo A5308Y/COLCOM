@@ -3,6 +3,9 @@
 use crate::map::{Map, Pos};
 use std::collections::VecDeque;
 
+/// No limit on how far `DistField::nearest_first` and friends look.
+pub const ANY_DISTANCE: i32 = i32::MAX;
+
 /// Distances from one start cell to every cell a pawn can walk to.
 pub struct DistField {
     /// Steps from the start plus one; 0 = unreachable. (Zero-initialised
@@ -101,6 +104,17 @@ impl DistField {
     pub fn dist_i(&self, i: usize) -> Option<i32> {
         let s = self.steps[i];
         (s > 0).then(|| s as i32 - 1)
+    }
+
+    /// Reached cells (by index), nearest first, with how far they are, up to
+    /// `max` steps (`ANY_DISTANCE` for all).
+    pub fn nearest_first(&self, max: i32) -> impl Iterator<Item = (usize, i32)> + '_ {
+        self.order.iter().map(|&i| (i, self.dist_i(i).unwrap_or(0))).take_while(move |&(_, d)| d <= max)
+    }
+
+    /// The nearest reached cell (by index) within `max` steps that passes `test`.
+    pub fn nearest(&self, max: i32, mut test: impl FnMut(usize) -> bool) -> Option<usize> {
+        self.nearest_first(max).map(|(i, _)| i).find(|&i| test(i))
     }
 
     /// Closest cell from which `target` can be reached: the target itself, or
@@ -221,4 +235,17 @@ mod tests {
         assert!(!line_of_sight(&m, (0, 1, Z), (9, 1, Z)), "a mound blocks the view");
         assert!(line_of_sight(&m, (0, 1, Z + 1), (9, 1, Z + 1)), "but not from above");
     }
+
+    #[test]
+    fn nearest_looks_outwards_and_stops_at_the_limit() {
+        let m = Map::flat(10, 3);
+        let df = bfs(&m, (1, 1, Z));
+        let dists: Vec<i32> = df.nearest_first(3).map(|(_, d)| d).collect();
+        assert!(dists.windows(2).all(|w| w[0] <= w[1]), "nearest first");
+        assert_eq!(dists.last(), Some(&3), "up to the limit");
+        let at = |x: usize| m.idx((x, 1, Z));
+        assert_eq!(df.nearest(ANY_DISTANCE, |i| i == at(7) || i == at(4)), Some(at(4)), "the nearer of two");
+        assert_eq!(df.nearest(2, |i| i == at(4)), None, "too far");
+    }
+
 }
