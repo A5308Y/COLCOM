@@ -421,6 +421,18 @@ impl Map {
         }
     }
 
+    /// Where stairs at `p`, built or planned, are walked onto: the cell at
+    /// their low end. Planned ones go the way they'll be built (see `stairs_fit`).
+    pub fn stairs_foot(&self, p: Pos) -> Option<Pos> {
+        let (dx, dy) = match self.feature[self.idx(p)] {
+            Feature::Blueprint { kind, dir, .. } if kind.def().special == Special::Stairs => {
+                DIRS[if self.stairs_fit(p, dir) { dir } else { self.stairs_facing(p) } as usize % 4]
+            }
+            _ => self.stairs_dir(p)?,
+        };
+        self.at(p.0 as i32 - dx, p.1 as i32 - dy, p.2 as i32)
+    }
+
     /// Which way new stairs at `p` should rise: away from walkable ground at
     /// their foot, ideally towards somewhere to stand at the top.
     pub fn stairs_facing(&self, p: Pos) -> u8 {
@@ -815,8 +827,8 @@ impl Map {
     /// (natural hollows don't get roofs), where a roof would be held up.
     /// Regions with a roof or roof blueprint in them are the space under a
     /// lower room's roof, so they get none until floors replace it. Stairs,
-    /// built or planned, get no roof (it would block the way up) and count as
-    /// covered.
+    /// built or planned, and the cell in front of them get no roof (it would
+    /// block the way up) and count as covered.
     pub fn recompute_rooms(&mut self) {
         let n = self.len();
         self.room = vec![0; n];
@@ -825,7 +837,15 @@ impl Map {
         self.roof_gaps.clear();
         let mut wanted = vec![false; n];
         let room_open = |m: &Map, i: usize| m.block[i] == Block::Air && !m.feature[i].blocks_room();
-        let stairs = |m: &Map, i: usize| m.feature[i].planned().is_some_and(|d| d.special == Special::Stairs);
+        let mut stairwell = vec![false; n];
+        for i in 0..n {
+            if self.feature[i].planned().is_some_and(|d| d.special == Special::Stairs) {
+                stairwell[i] = true;
+                if let Some(foot) = self.stairs_foot(self.pos(i)) {
+                    stairwell[self.idx(foot)] = true;
+                }
+            }
+        }
         let mut seen = vec![false; n];
         for start in 0..n {
             if seen[start] || !room_open(self, start) {
@@ -864,7 +884,7 @@ impl Map {
                     let ai = self.idx(a);
                     let free = matches!(self.feature[ai], Feature::None) || self.roof_blueprint(ai);
                     let open = self.block[ai] == Block::Air && !self.floor[ai] && !self.roof[ai];
-                    if !(free && open) || self.covered(p) || stairs(self, i) {
+                    if !(free && open) || self.covered(p) || stairwell[i] {
                         continue;
                     }
                     if self.floor_supported(a) {
@@ -875,7 +895,7 @@ impl Map {
                     }
                 }
             }
-            if region.iter().all(|&i| self.covered(self.pos(i)) || stairs(self, i)) {
+            if region.iter().all(|&i| self.covered(self.pos(i)) || stairwell[i]) {
                 let id = self.room_sizes.len() as u32;
                 self.room_sizes.push(region.len());
                 for &i in &region {

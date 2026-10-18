@@ -141,7 +141,7 @@ furniture, light, production), searchable, with costs (red if the colony is shor
 - **Building upwards:** floors make upper storeys and roofs; each needs a wall, door, stairs or ground
   beneath some cell within 3 steps. Walls, doors and windows stack onto walls, doors and windows below,
   even ones still planned: plan a wall several storeys high and it goes up one level at a time
-  (cancelling the bottom takes the rest along). Stairs, even planned ones, get no roof. Stairs connect a cell to the one above; you enter them from their low end
+  (cancelling the bottom takes the rest along). Stairs, even planned ones, and the cell in front of them get no roof. Stairs connect a cell to the one above; you enter them from their low end
   and can't walk across them. Use the layer view to place floors in mid-air (a faint grid shows the
   cells). Pawns and items with nothing underneath fall, and falls of two levels or more hurt.
 - **Looks:** sun and moon with shadows, dark nights, lamps that light rooms and caves, see-through

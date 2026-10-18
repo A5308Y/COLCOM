@@ -571,8 +571,14 @@ impl World {
                             // The way the player turned them, if they can climb that way.
                             let dir = if self.map.stairs_fit(target, dir) { dir } else { self.map.stairs_facing(target) };
                             self.map.set_feature(i, Feature::Built { kind, dir });
-                            // A roof overhead would block the way up: take it down.
-                            if let Some(a) = self.map.above(target) {
+                            // A roof over them or where they're walked onto would block the way up:
+                            // take it down.
+                            let over: Vec<Pos> = [Some(target), self.map.stairs_foot(target)]
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|c| self.map.above(c))
+                                .collect();
+                            for a in over {
                                 let ai = self.map.idx(a);
                                 if self.map.roof[ai] {
                                     self.map.set_roof(ai, false);

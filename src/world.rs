@@ -1750,7 +1750,8 @@ mod tests {
         house(&mut w, 5, 5, 9, 9);
         let marked = roof_blueprints(&w, Z + 1);
         assert!(!marked.contains(&(7, 7)), "the way up stays open");
-        assert_eq!(marked.len(), 8);
+        assert!(!marked.contains(&(6, 7)), "and so does the way onto them");
+        assert_eq!(marked.len(), 7);
         // Roofed everywhere else, it's still a room (the stairwell counts as covered).
         for (x, y) in marked {
             let a = w.map.idx((x, y, Z + 1));
@@ -1769,7 +1770,7 @@ mod tests {
         assert!(w.apply_order((7, 7, Z), Order::Build(BuildId::named("stairs"))));
         run(&mut w, 1.0);
         assert!(!roof_blueprints(&w, Z + 1).contains(&(7, 7)), "the roof plan goes");
-        assert_eq!(roof_blueprints(&w, Z + 1).len(), 8);
+        assert_eq!(roof_blueprints(&w, Z + 1).len(), 7, "over the cell in front too");
         assert!(w.apply_order((7, 7, Z), Order::Cancel));
         run(&mut w, 1.0);
         assert!(roof_blueprints(&w, Z + 1).contains(&(7, 7)), "and comes back without the stairs");
@@ -1793,6 +1794,8 @@ mod tests {
         run(&mut w, 60.0);
         assert!(w.map.feature[i].is_special(Special::Stairs), "built");
         assert!(!w.map.roof[w.map.idx((7, 7, Z + 1))], "no roof over the stairs");
+        let foot = w.map.stairs_foot((7, 7, Z)).unwrap();
+        assert!(!w.map.roof[w.map.idx((foot.0, foot.1, Z + 1))], "nor over the way onto them");
         assert!(roof_blueprints(&w, Z + 1).is_empty(), "and none comes back");
         assert!(w.map.roofed((6, 6, Z)), "still a room");
     }

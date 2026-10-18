@@ -760,7 +760,9 @@ real play.
   days, so they take twice as long in real time (raids are spaced further apart). `World::day_len` is saved
   (missing = 240 in older saves); loading rescales the clock and storyteller timers so day and hour stay put.
 - Two-storey fixes (2026-10-18): `recompute_rooms` treats planned stairs like built ones (no roof over a
-  stairs blueprint; before, a roof was planned over it and came back after deconstructing). Doors hold
+  stairs blueprint; before, a roof was planned over it and came back after deconstructing), nor over the
+  cell in front of stairs (`Map::stairs_foot`); both count as covered for rooms, and building stairs takes
+  down a roof over either. Doors hold
   floors, so walls stack onto them (and they hold up roofs and floors nearby). Walls, doors and windows can
   be planned on a planned holds-floors structure (`Feature::planned`); such a blueprint waits for the one
   below (`World::stacked_on_plan`, skipped by work search), and cancelling a blueprint takes away the
