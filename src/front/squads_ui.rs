@@ -49,9 +49,38 @@ fn slot_choice(
     chosen
 }
 
+/// How well a colonist fights: their skills, and the chances to hit with the
+/// weapon they have (before cover and the like).
+fn fighting(ui: &mut egui::Ui, p: &Pawn) {
+    use my_world::battle::base_hit_chance;
+    use my_world::pawn::Skill;
+    ui.label(RichText::new("Fighting").strong());
+    ui.label(format!("Shooting {}   Melee {}", p.skill(Skill::Shooting), p.skill(Skill::Melee)));
+    let w = p.attack();
+    let pct = |c: f32| format!("{:.0}%", c.clamp(0.05, 0.95) * 100.0);
+    let text = if w.ranged {
+        let far = w.range.floor().max(1.0);
+        format!(
+            "Hits with {}: {} at 3 cells, {} at {:.0} (its range), before cover",
+            p.weapon_name().to_lowercase(),
+            pct(base_hit_chance(p, true, 3.0)),
+            pct(base_hit_chance(p, true, far)),
+            far
+        )
+    } else {
+        format!("Hits with {}: {} of blows", p.weapon_name().to_lowercase(), pct(base_hit_chance(p, false, 1.0)))
+    };
+    ui.label(text);
+    let how = "Shots: 55% + 2.5% per Shooting level - 2.5% per cell away; blows: 60% + 2% per Melee level. \
+               Hurt eyes or hands lower both; in battle, cover, hunkering down, height and being pinned change it.";
+    ui.label(RichText::new(how).small().weak());
+}
+
 /// Role, squad and loadout of a colonist.
 pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction> {
     let mut actions = Vec::new();
+    fighting(ui, p);
+    ui.separator();
     ui.label(RichText::new("When a battle starts").strong());
     let mut role = p.role;
     ui.horizontal(|ui| {

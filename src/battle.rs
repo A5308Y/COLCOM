@@ -313,6 +313,18 @@ fn other(side: Faction) -> Faction {
     }
 }
 
+/// How likely `a` is to hit, before the situation (cover, hunkering, height,
+/// being pinned): shooting at `d` cells, or a blow in melee. Shots: 55% +
+/// 2.5% per Shooting level - 2.5% per cell; blows: 60% + 2% per Melee level.
+/// Bad eyes or hands make either worse.
+pub fn base_hit_chance(a: &Pawn, ranged: bool, d: f32) -> f32 {
+    let skill = if ranged { Skill::Shooting } else { Skill::Melee };
+    let level = a.skill(skill) as f32;
+    let c = if ranged { 0.55 + level * 0.025 - d * 0.025 } else { 0.6 + level * 0.02 };
+    let caps = &a.health.caps;
+    c * (0.4 + 0.6 * caps.sight.min(1.0)) * (0.5 + 0.5 * caps.manipulation.min(1.0))
+}
+
 impl World {
     // ---------- parley ----------
 
@@ -905,12 +917,7 @@ impl World {
     /// Chance that `a`'s shot or blow hits `o` if `a` stood at `from`.
     pub fn hit_chance_from(&self, a: &Pawn, from: Pos, o: &Pawn) -> f32 {
         let w = a.attack();
-        let skill = if w.ranged { Skill::Shooting } else { Skill::Melee };
-        let level = a.skill(skill) as f32;
-        let d = cell_dist(from, o.pos);
-        let mut c = if w.ranged { 0.55 + level * 0.025 - d * 0.025 } else { 0.6 + level * 0.02 };
-        let caps = &a.health.caps;
-        c *= (0.4 + 0.6 * caps.sight.min(1.0)) * (0.5 + 0.5 * caps.manipulation.min(1.0));
+        let mut c = base_hit_chance(a, w.ranged, cell_dist(from, o.pos));
         let b = self.battle.as_ref();
         let unit = |id: u32| b.and_then(|b| b.unit_of(id).map(|u| &b.units[u]));
         if w.ranged {
@@ -2028,6 +2035,22 @@ mod tests {
         if let Some(b) = &w.battle {
             assert!(!b.units[t].pinned(), "one volley doesn't pin: {}", b.units[t].suppression);
         }
+    }
+
+    #[test]
+    fn the_base_hit_chance_is_the_battle_one_in_the_open() {
+        let mut w = world(30, 20, 3);
+        let a = colonist(&mut w, (5, 5, Z));
+        let o = colonist(&mut w, (15, 5, Z));
+        let (pa, po) = (w.pawn(a).unwrap().clone(), w.pawn(o).unwrap().clone());
+        let ranged = pa.attack().ranged;
+        let d = cell_dist(pa.pos, po.pos);
+        assert!((w.hit_chance(&pa, &po) - base_hit_chance(&pa, ranged, d).clamp(0.05, 0.95)).abs() < 1e-5);
+        // Melee: skill only, 60% + 2% a level.
+        let mut fist = pa.clone();
+        fist.weapon = None;
+        fist.skills[Skill::Melee as usize] = 10;
+        assert!((base_hit_chance(&fist, false, 1.0) - 0.8).abs() < 1e-5);
     }
 
     #[test]

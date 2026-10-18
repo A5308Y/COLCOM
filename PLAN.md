@@ -875,3 +875,6 @@ real play.
   squad). Battles no longer swap gear (`gear_up` removed; `gear_down` stays for battles saved mid-way).
   Loading moves old `chosen` gear into free loadout slots (`chosen` is no longer saved). The Combat tab
   calls it Loadout and has a helmet slot.
+- Hit chances in the Combat tab (2026-10-18): `battle::base_hit_chance` (skill, distance, sight and
+  manipulation) is shared by `hit_chance_from` and the tab's new Fighting section (Shooting and Melee
+  levels, chances with the weapon they have: shots at 3 cells and at its range, or blows).
