@@ -933,13 +933,14 @@ impl World {
                     Special::Grave => {
                         m.standable(p) && empty && !m.floor[i] && m.below(p).is_some_and(|b| m.block[m.idx(b)] == Block::Soil)
                     }
-                    // Walls, doors and windows also stack straight onto walls below them.
+                    // Walls, doors and windows also stack straight onto walls, doors and
+                    // windows below them, built or planned (`stacked_on_plan`).
                     _ => {
                         empty
                             && (m.standable(p)
                             || kind.def().blocks_room
                                 && m.open(p)
-                                    && m.below(p).is_some_and(|b| m.feature[m.idx(b)].structure().is_some_and(|d| d.holds_floors)))
+                                    && m.below(p).is_some_and(|b| m.feature[m.idx(b)].planned().is_some_and(|d| d.holds_floors)))
                     }
                 }
             }
@@ -973,21 +974,55 @@ impl World {
                         self.map.drop_item(at, Stack { kind: item, count });
                     }
                 }
+                let stairs = |f: Feature| f.planned().is_some_and(|d| d.special == Special::Stairs);
+                if stairs(self.map.feature[i]) || kind.def().special == Special::Stairs {
+                    // Planned stairs keep the roof off (see `recompute_rooms`).
+                    self.map.rooms_dirty = true;
+                }
                 self.map.feature[i] = Feature::Blueprint { kind, delivered: 0, dir: 0 };
             }
             Order::Cancel => {
                 self.map.desig[i] = None;
                 self.cancel_move(p);
-                if let Feature::Blueprint { kind, delivered, .. } = self.map.feature[i] {
-                    self.map.feature[i] = Feature::None;
-                    let at = self.map.landing(p);
-                    for (item, count) in kind.def().delivered_split(delivered) {
-                        self.map.drop_item(at, Stack { kind: item, count });
-                    }
-                }
+                self.cancel_blueprint(p);
             }
         }
         true
+    }
+
+    /// Take away the blueprint at `p`, dropping what was delivered to it, and
+    /// any walls planned on top of it that are now left hanging.
+    fn cancel_blueprint(&mut self, mut p: Pos) {
+        let mut i = self.map.idx(p);
+        while let Feature::Blueprint { kind, delivered, .. } = self.map.feature[i] {
+            if kind.def().special == Special::Stairs {
+                self.map.rooms_dirty = true;
+            }
+            self.map.feature[i] = Feature::None;
+            let at = self.map.landing(p);
+            for (item, count) in kind.def().delivered_split(delivered) {
+                self.map.drop_item(at, Stack { kind: item, count });
+            }
+            // Nothing holds up a wall planned on top any more.
+            let m = &self.map;
+            let hanging = |a: Pos| matches!(m.feature[m.idx(a)], Feature::Blueprint { .. }) && !m.standable(a);
+            match self.map.above(p) {
+                Some(a) if hanging(a) => {
+                    p = a;
+                    i = self.map.idx(a);
+                }
+                _ => break,
+            }
+        }
+    }
+
+    /// A blueprint of a wall (door, window) planned on top of one that isn't
+    /// built yet. It waits for the one below, and goes when that is cancelled.
+    pub(crate) fn stacked_on_plan(&self, p: Pos) -> bool {
+        let m = &self.map;
+        matches!(m.feature[m.idx(p)], Feature::Blueprint { .. })
+            && !m.standable(p)
+            && m.below(p).is_some_and(|b| matches!(m.feature[m.idx(b)], Feature::Blueprint { .. }))
     }
 
     /// Testing: drop `count` of `kind` at `at` (spilling onto the cells around).
@@ -1727,6 +1762,20 @@ mod tests {
     }
 
     #[test]
+    fn planned_stairs_get_no_roof_either() {
+        let mut w = test_world(16, 16);
+        house(&mut w, 5, 5, 9, 9);
+        assert!(roof_blueprints(&w, Z + 1).contains(&(7, 7)));
+        assert!(w.apply_order((7, 7, Z), Order::Build(BuildId::named("stairs"))));
+        run(&mut w, 1.0);
+        assert!(!roof_blueprints(&w, Z + 1).contains(&(7, 7)), "the roof plan goes");
+        assert_eq!(roof_blueprints(&w, Z + 1).len(), 8);
+        assert!(w.apply_order((7, 7, Z), Order::Cancel));
+        run(&mut w, 1.0);
+        assert!(roof_blueprints(&w, Z + 1).contains(&(7, 7)), "and comes back without the stairs");
+    }
+
+    #[test]
     fn stairs_built_under_a_roof_open_it() {
         let mut w = test_world(16, 16);
         colonist(&mut w, (2, 2, Z));
@@ -1796,19 +1845,19 @@ mod tests {
         let mut w = test_world(20, 20);
         house(&mut w, 3, 3, 13, 11);
         let marked = roof_blueprints(&w, Z + 1);
-        // The middle of the hall is more than three cells from any wall (the
-        // door at (3, 7) holds nothing up).
-        for x in 6..=9 {
+        // The middle of the hall is more than three cells from any wall or
+        // the door at (3, 7).
+        for x in 7..=9 {
             assert!(!marked.contains(&(x, 7)), "{:?}", marked);
         }
         assert!(marked.contains(&(5, 7)) && marked.contains(&(10, 7)) && marked.contains(&(4, 4)));
-        assert_eq!(marked.len(), 9 * 7 - 4);
+        assert_eq!(marked.len(), 9 * 7 - 3);
         assert!(!w.map.roofed((5, 5, Z)), "with holes in its roof it's no room");
         // The player is told where.
         let mut gaps: Vec<Pos> = w.map.roof_gaps.iter().map(|&i| w.map.pos(i)).collect();
         gaps.sort();
-        assert_eq!(gaps, (6..=9).map(|x| (x, 7, Z + 1)).collect::<Vec<_>>());
-        assert!(w.alerts().iter().any(|(a, _)| a.starts_with("Roof can't reach 4 cell")), "{:?}", w.alerts());
+        assert_eq!(gaps, (7..=9).map(|x| (x, 7, Z + 1)).collect::<Vec<_>>());
+        assert!(w.alerts().iter().any(|(a, _)| a.starts_with("Roof can't reach 3 cell")), "{:?}", w.alerts());
         // A wall in the middle holds it all up.
         let pillar = w.map.idx((8, 6, Z));
         w.map.set_feature(pillar, Feature::built("wall"));
@@ -1954,6 +2003,35 @@ mod tests {
         assert_eq!(w.map.feature[w.map.idx((10, 10, Z + 1))], Feature::built("wall"));
         // And again on top of that (building it needs somewhere to stand up there).
         assert!(w.apply_order((10, 10, Z + 2), Order::Build(wall)));
+    }
+
+    #[test]
+    fn walls_stack_onto_doors_and_planned_walls() {
+        let mut w = test_world(20, 20);
+        colonist(&mut w, (2, 2, Z));
+        let wall = BuildId::named("wall");
+        let door = w.map.idx((10, 10, Z));
+        w.map.set_feature(door, Feature::built("door"));
+        assert!(w.apply_order((10, 10, Z + 1), Order::Build(wall)), "a wall over a door");
+        // A wall three high, planned all at once: it goes up one level at a time.
+        assert!(w.apply_order((12, 10, Z), Order::Build(wall)));
+        assert!(w.apply_order((12, 10, Z + 1), Order::Build(wall)));
+        assert!(!w.apply_order((13, 10, Z + 1), Order::Build(wall)), "not on thin air");
+        assert!(w.stacked_on_plan((12, 10, Z + 1)));
+        assert!(!w.stacked_on_plan((12, 10, Z)));
+        w.map.drop_item((4, 4, Z), Stack { kind: item("stone"), count: 12 });
+        run(&mut w, 80.0);
+        for at in [(10, 10, Z + 1), (12, 10, Z), (12, 10, Z + 1)] {
+            assert_eq!(w.map.feature[w.map.idx(at)], Feature::built("wall"), "{:?}", at);
+        }
+        // Cancelling a planned wall takes the ones planned on top of it along.
+        assert!(w.apply_order((14, 10, Z), Order::Build(wall)));
+        assert!(w.apply_order((14, 10, Z + 1), Order::Build(wall)));
+        assert!(w.apply_order((14, 10, Z + 2), Order::Build(wall)));
+        assert!(w.apply_order((14, 10, Z), Order::Cancel));
+        for z in Z..Z + 3 {
+            assert_eq!(w.map.feature[w.map.idx((14, 10, z))], Feature::None);
+        }
     }
 
     #[test]

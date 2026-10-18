@@ -31,7 +31,7 @@ const HELP_ORDERS: [&str; 7] = [
     "",
 ];
 
-const HELP_REST: [&str; 43] = [
+const HELP_REST: [&str; 44] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
     "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
@@ -47,7 +47,8 @@ const HELP_REST: [&str; 43] = [
     "      smelt it into steel and make weapons and armour at a smithy. Colonists pick up better gear;",
     "      select one and right-click a weapon or clothes to have them use it (and keep it).",
     "",
-    "Floors are for upper storeys; they need a wall, stairs or ground below within 3 cells.",
+    "Floors are for upper storeys; they need a wall, door, stairs or ground below within 3 cells.",
+    "      Walls stack onto walls and doors below, even planned ones, to build several storeys high.",
     "      Use the layer view to place floors in mid-air: PageDown/PageUp (or [ and ]).",
     "      Shift+R hides roofs, to look into the top room of every building at once.",
     "Stairs rise away from where you walk onto them; you can't walk across them.",

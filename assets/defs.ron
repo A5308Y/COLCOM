@@ -688,6 +688,8 @@
             passable: true,
             blocks_room: true,
             blocks_sight: true,
+            // Walls stack onto doors (a lintel), and floors rest on them.
+            holds_floors: true,
             special: Door,
             along_walls: true,
             look: Parts([

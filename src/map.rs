@@ -124,6 +124,14 @@ impl Feature {
         }
     }
 
+    /// The structure here, finished or still a blueprint.
+    pub fn planned(self) -> Option<&'static BuildDef> {
+        match self {
+            Feature::Built { kind, .. } | Feature::Blueprint { kind, .. } => Some(kind.def()),
+            _ => None,
+        }
+    }
+
     pub fn passable(self) -> bool {
         match self {
             Feature::None | Feature::Blueprint { .. } => true,
@@ -806,8 +814,9 @@ impl Map {
     /// cells of enclosed regions that built walls or doors help enclose
     /// (natural hollows don't get roofs), where a roof would be held up.
     /// Regions with a roof or roof blueprint in them are the space under a
-    /// lower room's roof, so they get none until floors replace it. Stairs
-    /// get no roof (it would block the way up) and count as covered.
+    /// lower room's roof, so they get none until floors replace it. Stairs,
+    /// built or planned, get no roof (it would block the way up) and count as
+    /// covered.
     pub fn recompute_rooms(&mut self) {
         let n = self.len();
         self.room = vec![0; n];
@@ -816,7 +825,7 @@ impl Map {
         self.roof_gaps.clear();
         let mut wanted = vec![false; n];
         let room_open = |m: &Map, i: usize| m.block[i] == Block::Air && !m.feature[i].blocks_room();
-        let stairs = |m: &Map, i: usize| m.feature[i].is_special(Special::Stairs);
+        let stairs = |m: &Map, i: usize| m.feature[i].planned().is_some_and(|d| d.special == Special::Stairs);
         let mut seen = vec![false; n];
         for start in 0..n {
             if seen[start] || !room_open(self, start) {

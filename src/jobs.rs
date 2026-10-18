@@ -257,7 +257,8 @@ impl World {
             }
             Feature::Blueprint { kind, delivered, .. } => {
                 let def = kind.def();
-                if def.work != wt {
+                // Walls planned on walls go up one storey at a time.
+                if def.work != wt || self.stacked_on_plan(pos) {
                     return None;
                 }
                 // Moved furniture needs no materials, only to be packed up first.
