@@ -824,10 +824,12 @@ real play.
   `Map::quarry_cols` (not saved, `index_quarries`) maps columns to them. `Order::Quarry` paints columns
   (at each column's own surface, `paint_box`), joining or merging neighbouring quarries; Clear zone takes
   them out (and the Mine marks they made). `Quarry::steps` is a path along the edge (outermost ring
-  first, straight on, else right) from the highest edge column; `floors` digs step k down to `top - k`
-  and the rest to `top - reach` (`reach`: depth, at most the number of steps, never level 0), leaving
+  first, straight on, else right), laid out only when the shape changes (`lay_out`; kept and saved so
+  steps don't move while digging), from the edge column with the longest run of steps the ground allows
+  (`top` is that entrance's level); `floors` digs step k down to `top - k` and the rest to `top - reach` (`reach`: depth, at most the number of steps, never level 0), leaving
   one-level natural steps, which pawns already walk. Once a second `update_quarries` marks the top
-  remaining layer with Mine (columns with water or anything built left alone, cells beside water kept
+  remaining layer below the entrance with Mine (ground above the entrance, a hill top in the zone, is
+  dug alongside, `quarry_layer`) (columns with water or anything built left alone, cells beside water kept
   as a rim, plants on top marked for cutting first). Front end: Quarry zone tool, ground tint
   (`QUARRY`), step outlines while the tool is out or a quarry is selected, inspector with depth -/+ and
   progress. Prospecting (hidden ore found by digging) is a possible later step.

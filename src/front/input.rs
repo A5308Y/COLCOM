@@ -1163,9 +1163,9 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
         || matches!(ui.selected, Some(Selection::Tile(t)) if m.quarry_at(t.0, t.1).is_some());
     if quarry_shown {
         for q in &w.quarries {
-            let floors = q.floors(m);
-            let reach = q.reach(m) as usize;
-            for (k, s) in q.steps(m).into_iter().take(reach).enumerate() {
+            let floors = q.floors();
+            let reach = q.reach() as usize;
+            for (k, &s) in q.steps.iter().take(reach).enumerate() {
                 let floor = floors.iter().find(|f| f.0 == s).map_or(q.top, |f| f.1);
                 let p = (s.0 as usize, s.1 as usize, floor);
                 if p.2 <= ui.top_at(m, p.0, p.1) {

@@ -1156,7 +1156,7 @@ fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<
             actions.push(Box::new(move |w| w.set_quarry_depth(k, depth + 1)));
         }
     });
-    let reach = q.reach(&w.map);
+    let reach = q.reach();
     if reach < q.depth {
         let why = format!("Only room for steps down {} levels: make it bigger to go deeper.", reach);
         ui.label(RichText::new(why).color(Color32::from_rgb(255, 190, 110)));
