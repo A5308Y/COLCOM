@@ -646,7 +646,7 @@ impl World {
     fn colonist_think(&mut self, p: &mut Pawn, dt: f32) {
         if p.break_timer > 0.0 {
             // In a daze, but not so far gone as to starve.
-            if p.hunger < 10.0 && !matches!(p.job, Some(Job::Eat { .. })) && self.try_eat(p) {
+            if p.hunger < HUNGER_WAKE && !matches!(p.job, Some(Job::Eat { .. })) && self.try_eat(p) {
                 return;
             }
             if p.job.is_none() {
@@ -672,7 +672,7 @@ impl World {
         // Urgent needs interrupt whatever they're doing.
         let on_need = matches!(p.job, Some(Job::Eat { .. }) | Some(Job::Sleep { .. }));
         if !on_need {
-            if p.hunger < 20.0 && self.try_eat(p) {
+            if p.hunger < HUNGER_URGENT && self.try_eat(p) {
                 return;
             }
             if p.rest < 8.0 && !matches!(p.job, Some(Job::Patient { .. })) {
@@ -683,7 +683,7 @@ impl World {
             }
         }
         // Sleepers wake up to eat when they'd otherwise starve.
-        if matches!(p.job, Some(Job::Sleep { .. })) && p.hunger < 10.0 && self.try_eat(p) {
+        if matches!(p.job, Some(Job::Sleep { .. })) && p.hunger < HUNGER_WAKE && self.try_eat(p) {
             return;
         }
         let tending_self = matches!(p.job, Some(Job::Tend { patient, .. }) if patient == p.id);
@@ -709,7 +709,7 @@ impl World {
         if p.job.is_some() {
             return;
         }
-        if p.hunger < 40.0 && self.try_eat(p) {
+        if p.hunger < HUNGER_IDLE && self.try_eat(p) {
             return;
         }
         if p.rest < 30.0 || (self.is_night() && p.rest < 75.0) {
@@ -1085,6 +1085,13 @@ impl World {
 }
 
 /// Step `p` towards tile `t`; returns true once it is exactly there.
+/// Hunger (100 full, 0 starving; it drops 0.4 a second) below which
+/// colonists eat: between jobs, dropping what they're doing, and waking up
+/// or snapping out of a mental break. With room for a long walk to the food.
+const HUNGER_IDLE: f32 = 50.0;
+const HUNGER_URGENT: f32 = 30.0;
+const HUNGER_WAKE: f32 = 15.0;
+
 /// Share of walking pace while climbing over furniture.
 const CLIMB_PACE: f32 = 0.3;
 
@@ -1192,7 +1199,8 @@ mod tests {
         let mut w = test_world(20, 20);
         let id = colonist(&mut w, (2, 2, Z));
         let i = w.pawn_index(id).unwrap();
-        w.pawns[i].hunger = 15.0;
+        // Hungry enough to drop everything (one raw food then does).
+        w.pawns[i].hunger = 25.0;
         let f = w.map.idx((6, 6, Z));
         w.map.items[f] = Some(Stack { kind: item("raw_food"), count: 3 });
         // Walk over (about 8 s), eat, and check before hunger drains again.
