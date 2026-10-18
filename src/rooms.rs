@@ -165,7 +165,10 @@ impl World {
             if let Some(d) = here {
                 st.beauty += d.beauty;
                 st.lit |= d.light.is_some();
-                st.heat += d.heat;
+                // Heaters and coolers only while they run.
+                if d.power.is_none_or(|p| p.draw <= 0.0) || self.running.contains(&(i as u32)) {
+                    st.heat += d.heat;
+                }
             }
             if let Some(k) = m.feature[i].structure_id() {
                 st.counts[k.index()] += 1;

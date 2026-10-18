@@ -121,6 +121,14 @@ pub struct World {
     /// not saved: rooms start from the outdoor temperature). See `temperature.rs`.
     #[serde(skip)]
     pub cell_temp: Vec<f32>,
+    /// Charge in the colony's batteries (watt-hours; see `power.rs`).
+    #[serde(default)]
+    pub stored_wh: f32,
+    /// Cells of the heaters and coolers running this second, and how the grid did.
+    #[serde(skip)]
+    pub running: std::collections::HashSet<u32>,
+    #[serde(skip)]
+    pub power: crate::power::PowerState,
     /// Areas dug out level by level (see `quarry.rs`).
     #[serde(default)]
     pub quarries: Vec<crate::quarry::Quarry>,
@@ -207,6 +215,9 @@ impl World {
             stockpiles: Vec::new(),
             moves: Vec::new(),
             quarries: Vec::new(),
+            stored_wh: 0.0,
+            running: Default::default(),
+            power: Default::default(),
             cell_temp: Vec::new(),
             quarry_unreachable: Vec::new(),
             colony_timer: 0.0,
@@ -309,6 +320,9 @@ impl World {
         }
         for p in colonists.iter().filter(|p| p.health.hypothermia > 0.05) {
             out.push((format!("{} is freezing (hypothermia {:.0}%)", p.name, p.health.hypothermia * 100.0), true));
+        }
+        if self.power.unpowered > 0 {
+            out.push((format!("Not enough power: {} heater(s)/cooler(s) off", self.power.unpowered), false));
         }
         let doomed = self.crops_frost_will_kill();
         if doomed > 0 && self.season_left() < 1.5 * DAY_LEN {
@@ -427,6 +441,7 @@ impl World {
             self.update_quarries();
             self.update_room_stats();
             self.update_temperatures(1.0);
+            self.update_power(1.0);
             self.update_squads();
             self.update_graves();
             self.update_trapped();
@@ -641,7 +656,7 @@ impl World {
     }
 
     fn update_needs(&mut self, p: &mut Pawn, dt: f32) {
-        p.felt = self.temperature_at(p.pos);
+        p.felt = crate::temperature::felt(self.temperature_at(p.pos), p.warmth());
         p.hunger = (p.hunger - HUNGER_DRAIN * dt).max(0.0);
         if !p.sleeping {
             p.rest = (p.rest - REST_DRAIN * dt).max(0.0);

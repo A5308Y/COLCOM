@@ -14,6 +14,7 @@ pub mod medical;
 pub mod moving;
 pub mod pathing;
 pub mod pawn;
+pub mod power;
 pub mod prioritize;
 pub mod production;
 pub mod quarry;

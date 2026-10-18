@@ -618,15 +618,16 @@ pub fn part_transform(p: &Part) -> Transform {
         .with_scale(Vec3::new(p.size.0, p.size.1, p.size.2))
 }
 
-/// Worn armour: `parts` (in metres from the bone, in the character's own
+/// Worn apparel: `parts` (in metres from the bone, in the character's own
 /// frame) under a root turned by `turn` (undoing the bone's own rest turn),
-/// in polished metal.
-pub fn spawn_worn(commands: &mut Commands, a: &PropAssets, turn: Quat, parts: &[Part]) -> Entity {
+/// in polished metal (armour) or plain colours (`cloth`: a parka, a hat).
+pub fn spawn_worn(commands: &mut Commands, a: &PropAssets, turn: Quat, parts: &[Part], cloth: bool) -> Entity {
     let mut e = commands.spawn((Transform::from_rotation(turn), Visibility::default()));
     e.with_children(|c| {
         for p in parts {
             let t = part_transform(p);
-            let mat = a.metals.get(&p.color).cloned().unwrap_or_else(|| a.paint(&p.color));
+            let metal = a.metals.get(&p.color).filter(|_| !cloth);
+            let mat = metal.cloned().unwrap_or_else(|| a.paint(&p.color));
             c.spawn((Mesh3d(a.mesh(p.shape).clone()), MeshMaterial3d(mat), t));
         }
     });

@@ -164,6 +164,9 @@ fn item_sheet(k: ItemId) -> Sheet {
         if a.mood != 0.0 {
             rows.push(row("Mood", format!("{:+.0} while worn", a.mood)));
         }
+        if a.warmth > 0.0 {
+            rows.push(row("Warmth", format!("+{:.0}°C felt in the cold (none in summer heat)", a.warmth)));
+        }
         if a.speed != 1.0 {
             rows.push(row("Speed", format!("{:+.0}% walking, and in battle per action point", (a.speed - 1.0) * 100.0)));
         }
@@ -296,14 +299,20 @@ fn build_sheet(k: BuildId) -> Sheet {
     if let Some(l) = &d.light {
         props.push(row("Light", format!("lights up {:.0} cells around", l.range)));
     }
-    if d.heat > 0.0 {
-        props.push(row("Heat", format!("warms its room by about {:.0}°C (less in a big room)", d.heat)));
+    let electric = d.power.is_some_and(|p| p.draw > 0.0);
+    if d.heat != 0.0 {
+        let (what, when) = match (d.heat > 0.0, electric) {
+            (true, false) => ("warms", String::new()),
+            (true, true) => ("warms", format!(", while it runs: when the room is below {:.0}°C", my_world::power::HEAT_BELOW)),
+            (false, _) => ("cools", format!(", while it runs: when the room is above {:.0}°C", my_world::power::COOL_ABOVE)),
+        };
+        props.push(row("Heat", format!("{} its room by about {:.0}°C (less in a big room){}", what, d.heat.abs(), when)));
     }
     if let Some(st) = &d.storage {
         props.push(row("Storage", format!("{} stacks of up to {} (different things)", st.slots, STACK_MAX)));
     }
     if let Some(power) = d.power_text() {
-        props.push(row("Power", format!("{} (nothing uses power yet)", power)));
+        props.push(row("Power", format!("{} (one grid for the whole colony)", power)));
     }
     s.section("Properties", props);
 

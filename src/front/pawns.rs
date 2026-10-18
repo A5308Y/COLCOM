@@ -420,7 +420,7 @@ fn sync_pawns(
                         continue;
                     };
                     // Undo the bone's turn at rest, so the parts sit in the character's own frame.
-                    let e = props::spawn_worn(&mut commands, &props, rest.inverse(), &piece.parts);
+                    let e = props::spawn_worn(&mut commands, &props, rest.inverse(), &piece.parts, piece.cloth);
                     commands.entity(e).insert(ChildOf(bone));
                     v.armor.push(e);
                 }

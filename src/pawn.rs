@@ -575,6 +575,11 @@ impl Pawn {
         self.health.caps.moving.clamp(0.15, 1.0) * self.gear_speed()
     }
 
+    /// How warm what they wear keeps them in the cold (°C).
+    pub fn warmth(&self) -> f32 {
+        self.apparel.iter().filter_map(|k| k.def().apparel.as_ref()).map(|a| a.warmth).sum()
+    }
+
     /// How much what they wear speeds them up or slows them down (1: not at all).
     pub fn gear_speed(&self) -> f32 {
         self.apparel.iter().filter_map(|k| k.def().apparel.as_ref()).map(|a| a.speed).product()

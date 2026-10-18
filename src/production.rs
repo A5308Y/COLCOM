@@ -94,8 +94,9 @@ impl Stockpile {
 }
 
 /// Whether `p` would take `kind` up of their own accord: better than what
-/// they have, for a slot their loadout leaves free (they keep their loadout's).
-fn wants_upgrade(p: &Pawn, kind: ItemId) -> bool {
+/// they have (apparel for the weather, `outdoors` °C), for a slot their
+/// loadout leaves free (they keep their loadout's).
+fn wants_upgrade(p: &Pawn, kind: ItemId, outdoors: f32) -> bool {
     let planned = |slot| p.loadout.iter().any(|&k| crate::squads::loadout_slot(k) == Some(slot));
     let d = kind.def();
     if let Some(w) = &d.weapon {
@@ -103,8 +104,8 @@ fn wants_upgrade(p: &Pawn, kind: ItemId) -> bool {
         return !planned(None) && w.score() > current * 1.1;
     }
     if let Some(a) = &d.apparel {
-        let worn = p.worn(a.slot).and_then(|k| k.def().apparel.as_ref()).map_or(f32::MIN, |w| w.score());
-        return !planned(Some(a.slot)) && a.score() > worn;
+        let worn = p.worn(a.slot).and_then(|k| k.def().apparel.as_ref()).map_or(f32::MIN, |w| w.score_at(outdoors));
+        return !planned(Some(a.slot)) && a.score_at(outdoors) > worn;
     }
     false
 }
@@ -429,7 +430,7 @@ impl World {
             return Some(Job::Equip { from, chosen: false });
         }
         ItemId::all()
-            .filter(|&k| wants_upgrade(p, k))
+            .filter(|&k| wants_upgrade(p, k, self.outdoor_temperature()))
             .filter_map(|k| nearest[k.index()])
             .min_by_key(|(d, _)| *d)
             .map(|(_, from)| Job::Equip { from, chosen: false })
@@ -447,11 +448,12 @@ impl World {
             // upgrade for a slot it leaves free. Told to by the player: the
             // first weapon or piece of apparel here (a shelf may hold several things).
             let gear: Vec<ItemId> = self.map.stacks(i).map(|s| s.kind).filter(|k| k.def().is_gear()).collect();
+            let outdoors = self.outdoor_temperature();
             let kind = gear
                 .iter()
                 .copied()
                 .find(|&k| p.loadout.contains(&k) && !p.has_on(k))
-                .or_else(|| gear.iter().copied().find(|&k| wants_upgrade(p, k)))
+                .or_else(|| gear.iter().copied().find(|&k| wants_upgrade(p, k, outdoors)))
                 .or(gear.first().copied().filter(|_| chosen));
             if let Some(s) = kind.and_then(|k| self.map.take_item(i, k, 1)) {
                 self.res_item[i] = 0;
@@ -654,6 +656,24 @@ mod tests {
         run(&mut w, 60.0);
         assert_eq!(w.pawn(id).unwrap().weapon, Some(item("rifle")), "not the club instead");
         assert_eq!(w.map.count_in(shelf, item("club")), 1);
+    }
+
+    #[test]
+    fn colonists_dress_for_the_weather() {
+        let mut w = test_world(20, 20);
+        let id = colonist(&mut w, (2, 2, Z));
+        w.map.drop_item((8, 8, Z), Stack { kind: item("steel_armor"), count: 1 });
+        w.map.drop_item((9, 8, Z), Stack { kind: item("parka"), count: 1 });
+        let outer = |w: &World| w.pawn(id).unwrap().worn(crate::defs::Slot::Outer);
+        // Summer: the armour.
+        w.time = crate::seasons::SEASON_LEN + 2.6 * crate::DAY_LEN;
+        run(&mut w, 60.0);
+        assert_eq!(outer(&w), Some(item("steel_armor")));
+        // Winter: the parka, the armour put down.
+        w.time = 3.0 * crate::seasons::SEASON_LEN + 0.6 * crate::DAY_LEN;
+        run(&mut w, 60.0);
+        assert_eq!(outer(&w), Some(item("parka")));
+        assert_eq!(w.map.count_items(item("steel_armor")), 1);
     }
 
     #[test]

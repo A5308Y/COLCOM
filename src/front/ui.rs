@@ -648,12 +648,18 @@ fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
         .collapsible(false)
         .resizable(false)
         .show(ctx, |ui| {
-            // What the colony's solar panels and batteries could do.
-            let (output, storage) = sim.world.map.feature.iter().filter_map(|f| f.structure()?.power).fold((0.0, 0.0), |a, p| (a.0 + p.output, a.1 + p.storage));
-            if output > 0.0 || storage > 0.0 {
+            // The colony's grid: what the panels make now, what's used, what's stored.
+            let g = sim.world.power;
+            if g.peak > 0.0 || g.capacity > 0.0 || g.used > 0.0 || g.unpowered > 0 {
                 ui.label(RichText::new("Power").strong());
-                ui.label(format!("{:.1} kW solar, {:.0} kWh storage", output / 1000.0, storage / 1000.0));
-                ui.label(RichText::new("Nothing uses power yet.").small().weak());
+                ui.label(format!("Solar {:.0} W now (up to {:.1} kW), using {:.0} W", g.made, g.peak / 1000.0, g.used));
+                if g.capacity > 0.0 {
+                    ui.label(format!("Batteries {:.1} of {:.0} kWh", g.stored / 1000.0, g.capacity / 1000.0));
+                }
+                if g.unpowered > 0 {
+                    let text = format!("{} heater(s)/cooler(s) without power", g.unpowered);
+                    ui.label(RichText::new(text).color(Color32::from_rgb(255, 140, 100)));
+                }
                 ui.add_space(4.0);
             }
             if categories.is_empty() {
@@ -794,6 +800,10 @@ fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32,
             if !p.apparel.is_empty() {
                 let worn: Vec<&str> = p.apparel.iter().map(|a| a.name()).collect();
                 ui.label(RichText::new(format!("Wearing {}", worn.join(", ").to_lowercase())).weak());
+            }
+            if p.is_living_colonist() {
+                let text = format!("Feels {:.0}°C (clothes +{:.0}°C in the cold)", p.felt, p.warmth());
+                ui.label(RichText::new(text).color(temp_color(p.felt)));
             }
             // Their gear, to look up.
             let gear: Vec<ItemId> = p.weapon.into_iter().chain(p.apparel.iter().copied()).collect();
@@ -1089,7 +1099,16 @@ fn tile_inspector(
             }
             wall_decor(ui, w, t, look_up, &mut actions);
             if let Some(power) = m.feature[i].structure().and_then(|d| d.power_text()) {
-                ui.label(RichText::new(format!("{} (nothing uses power yet)", power)).weak());
+                ui.label(RichText::new(power).weak());
+            }
+            if let Some(state) = w.device_state(i) {
+                use my_world::power::DeviceState;
+                let (text, color) = match state {
+                    DeviceState::Running => ("Running", Color32::from_rgb(140, 220, 140)),
+                    DeviceState::Idle => ("Idle: its room needs nothing", Color32::LIGHT_GRAY),
+                    DeviceState::NoPower => ("No power: build more PV systems or a battery", Color32::from_rgb(255, 140, 100)),
+                };
+                ui.label(RichText::new(text).color(color));
             }
             if let Some(d) = m.desig[i] {
                 ui.label(format!("Designated: {:?}", d));

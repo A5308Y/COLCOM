@@ -30,6 +30,17 @@ pub const HOT: f32 = 30.0;
 /// How long (game seconds) a small room takes to follow the outdoors most of the way.
 const ROOM_LAG: f32 = 0.2 * DAY_LEN;
 
+/// How much clothes' warmth counts at `t` °C: fully at `COLD` and below,
+/// fading to nothing at 20°C, so warm clothes don't make summer hotter.
+pub fn chill(t: f32) -> f32 {
+    ((20.0 - t) / (20.0 - COLD)).clamp(0.0, 1.0)
+}
+
+/// What someone wearing clothes `warmth` warm feels at `t` °C.
+pub fn felt(t: f32, warmth: f32) -> f32 {
+    t + warmth * chill(t)
+}
+
 /// Outdoor temperature at game time `t`: the warmest around the start of
 /// summer, the coldest around the start of winter, and in the day at 15:00 and 03:00.
 pub fn outdoor_at(t: f32) -> f32 {
@@ -142,6 +153,39 @@ mod tests {
         build(&mut w, (4, 4, Z), "stove");
         run(&mut w, DAY_LEN);
         assert!(w.temperature_at((4, 5, Z)) > w.outdoor_temperature() + 10.0);
+    }
+
+    #[test]
+    fn clothes_warm_in_the_cold_but_not_in_the_heat() {
+        assert_eq!(felt(-5.0, 14.0), 9.0, "all of it in the cold");
+        assert_eq!(felt(25.0, 14.0), 25.0, "none in the heat");
+        assert!(felt(15.0, 10.0) > 15.0 && felt(15.0, 10.0) < 25.0, "some in between");
+    }
+
+    #[test]
+    fn dressed_for_winter_they_work_outside_without_freezing() {
+        let mut w = quiet_world(12, 12, 1);
+        let warm = colonist(&mut w, (8, 8, Z));
+        let bare = colonist(&mut w, (9, 9, Z));
+        for p in w.pawns.iter_mut() {
+            p.priorities = [0; crate::pawn::WorkType::ALL.len()];
+            p.apparel = vec![crate::testing::item("clothes")];
+            if p.id == warm {
+                p.apparel.extend([crate::testing::item("parka"), crate::testing::item("wool_hat")]);
+            }
+        }
+        // Winter's first day, outdoors all of it, from midnight.
+        w.time = 3.0 * SEASON_LEN;
+        for _ in 0..8 {
+            run(&mut w, 60.0);
+            for p in w.pawns.iter_mut() {
+                p.hunger = 100.0;
+                p.rest = 100.0;
+            }
+        }
+        let (pw, pb) = (w.pawn(warm).unwrap(), w.pawn(bare).unwrap());
+        assert!(pw.felt > FREEZING && pw.health.hypothermia == 0.0, "{} felt", pw.felt);
+        assert!(pb.health.hypothermia > 0.0);
     }
 
     #[test]

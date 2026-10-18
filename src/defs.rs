@@ -201,6 +201,9 @@ pub struct ApparelDef {
     pub armor: f32,
     /// Mood while worn.
     pub mood: f32,
+    /// How much warmer the wearer feels in the cold (°C; see `temperature::felt`).
+    #[serde(default)]
+    pub warmth: f32,
     /// How fast the wearer walks (and moves in battle) with it on: 1 unchanged.
     #[serde(default = "full")]
     pub speed: f32,
@@ -220,6 +223,9 @@ pub struct WornPiece {
     /// Hair is hidden under it (helmets).
     #[serde(default)]
     pub hides_hair: bool,
+    /// Drawn as cloth rather than polished metal (a parka, a hat).
+    #[serde(default)]
+    pub cloth: bool,
 }
 
 /// A replacement for a lost limb, fitted by a doctor at an operating table.
@@ -239,9 +245,10 @@ impl ItemDef {
 }
 
 impl ApparelDef {
-    /// To compare apparel for the same slot.
-    pub fn score(&self) -> f32 {
-        self.armor * 40.0 + self.mood
+    /// To compare apparel for the same slot, with it `outdoors` °C outside:
+    /// armour and mood, and warmth the more the colder it is.
+    pub fn score_at(&self, outdoors: f32) -> f32 {
+        self.armor * 40.0 + self.mood + self.warmth * 3.0 * crate::temperature::chill(outdoors)
     }
 }
 
@@ -396,7 +403,7 @@ pub struct BuildDef {
     pub holds_floors: bool,
     #[serde(default)]
     pub special: Special,
-    /// Makes or stores power (shown; nothing uses power yet).
+    /// Makes, stores or uses power (see `power.rs`).
     #[serde(default)]
     pub power: Option<Power>,
     /// Must stand under open sky (solar panels).
@@ -442,7 +449,8 @@ pub struct BuildDef {
     /// Adds to the beauty of the room it's in (or borders, for walls and windows).
     #[serde(default)]
     pub beauty: f32,
-    /// Warms the room it's in (°C for a small room, less in bigger ones): what burns.
+    /// Warms (or, below 0, cools) the room it's in: °C for a small room, less
+    /// in bigger ones. What burns always; what uses power while it runs.
     #[serde(default)]
     pub heat: f32,
     #[serde(default)]
@@ -460,6 +468,8 @@ pub struct BuildDef {
 pub struct Power {
     pub output: f32,
     pub storage: f32,
+    /// Watts it uses while running (heaters, coolers).
+    pub draw: f32,
 }
 
 fn cost_list<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<Amount>, D::Error> {
@@ -524,6 +534,9 @@ impl BuildDef {
         }
         if p.storage > 0.0 {
             parts.push(format!("Stores {}Wh", kilo(p.storage)));
+        }
+        if p.draw > 0.0 {
+            parts.push(format!("Uses {}W while running", kilo(p.draw)));
         }
         Some(parts.join("; "))
     }

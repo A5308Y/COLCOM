@@ -916,3 +916,20 @@ real play.
   temperature in the HUD, temperatures in the inspector, hypothermia in the Health tab, a freezing
   alert, a Heat row in Info. Not yet: colonists don't seek warmth by themselves; clothing warmth (step 3)
   and powered heaters and coolers (step 4).
+- Seasons, step 3: clothing warmth (2026-10-18): `ApparelDef::warmth` (clothes 4, steel helmet 1, steel
+  armour 2, powered armour 12, new parka 14 (Outer, 12 cloth) and wool hat 4 (Head, 3 cloth), both at
+  the crafting bench). `temperature::felt(t, warmth)` adds it scaled by `chill(t)` (full at 10°C and
+  below, none from 20°C), used for `Pawn::felt`. `ApparelDef::score_at(outdoors)` weighs warmth by the
+  same chill (3 a degree), so colonists swap armour for a parka in the cold (slots their loadout leaves
+  free). `WornPiece::cloth` draws pieces in plain colours. UI: Info Warmth row; the colonist inspector
+  shows what they feel.
+- Seasons, step 4: power for heating and cooling (2026-10-18): `src/power.rs`. One grid for the colony.
+  `Power::draw` (watts while running); `electric_heater` (heat 20, 800 W) and `cooler` (heat -16, 800 W)
+  run when their room (or the room beside, for one in a wall) is below `HEAT_BELOW` (18) / above
+  `COOL_ABOVE` (24). Once a second, after the room temperatures, `update_power` gives PV output
+  (`output` x daylight, none at night or covered) to wanting devices in turn, the batteries
+  (`World::stored_wh`, saved; capacity = sum of `storage`) making up the rest and taking what's left;
+  devices that can't be fed stay off. `World::running` (cells) decides whose `heat` counts in
+  `update_room_stats` (fires always count). `World::power` (`PowerState`) feeds the Resources window and
+  the "Not enough power" alert; `device_state` the inspector. Possible later: cables and separate grids,
+  more consumers (lamps, benches).

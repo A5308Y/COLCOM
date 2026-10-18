@@ -313,7 +313,7 @@ fn details(ui: &mut egui::Ui, e: &ToolEntry, def: Option<&BuildDef>, totals: &[u
         facts.push("Hangs on a wall, in one of five places on either side; counts for the room it faces".into());
     }
     if let Some(power) = d.power_text() {
-        facts.push(format!("{} (nothing uses power yet)", power));
+        facts.push(power);
     }
     if d.open_sky {
         facts.push("Needs open sky: not under a roof".into());

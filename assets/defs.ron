@@ -37,6 +37,9 @@
         "iron": (0.22, 0.23, 0.25),
         "cotton": (0.96, 0.95, 0.92),
         "cloth": (0.82, 0.78, 0.66),
+        "parka": (0.66, 0.33, 0.17),
+        "fur": (0.86, 0.81, 0.7),
+        "wool": (0.56, 0.18, 0.22),
         "canvas": (0.93, 0.89, 0.78),
         "poster": (0.24, 0.42, 0.7),
         "paper": (0.97, 0.96, 0.92),
@@ -538,7 +541,7 @@
             category: "Apparel",
             color: "dye",
             // `armor`: share of each blow's damage it stops; `mood` while worn.
-            apparel: Some((slot: Body, armor: 0.06, mood: 3.0)),
+            apparel: Some((slot: Body, armor: 0.06, mood: 3.0, warmth: 4.0)),
             look: [
                 (shape: Cube, color: "dye", at: (0.0, 0.04, 0.0), size: (0.4, 0.08, 0.34)),
                 (shape: Cube, color: "dye", at: (0.0, 0.1, 0.0), size: (0.36, 0.06, 0.3), turn: (0.0, 12.0, 0.0)),
@@ -550,7 +553,7 @@
             name: "Steel helmet",
             category: "Apparel",
             color: "steel",
-            apparel: Some((slot: Head, armor: 0.12, mood: 0.0, pieces: [
+            apparel: Some((slot: Head, armor: 0.12, mood: 0.0, warmth: 1.0, pieces: [
                 // A dome over the head with an iron brim and a nose guard.
                 (bone: "Head", hides_hair: true, parts: [
                     (shape: Sphere, color: "steel", at: (0.0, 0.18, -0.01), size: (0.26, 0.21, 0.27)),
@@ -564,12 +567,56 @@
             ],
         ),
         (
+            id: "parka",
+            value: 45.0,
+            name: "Parka",
+            category: "Apparel",
+            color: "parka",
+            about: Some("A padded coat with a fur-lined hood: worn over clothes instead of armour, it keeps out the winter cold."),
+            apparel: Some((slot: Outer, armor: 0.04, mood: 1.0, warmth: 14.0, pieces: [
+                // A padded coat round the body, a hood lying on the shoulders, fur trim.
+                (bone: "spine_03", cloth: true, parts: [
+                    (shape: Cylinder, color: "parka", at: (0.0, -0.04, -0.02), size: (0.46, 0.5, 0.37)),
+                    (shape: Sphere, color: "parka", at: (0.0, 0.17, -0.1), size: (0.32, 0.16, 0.2)),
+                    (shape: Cylinder, color: "fur", at: (0.0, 0.2, -0.02), size: (0.27, 0.05, 0.24)),
+                ]),
+                (bone: "upperarm_l", cloth: true, parts: [
+                    (shape: Cylinder, color: "parka", at: (0.0, 0.1, 0.0), size: (0.13, 0.26, 0.13)),
+                ]),
+                (bone: "upperarm_r", cloth: true, parts: [
+                    (shape: Cylinder, color: "parka", at: (0.0, 0.1, 0.0), size: (0.13, 0.26, 0.13)),
+                ]),
+            ])),
+            look: [
+                (shape: Cube, color: "parka", at: (0.0, 0.06, 0.0), size: (0.42, 0.12, 0.3)),
+                (shape: Cube, color: "fur", at: (0.0, 0.13, -0.1), size: (0.3, 0.04, 0.1)),
+            ],
+        ),
+        (
+            id: "wool_hat",
+            value: 12.0,
+            name: "Wool hat",
+            category: "Apparel",
+            color: "wool",
+            about: Some("A knitted hat: warm ears in winter, though it stops no blows."),
+            apparel: Some((slot: Head, armor: 0.0, mood: 1.0, warmth: 4.0, pieces: [
+                (bone: "Head", hides_hair: true, cloth: true, parts: [
+                    (shape: Sphere, color: "wool", at: (0.0, 0.17, -0.01), size: (0.25, 0.2, 0.26)),
+                    (shape: Cylinder, color: "wool", at: (0.0, 0.13, -0.01), size: (0.26, 0.04, 0.27)),
+                    (shape: Sphere, color: "fur", at: (0.0, 0.28, -0.01), size: (0.07, 0.07, 0.07)),
+                ]),
+            ])),
+            look: [
+                (shape: Sphere, color: "wool", at: (0.0, 0.06, 0.0), size: (0.24, 0.12, 0.24)),
+            ],
+        ),
+        (
             id: "steel_armor",
             value: 150.0,
             name: "Steel armour",
             category: "Apparel",
             color: "steel",
-            apparel: Some((slot: Outer, armor: 0.35, mood: 0.0, pieces: [
+            apparel: Some((slot: Outer, armor: 0.35, mood: 0.0, warmth: 2.0, pieces: [
                 // A breastplate round the chest, raised at the front, with an iron collar and belt.
                 (bone: "spine_03", parts: [
                     (shape: Cylinder, color: "steel", at: (0.0, 0.0, -0.02), size: (0.44, 0.40, 0.35)),
@@ -598,7 +645,7 @@
             color: "plating",
             about: Some("Plate armour with motors and a sealed helmet; stops most of every blow."),
             // Its motors carry the weight and then some: a quarter faster.
-            apparel: Some((slot: Outer, armor: 0.6, mood: 0.0, speed: 1.25, pieces: [
+            apparel: Some((slot: Outer, armor: 0.6, mood: 0.0, speed: 1.25, warmth: 12.0, pieces: [
                 // A heavy cuirass with a power pack on the back and a glowing core.
                 (bone: "spine_03", parts: [
                     (shape: Cylinder, color: "plating", at: (0.0, 0.0, -0.02), size: (0.48, 0.44, 0.38)),
@@ -1384,6 +1431,41 @@
                 (shape: Cube, color: "panel", at: (0.0, 0.685, 0.0), size: (0.9, 0.02, 0.74), turn: (25.0, 0.0, 0.0)),
             ]),
         ),
+        // Thermostats for their room, using power while they run (see `power.rs`).
+        (
+            id: "electric_heater",
+            front: 2,
+            cover: Some(Light),
+            category: "Power",
+            name: "Electric heater",
+            cost: [("steel", 4), ("electrical_components", 2)],
+            work_time: 6.0,
+            passable: false,
+            heat: 20.0,
+            power: Some((draw: 800.0)),
+            look: Parts([
+                (shape: Cube, color: "white", at: (0.0, 0.25, 0.0), size: (0.7, 0.42, 0.22)),
+                (shape: Cube, color: "ember", at: (0.0, 0.26, 0.115), size: (0.56, 0.24, 0.01)),
+                (shape: Cube, color: "iron", at: (0.0, 0.02, 0.0), size: (0.72, 0.04, 0.26)),
+            ]),
+        ),
+        (
+            id: "cooler",
+            front: 2,
+            cover: Some(Light),
+            category: "Power",
+            name: "Cooler",
+            cost: [("steel", 4), ("electrical_components", 2), ("mechanical_components", 1)],
+            work_time: 6.0,
+            passable: false,
+            heat: -16.0,
+            power: Some((draw: 800.0)),
+            look: Parts([
+                (shape: Cube, color: "white", at: (0.0, 0.35, 0.0), size: (0.7, 0.66, 0.4)),
+                (shape: Cylinder, color: "iron", at: (0.0, 0.38, 0.205), size: (0.4, 0.4, 0.01), turn: (90.0, 0.0, 0.0)),
+                (shape: Cube, color: "visor", at: (0.25, 0.62, 0.205), size: (0.06, 0.03, 0.01)),
+            ]),
+        ),
         (
             id: "home_battery",
             front: 3,
@@ -1756,6 +1838,10 @@
             ingredients: [("cotton", 4)], products: [("cloth", 3)]),
         (id: "make_clothes", name: "Make simple clothes", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 8.0,
             ingredients: [("cloth", 5)], products: [("clothes", 1)]),
+        (id: "make_parka", name: "Make parka", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 14.0,
+            ingredients: [("cloth", 12)], products: [("parka", 1)]),
+        (id: "make_wool_hat", name: "Make wool hat", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 5.0,
+            ingredients: [("cloth", 3)], products: [("wool_hat", 1)]),
         (id: "make_prosthetic_arm", name: "Make prosthetic arm", bench: "machinist_bench", work: Crafting, skill: Crafting, time: 12.0,
             ingredients: [("mechanical_components", 2), ("structural_components", 1), ("textile_components", 1)], products: [("prosthetic_arm", 1)], sound: Some("anvil")),
         (id: "make_prosthetic_leg", name: "Make prosthetic leg", bench: "machinist_bench", work: Crafting, skill: Crafting, time: 12.0,

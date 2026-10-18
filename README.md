@@ -105,8 +105,17 @@ for), and `<` goes back.
   by what burns in them: torches, stoves, smelters, smithies and the fireplace (8 stone blocks, warms a
   small room by about 16°C). Colonists feel where they are: below 10°C cold, below 0°C freezing and
   hypothermia builds up (they slow down, collapse at 70%, die at 100%; it wears off when warm), above
-  30°C hot. The cell inspector shows a room's temperature; the Health tab hypothermia; an alert says
-  who's freezing.
+  30°C hot. Clothes keep them warm in the cold (not in summer heat): simple clothes +4°C, a parka
+  +14 (12 cloth, worn instead of armour), a wool hat +4 (3 cloth, instead of a helmet), powered armour
+  +12. Colonists without those slots in their loadout put on a parka and hat when it gets cold and
+  go back to armour when it's warm. The cell inspector shows a room's temperature; the colonist
+  inspector how warm they feel; the Health tab hypothermia; an alert says who's freezing.
+- **Power:** one grid for the whole colony (no cables). PV systems make up to 1 kW in daylight (about
+  10.8 kWh a day), home batteries store 10 kWh. Electric heaters (+20°C) and coolers (-16°C) are
+  thermostats for their room: a heater runs below 18°C, a cooler above 24°C, each using 800 W while it
+  runs. Panels feed them first, batteries make up the rest and take what's spare; without enough, they
+  stay off (an alert says so). A heater running all winter day and night needs about two panels and a
+  battery. The Resources window shows the grid; a device's inspector whether it's running.
 - **Quarries:** paint a Quarry zone over the ground (Zones) and miners dig it out level by level from
   the top, down to the depth set in its inspector (5 levels below the ground at its entrance to start,
   up to 12). The way down is a ladder in one edge column, on the side your colonists come from
