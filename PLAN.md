@@ -802,7 +802,8 @@ real play.
     like the floor beside each (indoors/outdoors), on a slab when standing on a built floor. Only on
     natural ground is every quarter drawn; upstairs (on a slab or on a lower wall) a quarter with no
     floor beside it stays open, so no floor sticks out past the wall. Rock overhead gets a ceiling. Walls no longer hide neighbours' faces (`Look3::covers`). Wallpaper
-    is drawn per piece (`MeshBuf::wall_face`) on absolute along-wall coordinates. Doors are 0.22 deep.
+    is drawn per piece (`MeshBuf::wall_face`, `wall_part` for part of the height) on absolute along-wall
+    coordinates, windows included (around the hole, on each side facing a themed room). Doors are 0.22 deep.
     The simulation is unchanged: a wall still fills its cell.
   - Decor (`src/decor.rs`): `BuildDef::on_wall` buildables (painting, poster, calendar, wall lamp, wall
     shelf, hanging plant; category "Wall decor") hang in one of `SLOTS` (5) places per face.

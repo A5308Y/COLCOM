@@ -341,7 +341,23 @@ impl MeshBuf {
     /// squares of an eighth of a cell, the bottom row a skirting board. The
     /// pattern runs on along the wall from piece to piece and cell to cell.
     #[allow(clippy::too_many_arguments)]
-    fn wall_face(&mut self, a: (f32, f32), b: (f32, f32), (dx, dz): (i32, i32), lo: f32, hi: f32, face: Rgb, paper: Option<&Wallpaper>) {
+    fn wall_face(&mut self, a: (f32, f32), b: (f32, f32), n: (i32, i32), lo: f32, hi: f32, face: Rgb, paper: Option<&Wallpaper>) {
+        self.wall_part(a, b, n, (lo, hi), (lo, hi), face, paper);
+    }
+
+    /// Part of a wall face (`wall_face`): only heights `y0..y1` of a wall
+    /// running `lo..hi`, its paper lined up with the rest of the wall (around a window's hole).
+    #[allow(clippy::too_many_arguments)]
+    fn wall_part(
+        &mut self,
+        a: (f32, f32),
+        b: (f32, f32),
+        (dx, dz): (i32, i32),
+        (lo, hi): (f32, f32),
+        (y_from, y_to): (f32, f32),
+        face: Rgb,
+        paper: Option<&Wallpaper>,
+    ) {
         let normal = Vec3::new(dx as f32, 0.0, dz as f32);
         let corners = |u0: f32, u1: f32, y0: f32, y1: f32| {
             let at = |u: f32, y: f32| if dx != 0 { Vec3::new(a.0, y, u) } else { Vec3::new(u, y, a.1) };
@@ -349,8 +365,11 @@ impl MeshBuf {
         };
         // Along the wall: z for faces looking along x, else x.
         let (s, e) = if dx != 0 { (a.1.min(b.1), a.1.max(b.1)) } else { (a.0.min(b.0), a.0.max(b.0)) };
+        if y_to <= y_from || e <= s {
+            return;
+        }
         let Some(paper) = paper else {
-            self.quad(corners(s, e, lo, hi), normal, face);
+            self.quad(corners(s, e, y_from, y_to), normal, face);
             return;
         };
         const N: f32 = 8.0;
@@ -360,6 +379,10 @@ impl MeshBuf {
             let (u0, u1) = ((k as f32 / N).max(s), ((k + 1) as f32 / N).min(e));
             for j in 0..N as i64 {
                 let (y0, y1) = (lo + (hi - lo) * j as f32 / N, lo + (hi - lo) * (j + 1) as f32 / N);
+                let (y0, y1) = (y0.max(y_from), y1.min(y_to));
+                if y1 <= y0 {
+                    continue;
+                }
                 let color = if j == 0 {
                     accent.shade(0.7)
                 } else if paper.pattern.accent(k, j) {
@@ -514,7 +537,13 @@ fn build_chunk(m: &Map, cx: usize, cy: usize, cut: Cut) -> (Mesh, Option<Mesh>) 
                             let hole = (width, lo + bottom * LEVEL_H, lo + top * LEVEL_H);
                             let links = m.wall_links(p);
                             let end_open = |dx: i32, dz: i32| !DIRS.iter().position(|&d| d == (dx, dz)).is_some_and(|k| links[k]);
-                            opening(&mut b, (fx, fz, lo, hi), along_x, hole, top_color, &end_open);
+                            // Papered like the walls on each side, where that's a themed room.
+                            let paper = |dv: i32| {
+                                let (dx, dz) = if along_x { (0, dv) } else { (dv, 0) };
+                                paper_at(m, m.at(xi + dx, yi + dz, zi), cut)
+                            };
+                            let papers = [paper(-1), paper(1)];
+                            opening(&mut b, (fx, fz, lo, hi), along_x, hole, top_color, &end_open, papers);
                         }
                         _ => thin_wall(&mut b, m, p, cut, (lo, hi), top_color),
                     }
@@ -696,6 +725,7 @@ fn opening(
     (width, yb, yt): (f32, f32, f32),
     top_color: Option<Rgb>,
     end_open: &dyn Fn(i32, i32) -> bool,
+    papers: [Option<&Wallpaper>; 2],
 ) {
     let (va, vb) = (WALL_A, WALL_B);
     let world = |u: f32, y: f32, v: f32| if along_x { Vec3::new(x + u, y, z + v) } else { Vec3::new(x + v, y, z + u) };
@@ -706,16 +736,16 @@ fn opening(
     };
     let (h0, h1) = (0.5 - width / 2.0, 0.5 + width / 2.0);
     let reveal = WALL_FACE.shade(0.85);
-    // Faces across `v` (front and back), with the hole cut out.
-    let across = |b: &mut MeshBuf, v: f32, dv: i32, u0: f32, u1: f32, y0: f32, y1: f32| {
-        let c = [world(u0, y0, v), world(u1, y0, v), world(u1, y1, v), world(u0, y1, v)];
-        b.quad(c, normal(0, 0, dv), WALL_FACE);
+    // Faces across `v` (front and back), with the hole cut out, papered like the walls beside.
+    let across = |b: &mut MeshBuf, v: f32, dv: i32, u0: f32, u1: f32, y0: f32, y1: f32, paper: Option<&Wallpaper>| {
+        let (a, c) = (world(u0, 0.0, v), world(u1, 0.0, v));
+        b.wall_part((a.x, a.z), (c.x, c.z), dir(0, dv), (lo, hi), (y0, y1), WALL_FACE, paper);
     };
-    for (v, dv) in [(va, -1), (vb, 1)] {
-        across(b, v, dv, 0.0, 1.0, lo, yb);
-        across(b, v, dv, 0.0, 1.0, yt, hi);
-        across(b, v, dv, 0.0, h0, yb, yt);
-        across(b, v, dv, h1, 1.0, yb, yt);
+    for (v, dv, paper) in [(va, -1, papers[0]), (vb, 1, papers[1])] {
+        across(b, v, dv, 0.0, 1.0, lo, yb, paper);
+        across(b, v, dv, 0.0, 1.0, yt, hi, paper);
+        across(b, v, dv, 0.0, h0, yb, yt, paper);
+        across(b, v, dv, h1, 1.0, yb, yt, paper);
     }
     // The ends, unless they meet the walls beside it.
     for (u, du) in [(0.0, -1), (1.0, 1)] {
@@ -776,6 +806,43 @@ mod tests {
         let accent = Rgb(paper.accent.0, paper.accent.1, paper.accent.2).vertex();
         assert!(papered.iter().any(|c| c == &accent), "in its colours");
         assert!(!plain.iter().any(|c| c == &accent));
+    }
+
+    #[test]
+    fn windows_are_papered_like_their_walls() {
+        // The roofed room of `themed_rooms_are_papered`, with a window in its north wall at (4, 2).
+        let mut m = Map::flat(10, 10);
+        for y in 2..=6 {
+            for x in 2..=6 {
+                if x == 2 || x == 6 || y == 2 || y == 6 {
+                    let i = m.idx((x, y, Z));
+                    let id = match (x, y) {
+                        (2, 4) => "door",
+                        (4, 2) => "window",
+                        _ => "wall",
+                    };
+                    m.set_feature(i, Feature::built(id));
+                }
+                let i = m.idx((x, y, Z + 1));
+                m.set_roof(i, true);
+            }
+        }
+        m.recompute_rooms();
+        let room = m.room[m.idx((4, 4, Z))] as usize;
+        let k = defs().rooms.iter().position(|r| r.id == "workshop").unwrap();
+        let mut kinds = vec![0u8; room + 1];
+        kinds[room] = k as u8 + 1;
+        let (mesh, _) = build_chunk(&m, 0, 0, Cut { level: Z, columns: &[], kinds: &kinds });
+        let (Some(bevy::mesh::VertexAttributeValues::Float32x3(pos)), Some(bevy::mesh::VertexAttributeValues::Float32x4(col))) =
+            (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.attribute(Mesh::ATTRIBUTE_COLOR))
+        else {
+            panic!("positions and colours")
+        };
+        let paper = defs().rooms[k].wallpaper.as_ref().unwrap();
+        let accent = Rgb(paper.accent.0, paper.accent.1, paper.accent.2).vertex();
+        let window_face = |z: f32| pos.iter().zip(col).filter(move |(p, _)| p[0] > 4.0 && p[0] < 5.0 && (p[2] - z).abs() < 1e-4);
+        assert!(window_face(2.0 + WALL_B).any(|(_, c)| c == &accent), "papered on the room's side");
+        assert!(!window_face(2.0 + WALL_A).any(|(_, c)| c == &accent), "plain outside");
     }
 
     #[test]
