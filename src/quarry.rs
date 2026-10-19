@@ -12,9 +12,16 @@
 //! the shaft: its cell is dug and a ladder put there (3 wood) before the rest
 //! of the layer is marked, so nobody is ever shut in down there.
 //!
-//! Ground higher than the entrance (a hill top in the zone) is dug alongside.
+//! The whole quarry comes down one layer at a time, from its highest rock
+//! (a hill top in the zone above the entrance too): nothing is dug below a
+//! level the rest hasn't come down to, so every dug cell is at most a step
+//! below its neighbours and open to the way out; no pit can shut anyone in.
 //! Columns with water or anything built in them are left alone, a rim is
 //! left beside water, and plants in the way are marked to be cut first.
+//! Mine marks in its columns other than the layer being dug are taken off.
+//! Cells nobody can get to (the top of a pillar too tall to reach) are left
+//! standing: the column is dug from the highest cell someone can reach, so
+//! they don't hold up the layers around them.
 
 use crate::defs::defs;
 use crate::map::{Block, Desig, Feature, Map, Pos, DIRS};
@@ -246,8 +253,15 @@ impl World {
                 if m.column_taken(x, y, from) {
                     return None;
                 }
-                let top = (from..m.d).rev().find(|&z| m.block[m.idx((x, y, z))].solid())?;
-                Some((x, y, top))
+                let top = (from..m.d).rev().find(|&z| {
+                    let i = m.idx((x, y, z));
+                    m.block[i].solid() && !self.quarry_out_of_reach.contains(&i)
+                })?;
+                // Beside water: left standing as a rim (from here down), so the lake stays put.
+                let wet = DIRS.iter().any(|&(dx, dy)| {
+                    m.at(x as i32 + dx, y as i32 + dy, top as i32).is_some_and(|q| m.block[m.idx(q)] == Block::Water)
+                });
+                (!wet && !self.quarry_out_of_reach.contains(&m.idx((x, y, top)))).then_some((x, y, top))
             })
             .collect()
     }
@@ -258,20 +272,27 @@ impl World {
         let m = &self.map;
         let q = &self.quarries[k];
         let work = self.quarry_work(k);
-        // Above the entrance: dig away whenever.
-        let mut dig: Vec<Pos> = work.iter().copied().filter(|p| p.2 >= q.ground).collect();
-        let level = work.iter().map(|p| p.2).filter(|&z| z < q.ground).max();
+        // One layer at a time, the highest first, wherever it is.
+        let top = work.iter().map(|p| p.2).max();
+        let layer = |z: usize| -> Vec<Pos> { work.iter().copied().filter(|p| p.2 == z).collect() };
+        let at_or_above = top.filter(|&z| z >= q.ground || q.shaft.is_none());
+        if let Some(z) = at_or_above {
+            // Down to the entrance's level no way down is needed.
+            let dig = layer(z);
+            let left = dig.len();
+            return (dig, None, QuarryState::Digging { level: z, left });
+        }
+        let mut dig = Vec::new();
+        let level = top;
         let Some(c) = q.shaft else {
-            let state = if dig.is_empty() { QuarryState::Done } else { QuarryState::Digging { level: q.ground, left: dig.len() } };
-            return (dig, None, state);
+            return (dig, None, QuarryState::Done);
         };
         // The highest level of the shaft without its stairs yet.
         let missing = (q.bottom()..q.ground).rev().find(|&z| !m.is_stairs((c.0 as usize, c.1 as usize, z)));
         let mut stairs = None;
         let mut state = match level {
             Some(level) => QuarryState::Digging { level, left: work.iter().filter(|p| p.2 == level).count() },
-            None if dig.is_empty() => QuarryState::Done,
-            None => QuarryState::Digging { level: q.ground, left: dig.len() },
+            None => QuarryState::Done,
         };
         if let Some(z) = missing {
             let cell = (c.0 as usize, c.1 as usize, z);
@@ -303,29 +324,49 @@ impl World {
     /// and mark plants in the way for cutting.
     pub(crate) fn update_quarries(&mut self) {
         let Some(stairs_kind) = defs().ladder().or(defs().stairs()) else { return };
-        // Where the colonists can get to, to tell the player about cells out of reach.
-        let reach = (!self.quarries.is_empty())
-            .then(|| self.pawns.iter().find(|p| p.is_living_colonist()).map(|p| crate::pathing::bfs(&self.map, p.pos)))
-            .flatten();
+        // Where the colonists (not shut in somewhere) can get to: what nobody
+        // can reach is left standing, and the player told.
+        let from = self
+            .pawns
+            .iter()
+            .filter(|p| p.is_living_colonist())
+            .min_by_key(|p| self.trapped.contains(&p.id))
+            .map(|p| p.pos);
+        let reach = from.filter(|_| !self.quarries.is_empty()).map(|f| crate::pathing::bfs(&self.map, f));
         self.quarry_unreachable = vec![0; self.quarries.len()];
+        self.quarry_out_of_reach.clear();
+        if let Some(df) = &reach {
+            for k in 0..self.quarries.len() {
+                // Down each column past what can't be reached, to what can.
+                loop {
+                    let out: Vec<Pos> = self.quarry_work(k).into_iter().filter(|&p| df.approach(&self.map, p, true).is_none()).collect();
+                    if out.is_empty() {
+                        break;
+                    }
+                    for p in out {
+                        self.quarry_out_of_reach.insert(self.map.idx(p));
+                        self.quarry_unreachable[k] += 1;
+                    }
+                }
+            }
+        }
         for k in 0..self.quarries.len() {
             let (dig, stairs, _) = self.quarry_plan(k);
-            if let Some(df) = &reach {
-                self.quarry_unreachable[k] = dig.iter().filter(|&&p| df.approach(&self.map, p, true).is_none()).count();
-            }
             if let Some(p) = stairs {
                 let i = self.map.idx(p);
                 self.map.feature[i] = Feature::blueprint(stairs_kind, 0, self.quarries[k].out);
             }
             let m = &mut self.map;
-            for p in dig {
-                // Beside water: left standing as a rim, so the lake stays put.
-                let wet = DIRS.iter().any(|&(dx, dy)| {
-                    m.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32).is_some_and(|q| m.block[m.idx(q)] == Block::Water)
-                });
-                if wet {
-                    continue;
+            // Only the layer being dug is marked (marks from before, deeper down, come off).
+            for &(x, y) in &self.quarries[k].cols {
+                for z in 0..m.d {
+                    let i = m.idx((x as usize, y as usize, z));
+                    if m.desig[i] == Some(Desig::Mine) && !dig.contains(&(x as usize, y as usize, z)) {
+                        m.desig[i] = None;
+                    }
                 }
+            }
+            for p in dig {
                 // A plant on top goes first.
                 if let Some(a) = m.above(p) {
                     let ai = m.idx(a);
@@ -512,7 +553,7 @@ mod tests {
     }
 
     #[test]
-    fn a_hill_top_in_the_zone_is_dug_alongside() {
+    fn a_hill_top_in_the_zone_comes_down_first() {
         let mut w = hill(16, 16);
         for z in 8..11 {
             let i = w.map.idx((4, 4, z));
@@ -521,9 +562,60 @@ mod tests {
         paint(&mut w, 4, 4, 8, 7);
         assert_eq!(w.quarries[0].ground, 8, "the ground outside, not the hill top");
         w.update_quarries();
-        let tops = marked(&w).into_iter().filter(|p| p.2 == 10).count();
-        assert_eq!(tops, 1, "the hill top is dug while the shaft starts");
+        assert_eq!(marked(&w), vec![(4, 4, 10)], "only the top layer: nothing deeper meanwhile");
     }
+
+    /// Rock standing above the entrance in part of the zone used to be dug
+    /// on its own while the layers below went down elsewhere, leaving deep
+    /// pits shut off from the ladder. Now everyone can always get out.
+    #[test]
+    fn an_outcrop_in_the_zone_never_shuts_anyone_in() {
+        let mut w = hill(16, 14);
+        for (x, y) in [(6, 5), (7, 5), (6, 6), (7, 6), (8, 8)] {
+            for z in 8..11 {
+                let i = w.map.idx((x, y, z));
+                w.map.block[i] = Block::Rock;
+            }
+        }
+        w.map.recompute_rooms();
+        for k in 0..3 {
+            colonist(&mut w, (1 + k, 1, 8));
+        }
+        w.map.drop_item((1, 3, 8), Stack { kind: item("wood"), count: 40 });
+        paint(&mut w, 4, 4, 9, 9);
+        w.set_quarry_depth(0, 3);
+        for _ in 0..100 {
+            run(&mut w, 30.0);
+            for p in w.pawns.iter_mut() {
+                p.hunger = 100.0;
+                p.rest = 100.0;
+            }
+            w.update_trapped();
+            assert!(w.trapped.is_empty(), "shut in at {:?}", w.pawns.iter().filter(|p| w.trapped.contains(&p.id)).map(|p| p.pos).collect::<Vec<_>>());
+        }
+        assert_eq!(w.quarry_state(0), QuarryState::Done);
+    }
+
+    #[test]
+    fn someone_shut_in_a_pit_climbs_out_up_its_wall() {
+        let mut w = hill(12, 12);
+        // A pit three levels deep, one cell wide, with someone at the bottom.
+        for z in 5..8 {
+            let i = w.map.idx((6, 6, z));
+            w.map.block[i] = Block::Air;
+        }
+        w.map.recompute_rooms();
+        let id = colonist(&mut w, (6, 6, 5));
+        for _ in 0..20 {
+            run(&mut w, 3.0);
+            let i = w.pawn_index(id).unwrap();
+            (w.pawns[i].hunger, w.pawns[i].rest) = (100.0, 100.0);
+        }
+        let p = w.pawn(id).unwrap();
+        assert_eq!(p.pos.2, 8, "out on the ground: {:?}", p.pos);
+        assert!(p.health.hediffs.is_empty(), "without falling");
+    }
+
 
     #[test]
     fn water_and_buildings_are_left_alone() {

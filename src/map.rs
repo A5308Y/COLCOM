@@ -417,6 +417,14 @@ impl Map {
     /// Where a pawn standing at `p` can get to in one step.
     /// Furniture a trapped pawn may climb over (slowly) to get out: anything
     /// built that blocks the way but isn't part of a wall, on something to stand on.
+    /// Open air with nothing to stand on but natural rock or soil right
+    /// beside: a trapped pawn can climb up a pit's wall through it.
+    pub fn cling(&self, p: Pos) -> bool {
+        self.open(p)
+            && !self.supported(p)
+            && DIRS.iter().any(|&(dx, dy)| self.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32).is_some_and(|n| self.solid(n)))
+    }
+
     pub fn climbable(&self, p: Pos) -> bool {
         let i = self.idx(p);
         self.block[i] == Block::Air

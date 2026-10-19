@@ -1220,7 +1220,7 @@ fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<
     let stuck = w.quarry_unreachable.get(k).copied().unwrap_or(0);
     if stuck > 0 {
         let why = format!(
-            "{} cell(s) to dig that nobody can get to (cut off on a ledge or cliff): take those columns out with Clear zone, or build a way up.",
+            "{} cell(s) nobody can get to (a ledge, or a pillar too tall to climb) are left standing; it digs on around and under them. Build a way up to have them dug.",
             stuck
         );
         ui.label(RichText::new(why).color(Color32::from_rgb(255, 190, 110)));

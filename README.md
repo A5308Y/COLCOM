@@ -144,10 +144,13 @@ for), and `<` goes back.
   (marked while the tool is out or a quarry cell is selected): each layer starts with the shaft cell
   and its piece of ladder (3 wood), and the rest of the layer is only dug once that's in, so nobody
   gets shut in. Ladders (Structure) can be built anywhere: like stairs, but climbed straight up,
-  leaning on the side the arrow points to. Everything in the zone is dug, ore included; ground higher than the entrance is
-  dug alongside. Columns with water or buildings are left alone, a rim stays beside water, and trees in
-  the way are cut first. The inspector tells you when it waits for the ladder, and about cells nobody can
-  reach. Clear zone takes columns out again.
+  leaning on the side the arrow points to. Everything in the zone is dug, ore included, strictly one
+  layer at a time across the whole zone, starting with any ground higher than the entrance, so no
+  part is ever dug deeper than the rest. Cells nobody can reach (the top of a pillar too tall to climb)
+  are left standing and the column dug from below them. Columns with water or buildings are left alone,
+  a rim stays beside water, and trees in the way are cut first. The inspector tells you when it waits for
+  the ladder, and about cells nobody can reach. Clear zone takes columns out again. Anyone who still
+  ends up in a pit with no way out climbs up its rock wall and over the rim.
 - **Sound:** footsteps that depend on the ground (silent at 5x and 10x speed), chopping, mining, hammering, sawing, cooking and
   smithing while colonists work, trees crashing down, rock breaking, doors, gunshots, hits and armour
   glancing off, falls, alerts for raids and newcomers, interface clicks, and ambience that fades between

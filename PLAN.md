@@ -380,6 +380,19 @@ slopes, and old save versions); the newer note in the same topic says so.
 - Vegetation cap (2026-10-17): wild plants regrow (one try every 4 s) only while their kind covers less than
   its `wild.density` share of the columns topped by soil (`World::wild_cap`, counted from the terrain, so
   plants on it don't shrink it), so a long game stays about as wooded as a new map.
+- Quarries can't shut anyone in (2026-10-19, found in a save: two colonists at the bottom of a
+  three-level pit). Columns whose rock stood above the entrance were dug "whenever" and left out of
+  the layer order, so lower layers went on elsewhere and left deep pits cut off from the shaft. Now
+  `quarry_plan` digs the highest layer of all its columns first (above the entrance no ladder is
+  needed); below it, as before, the shaft and its ladder come first. `quarry_work` takes each column's
+  highest solid cell not in `World::quarry_out_of_reach` (filled in `update_quarries` from a colonist
+  who isn't trapped: unreachable tops are skipped down to a reachable cell, so pillars too tall to
+  climb don't stall the layers) and leaves out cells beside water (the rim, which used to stall a
+  strict order). Mine marks in quarry columns other than the current layer are taken off. Rescue for
+  anyone already in a pit: `bfs_climbing` also climbs up `Map::cling` cells (open air with natural
+  rock or soil beside) and over a rim onto standable ground; pawns climbing (`cling`, path left) don't
+  fall, and `go_to_reach` keeps climbing mode while on a cling cell. Tests:
+  `an_outcrop_in_the_zone_never_shuts_anyone_in`, `someone_shut_in_a_pit_climbs_out_up_its_wall`.
 
 ### Rooms and furniture
 

@@ -27,7 +27,8 @@ pub fn bfs(map: &Map, start: Pos) -> DistField {
     search(map, start, |_| false, true, false)
 }
 
-/// BFS for a trapped pawn: also over furniture (`Map::climbable`), never through walls.
+/// BFS for a trapped pawn: also over furniture (`Map::climbable`) and up the
+/// rock face of a pit (`Map::cling`), never through walls.
 pub fn bfs_climbing(map: &Map, start: Pos) -> DistField {
     search(map, start, |_| false, true, true)
 }
@@ -66,6 +67,23 @@ fn search(map: &Map, start: Pos, blocked: impl Fn(usize) -> bool, shelves: bool,
                 let Some(nb) = map.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32) else { continue };
                 let ni = map.idx(nb);
                 if steps[ni] == 0 && map.climbable(nb) {
+                    steps[ni] = d + 1;
+                    parent[ni] = pi as u32;
+                    order.push(ni);
+                    q.push_back(nb);
+                }
+            }
+            // Up a pit's wall, hand over hand, and over its rim at the top.
+            let up = map.above(p).filter(|&a| map.cling(a));
+            let headroom = map.above(p).is_some_and(|a| map.open(a));
+            let rims = crate::map::DIRS.into_iter().filter_map(|(dx, dy)| {
+                let wall = map.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32)?;
+                let top = map.above(wall)?;
+                (headroom && map.solid(wall) && map.standable(top)).then_some(top)
+            });
+            for nb in up.into_iter().chain(rims) {
+                let ni = map.idx(nb);
+                if steps[ni] == 0 {
                     steps[ni] = d + 1;
                     parent[ni] = pi as u32;
                     order.push(ni);

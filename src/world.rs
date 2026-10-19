@@ -136,6 +136,9 @@ pub struct World {
     /// (counted once a second in `update_quarries`).
     #[serde(skip)]
     pub quarry_unreachable: Vec<usize>,
+    /// Those cells (indices): left standing for now, so the layers go on around them.
+    #[serde(skip)]
+    pub quarry_out_of_reach: std::collections::HashSet<usize>,
     /// Counts down to the next once-a-second pass over benches and rooms.
     pub colony_timer: f32,
     /// Quality per room id (index 0 unused). Derived, so not saved.
@@ -227,6 +230,7 @@ impl World {
             power: Default::default(),
             cell_temp: Vec::new(),
             quarry_unreachable: Vec::new(),
+            quarry_out_of_reach: Default::default(),
             colony_timer: 0.0,
             room_stats: Vec::new(),
             parley: None,
@@ -587,6 +591,10 @@ impl World {
         if p.pos.2 == 0 || self.map.block[i] != Block::Air || self.map.supported(p.pos) {
             return;
         }
+        // Climbing out of a pit up its wall (see `way_out`): holding on.
+        if !p.path.is_empty() && self.map.cling(p.pos) {
+            return;
+        }
         let land = self.map.landing(p.pos);
         let levels = p.pos.2 - land.2;
         p.pos = land;
@@ -735,8 +743,8 @@ impl World {
         };
     }
 
-    /// For a trapped pawn at `p`: the nearest spot over the furniture from
-    /// which the edge of the map can be walked to.
+    /// For a trapped pawn at `p`: the nearest spot over the furniture, or up
+    /// the wall of a pit, from which the edge of the map can be walked to.
     fn way_out(&self, p: Pos) -> Option<Pos> {
         let m = &self.map;
         let inside = bfs(m, p);
@@ -974,8 +982,8 @@ impl World {
     pub(crate) fn go_to_reach(&self, p: &mut Pawn, goal: Pos, reach: Reach, dt: f32) -> Step {
         // What can't be stepped onto (a shelf) is reached from beside it.
         let reach = if reach == Reach::On && p.pos != goal && self.map.storage_furniture(self.map.idx(goal)) { Reach::Beside } else { reach };
-        // Shut in: over the furniture if need be.
-        let climb = self.trapped.contains(&p.id);
+        // Shut in: over the furniture (or up a pit's wall) if need be, and on up once climbing.
+        let climb = self.trapped.contains(&p.id) || self.map.cling(p.pos);
         if p.path_goal != Some(goal) {
             p.path.clear();
             p.path_goal = Some(goal);
@@ -1004,7 +1012,7 @@ impl World {
             if p.getting_up > 0.0 {
                 return Step::Moving;
             }
-            let over = climb && self.map.climbable(next);
+            let over = climb && (self.map.climbable(next) || self.map.cling(next));
             if !self.map.passable(next) && !over {
                 // Something was built or grew in the way; plan again next tick.
                 p.path.clear();
