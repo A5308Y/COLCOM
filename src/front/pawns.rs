@@ -151,7 +151,7 @@ fn spawn_pawn(
     commands.spawn(mesh(&a.sphere, skin, Transform::from_xyz(0.0, 1.0, 0.0).with_scale(Vec3::splat(0.3)), figure));
     let cap = Transform::from_xyz(0.0, 1.06, -0.03).with_scale(Vec3::new(0.32, 0.22, 0.32));
     commands.spawn(mesh(&a.sphere, hair, cap, figure));
-    let weapon = commands.spawn((mesh(&a.cube, a.metal.clone(), Transform::default(), figure), Visibility::Hidden)).id();
+    let weapon = commands.spawn((Transform::default(), Visibility::Hidden, ChildOf(figure))).id();
     // Armour on the figure: a shell over the torso, a cap over the head.
     let plate = Transform::from_xyz(0.0, 0.6, 0.0).with_scale(Vec3::new(1.12, 0.9, 1.12));
     let cap = Transform::from_xyz(0.0, 1.07, 0.0).with_scale(Vec3::new(0.34, 0.24, 0.34));
@@ -217,6 +217,25 @@ fn weapon_pose(w: ItemId, props: &PropAssets, in_hand: bool) -> Option<(Transfor
         Transform::from_xyz(h.at.0, h.at.1, h.at.2).with_rotation(turn).with_scale(size)
     };
     Some((tf, props.mesh(h.shape).clone(), props.paint(&h.color)))
+}
+
+pub(super) fn equip_visual(commands: &mut Commands, props: &PropAssets, root: Entity, weapon: Option<ItemId>, in_hand: bool) {
+    commands.entity(root).despawn_children();
+    let Some(kind) = weapon else { return };
+    let Some((tf, mesh, mat)) = weapon_pose(kind, props, in_hand) else { return };
+    let fallback = commands.spawn((tf, Mesh3d(mesh), MeshMaterial3d(mat), Visibility::default(), ChildOf(root))).id();
+    if let Some(model) = &kind.def().model {
+        let pose = props::model_transform(&model.held);
+        let tf = if in_hand {
+            characters::model_hand_pose(pose)
+        } else {
+            let h = &kind.def().weapon.as_ref().unwrap().held;
+            // The old figure's grip is near the rear of its single weapon part.
+            Transform::from_xyz(h.at.0, h.at.1, h.at.2 - h.size.2 / 2.0 + 0.1)
+                .with_scale(Vec3::splat(characters::RIG_SCALE / SCALE)) * pose
+        };
+        props::attach_item_model(commands, props, kind, root, tf, fallback);
+    }
 }
 
 /// Direction the pawn should face when not moving: the nearest enemy in a
@@ -602,7 +621,7 @@ fn sync_pawns(
             }
             if v.rig_weapon.is_none() {
                 if let Some(hand) = r.hand {
-                    let e = commands.spawn((mesh(&assets.cube, assets.metal.clone(), Transform::default(), hand), Visibility::Hidden));
+                    let e = commands.spawn((Transform::default(), Visibility::Hidden, ChildOf(hand)));
                     v.rig_weapon = Some(e.id());
                     v.weapon_kind = None;
                 }
@@ -634,11 +653,9 @@ fn sync_pawns(
         let weapons = [(Some(v.weapon), false), (v.rig_weapon, true)];
         if v.weapon_kind != Some(p.weapon) {
             for (e, in_hand) in weapons {
-                let (Some(e), Some((tf, mesh, mat))) = (e, p.weapon.and_then(|w| weapon_pose(w, &props, in_hand))) else {
-                    continue;
-                };
-                // Through commands: the hand's weapon may have been spawned this frame.
-                commands.entity(e).insert((tf, Mesh3d(mesh), MeshMaterial3d(mat)));
+                if let Some(e) = e {
+                    equip_visual(&mut commands, &props, e, p.weapon, in_hand);
+                }
             }
             v.weapon_kind = Some(p.weapon);
         }

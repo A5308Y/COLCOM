@@ -289,6 +289,9 @@ harvested and every recipe made.
 - `assets/defs.ron`, `assets/sounds.ron`: definitions and the sound table (built into the game)
 - `assets/sounds/`: placeholder sounds
 - `assets/models/characters/`: Quaternius characters, hair, outfits and animation library (glTF, CC0)
+- `assets/models/weapons/`: original faceted sci-fi Rifle; [asset notes](assets/models/weapons/README.md)
+  include the quality budget and regeneration/preview commands. Its shared model appears in hands,
+  on the ground and on shelves; shape definitions remain the loading fallback.
 - `assets/models/nature/`, `trees/`, `crops/`, `village/`: Quaternius packs converted from OBJ by
   `python3 tools/obj_to_gltf.py` (from `asset-sources/`)
 - `asset-sources/`: the original downloads (FBX, OBJ, Blender files). Not used by the game and not in

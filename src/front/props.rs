@@ -11,7 +11,9 @@ use super::sim::Sim;
 use super::terrain::{FLOOR_T, LEVEL_H};
 use super::tile_center;
 use bevy::prelude::*;
-use my_world::defs::{defs, BuildId, BuildLook, ItemId, Part, PlantId, Shape, Special, Storage};
+use bevy::gltf::GltfAssetLabel;
+use bevy::world_serialization::{WorldAsset, WorldAssetRoot, WorldInstanceReady};
+use my_world::defs::{defs, BuildId, BuildLook, ItemId, ModelPose, Part, PlantId, Shape, Special, Storage};
 use my_world::map::{Feature, Map, Pos, DIRS};
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::{FRAC_PI_2, TAU};
@@ -58,7 +60,7 @@ struct DecorKey {
     item: Option<ItemKey>,
 }
 
-/// Shared unit meshes and materials for props (and carried items on pawns).
+/// Shared unit meshes, materials and glTF scenes for props and equipped items.
 #[derive(Resource)]
 pub struct PropAssets {
     cube: Handle<Mesh>,
@@ -71,6 +73,7 @@ pub struct PropAssets {
     metals: HashMap<String, Handle<StandardMaterial>>,
     blueprint: Handle<StandardMaterial>,
     blanket_free: Handle<StandardMaterial>,
+    models: HashMap<String, Handle<WorldAsset>>,
 }
 
 impl PropAssets {
@@ -108,7 +111,12 @@ pub fn lit(materials: &mut Assets<StandardMaterial>, c: Rgb) -> Handle<StandardM
     materials.add(StandardMaterial { base_color: c.color(), perceptual_roughness: 0.85, ..default() })
 }
 
-fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
+fn setup_assets(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    server: Res<AssetServer>,
+) {
     let d = defs();
     let mut paints = HashMap::new();
     let mut metals = HashMap::new();
@@ -150,6 +158,9 @@ fn setup_assets(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut ma
         metals,
         blueprint,
         blanket_free: lit(&mut materials, Rgb(0.55, 0.58, 0.62)),
+        models: d.items.iter().filter_map(|item| item.model.as_ref()).map(|model| {
+            (model.path.clone(), server.load(GltfAssetLabel::Scene(0).from_asset(model.path.clone())))
+        }).collect(),
     };
     commands.insert_resource(assets);
 }
@@ -553,7 +564,7 @@ fn spawn_decor(commands: &mut Commands, a: &PropAssets, key: DecorKey, pos: Pos,
     if let (Some(item), Some(st)) = (key.item, def.storage.as_ref()) {
         let s = if item.big { 0.34 } else { 0.28 };
         let t = Transform::from_xyz(0.0, st.height, 0.06).with_scale(Vec3::splat(s));
-        let on = spawn_parts(commands, a, t, &item.kind.def().look, Pose::default(), &a.blanket_free);
+        let on = spawn_item_look(commands, a, item.kind, t);
         commands.entity(on).insert(ChildOf(e));
     }
     e
@@ -616,6 +627,53 @@ pub fn part_transform(p: &Part) -> Transform {
     Transform::from_xyz(p.at.0, p.at.1, p.at.2)
         .with_rotation(Quat::from_euler(EulerRot::XYZ, tx.to_radians(), ty.to_radians(), tz.to_radians()))
         .with_scale(Vec3::new(p.size.0, p.size.1, p.size.2))
+}
+
+pub fn model_transform(pose: &ModelPose) -> Transform {
+    Transform::from_xyz(pose.at.0, pose.at.1, pose.at.2)
+        .with_rotation(Quat::from_euler(EulerRot::XYZ, pose.turn.0.to_radians(), pose.turn.1.to_radians(), pose.turn.2.to_radians()))
+        .with_scale(Vec3::splat(pose.scale))
+}
+
+#[derive(Component)]
+struct ModelFallback(Entity);
+
+/// Keep the cheap shape visible until this particular scene instance is ready.
+pub fn attach_item_model(
+    commands: &mut Commands,
+    a: &PropAssets,
+    kind: ItemId,
+    parent: Entity,
+    transform: Transform,
+    fallback: Entity,
+) {
+    let Some(model) = kind.def().model.as_ref() else { return };
+    commands.spawn((
+        WorldAssetRoot(a.models[&model.path].clone()),
+        transform,
+        Visibility::default(),
+        ChildOf(parent),
+        ModelFallback(fallback),
+    )).observe(hide_model_fallback);
+}
+
+fn hide_model_fallback(ready: On<WorldInstanceReady>, fallbacks: Query<&ModelFallback>, mut commands: Commands) {
+    if let Ok(fallback) = fallbacks.get(ready.event().entity) {
+        commands.entity(fallback.0).insert(Visibility::Hidden);
+    }
+}
+
+fn spawn_item_look(commands: &mut Commands, a: &PropAssets, kind: ItemId, transform: Transform) -> Entity {
+    if kind.def().model.is_none() {
+        return spawn_parts(commands, a, transform, &kind.def().look, Pose::default(), &a.blanket_free);
+    }
+    let root = commands.spawn((transform, Visibility::default())).id();
+    let fallback = spawn_parts(commands, a, Transform::default(), &kind.def().look, Pose::default(), &a.blanket_free);
+    commands.entity(fallback).insert(ChildOf(root));
+    if let Some(model) = &kind.def().model {
+        attach_item_model(commands, a, kind, root, model_transform(&model.ground), fallback);
+    }
+    root
 }
 
 /// Worn apparel: `parts` (in metres from the bone, in the character's own
@@ -717,7 +775,7 @@ fn spawn_shelf_items(commands: &mut Commands, a: &PropAssets, key: ItemsKey, pos
         let y = if k < 2 { st.height } else { st.lower.unwrap_or(st.height) };
         let s = if item.big { 0.62 } else { 0.5 };
         let t = Transform::from_xyz(x, y, 0.0).with_scale(Vec3::splat(s));
-        let e = spawn_parts(commands, a, t, &item.kind.def().look, Pose::default(), &a.blanket_free);
+        let e = spawn_item_look(commands, a, item.kind, t);
         commands.entity(e).insert(ChildOf(root));
     }
     root
@@ -729,7 +787,7 @@ fn spawn_item(commands: &mut Commands, a: &PropAssets, key: ItemKey, pos: Pos, l
     let root = Transform::from_translation(tile_center(pos) + Vec3::Y * lift)
         .with_rotation(Quat::from_rotation_y(hash(xi, yi, 24) * TAU))
         .with_scale(Vec3::splat(s));
-    spawn_parts(commands, a, root, &key.kind.def().look, Pose::default(), &a.blanket_free)
+    spawn_item_look(commands, a, key.kind, root)
 }
 
 #[cfg(test)]
@@ -737,6 +795,71 @@ mod tests {
     use super::*;
     use my_world::map::FLAT_Z as Z;
 
+    #[test]
+    fn item_models_share_handles_and_equipping_removes_old_children() {
+        let a = PropAssets {
+            cube: Handle::default(), sphere: Handle::default(), cylinder: Handle::default(), cone: Handle::default(),
+            paints: HashMap::new(), metals: HashMap::new(), blueprint: Handle::default(), blanket_free: Handle::default(),
+            models: HashMap::from([("models/weapons/Rifle.gltf".into(), Handle::default())]),
+        };
+        let mut world = World::new();
+        let rifle = ItemId::named("rifle");
+        let held = world.spawn((Transform::default(), Visibility::Hidden)).id();
+        let stored = {
+            let mut commands = world.commands();
+            super::super::pawns::equip_visual(&mut commands, &a, held, Some(rifle), true);
+            spawn_item_look(&mut commands, &a, rifle, Transform::default())
+        };
+        world.flush();
+        let models: Vec<_> = world.query::<&WorldAssetRoot>().iter(&world).map(|model| model.0.id()).collect();
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0], models[1], "stored and equipped use the same asset");
+        for fallback in world.query::<&ModelFallback>().iter(&world) {
+            assert_eq!(world.get::<Visibility>(fallback.0), Some(&Visibility::Inherited), "fallback stays visible until loaded");
+        }
+        assert_eq!(world.get::<Visibility>(held), Some(&Visibility::Hidden), "equipping preserves visibility");
+        let old_children: Vec<_> = world.get::<Children>(held).unwrap().iter().collect();
+        super::super::pawns::equip_visual(&mut world.commands(), &a, held, Some(ItemId::named("pistol")), true);
+        world.flush();
+        assert!(old_children.iter().all(|e| world.get_entity(*e).is_err()));
+        assert_eq!(world.get::<Children>(held).unwrap().len(), 1, "pistol uses its original shape");
+        assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 1, "only the stored rifle remains");
+        super::super::pawns::equip_visual(&mut world.commands(), &a, held, None, true);
+        world.flush();
+        assert!(world.get::<Children>(held).is_none_or(|c| c.is_empty()), "unequipping removes the visual");
+        world.despawn(stored);
+        assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0, "despawning removes the scene too");
+    }
+
+    #[test]
+    fn rifle_asset_fits_on_the_floor_and_stays_within_budget() {
+        let model = ItemId::named("rifle").def().model.as_ref().unwrap();
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(&model.path);
+        let gltf: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let buffer = std::fs::read(path.with_file_name(gltf["buffers"][0]["uri"].as_str().unwrap())).unwrap();
+        let pose = model_transform(&model.ground);
+        let mut triangles = 0;
+        let mut min = Vec3::splat(f32::INFINITY);
+        let mut max = Vec3::splat(f32::NEG_INFINITY);
+        for primitive in gltf["meshes"][0]["primitives"].as_array().unwrap() {
+            let positions = &gltf["accessors"][primitive["attributes"]["POSITION"].as_u64().unwrap() as usize];
+            let view = &gltf["bufferViews"][positions["bufferView"].as_u64().unwrap() as usize];
+            let offset = view["byteOffset"].as_u64().unwrap() as usize;
+            for vertex in buffer[offset..offset + positions["count"].as_u64().unwrap() as usize * 12].chunks_exact(12) {
+                let xyz: Vec<f32> = vertex.chunks_exact(4).map(|v| f32::from_le_bytes(v.try_into().unwrap())).collect();
+                let p = pose.transform_point(Vec3::new(xyz[0], xyz[1], xyz[2]));
+                assert!(p.is_finite());
+                min = min.min(p);
+                max = max.max(p);
+            }
+            triangles += gltf["accessors"][primitive["indices"].as_u64().unwrap() as usize]["count"].as_u64().unwrap() / 3;
+        }
+        assert!((1000..=2000).contains(&triangles), "{triangles} triangles");
+        assert!(gltf["materials"].as_array().unwrap().len() <= 5);
+        assert!(gltf.get("textures").is_none());
+        assert!(min.y >= 0.0 && min.y < 0.01, "rests above the surface: {min:?}");
+        assert!(min.x >= -0.5 && max.x <= 0.5, "fits inside one tile: {min:?} {max:?}");
+    }
     #[test]
     fn furniture_is_drawn_back_against_the_wall_behind_it() {
         let mut m = Map::flat(8, 8);

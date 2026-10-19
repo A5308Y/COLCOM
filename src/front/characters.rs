@@ -693,6 +693,16 @@ pub fn hand_pose(size: Vec3, turn: Quat, figure_scale: f32) -> Transform {
     Transform::from_translation(grip * (offset + Vec3::Y * 0.02)).with_rotation(grip * turn).with_scale(size)
 }
 
+/// A model already authored in metres around the grip needs no inferred offset.
+pub fn model_hand_pose(pose: Transform) -> Transform {
+    let grip = AIM_HAND.normalize().inverse();
+    Transform {
+        translation: grip * pose.translation,
+        rotation: grip * pose.rotation,
+        scale: pose.scale,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -790,5 +800,13 @@ mod tests {
         assert!((world * Vec3::Y).dot(Vec3::Y) > 0.99);
         // The barrel reaches forward past the hand.
         assert!((AIM_HAND.normalize() * tf.translation).z > 0.2);
+        // Grip-authored models keep the hand at their origin and retain metre scale.
+        let pose = super::super::props::model_transform(&ItemId::named("rifle").def().model.as_ref().unwrap().held);
+        let held = model_hand_pose(pose);
+        let world = AIM_HAND.normalize() * held.rotation;
+        assert!((world * Vec3::Z - Vec3::Z).length() < 1e-5);
+        assert!((world * Vec3::Y - Vec3::Y).length() < 1e-5);
+        assert_eq!(held.translation, Vec3::ZERO);
+        assert_eq!(held.scale, Vec3::ONE);
     }
 }

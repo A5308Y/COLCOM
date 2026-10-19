@@ -253,6 +253,25 @@ impl ApparelDef {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct ModelPose {
+    pub at: (f32, f32, f32),
+    /// Euler degrees, in the same order as `Part::turn`.
+    pub turn: (f32, f32, f32),
+    pub scale: f32,
+}
+
+/// Optional shared glTF visual. Metres, +Y up, +Z forward, origin at the grip.
+#[derive(Clone, Debug, Deserialize)]
+pub struct ItemModel {
+    /// Asset-relative path, without the scene label.
+    pub path: String,
+    /// Model to floor coordinates (also used by shelf displays).
+    pub ground: ModelPose,
+    /// Model to grip coordinates, before cancelling the hand bone's rotation.
+    pub held: ModelPose,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct ItemDef {
     pub id: String,
     pub name: String,
@@ -287,6 +306,8 @@ pub struct ItemDef {
     /// One line on what it is (components: what they stand for).
     #[serde(default)]
     pub about: Option<String>,
+    #[serde(default)]
+    pub model: Option<ItemModel>,
     pub look: Vec<Part>,
 }
 
@@ -1098,6 +1119,17 @@ impl Defs {
                 return Err(format!("{}: needs a look", d.id));
             }
             parts(&d.id, &d.look)?;
+            if let Some(model) = &d.model {
+                if model.path.is_empty() || !model.path.ends_with(".gltf") && !model.path.ends_with(".glb") {
+                    return Err(format!("{}: model needs a glTF asset path", d.id));
+                }
+                for pose in [&model.ground, &model.held] {
+                    let values = [pose.at.0, pose.at.1, pose.at.2, pose.turn.0, pose.turn.1, pose.turn.2, pose.scale];
+                    if pose.scale <= 0.0 || values.iter().any(|v| !v.is_finite()) {
+                        return Err(format!("{}: model transforms need finite values and positive scale", d.id));
+                    }
+                }
+            }
             if d.pods.is_some_and(|(lo, hi)| lo == 0 || lo > hi) {
                 return Err(format!("{}: pods need 1 <= min <= max", d.id));
             }
@@ -1307,6 +1339,17 @@ mod tests {
         assert!(ItemId::all().any(|i| d.is_medicine(i)), "some medicine");
         assert!(BuildId::all().any(|b| b.def().special == Special::Bed), "somewhere to sleep");
         assert!(BuildId::all().any(|b| b.def().special == Special::Stairs), "a way up");
+    }
+
+    #[test]
+    fn item_models_are_optional_and_have_valid_transforms() {
+        let rifle = ItemId::named("rifle").def();
+        let model = rifle.model.as_ref().unwrap();
+        assert!(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(&model.path).is_file());
+        assert!(ItemId::named("pistol").def().model.is_none());
+        let mut d = Defs::parse(BUILT_IN).unwrap();
+        d.items[ItemId::named("rifle").index()].model.as_mut().unwrap().held.scale = 0.0;
+        assert!(d.check().unwrap_err().contains("positive scale"));
     }
 
     #[test]

@@ -660,6 +660,7 @@ mod tests {
             "models/characters/outfits/Male_Ranger.gltf",
             "models/characters/hair/Hair_SimpleParted.gltf",
             "models/characters/animations/UAL1_Standard.glb",
+            "models/weapons/Rifle.gltf",
         ];
         let handles: Vec<Handle<Gltf>> = files.iter().map(|f| app.world().resource::<AssetServer>().load(*f)).collect();
         for _ in 0..2000 {
@@ -715,12 +716,31 @@ mod tests {
                 rig.hand.expect("found the right hand bone")
             })
             .collect();
-        // Weapons in hands are sized from their definitions, not left as unit cubes.
-        let mut held = app.world_mut().query::<(&ChildOf, &Transform, &Mesh3d)>();
-        for (parent, tf, _) in held.iter(app.world()) {
-            if hands.contains(&parent.parent()) {
-                assert!(tf.scale.max_element() < 1.0, "weapon scaled {:?}", tf.scale);
+        // Both shape and model visuals now live beneath a stable hand attachment.
+        let mut held = app.world_mut().query::<(Entity, &ChildOf, &Children)>();
+        let held: Vec<Entity> = held.iter(app.world()).filter(|(_, parent, _)| hands.contains(&parent.parent())).map(|(e, _, _)| e).collect();
+        assert!(!held.is_empty(), "weapons attach to the hands");
+        let mut stack = held.clone();
+        let mut descendants = Vec::new();
+        while let Some(e) = stack.pop() {
+            if let Some(children) = app.world().get::<Children>(e) {
+                for child in children.iter() {
+                    descendants.push(child);
+                    stack.push(child);
+                }
             }
         }
+        let mut meshes = app.world_mut().query::<(&GlobalTransform, &Mesh3d)>();
+        let mut checked = 0;
+        for e in &descendants {
+            if let Ok((tf, _)) = meshes.get(app.world(), *e) {
+                let scale = tf.to_scale_rotation_translation().0;
+                assert!(scale.max_element() < 1.0, "weapon scaled {scale:?}");
+                checked += 1;
+            }
+        }
+        assert!(checked >= held.len(), "each attachment contains weapon meshes");
+        let mut names = app.world_mut().query::<&Name>();
+        assert!(descendants.iter().any(|e| names.get(app.world(), *e).is_ok_and(|n| n.as_str() == "Rifle")), "the rifle model spawned in a hand");
     }
 }
