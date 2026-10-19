@@ -26,8 +26,10 @@ def linear(v):
 
 
 class Rifle:
-    def __init__(self):
-        self.groups = [[[], [], []] for _ in PALETTE]
+    def __init__(self, palette=None):
+        self.palette = PALETTE if palette is None else palette
+        self.emissive = {4: [.65, .22, .025]} if palette is None else {}
+        self.groups = [[[], [], []] for _ in self.palette]
 
     def face(self, points, material):
         positions, normals, indices = self.groups[material]
@@ -182,11 +184,11 @@ class Rifle:
             gltf["accessors"].append(a)
             return len(gltf["accessors"]) - 1
 
-        for i, (material_name, color, metal, rough) in enumerate(PALETTE):
+        for i, (material_name, color, metal, rough) in enumerate(self.palette):
             material = {"name": material_name, "pbrMetallicRoughness": {
                 "baseColorFactor": [linear(c) for c in color] + [1], "metallicFactor": metal, "roughnessFactor": rough}}
-            if i == 4:
-                material["emissiveFactor"] = [.65, .22, .025]
+            if i in self.emissive:
+                material["emissiveFactor"] = self.emissive[i]
             gltf["materials"].append(material)
         triangles = 0
         for label, geometry, _ in pieces:
@@ -204,7 +206,7 @@ class Rifle:
         out.mkdir(parents=True, exist_ok=True)
         (out / (name + ".bin")).write_bytes(blob)
         (out / (name + ".gltf")).write_text(json.dumps(gltf, indent=2) + "\n")
-        print(f"{name}: {triangles} triangles, {len(PALETTE)} materials, {len(blob):,} bytes")
+        print(f"{name}: {triangles} triangles, {len(self.palette)} materials, {len(blob):,} bytes")
 
 
 if __name__ == "__main__":

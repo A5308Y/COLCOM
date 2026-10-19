@@ -55,8 +55,6 @@ pub const SAFE: Rgb = Rgb(0.45, 0.9, 0.55);
 pub const QUARRY: Rgb = Rgb(0.95, 0.7, 0.35);
 pub const BLOOD: Rgb = Rgb(0.45, 0.03, 0.04);
 
-pub const WOOD: Rgb = Rgb(0.55, 0.37, 0.2);
-
 /// Stable pseudo-random value in [0, 1) for a tile, so decoration doesn't flicker.
 pub fn hash(x: i32, y: i32, salt: u32) -> f32 {
     let mut h = (x as u32).wrapping_mul(0x27d4_eb2d) ^ (y as u32).wrapping_mul(0x1656_67b1) ^ salt.wrapping_mul(0x9e37_79b9);

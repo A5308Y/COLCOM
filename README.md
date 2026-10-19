@@ -294,6 +294,9 @@ harvested and every recipe made.
   and on shelves; shape definitions remain the loading fallback.
 - `assets/models/armor/`: matching helmet, steel and powered armor; [asset notes](assets/models/armor/README.md).
   Stored displays and pieces attached to character bones share the same meshes and materials.
+- `assets/models/items/`: all remaining resources, components, food, medical supplies, prosthetics
+  and clothing in the same faceted style; [asset notes](assets/models/items/README.md). Ground,
+  shelf and carried stacks share models; clothing also has pieces attached to character bones.
 - `assets/models/nature/`, `trees/`, `crops/`, `village/`: Quaternius packs converted from OBJ by
   `python3 tools/obj_to_gltf.py` (from `asset-sources/`)
 - `asset-sources/`: the original downloads (FBX, OBJ, Blender files). Not used by the game and not in

@@ -18,7 +18,8 @@ provide detail without textures, transparency, custom shaders or extra lights.
 | Powered armour | 1,538 | Heavier plates and arm sleeves, vented power pack, sealed helmet and amber visor |
 
 These are cosmetic replacements. Item IDs, prices, protection, warmth, speed, recipes and saves
-retain their existing behavior. Simple clothes, parkas and wool hats retain their existing artwork.
+retain their existing behavior. [Simple clothes, parkas and wool hats](../items/README.md) now use
+matching faceted models with softer materials.
 
 ## Shared stored and worn geometry
 

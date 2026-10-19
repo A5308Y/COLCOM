@@ -57,7 +57,7 @@ def render(rifle, path, eye, focus=(0, .08, .175), scale=1040):
             if abs(area) < 1e-9:
                 continue
             shade = math.sqrt(.22 + .78 * max(0, dot(normal, light)))
-            color = bytes(min(255, round(255 * x * shade)) for x in PALETTE[material][1])
+            color = bytes(min(255, round(255 * x * shade)) for x in rifle.palette[material][1])
             x0, x1 = max(0, math.floor(min(a[0], b[0], c[0]))), min(width - 1, math.ceil(max(a[0], b[0], c[0])))
             y0, y1 = max(0, math.floor(min(a[1], b[1], c[1]))), min(height - 1, math.ceil(max(a[1], b[1], c[1])))
             for y in range(y0, y1 + 1):

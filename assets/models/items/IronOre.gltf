@@ -1,0 +1,296 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "My World make_rifle.py"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "IronOre",
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "name": "IronOre",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2
+        },
+        {
+          "material": 1,
+          "attributes": {
+            "POSITION": 3,
+            "NORMAL": 4
+          },
+          "indices": 5
+        },
+        {
+          "material": 3,
+          "attributes": {
+            "POSITION": 6,
+            "NORMAL": 7
+          },
+          "indices": 8
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Body",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.15487248594976835,
+          0.07828831963873101,
+          0.039681909478526005,
+          1
+        ],
+        "metallicFactor": 0.18,
+        "roughnessFactor": 0.64
+      }
+    },
+    {
+      "name": "Secondary",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.0432336359153358,
+          0.05087608817155679,
+          0.05087608817155679,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.83
+      }
+    },
+    {
+      "name": "Bindings",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.017389102368488736,
+          0.021980947079887205,
+          0.021980947079887205,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.93
+      }
+    },
+    {
+      "name": "Edges",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.31854677812509186,
+          0.13286832155381798,
+          0.05087608817155679,
+          1
+        ],
+        "metallicFactor": 0.126,
+        "roughnessFactor": 0.78
+      }
+    },
+    {
+      "name": "Accent",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.5870163508936885,
+          0.1788675039555289,
+          0.027211780951381357,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.88
+      }
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 168,
+      "type": "VEC3",
+      "min": [
+        -0.2284987021185842,
+        0.0,
+        -0.1485543169584418
+      ],
+      "max": [
+        0.24907938880241864,
+        0.31,
+        0.14160859173474896
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 168,
+      "type": "VEC3",
+      "min": [
+        -0.848663713469239,
+        -1.0,
+        -0.9485757836750623
+      ],
+      "max": [
+        0.7756292501204908,
+        0.9256584221839934,
+        0.9571251681229774
+      ]
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5125,
+      "count": 234,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.2284987021185842,
+        0.0,
+        -0.1485543169584418
+      ],
+      "max": [
+        0.24907938880241864,
+        0.268,
+        0.14160859173474896
+      ]
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.8174216798338735,
+        -0.44076812062280885,
+        -0.9213179179031622
+      ],
+      "max": [
+        0.7546525972334112,
+        0.5865852815026875,
+        0.9063862022786268
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5125,
+      "count": 72,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 72,
+      "type": "VEC3",
+      "min": [
+        0.05589337431315997,
+        0.118,
+        0.07158679841509463
+      ],
+      "max": [
+        0.1398915831566715,
+        0.198,
+        0.14589055589091438
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 72,
+      "type": "VEC3",
+      "min": [
+        -0.8098288815374496,
+        -1.0,
+        -0.9417535558922522
+      ],
+      "max": [
+        0.8871986595134369,
+        0.8473051254272705,
+        0.958131645937459
+      ]
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5125,
+      "count": 102,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 2016,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 2016,
+      "byteLength": 2016,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 4032,
+      "byteLength": 936,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 4968,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 5544,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 6120,
+      "byteLength": 288,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 6408,
+      "byteLength": 864,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 7272,
+      "byteLength": 864,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 8136,
+      "byteLength": 408,
+      "target": 34963
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "IronOre.bin",
+      "byteLength": 8544
+    }
+  ]
+}

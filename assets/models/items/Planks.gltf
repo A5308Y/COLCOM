@@ -1,0 +1,296 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "My World make_rifle.py"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Planks",
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Planks",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2
+        },
+        {
+          "material": 1,
+          "attributes": {
+            "POSITION": 3,
+            "NORMAL": 4
+          },
+          "indices": 5
+        },
+        {
+          "material": 2,
+          "attributes": {
+            "POSITION": 6,
+            "NORMAL": 7
+          },
+          "indices": 8
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Body",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.3303437128042374,
+          0.1788675039555289,
+          0.06372379528489175,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.84
+      }
+    },
+    {
+      "name": "Secondary",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.12596738774090202,
+          0.06838485415816624,
+          0.027211780951381357,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.83
+      }
+    },
+    {
+      "name": "Bindings",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.017389102368488736,
+          0.021980947079887205,
+          0.021980947079887205,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.93
+      }
+    },
+    {
+      "name": "Edges",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.49190504085677866,
+          0.29569980462568246,
+          0.1192801876221121,
+          1
+        ],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.78
+      }
+    },
+    {
+      "name": "Accent",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.10653922395082352,
+          0.12596738774090202,
+          0.05925352111727415,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.88
+      }
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 288,
+      "type": "VEC3",
+      "min": [
+        -0.29,
+        0.0010000000000000009,
+        -0.16
+      ],
+      "max": [
+        0.29,
+        0.159,
+        0.16
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 288,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5125,
+      "count": 504,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 144,
+      "type": "VEC3",
+      "min": [
+        -0.25,
+        0.0485,
+        -0.113
+      ],
+      "max": [
+        0.21000000000000002,
+        0.1605,
+        0.06100000000000001
+      ]
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 144,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5125,
+      "count": 216,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 288,
+      "type": "VEC3",
+      "min": [
+        -0.18200000000000002,
+        0.0,
+        -0.1665
+      ],
+      "max": [
+        0.18200000000000002,
+        0.168,
+        0.1665
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 288,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5125,
+      "count": 504,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 3456,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 3456,
+      "byteLength": 3456,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 6912,
+      "byteLength": 2016,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 8928,
+      "byteLength": 1728,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 10656,
+      "byteLength": 1728,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 12384,
+      "byteLength": 864,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 13248,
+      "byteLength": 3456,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 16704,
+      "byteLength": 3456,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 20160,
+      "byteLength": 2016,
+      "target": 34963
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "Planks.bin",
+      "byteLength": 22176
+    }
+  ]
+}

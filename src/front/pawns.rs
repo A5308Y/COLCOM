@@ -10,7 +10,7 @@ use super::props::{self, lit, PropAssets};
 use super::sim::Sim;
 use super::tile_point;
 use bevy::prelude::*;
-use my_world::defs::{ItemId, Special, WornPiece};
+use my_world::defs::{ItemId, Slot, Special, WornPiece};
 use my_world::map::{turn_dir, Feature, Map, Pos, DIRS};
 use my_world::recreation::GET_UP;
 use my_world::pawn::{Job, Pawn, Task};
@@ -85,8 +85,6 @@ struct PawnAssets {
     leg: Handle<Mesh>,
     arm: Handle<Mesh>,
     sphere: Handle<Mesh>,
-    cube: Handle<Mesh>,
-    wood: Handle<StandardMaterial>,
 }
 
 pub struct PawnsPlugin;
@@ -97,15 +95,13 @@ impl Plugin for PawnsPlugin {
     }
 }
 
-fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials: ResMut<Assets<StandardMaterial>>) {
+fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>) {
     commands.insert_resource(PawnAssets {
         torso: meshes.add(Capsule3d::new(0.15, 0.22)),
         leg: meshes.add(Capsule3d::new(0.065, 0.2)),
         arm: meshes.add(Capsule3d::new(0.05, 0.22)),
         sphere: meshes.add(Sphere::new(0.5)),
-        cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
         cylinder: meshes.add(Cylinder::new(0.5, 1.0)),
-        wood: lit(&mut materials, WOOD),
     });
 }
 
@@ -149,8 +145,8 @@ fn spawn_pawn(
     commands.spawn(mesh(&a.sphere, hair, cap, figure));
     let weapon = commands.spawn((Transform::default(), Visibility::Hidden, ChildOf(figure))).id();
     // Carried things are held in front of the chest, by either body.
-    let carry_tf = Transform::from_xyz(0.0, 0.6 * SCALE, 0.28 * SCALE).with_scale(Vec3::splat(0.24 * SCALE));
-    let carry = commands.spawn((mesh(&a.cube, a.wood.clone(), carry_tf, root), Visibility::Hidden)).id();
+    let carry_tf = Transform::from_xyz(0.0, 0.6 * SCALE, 0.32 * SCALE).with_scale(Vec3::splat(0.5));
+    let carry = commands.spawn((carry_tf, Visibility::Hidden, ChildOf(root))).id();
     let blanket_mat = lit(materials, Rgb(p.color[0], p.color[1], p.color[2]).shade(0.8));
     // Placed at the bed's floor point each frame; the parts are relative to it
     // (bed head towards -Z): a lump over the body, and the blanket's edge
@@ -235,9 +231,10 @@ pub(super) fn equip_visual(commands: &mut Commands, props: &PropAssets, root: En
 /// A suit's integrated helmet and separate headgear can occupy the same bone.
 /// Draw the more protective one so their shells cannot overlap and flicker.
 fn worn_pieces(apparel: &[ItemId]) -> Vec<&'static WornPiece> {
+    let outer = apparel.iter().any(|k| k.def().apparel.as_ref().is_some_and(|a| a.slot == Slot::Outer && !a.pieces.is_empty()));
     let head = apparel.iter().filter(|k| k.def().apparel.as_ref().is_some_and(|a| a.pieces.iter().any(|p| p.bone == "Head")))
         .max_by(|a, b| a.def().apparel.as_ref().unwrap().armor.total_cmp(&b.def().apparel.as_ref().unwrap().armor));
-    apparel.iter().flat_map(|kind| {
+    apparel.iter().filter(|k| !outer || k.def().apparel.as_ref().is_none_or(|a| a.slot != Slot::Body)).flat_map(|kind| {
         kind.def().apparel.iter().flat_map(|a| &a.pieces).filter(move |piece| piece.bone != "Head" || head == Some(kind))
     }).collect()
 }
@@ -398,7 +395,6 @@ fn sync_pawns(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut transforms: Query<&mut Transform>,
     mut visibility: Query<&mut Visibility>,
-    mut mats: Query<&mut MeshMaterial3d<StandardMaterial>>,
     mut rigs: Query<(&mut Rig, &mut AnimationPlayer)>,
 ) {
     let visuals = visuals.into_inner();
@@ -679,15 +675,9 @@ fn sync_pawns(
         // Whatever they're carrying, held in front.
         let carried = p.carrying.map(|s| s.kind).filter(|_| !lying);
         if carried != v.carry_kind {
-            if let Some(kind) = carried {
-                if let Ok(mut mm) = mats.get_mut(v.carry) {
-                    mm.0 = props.item_material(kind);
-                }
-            }
-            if let Ok(mut vis) = visibility.get_mut(v.carry) {
-                *vis = if carried.is_some() { Visibility::Inherited } else { Visibility::Hidden };
-                v.carry_kind = carried;
-            }
+            props::replace_carried_item(&mut commands, &props, v.carry, carried);
+            commands.entity(v.carry).insert(if carried.is_some() { Visibility::Inherited } else { Visibility::Hidden });
+            v.carry_kind = carried;
         }
     }
 }
@@ -712,6 +702,17 @@ mod tests {
         let pieces = worn_pieces(&[ItemId::named("steel_armor"), helmet]);
         assert_eq!(pieces.iter().filter(|p| p.bone == "Head").count(), 1);
         assert!(pieces.iter().any(|p| p.model.as_ref().is_some_and(|m| m.path.ends_with("SteelHelmet.gltf"))));
+    }
+
+    #[test]
+    fn outer_layers_cover_the_utility_jacket_without_duplicate_collars() {
+        let clothes = ItemId::named("clothes");
+        assert_eq!(worn_pieces(&[clothes]).len(), 3);
+        for outer in ["parka", "steel_armor", "powered_armor"] {
+            let pieces = worn_pieces(&[clothes, ItemId::named(outer)]);
+            assert!(pieces.iter().all(|p| !p.model.as_ref().unwrap().path.ends_with("SimpleClothes.gltf")));
+            assert!(pieces.iter().any(|p| p.bone == "spine_03"));
+        }
     }
 
     #[test]

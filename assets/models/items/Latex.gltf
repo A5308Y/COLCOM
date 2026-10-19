@@ -1,0 +1,360 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "My World make_rifle.py"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Latex",
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Latex",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2
+        },
+        {
+          "material": 1,
+          "attributes": {
+            "POSITION": 3,
+            "NORMAL": 4
+          },
+          "indices": 5
+        },
+        {
+          "material": 2,
+          "attributes": {
+            "POSITION": 6,
+            "NORMAL": 7
+          },
+          "indices": 8
+        },
+        {
+          "material": 4,
+          "attributes": {
+            "POSITION": 9,
+            "NORMAL": 10
+          },
+          "indices": 11
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Body",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.5704815954749093,
+          0.5542217602988447,
+          0.3672464682101826,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.84
+      }
+    },
+    {
+      "name": "Secondary",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.19599417930148813,
+          0.22341399352485986,
+          0.20490176639819646,
+          1
+        ],
+        "metallicFactor": 0.35,
+        "roughnessFactor": 0.83
+      }
+    },
+    {
+      "name": "Bindings",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.017389102368488736,
+          0.021980947079887205,
+          0.021980947079887205,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.93
+      }
+    },
+    {
+      "name": "Edges",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.7874122893956174,
+          0.748414103499371,
+          0.5070785101492276,
+          1
+        ],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.78
+      }
+    },
+    {
+      "name": "Accent",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.29569980462568246,
+          0.34239163959260344,
+          0.15487248594976835,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.88
+      }
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.12,
+        0.0049999999999999906,
+        -0.12000000000000001
+      ],
+      "max": [
+        0.12,
+        0.245,
+        0.12000000000000001
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.9238795325112868,
+        -1.0,
+        -0.9238795325112868
+      ],
+      "max": [
+        0.9238795325112867,
+        1.0,
+        0.9238795325112868
+      ]
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5125,
+      "count": 84,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.125,
+        0.239,
+        -0.125
+      ],
+      "max": [
+        0.125,
+        0.257,
+        0.125
+      ]
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.9238795325112868,
+        -1.0,
+        -0.9238795325112868
+      ],
+      "max": [
+        0.9238795325112868,
+        1.0,
+        0.9238795325112868
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5125,
+      "count": 84,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 192,
+      "type": "VEC3",
+      "min": [
+        -0.11399999999999999,
+        0.255,
+        -0.047
+      ],
+      "max": [
+        0.11399999999999999,
+        0.324,
+        0.047
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 192,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5125,
+      "count": 336,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 9,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.05,
+        0.095,
+        0.11599999999999999
+      ],
+      "max": [
+        0.05,
+        0.17500000000000002,
+        0.124
+      ]
+    },
+    {
+      "bufferView": 10,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 11,
+      "componentType": 5125,
+      "count": 84,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 576,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1152,
+      "byteLength": 336,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1488,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 2064,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 2640,
+      "byteLength": 336,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 2976,
+      "byteLength": 2304,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 5280,
+      "byteLength": 2304,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 7584,
+      "byteLength": 1344,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 8928,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 9504,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 10080,
+      "byteLength": 336,
+      "target": 34963
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "Latex.bin",
+      "byteLength": 10416
+    }
+  ]
+}

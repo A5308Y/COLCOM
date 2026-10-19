@@ -53,8 +53,9 @@ the ground pose. Animated hands cancel the aiming hand's rotation; fallback figu
 to their own scale. The asset server shares the scene's mesh and material handles across instances.
 
 Existing `look` and weapon `held` shapes are retained as fallbacks. They stay visible until each
-glTF instance is ready, and remain visible when loading fails. Hauling continues to use the game's
-generic carried-item marker. Gameplay data and saves are unaffected.
+glTF instance is ready, and remain visible when loading fails. Hauling uses a smaller instance of
+the same item scene, as it does for the [other inventory items](../items/README.md). Gameplay data
+and saves are unaffected.
 
 Review standing and deployed aim poses, switching weapons, dropped items and shelf displays, at
 normal and close zoom in daylight and dusk. GPU validation is required for final lighting and animation

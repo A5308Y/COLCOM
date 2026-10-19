@@ -1364,7 +1364,8 @@ mod tests {
         let rifle = ItemId::named("rifle").def();
         let model = rifle.model.as_ref().unwrap();
         assert!(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(&model.path).is_file());
-        assert!(ItemId::named("clothes").def().model.is_none());
+        let legacy: ItemDef = serde_json::from_str(r#"{"id":"legacy","name":"Legacy","category":"Materials","color":"wood","look":[]}"#).unwrap();
+        assert!(legacy.model.is_none(), "old definitions can still omit the model field");
         let mut d = Defs::parse(BUILT_IN).unwrap();
         d.items[ItemId::named("rifle").index()].model.as_mut().unwrap().held.scale = 0.0;
         assert!(d.check().unwrap_err().contains("positive scale"));

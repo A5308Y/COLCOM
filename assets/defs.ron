@@ -97,6 +97,11 @@
             name: "Wood",
             category: "Materials",
             color: "wood",
+            model: Some((
+                path: "models/items/Wood.gltf",
+                ground: (at: (-0.000000, 0.005000, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             pods: Some((15, 40)),
             look: [
                 (shape: Cylinder, color: "wood", at: (0.0, 0.07, -0.08), size: (0.14, 0.6, 0.14), turn: (0.0, 0.0, 90.0)),
@@ -110,6 +115,11 @@
             name: "Planks",
             category: "Materials",
             color: "wood_light",
+            model: Some((
+                path: "models/items/Planks.gltf",
+                ground: (at: (-0.000000, 0.005000, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             pods: Some((10, 30)),
             look: [
                 (shape: Cube, color: "wood_light", at: (0.0, 0.03, -0.09), size: (0.62, 0.05, 0.16)),
@@ -123,6 +133,11 @@
             name: "Stone",
             category: "Materials",
             color: "stone",
+            model: Some((
+                path: "models/items/Stone.gltf",
+                ground: (at: (-0.010290, 0.005000, 0.003473), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             pods: Some((15, 40)),
             look: [
                 (shape: Cube, color: "stone", at: (-0.12, 0.09, 0.0), size: (0.2, 0.2, 0.2)),
@@ -136,6 +151,11 @@
             name: "Stone blocks",
             category: "Materials",
             color: "stone_block",
+            model: Some((
+                path: "models/items/StoneBlocks.gltf",
+                ground: (at: (-0.000000, 0.005000, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             look: [
                 (shape: Cube, color: "stone_block", at: (-0.1, 0.08, -0.1), size: (0.19, 0.16, 0.19)),
                 (shape: Cube, color: "stone_block", at: (0.1, 0.08, -0.1), size: (0.19, 0.16, 0.19)),
@@ -150,6 +170,11 @@
             name: "Iron ore",
             category: "Materials",
             color: "ore",
+            model: Some((
+                path: "models/items/IronOre.gltf",
+                ground: (at: (-0.010290, 0.005000, 0.001332), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             look: [
                 (shape: Cube, color: "ore", at: (-0.1, 0.09, 0.02), size: (0.2, 0.18, 0.2), turn: (0.0, 20.0, 0.0)),
                 (shape: Cube, color: "ore", at: (0.12, 0.08, -0.04), size: (0.17, 0.16, 0.17), turn: (0.0, 50.0, 0.0)),
@@ -162,6 +187,11 @@
             name: "Steel",
             category: "Materials",
             color: "steel",
+            model: Some((
+                path: "models/items/Steel.gltf",
+                ground: (at: (-0.000000, 0.005000, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             pods: Some((8, 20)),
             look: [
                 (shape: Cube, color: "steel", at: (0.0, 0.04, -0.08), size: (0.4, 0.08, 0.13)),
@@ -175,6 +205,11 @@
             name: "Copper ore",
             category: "Materials",
             color: "copper_ore",
+            model: Some((
+                path: "models/items/CopperOre.gltf",
+                ground: (at: (-0.010290, 0.005000, 0.001332), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             look: [
                 (shape: Sphere, color: "copper_ore", at: (-0.1, 0.1, 0.0), size: (0.24, 0.2, 0.22)),
                 (shape: Sphere, color: "stone", at: (0.12, 0.09, 0.06), size: (0.2, 0.18, 0.2)),
@@ -186,6 +221,11 @@
             name: "Copper",
             category: "Materials",
             color: "copper",
+            model: Some((
+                path: "models/items/Copper.gltf",
+                ground: (at: (-0.000000, 0.005000, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             pods: Some((5, 12)),
             look: [
                 (shape: Cube, color: "copper", at: (0.0, 0.04, -0.08), size: (0.4, 0.08, 0.13)),
@@ -198,6 +238,11 @@
             name: "Latex",
             category: "Materials",
             color: "latex",
+            model: Some((
+                path: "models/items/Latex.gltf",
+                ground: (at: (-0.000000, 0.000000, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             look: [
                 (shape: Cylinder, color: "latex", at: (0.0, 0.1, 0.0), size: (0.24, 0.2, 0.24)),
             ],
@@ -208,6 +253,11 @@
             name: "Rubber",
             category: "Materials",
             color: "rubber",
+            model: Some((
+                path: "models/items/Rubber.gltf",
+                ground: (at: (-0.000000, 0.005000, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             look: [
                 (shape: Cube, color: "rubber", at: (0.0, 0.05, 0.0), size: (0.36, 0.1, 0.26)),
             ],
@@ -218,6 +268,11 @@
             name: "Silicon",
             category: "Materials",
             color: "silicon",
+            model: Some((
+                path: "models/items/Silicon.gltf",
+                ground: (at: (-0.000000, -0.000000, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             look: [
                 (shape: Cube, color: "silicon", at: (0.0, 0.06, 0.0), size: (0.3, 0.12, 0.3)),
                 (shape: Cube, color: "optic", at: (0.0, 0.125, 0.0), size: (0.2, 0.01, 0.2)),
@@ -229,6 +284,11 @@
             name: "Scrap metal",
             category: "Scrap",
             color: "rust",
+            model: Some((
+                path: "models/items/ScrapMetal.gltf",
+                ground: (at: (0.007462, -0.014537, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             pods: Some((3, 8)),
             look: [
                 (shape: Cube, color: "rust", at: (-0.08, 0.06, 0.0), size: (0.26, 0.12, 0.2), turn: (0.0, 25.0, 10.0)),
@@ -241,6 +301,11 @@
             name: "E-waste",
             category: "Scrap",
             color: "circuit",
+            model: Some((
+                path: "models/items/EWaste.gltf",
+                ground: (at: (-0.018225, 0.005500, -0.025658), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             pods: Some((2, 6)),
             look: [
                 (shape: Cube, color: "circuit", at: (0.0, 0.04, 0.0), size: (0.3, 0.03, 0.22), turn: (0.0, 15.0, 0.0)),
@@ -253,6 +318,11 @@
             name: "Mechanical components",
             category: "Components",
             color: "steel",
+            model: Some((
+                path: "models/items/MechanicalComponents.gltf",
+                ground: (at: (0.018000, -0.008000, -0.004250), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             about: Some("Gears, motors and actuators: moving parts."),
             pods: Some((1, 3)),
             look: [
@@ -267,6 +337,11 @@
             name: "Electrical components",
             category: "Components",
             color: "circuit",
+            model: Some((
+                path: "models/items/ElectricalComponents.gltf",
+                ground: (at: (-0.000000, -0.007500, 0.005500), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             about: Some("Wiring, circuit boards and capacitors."),
             pods: Some((1, 3)),
             look: [
@@ -281,6 +356,11 @@
             name: "Optical components",
             category: "Components",
             color: "optic",
+            model: Some((
+                path: "models/items/OpticalComponents.gltf",
+                ground: (at: (-0.000000, 0.005000, -0.018500), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             about: Some("Lenses, cameras and sensors."),
             look: [
                 (shape: Cylinder, color: "iron", at: (0.0, 0.08, 0.0), size: (0.16, 0.16, 0.16)),
@@ -293,6 +373,11 @@
             name: "Structural components",
             category: "Components",
             color: "plating",
+            model: Some((
+                path: "models/items/StructuralComponents.gltf",
+                ground: (at: (-0.000000, -0.002500, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             about: Some("Metal plates, frames and armour plating."),
             pods: Some((1, 3)),
             look: [
@@ -307,6 +392,11 @@
             name: "Chemical components",
             category: "Components",
             color: "chem",
+            model: Some((
+                path: "models/items/ChemicalComponents.gltf",
+                ground: (at: (0.004000, 0.005000, -0.004250), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             about: Some("Batteries, explosives and fuel cells."),
             look: [
                 (shape: Cylinder, color: "chem", at: (-0.07, 0.1, 0.0), size: (0.12, 0.2, 0.12)),
@@ -320,6 +410,11 @@
             name: "Textile components",
             category: "Components",
             color: "textile",
+            model: Some((
+                path: "models/items/TextileComponents.gltf",
+                ground: (at: (-0.000000, 0.005000, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             about: Some("Tough fabric, insulation and padding."),
             look: [
                 (shape: Cube, color: "textile", at: (0.0, 0.05, 0.0), size: (0.36, 0.1, 0.28)),
@@ -332,6 +427,11 @@
             name: "Cotton",
             category: "Materials",
             color: "cotton",
+            model: Some((
+                path: "models/items/Cotton.gltf",
+                ground: (at: (-0.012997, 0.005000, -0.002201), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             look: [
                 (shape: Sphere, color: "cotton", at: (-0.1, 0.1, 0.0), size: (0.22, 0.2, 0.22)),
                 (shape: Sphere, color: "cotton", at: (0.1, 0.1, 0.05), size: (0.22, 0.2, 0.22)),
@@ -344,6 +444,11 @@
             name: "Cloth",
             category: "Materials",
             color: "cloth",
+            model: Some((
+                path: "models/items/Cloth.gltf",
+                ground: (at: (-0.000000, 0.005000, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             pods: Some((10, 25)),
             look: [
                 (shape: Cube, color: "cloth", at: (0.0, 0.04, 0.0), size: (0.42, 0.08, 0.32)),
@@ -356,6 +461,11 @@
             name: "Raw food",
             category: "Food",
             color: "berry",
+            model: Some((
+                path: "models/items/RawFood.gltf",
+                ground: (at: (-0.000000, 0.002500, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             nutrition: 40.0,
             raw: true,
             poison: 0.02,
@@ -374,6 +484,11 @@
             name: "Simple meal",
             category: "Food",
             color: "meal",
+            model: Some((
+                path: "models/items/Meal.gltf",
+                ground: (at: (-0.000000, 0.003500, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             nutrition: 80.0,
             pods: Some((8, 20)),
             look: [
@@ -388,6 +503,11 @@
             name: "Healroot",
             category: "Medicine",
             color: "healroot",
+            model: Some((
+                path: "models/items/Healroot.gltf",
+                ground: (at: (-0.002328, -0.007215, -0.010517), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             look: [
                 (shape: Cylinder, color: "healroot", at: (-0.08, 0.04, 0.0), size: (0.06, 0.4, 0.06), turn: (0.0, 0.0, 90.0)),
                 (shape: Cylinder, color: "healroot", at: (0.06, 0.04, 0.06), size: (0.06, 0.4, 0.06), turn: (0.0, 30.0, 90.0)),
@@ -400,6 +520,11 @@
             name: "Herbal medicine",
             category: "Medicine",
             color: "healroot",
+            model: Some((
+                path: "models/items/HerbalMedicine.gltf",
+                ground: (at: (-0.000000, 0.005000, -0.004250), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             medicine: 0.6,
             look: [
                 (shape: Cube, color: "healroot", at: (0.0, 0.08, 0.0), size: (0.3, 0.16, 0.24)),
@@ -412,6 +537,11 @@
             name: "Medicine",
             category: "Medicine",
             color: "white",
+            model: Some((
+                path: "models/items/Medicine.gltf",
+                ground: (at: (-0.000000, 0.005000, -0.004250), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             medicine: 1.0,
             pods: Some((3, 8)),
             look: [
@@ -426,6 +556,11 @@
             name: "Prosthetic arm",
             category: "Medicine",
             color: "steel",
+            model: Some((
+                path: "models/items/ProstheticArm.gltf",
+                ground: (at: (0.013750, 0.006000, -0.032750), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             prosthetic: Some((fits: [LeftShoulder, LeftArm, LeftHand, RightShoulder, RightArm, RightHand], efficiency: 0.75)),
             look: [
                 (shape: Cylinder, color: "steel", at: (0.0, 0.05, -0.05), size: (0.1, 0.5, 0.1), turn: (90.0, 0.0, 0.0)),
@@ -439,6 +574,11 @@
             name: "Prosthetic leg",
             category: "Medicine",
             color: "steel",
+            model: Some((
+                path: "models/items/ProstheticLeg.gltf",
+                ground: (at: (-0.000000, 0.006000, -0.036250), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             prosthetic: Some((fits: [LeftLeg, LeftFoot, RightLeg, RightFoot], efficiency: 0.75)),
             look: [
                 (shape: Cylinder, color: "steel", at: (0.0, 0.06, 0.0), size: (0.11, 0.6, 0.11), turn: (90.0, 0.0, 0.0)),
@@ -572,8 +712,26 @@
             name: "Simple clothes",
             category: "Apparel",
             color: "dye",
+            model: Some((
+                path: "models/items/SimpleClothes.gltf",
+                ground: (at: (-0.000000, 0.141850, 0.009800), turn: (90.000000, 0.000000, 0.000000), scale: 0.7),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             // `armor`: share of each blow's damage it stops; `mood` while worn.
-            apparel: Some((slot: Body, armor: 0.06, mood: 3.0, warmth: 4.0)),
+            apparel: Some((slot: Body, armor: 0.06, mood: 3.0, warmth: 4.0, pieces: [
+                (bone: "spine_03",
+                    model: Some((path: "models/items/SimpleClothes.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
+                    (shape: Cube, color: "dye", at: (0.000000, -0.020000, -0.010000), size: (0.435000, 0.400000, 0.335000)),
+                ]),
+                (bone: "upperarm_l",
+                    model: Some((path: "models/items/SimpleClothes.gltf", scene: 2, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
+                    (shape: Cube, color: "dye", at: (0.130000, 0.000000, 0.000000), size: (0.260000, 0.130000, 0.130000)),
+                ]),
+                (bone: "upperarm_r",
+                    model: Some((path: "models/items/SimpleClothes.gltf", scene: 3, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
+                    (shape: Cube, color: "dye", at: (-0.130000, 0.000000, 0.000000), size: (0.260000, 0.130000, 0.130000)),
+                ]),
+            ])),
             look: [
                 (shape: Cube, color: "dye", at: (0.0, 0.04, 0.0), size: (0.4, 0.08, 0.34)),
                 (shape: Cube, color: "dye", at: (0.0, 0.1, 0.0), size: (0.36, 0.06, 0.3), turn: (0.0, 12.0, 0.0)),
@@ -611,18 +769,26 @@
             name: "Parka",
             category: "Apparel",
             color: "parka",
+            model: Some((
+                path: "models/items/Parka.gltf",
+                ground: (at: (-0.000000, 0.141850, 0.016100), turn: (90.000000, 0.000000, 0.000000), scale: 0.7),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             about: Some("A padded coat with a fur-lined hood: worn over clothes instead of armour, it keeps out the winter cold."),
             apparel: Some((slot: Outer, armor: 0.04, mood: 1.0, warmth: 14.0, pieces: [
                 // A padded coat round the body, a hood lying on the shoulders, fur trim.
-                (bone: "spine_03", cloth: true, parts: [
+                (bone: "spine_03",
+                    model: Some((path: "models/items/Parka.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
                     (shape: Cylinder, color: "parka", at: (0.0, -0.04, -0.02), size: (0.46, 0.5, 0.37)),
                     (shape: Sphere, color: "parka", at: (0.0, 0.17, -0.1), size: (0.32, 0.16, 0.2)),
                     (shape: Cylinder, color: "fur", at: (0.0, 0.2, -0.02), size: (0.27, 0.05, 0.24)),
                 ]),
-                (bone: "upperarm_l", cloth: true, parts: [
+                (bone: "upperarm_l",
+                    model: Some((path: "models/items/Parka.gltf", scene: 2, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
                     (shape: Cylinder, color: "parka", at: (0.0, 0.1, 0.0), size: (0.13, 0.26, 0.13)),
                 ]),
-                (bone: "upperarm_r", cloth: true, parts: [
+                (bone: "upperarm_r",
+                    model: Some((path: "models/items/Parka.gltf", scene: 3, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
                     (shape: Cylinder, color: "parka", at: (0.0, 0.1, 0.0), size: (0.13, 0.26, 0.13)),
                 ]),
             ])),
@@ -637,9 +803,15 @@
             name: "Wool hat",
             category: "Apparel",
             color: "wool",
+            model: Some((
+                path: "models/items/WoolHat.gltf",
+                ground: (at: (-0.000000, -0.068500, 0.006300), turn: (0.000000, 0.000000, 0.000000), scale: 0.7),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
             about: Some("A knitted hat: warm ears in winter, though it stops no blows."),
             apparel: Some((slot: Head, armor: 0.0, mood: 1.0, warmth: 4.0, pieces: [
-                (bone: "Head", hides_hair: true, cloth: true, parts: [
+                (bone: "Head",
+                    model: Some((path: "models/items/WoolHat.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), hides_hair: true, cloth: true, parts: [
                     (shape: Sphere, color: "wool", at: (0.0, 0.17, -0.01), size: (0.25, 0.2, 0.26)),
                     (shape: Cylinder, color: "wool", at: (0.0, 0.13, -0.01), size: (0.26, 0.04, 0.27)),
                     (shape: Sphere, color: "fur", at: (0.0, 0.28, -0.01), size: (0.07, 0.07, 0.07)),

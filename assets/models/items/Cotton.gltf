@@ -1,0 +1,296 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "My World make_rifle.py"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Cotton",
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Cotton",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2
+        },
+        {
+          "material": 2,
+          "attributes": {
+            "POSITION": 3,
+            "NORMAL": 4
+          },
+          "indices": 5
+        },
+        {
+          "material": 3,
+          "attributes": {
+            "POSITION": 6,
+            "NORMAL": 7
+          },
+          "indices": 8
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Body",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.6038273388553378,
+          0.5870163508936885,
+          0.4200332886842154,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.84
+      }
+    },
+    {
+      "name": "Secondary",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.3303437128042374,
+          0.31854677812509186,
+          0.21404114048223255,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.83
+      }
+    },
+    {
+      "name": "Bindings",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.017389102368488736,
+          0.021980947079887205,
+          0.021980947079887205,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.93
+      }
+    },
+    {
+      "name": "Edges",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.8073459089125289,
+          0.748414103499371,
+          0.5225215539683921,
+          1
+        ],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.78
+      }
+    },
+    {
+      "name": "Accent",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.10653922395082352,
+          0.12596738774090202,
+          0.05925352111727415,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.88
+      }
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 168,
+      "type": "VEC3",
+      "min": [
+        -0.21755686467100685,
+        0.0,
+        -0.15199062782376552
+      ],
+      "max": [
+        0.2435504671241884,
+        0.27,
+        0.15639186020746873
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 168,
+      "type": "VEC3",
+      "min": [
+        -0.8362840439214984,
+        -1.0,
+        -0.9077714887031346
+      ],
+      "max": [
+        0.7678311894695243,
+        0.929837388868847,
+        0.9100977710254864
+      ]
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5125,
+      "count": 234,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 288,
+      "type": "VEC3",
+      "min": [
+        -0.112,
+        0.0,
+        -0.1495
+      ],
+      "max": [
+        0.112,
+        0.276,
+        0.1495
+      ]
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 288,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5125,
+      "count": 504,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.21755686467100685,
+        0.0,
+        -0.15199062782376552
+      ],
+      "max": [
+        0.2435504671241884,
+        0.238,
+        0.15639186020746873
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.7671052036393526,
+        -0.4536394845983688,
+        -0.9079160769480592
+      ],
+      "max": [
+        0.7633410609556679,
+        0.6172568045567957,
+        0.8954109257117466
+      ]
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5125,
+      "count": 72,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 2016,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 2016,
+      "byteLength": 2016,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 4032,
+      "byteLength": 936,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 4968,
+      "byteLength": 3456,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 8424,
+      "byteLength": 3456,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 11880,
+      "byteLength": 2016,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 13896,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 14472,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 15048,
+      "byteLength": 288,
+      "target": 34963
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "Cotton.bin",
+      "byteLength": 15336
+    }
+  ]
+}

@@ -1,0 +1,296 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "My World make_rifle.py"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "HerbalMedicine",
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "name": "HerbalMedicine",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2
+        },
+        {
+          "material": 2,
+          "attributes": {
+            "POSITION": 3,
+            "NORMAL": 4
+          },
+          "indices": 5
+        },
+        {
+          "material": 4,
+          "attributes": {
+            "POSITION": 6,
+            "NORMAL": 7
+          },
+          "indices": 8
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Body",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.1192801876221121,
+          0.1788675039555289,
+          0.06838485415816624,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.84
+      }
+    },
+    {
+      "name": "Secondary",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.19599417930148813,
+          0.22341399352485986,
+          0.20490176639819646,
+          1
+        ],
+        "metallicFactor": 0.35,
+        "roughnessFactor": 0.83
+      }
+    },
+    {
+      "name": "Bindings",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.017389102368488736,
+          0.021980947079887205,
+          0.021980947079887205,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.93
+      }
+    },
+    {
+      "name": "Edges",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.6038273388553378,
+          0.5542217602988447,
+          0.38005633644979925,
+          1
+        ],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.78
+      }
+    },
+    {
+      "name": "Accent",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.6038273388553378,
+          0.5542217602988447,
+          0.38005633644979925,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.88
+      }
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 96,
+      "type": "VEC3",
+      "min": [
+        -0.154,
+        0.0,
+        -0.1215
+      ],
+      "max": [
+        0.154,
+        0.16000000000000003,
+        0.1215
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 96,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5125,
+      "count": 168,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 240,
+      "type": "VEC3",
+      "min": [
+        -0.1095,
+        0.06070000000000002,
+        -0.0768
+      ],
+      "max": [
+        0.1095,
+        0.23100000000000004,
+        0.13
+      ]
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 240,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5125,
+      "count": 420,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 144,
+      "type": "VEC3",
+      "min": [
+        -0.057499999999999996,
+        0.1605,
+        -0.0575
+      ],
+      "max": [
+        0.057499999999999996,
+        0.1695,
+        0.0575
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 144,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5125,
+      "count": 252,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 1152,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1152,
+      "byteLength": 1152,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 2304,
+      "byteLength": 672,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 2976,
+      "byteLength": 2880,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 5856,
+      "byteLength": 2880,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 8736,
+      "byteLength": 1680,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 10416,
+      "byteLength": 1728,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 12144,
+      "byteLength": 1728,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 13872,
+      "byteLength": 1008,
+      "target": 34963
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "HerbalMedicine.bin",
+      "byteLength": 14880
+    }
+  ]
+}

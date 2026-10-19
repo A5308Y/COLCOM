@@ -77,11 +77,6 @@ pub struct PropAssets {
 }
 
 impl PropAssets {
-    /// Material for a carried or stored item of this kind.
-    pub fn item_material(&self, kind: ItemId) -> Handle<StandardMaterial> {
-        self.paint(&kind.def().color)
-    }
-
     pub fn paint(&self, color: &str) -> Handle<StandardMaterial> {
         // Unknown colours are caught when the definitions load.
         self.paints.get(color).unwrap_or(&self.blanket_free).clone()
@@ -691,6 +686,15 @@ fn spawn_item_look(commands: &mut Commands, a: &PropAssets, kind: ItemId, transf
     root
 }
 
+/// A carried stack uses the same item visual as a ground or shelf stack.
+pub fn replace_carried_item(commands: &mut Commands, a: &PropAssets, carrier: Entity, kind: Option<ItemId>) {
+    commands.entity(carrier).despawn_children();
+    if let Some(kind) = kind {
+        let item = spawn_item_look(commands, a, kind, Transform::default());
+        commands.entity(item).insert(ChildOf(carrier));
+    }
+}
+
 /// Worn apparel: `parts` (in metres from the bone, in the character's own
 /// frame) under a root turned by `turn` (undoing the bone's own rest turn),
 /// in polished metal (armour) or plain colours (`cloth`: a parka, a hat).
@@ -872,14 +876,38 @@ mod tests {
         let wood = spawn_item_look(&mut world.commands(), &a, ItemId::named("wood"), Transform::default());
         world.flush();
         assert!(world.get::<Children>(wood).is_some());
-        assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0, "ordinary items still use shapes");
+        assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 1, "resources now use their own models too");
     }
 
     #[test]
-    fn worn_armor_scenes_keep_fallbacks_and_despawn_with_their_owner() {
+    fn carried_items_share_models_and_clear_old_stack_visuals() {
         let a = test_assets();
         let mut world = World::new();
-        for kind in ItemId::all().filter(|k| k.def().apparel.as_ref().is_some_and(|a| a.armor >= 0.1)) {
+        let pose = Transform::from_xyz(0.0, 0.51, 0.27).with_scale(Vec3::splat(0.5));
+        let carrier = world.spawn((pose, Visibility::Hidden)).id();
+        for kind in ItemId::all() {
+            let old = world.get::<Children>(carrier).map(|c| c.iter().collect::<Vec<_>>()).unwrap_or_default();
+            replace_carried_item(&mut world.commands(), &a, carrier, Some(kind));
+            world.flush();
+            assert!(old.iter().all(|e| world.get_entity(*e).is_err()), "old carried stack was removed");
+            assert_eq!(world.get::<Children>(carrier).unwrap().len(), 1);
+            let scene = world.query::<&WorldAssetRoot>().single(&world).unwrap();
+            let model = kind.def().model.as_ref().unwrap();
+            assert_eq!(scene.0, a.models[&model_key(&model.path, 0)], "carrying shares the stored asset for {kind:?}");
+            assert_eq!(world.get::<Transform>(carrier).unwrap(), &pose);
+            assert_eq!(world.get::<Visibility>(carrier), Some(&Visibility::Hidden));
+        }
+        replace_carried_item(&mut world.commands(), &a, carrier, None);
+        world.flush();
+        assert!(world.get::<Children>(carrier).is_none_or(|c| c.is_empty()));
+        assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0);
+    }
+
+    #[test]
+    fn worn_apparel_scenes_keep_fallbacks_and_despawn_with_their_owner() {
+        let a = test_assets();
+        let mut world = World::new();
+        for kind in ItemId::all().filter(|k| k.def().apparel.is_some()) {
             let owner = world.spawn((Transform::default(), Visibility::default())).id();
             let pieces = &kind.def().apparel.as_ref().unwrap().pieces;
             for piece in pieces {
@@ -895,18 +923,19 @@ mod tests {
             world.despawn(owner);
             assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0, "{kind:?} leaves no old bone pieces");
         }
-        let cloth = &ItemId::named("parka").def().apparel.as_ref().unwrap().pieces[0];
-        spawn_worn(&mut world.commands(), &a, Transform::default(), cloth);
+        let mut cloth = ItemId::named("parka").def().apparel.as_ref().unwrap().pieces[0].clone();
+        cloth.model = None;
+        spawn_worn(&mut world.commands(), &a, Transform::default(), &cloth);
         world.flush();
         assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0, "ordinary clothing keeps its shape visuals");
         assert!(world.query::<&Mesh3d>().iter(&world).count() > 0);
     }
 
     #[test]
-    fn gear_assets_fit_on_the_floor_and_stay_within_budget() {
+    fn item_assets_fit_on_the_floor_and_stay_within_budget() {
         let mut checked = 0;
-        for kind in ItemId::all().filter(|k| k.def().weapon.is_some() || k.def().apparel.as_ref().is_some_and(|a| a.armor >= 0.1)) {
-            let model = kind.def().model.as_ref().expect("all weapons and armor have a model");
+        for kind in ItemId::all() {
+            let model = kind.def().model.as_ref().expect("all inventory items have a model");
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(&model.path);
             let gltf: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
             let buffer = std::fs::read(path.with_file_name(gltf["buffers"][0]["uri"].as_str().unwrap())).unwrap();
@@ -942,7 +971,8 @@ mod tests {
                     }
                 }
             }
-            assert!((1..=2000).contains(&triangles), "{kind:?}: {triangles} triangles");
+            let budget = if model.path.starts_with("models/items/") { 1000 } else { 2000 };
+            assert!((1..=budget).contains(&triangles), "{kind:?}: {triangles} triangles");
             assert!(gltf["materials"].as_array().unwrap().len() <= 5);
             assert!(gltf.get("textures").is_none());
             assert!(min.y >= -1e-6 && min.y < 0.01, "{kind:?} rests above the surface: {min:?}");
@@ -958,7 +988,7 @@ mod tests {
             }
             checked += 1;
         }
-        assert_eq!(checked, 9, "six weapons and three armor items");
+        assert_eq!(checked, defs().items.len(), "every inventory item has been checked");
     }
     #[test]
     fn furniture_is_drawn_back_against_the_wall_behind_it() {
