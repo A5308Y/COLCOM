@@ -628,8 +628,16 @@ impl World {
         }
         // Raiders only act in battles (`battle.rs`).
         if p.faction == Faction::Colony {
+            p.getting_up = (p.getting_up - dt).max(0.0);
+            let was_seated = self.seated(p);
             self.colonist_think(p, dt);
             self.run_job(p, dt);
+            // Off a chair: standing up takes a moment.
+            if self.seated(p) {
+                p.getting_up = 0.0;
+            } else if was_seated {
+                p.getting_up = crate::recreation::GET_UP;
+            }
         }
     }
 
@@ -781,6 +789,15 @@ impl World {
                 return;
             }
         }
+        // Freezing: off to somewhere warm (unless eating, sleeping or laid up).
+        let warming = matches!(p.job, Some(Job::WarmUp { .. }));
+        if !on_need && !warming && !matches!(p.job, Some(Job::Patient { .. })) && self.needs_warmth(p) {
+            if let Some(to) = self.warm_spot(p) {
+                self.end_job(p);
+                self.start_job(p, Job::WarmUp { to });
+                return;
+            }
+        }
         // Sleepers wake up to eat when they'd otherwise starve.
         if matches!(p.job, Some(Job::Sleep { .. })) && p.hunger < HUNGER_WAKE && self.try_eat(p) {
             return;
@@ -844,6 +861,14 @@ impl World {
             }
         }
         if self.rng.chance(0.25) {
+            // Now and then they sit down on a chair nearby instead.
+            if self.rng.chance(0.4) {
+                if let Some(at) = self.free_chair(p, 12) {
+                    let until = (self.time + self.rng.range_f32(15.0, 30.0)) as u32;
+                    self.start_job(p, Job::Sit { at, until });
+                    return;
+                }
+            }
             self.start_wander(p, 5);
         }
     }
@@ -975,6 +1000,10 @@ impl World {
             }
         }
         if let Some(&next) = p.path.last() {
+            // Still getting up from a chair.
+            if p.getting_up > 0.0 {
+                return Step::Moving;
+            }
             let over = climb && self.map.climbable(next);
             if !self.map.passable(next) && !over {
                 // Something was built or grew in the way; plan again next tick.

@@ -81,7 +81,8 @@ for), and `<` goes back.
   blow (and shows: a breastplate with shoulder plates, a helmet, powered armour's sealed suit), and
   clothes cheer them up. Powered armour's motors make its wearer a quarter faster, on foot and in
   battle; a limp (low Moving) slows them in both (a squad moves at its slowest member's pace). Pinned down in battle, a unit has 60% of its
-  action points and each step costs twice as much.
+  action points and each step costs twice as much. Ranged squads can deploy: down on one knee, aiming
+  (better aim, harder to hit, can't move until they stand up). Melee squads and lone fighters can't.
 - **Components:** six kinds (mechanical, electrical, optical, structural, chemical, textile; their
   descriptions say what they stand for: gears, wiring, lenses ...) made at fitting benches: structural at
   the smithy, textile at the crafting bench, mechanical at the machinist's bench, chemical at the chemistry
@@ -128,7 +129,9 @@ for), and `<` goes back.
   +14 (12 cloth, worn instead of armour), a wool hat +4 (3 cloth, instead of a helmet), powered armour
   +12. Colonists without those slots in their loadout put on a parka and hat when it gets cold and
   go back to armour when it's warm. The cell inspector shows a room's temperature; the colonist
-  inspector how warm they feel; the Health tab hypothermia; an alert says who's freezing.
+  inspector how warm they feel; the Health tab hypothermia; an alert says who's freezing. Freezing
+  colonists (hypothermia from 10%) drop what they're doing and go to the nearest room warm enough to
+  recover, stay until it's gone, then go back to work; with no warm room they carry on.
 - **Power:** one grid for the whole colony (no cables). PV systems make up to 1 kW in daylight (about
   10.8 kWh a day), home batteries store 10 kWh. Electric heaters (+20°C) and coolers (-16°C) are
   thermostats for their room: a heater runs below 18°C, a cooler above 24°C, each using 800 W while it
@@ -151,7 +154,8 @@ for), and `<` goes back.
   day, night and caves. Sounds are placed in the world: quieter further from the camera's focus and when
   zoomed out, panned left and right. The **Sound** button opens volume sliders.
 - **Furniture and rooms:** tables and chairs (colonists eat sitting at a table, and dislike eating
-  without one), shelves (four different things per shelf, 50 of each, shown two on top and two on the middle board; nobody walks through them, they're stocked from beside; a colonist shut in by furniture gets an alert and climbs out over it), windows, fences that join up, flickering torches, stone
+  without one; they also sit to play chess, to craft at a bench with a chair at its front, and now and
+  then just to sit down for a bit; they sit down and get up properly before walking off), shelves (four different things per shelf, 50 of each, shown two on top and two on the middle board; nobody walks through them, they're stocked from beside; a colonist shut in by furniture gets an alert and climbs out over it), windows, fences that join up, flickering torches, stone
   doors. Each room has a quality from its size, the beauty of its furniture, doors and windows, its
   cleanliness (blood, clutter) and light; sleeping and eating in better rooms lifts mood more. Click a
   cell in a room to see the breakdown.

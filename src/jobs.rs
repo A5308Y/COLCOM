@@ -340,6 +340,8 @@ impl World {
             Job::Operation { table } => self.run_operation(p, table, dt),
             Job::Relax { at, stand } => self.run_relax(p, at, stand, dt),
             Job::Stroll { to } => self.run_stroll(p, to, dt),
+            Job::Sit { at, until } => self.run_sit(p, at, until, dt),
+            Job::WarmUp { to } => self.run_warm_up(p, to, dt),
             Job::Surgery { patient, prosthetic, picked } => self.run_surgery(p, patient, prosthetic, picked, dt),
         }
     }

@@ -106,7 +106,7 @@ impl World {
         if let Some((t, score)) = attack {
             // A squad staying put to fire goes down on one knee first (a fresh activation only).
             let staying = score >= GOOD_ODDS && !unit.moved && unit.ap == unit.ap_start;
-            if unit.led && !unit.deployed && staying && unit.ap >= AP_DEPLOY + AP_ATTACK {
+            if !unit.deployed && staying && unit.ap >= AP_DEPLOY + AP_ATTACK && self.can_deploy(u) {
                 return BattleOrder::Deploy;
             }
             if score >= GOOD_ODDS || unit.moved || unit.deployed {

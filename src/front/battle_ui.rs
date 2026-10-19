@@ -938,8 +938,9 @@ fn battle_panels(
                         panel.label(format!("Move there: {} AP, {} nearby", cost, cover.name()));
                     }
                 }
+                let deployable = w.can_deploy(u);
                 panel.horizontal(|row| {
-                    if unit.led {
+                    if deployable {
                         let (label, hint) = if unit.deployed {
                             (format!("Stand up ({} AP)", AP_DEPLOY), "Back on their feet, so the squad can move")
                         } else {

@@ -10,7 +10,7 @@
 
 use super::look::{hash, pawn_look, Rgb};
 use bevy::animation::{AnimatedBy, AnimationTargetId};
-use bevy::gltf::{Gltf, GltfAssetLabel, GltfMaterialName};
+use bevy::gltf::{Gltf, GltfAssetLabel, GltfMaterialName, GltfNode};
 use bevy::prelude::*;
 use bevy::world_serialization::{WorldAssetRoot, WorldInstanceReady};
 use my_world::defs::ItemId;
@@ -65,10 +65,72 @@ pub enum Anim {
     /// Collapsing and lying on the ground (downed, dead); holds the last frame.
     Down,
     Fall,
+    /// Sitting down onto a chair, and getting up again (once each).
+    SitEnter,
+    SitExit,
+    /// Sitting and gesturing (playing chess).
+    SitTalk,
+    /// Arms held out in front, for the upper body while carrying something.
+    Carry,
+}
+
+/// Which bones a clip node animates: all of them, only the legs and hips
+/// (`Lower`), or only the spine, arms and head (`Upper`, from `spine_01` up).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Layer {
+    Full,
+    Lower,
+    Upper,
+}
+
+/// Mask groups of the library's bones.
+const UPPER_GROUP: u32 = 0;
+const LOWER_GROUP: u32 = 1;
+/// The bone the upper body hangs from.
+const UPPER_ROOT: &str = "spine_01";
+
+/// What a character's body is doing: one clip for all of it, or (`upper`)
+/// the legs from `body` and the upper body from another clip, e.g. kneeling
+/// while aiming, or walking with the arms held out to carry something.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Pose {
+    pub body: Anim,
+    pub upper: Option<Anim>,
+}
+
+impl Pose {
+    pub fn full(body: Anim) -> Pose {
+        Pose { body, upper: None }
+    }
+
+    pub fn split(body: Anim, upper: Anim) -> Pose {
+        Pose { body, upper: Some(upper) }
+    }
+
+    /// Any part of it sitting on a chair (the character is moved onto the seat).
+    pub fn sitting(self) -> bool {
+        matches!(self.body, Anim::Sit | Anim::SitTalk | Anim::SitEnter | Anim::SitExit)
+    }
+
+    /// The same, with the arms held out to carry something (over walking or standing).
+    pub fn carrying(self) -> Pose {
+        match (self.body, self.upper) {
+            (Anim::Idle | Anim::Walk | Anim::Jog | Anim::Sprint, None) => Pose::split(self.body, Anim::Carry),
+            _ => self,
+        }
+    }
+
+    /// The clip nodes it plays, with their layers.
+    fn layers(self) -> Vec<(Anim, Layer)> {
+        match self.upper {
+            None => vec![(self.body, Layer::Full)],
+            Some(u) => vec![(self.body, Layer::Lower), (u, Layer::Upper)],
+        }
+    }
 }
 
 impl Anim {
-    const ALL: [Anim; 16] = [
+    const ALL: [Anim; 20] = [
         Anim::Idle,
         Anim::Walk,
         Anim::Jog,
@@ -85,6 +147,10 @@ impl Anim {
         Anim::Punch,
         Anim::Down,
         Anim::Fall,
+        Anim::SitEnter,
+        Anim::SitExit,
+        Anim::SitTalk,
+        Anim::Carry,
     ];
 
     fn clip(self) -> &'static str {
@@ -104,12 +170,17 @@ impl Anim {
             Anim::Punch => "Punch_Cross",
             Anim::Down => "Death01",
             Anim::Fall => "Jump_Loop",
+            Anim::SitEnter => "Sitting_Enter",
+            Anim::SitExit => "Sitting_Exit",
+            Anim::SitTalk => "Sitting_Talking_Loop",
+            // Arms forward at chest height, as if holding a wheel: holding a load.
+            Anim::Carry => "Driving_Loop",
         }
     }
 
     /// Played once (and held at the end) rather than looped.
     fn once(self) -> bool {
-        matches!(self, Anim::Shoot | Anim::Strike | Anim::Punch | Anim::Down)
+        matches!(self, Anim::Shoot | Anim::Strike | Anim::Punch | Anim::Down | Anim::SitEnter | Anim::SitExit)
     }
 
     /// The clip's own speed in cells per second, for locomotion.
@@ -129,13 +200,16 @@ pub struct CharacterLibrary {
     gltf: Handle<Gltf>,
     peasant_2: Handle<Image>,
     graph: Option<Handle<AnimationGraph>>,
-    nodes: HashMap<Anim, (AnimationNodeIndex, f32)>,
+    /// Each clip three times: for the whole body, the legs only, the upper body only.
+    nodes: HashMap<(Anim, Layer), (AnimationNodeIndex, f32)>,
+    /// Which clip each node plays.
+    clip_of: HashMap<AnimationNodeIndex, &'static str>,
 }
 
 impl CharacterLibrary {
     /// Length of an animation in seconds.
     pub fn duration(&self, a: Anim) -> f32 {
-        self.nodes.get(&a).map_or(1.0, |n| n.1)
+        self.nodes.get(&(a, Layer::Full)).map_or(1.0, |n| n.1)
     }
 }
 
@@ -167,7 +241,8 @@ pub struct Rig {
     hair_parts: Vec<Entity>,
     /// The animation graph is attached.
     animated: bool,
-    playing: Option<Anim>,
+    /// Clip nodes playing and their weight, fading in (wanted) or out.
+    layers: Vec<(AnimationNodeIndex, f32)>,
 }
 
 impl Rig {
@@ -191,13 +266,17 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
         peasant_2: assets.load(PEASANT_2),
         graph: None,
         nodes: HashMap::new(),
+        clip_of: HashMap::new(),
     });
 }
 
-/// Once the library is loaded, put the clips we use in one graph.
+/// Once the library is loaded, put the clips we use in one graph: each
+/// clip for the whole body, and masked to the legs or the upper body (bones
+/// grouped by whether they hang from `spine_01`).
 fn build_library(
     mut library: ResMut<CharacterLibrary>,
     gltfs: Res<Assets<Gltf>>,
+    gltf_nodes: Res<Assets<GltfNode>>,
     clips: Res<Assets<AnimationClip>>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
 ) {
@@ -208,16 +287,38 @@ fn build_library(
         return;
     };
     let mut graph = AnimationGraph::new();
+    match gltf.named_nodes.get("Armature").and_then(|h| gltf_nodes.get(h)) {
+        Some(armature) => {
+            let mut stack = vec![(armature, vec![Name::new(armature.name.clone())], false)];
+            while let Some((node, path, upper)) = stack.pop() {
+                let upper = upper || node.name == UPPER_ROOT;
+                let group = if upper { UPPER_GROUP } else { LOWER_GROUP };
+                graph.add_target_to_mask_group(AnimationTargetId::from_names(path.iter()), group);
+                for child in node.children.iter().filter_map(|h| gltf_nodes.get(h)) {
+                    let mut p = path.clone();
+                    p.push(Name::new(child.name.clone()));
+                    stack.push((child, p, upper));
+                }
+            }
+        }
+        None => warn!("animation library has no Armature: no layered poses"),
+    }
     let mut nodes = HashMap::new();
+    let mut clip_of = HashMap::new();
     for a in Anim::ALL {
         let Some(clip) = gltf.named_animations.get(a.clip()) else {
             warn!("animation library has no {}", a.clip());
             continue;
         };
         let length = clips.get(clip).map_or(1.0, |c| c.duration());
-        nodes.insert(a, (graph.add_clip(clip.clone(), 1.0, graph.root), length));
+        for (layer, mask) in [(Layer::Full, 0), (Layer::Lower, 1 << UPPER_GROUP), (Layer::Upper, 1 << LOWER_GROUP)] {
+            let node = graph.add_clip_with_mask(clip.clone(), mask, 1.0, graph.root);
+            nodes.insert((a, layer), (node, length));
+            clip_of.insert(node, a.clip());
+        }
     }
     library.nodes = nodes;
+    library.clip_of = clip_of;
     library.graph = Some(graphs.add(graph));
 }
 
@@ -250,7 +351,6 @@ pub fn spawn_rig(commands: &mut Commands, assets: &AssetServer, p: &Pawn, parent
     let rig = commands
         .spawn((
             AnimationPlayer::default(),
-            AnimationTransitions::new(),
             Transform::from_scale(Vec3::splat(RIG_SCALE)),
             Visibility::Hidden,
             ChildOf(parent),
@@ -286,7 +386,7 @@ pub fn spawn_rig(commands: &mut Commands, assets: &AssetServer, p: &Pawn, parent
         bones: HashMap::new(),
         hair_parts,
         animated: false,
-        playing: None,
+        layers: Vec::new(),
     });
     rig
 }
@@ -436,33 +536,63 @@ pub fn cover_body(rig: &mut Rig, covered: bool, visibility: &mut Query<&mut Visi
     }
 }
 
-/// Play `anim` (fading from the last one), restarting it if `restart`.
-/// `rate` scales its speed (walk speed, simulation speed; 0 pauses).
-pub fn play(
-    library: &CharacterLibrary,
-    rig: &mut Rig,
-    player: &mut AnimationPlayer,
-    transitions: &mut AnimationTransitions,
-    anim: Anim,
-    restart: bool,
-    rate: f32,
-) {
-    let Some(&(node, _)) = library.nodes.get(&anim) else {
-        return;
-    };
-    let same_clip = rig.playing.is_some_and(|a| a.clip() == anim.clip()) && player.is_playing_animation(node);
-    if !same_clip || restart {
-        let active = transitions.play(player, node, BLEND);
-        if anim.once() {
-            active.set_repeat(bevy::animation::RepeatAnimation::Never);
-        } else {
-            active.repeat();
+/// Play `pose`: its clip nodes fade in over `BLEND` (real time `dt`) and
+/// whatever else was playing fades out. Once-only clips start over if
+/// `restart`. A node starting while the same clip plays in another node (the
+/// legs of a walk when a carry starts) picks up at the same point, so
+/// nothing jumps. `rate` scales its speed (walk speed, simulation speed; 0 pauses).
+pub fn play(library: &CharacterLibrary, rig: &mut Rig, player: &mut AnimationPlayer, pose: Pose, restart: bool, rate: f32, dt: f32) {
+    let mut wanted = Vec::new();
+    for (anim, layer) in pose.layers() {
+        let Some(&(node, _)) = library.nodes.get(&(anim, layer)) else { continue };
+        wanted.push(node);
+        let fresh = !player.is_playing_animation(node);
+        if fresh || (restart && anim.once()) {
+            let clip = anim.clip();
+            let along = rig
+                .layers
+                .iter()
+                .filter(|l| l.0 != node && library.clip_of.get(&l.0) == Some(&clip))
+                .find_map(|l| player.animation(l.0))
+                .map(|a| a.seek_time());
+            // The very first pose shows at once; later ones fade in.
+            let weight = if rig.layers.is_empty() { 1.0 } else { 0.0 };
+            let active = player.start(node);
+            if anim.once() {
+                active.set_repeat(bevy::animation::RepeatAnimation::Never);
+            } else {
+                active.repeat();
+            }
+            match along {
+                Some(t) if !restart => {
+                    active.seek_to(t);
+                }
+                _ => {}
+            }
+            if fresh {
+                active.set_weight(weight);
+                rig.layers.retain(|l| l.0 != node);
+                rig.layers.push((node, weight));
+            }
+        }
+        if let Some(active) = player.animation_mut(node) {
+            active.set_speed(rate);
         }
     }
-    rig.playing = Some(anim);
-    if let Some(active) = player.animation_mut(node) {
-        active.set_speed(rate);
+    let step = dt / BLEND.as_secs_f32();
+    for (node, weight) in rig.layers.iter_mut() {
+        *weight = if wanted.contains(node) { (*weight + step).min(1.0) } else { (*weight - step).max(0.0) };
+        if let Some(active) = player.animation_mut(*node) {
+            active.set_weight(*weight);
+        }
     }
+    rig.layers.retain(|&(node, weight)| {
+        let keep = weight > 0.0 || wanted.contains(&node);
+        if !keep {
+            player.stop(node);
+        }
+        keep
+    });
 }
 
 /// Picks the locomotion clip, walking around the colony or running in a
@@ -486,19 +616,32 @@ pub fn locomotion(speed: f32, sim_rate: f32, running: bool) -> (Anim, f32) {
 /// slide, hardly visible from above, for a calmer step at battle speed).
 pub const RUN_STRIDE: f32 = 1.6;
 
-/// The animation for what a pawn is doing in place (not moving, not lying
-/// down, not falling, no attack being played).
-pub fn activity(p: &Pawn, w: &SimWorld, armed: bool) -> Anim {
+/// The pose for what a pawn is doing in place (not moving, not lying
+/// down, not falling, no attack being played, not sitting down or getting up).
+pub fn activity(p: &Pawn, w: &SimWorld, armed: bool) -> Pose {
     let m = &w.map;
     let arrived = p.path.is_empty();
     // In a battle: crouched behind cover when hunkered (civilians always are),
-    // down on one knee when deployed.
+    // down on one knee aiming when deployed.
     if let Some(b) = &w.battle {
-        if b.unit_of(p.id).is_some_and(|u| b.units[u].hunkered || b.units[u].deployed) {
-            return Anim::Crouch;
+        if let Some(u) = b.unit_of(p.id) {
+            if b.units[u].deployed {
+                return Pose::split(Anim::Kneel, Anim::Aim);
+            }
+            if b.units[u].hunkered {
+                return Pose::full(Anim::Crouch);
+            }
         }
     }
-    match p.job {
+    // On a chair: playing chess gestures, crafting works with the hands.
+    if w.seated(p) {
+        return match p.job {
+            Some(Job::Relax { .. }) => Pose::full(Anim::SitTalk),
+            Some(Job::Work { .. }) => Pose::split(Anim::Sit, Anim::Interact),
+            _ => Pose::full(Anim::Sit),
+        };
+    }
+    let anim = match p.job {
         Some(Job::Work { target, task }) if arrived => match task {
             Task::Harvest(plant) if plant.def().harvest.desig == Some(Desig::Chop) => Anim::Swing,
             Task::Mine | Task::Fill => Anim::Swing,
@@ -509,13 +652,8 @@ pub fn activity(p: &Pawn, w: &SimWorld, armed: bool) -> Anim {
             },
             Task::Craft | Task::Decorate => Anim::Interact,
         },
-        Some(Job::Eat { picked: true, seat, .. }) if arrived => {
-            if seat == Some(p.pos) {
-                Anim::Sit
-            } else {
-                Anim::Crouch
-            }
-        }
+        // Eating without a seat.
+        Some(Job::Eat { picked: true, .. }) if arrived => Anim::Crouch,
         Some(Job::Tend { picked: true, .. } | Job::Feed { picked: true, .. }) if arrived => Anim::Kneel,
         _ if armed => match p.weapon.and_then(|w: ItemId| w.def().weapon.as_ref()) {
             Some(wd) if wd.ranged() => Anim::Aim,
@@ -523,7 +661,8 @@ pub fn activity(p: &Pawn, w: &SimWorld, armed: bool) -> Anim {
             None => Anim::Idle,
         },
         _ => Anim::Idle,
-    }
+    };
+    Pose::full(anim)
 }
 
 /// The attack animation for a pawn's weapon.
@@ -608,6 +747,38 @@ mod tests {
         // A faster game plays the same clip faster.
         assert_eq!(locomotion(3.0 * WALK_SPEED, 3.0, false).0, Anim::Walk);
         assert_eq!(locomotion(3.0 * RUN_SPEED, 3.0, true).0, Anim::Jog);
+    }
+
+    #[test]
+    fn poses_layer_legs_and_upper_body() {
+        use my_world::map::{Map, FLAT_Z as Z};
+        use my_world::pawn::Job;
+        // Carrying: arms out over walking or standing, nothing else changed.
+        assert_eq!(Pose::full(Anim::Walk).carrying(), Pose::split(Anim::Walk, Anim::Carry));
+        assert_eq!(Pose::full(Anim::Kneel).carrying(), Pose::full(Anim::Kneel));
+        assert_eq!(Pose::split(Anim::Walk, Anim::Carry).layers(), vec![(Anim::Walk, Layer::Lower), (Anim::Carry, Layer::Upper)]);
+
+        // Seated: chess gestures, crafting with the hands, otherwise just sitting.
+        let mut w = SimWorld::with_map(Map::flat(12, 12), my_world::rng::Rng::new(1));
+        let at = (5, 5, Z);
+        let i = w.map.idx(at);
+        w.map.set_feature(i, Feature::built("chair"));
+        let id = w.spawn_colonist(at);
+        let k = w.pawn_index(id).unwrap();
+        w.pawns[k].job = Some(Job::Relax { at: (5, 6, Z), stand: at });
+        assert_eq!(activity(&w.pawns[k], &w, false), Pose::full(Anim::SitTalk));
+        w.pawns[k].job = Some(Job::Sit { at, until: u32::MAX });
+        assert_eq!(activity(&w.pawns[k], &w, false), Pose::full(Anim::Sit));
+        assert!(activity(&w.pawns[k], &w, false).sitting());
+
+        // A deployed squad kneels, aiming.
+        let mut w = my_world::scenarios::build("battle").unwrap();
+        let b = w.battle.as_ref().unwrap();
+        let u = (0..b.units.len()).find(|&u| w.can_deploy(u)).expect("a ranged squad");
+        let member = b.units[u].members[0];
+        w.battle.as_mut().unwrap().units[u].deployed = true;
+        let p = w.pawn(member).unwrap();
+        assert_eq!(activity(p, &w, true), Pose::split(Anim::Kneel, Anim::Aim));
     }
 
     #[test]

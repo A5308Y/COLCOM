@@ -105,7 +105,7 @@ In the suggested order. Graphics first: the content has settled, so the look can
 - Expeditions: raids by the other factions, caravans visiting the colony, more varied site maps, a world
   map, skills that change mission outcomes (hunting by Shooting, prospecting by Mining).
 - Power: cables and separate grids, more consumers (lamps, benches).
-- Colonists: seeking warmth by themselves, a real carry pose, a sitting animation.
+- Colonists: pick-up and put-down clips, hit reactions, a pose for sleeping on the ground.
 - Production: meal quality per cook, fuel, smithing and tailoring as separate skills.
 - Digging: prospecting (hidden ore found by digging).
 
@@ -531,6 +531,15 @@ slopes, and old save versions); the newer note in the same topic says so.
   to fun below `JOY_BORED`. Fun ends when full or in Work/Sleep hours. UI: Fun bar, the Work window's
   Schedule tab (pick a block, click or drag to paint), Info Fun row. `testing::colonist` starts
   entertained with no fixed hours, so other tests time only the work.
+- Warming up and sitting (2026-10-19): freezing colonists (`needs_warmth`: hypothermia ≥
+  `WARM_UP_AT` 0.1 and `felt` below `FREEZING`) take `Job::WarmUp { to }` from `colonist_think` (with
+  the urgent needs) to the nearest standable room cell that feels at least `FREEZING + 5`
+  (`warm_spot`, with their clothes); they stay until hypothermia is 0, look again if it turns cold
+  there, and otherwise carry on. `World::seated` (recreation.rs): settled on a `Seat` while eating
+  there, crafting from a chair at a bench's `front_cell`, playing from a chair (`find_fun` prefers a
+  free chair around fun furniture), or `Job::Sit { at, until }` (idle: 10% of idle thinks, a free chair
+  within 12 steps, 15-30 s, a little fun). `seat_free` keeps chairs to one person. Leaving a seat sets
+  `Pawn::getting_up` to `GET_UP` (1.2 s); `go_to_reach` doesn't step meanwhile.
 
 ### Items, production and gear
 
@@ -814,6 +823,9 @@ slopes, and old save versions); the newer note in the same topic says so.
   times `PINNED_MOVE` (2) for a unit that started the round pinned (`Unit::held_down`: its AP were cut,
   even if its suppression has halved since). Used by orders, the AI and the move preview. Everyday
   walking (`Pawn::move_speed`) uses `gear_speed` too.
+- Only ranged squads deploy (2026-10-19): `World::can_deploy(u)` (a led unit whose leader fights at
+  range, or one already deployed so it can stand up); the order, the AI and the battle panel's button
+  use it.
 
 ### Storyteller, raids and expeditions
 
@@ -947,6 +959,15 @@ slopes, and old save versions); the newer note in the same topic says so.
     ambience loops. Originals are in `asset-sources/kenney/` and `asset-sources/matthew-pablo/`.
 - No footsteps at 5x and 10x speed (2026-10-18): they ran together into a constant noise
   (`audio::steps_heard`, `SILENT_STEPS_SPEED`); work strokes and other sounds still play.
+- Layered poses (2026-10-19, `front/characters.rs`): the library graph holds each clip three times,
+  whole body, legs only and upper body only (bone mask groups: everything under `spine_01` is upper).
+  `Pose { body, upper }` plays one clip, or the legs of `body` with the upper body of `upper`. `play`
+  does its own cross-fading (`Rig::layers`, replacing `AnimationTransitions`); a node starting while
+  its clip plays elsewhere starts at the same time. Deployed: `Kneel` legs + `Aim` (or `Shoot` when
+  firing). Carrying: `Carry` (`Driving_Loop`'s arms) over walking or standing. Seated (`World::seated`):
+  `Sit`, `SitTalk` at chess, `Sit` + `Interact` crafting; `SitEnter` plays on sitting down and
+  `SitExit` while `getting_up`; the seat offset glides. Idle sitters face the chair's front. The clips
+  are constants in `Anim::clip` (to swap after a look).
 
 ### Saves, performance and history
 

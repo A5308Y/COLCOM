@@ -1108,9 +1108,14 @@ mod tests {
     fn offers_come_and_go() {
         let mut w = quiet_world(10, 10, 5);
         colonist(&mut w, (2, 2, Z));
-        run(&mut w, 3.0 * DAY_LEN);
-        assert!(!w.offers.is_empty());
-        assert!(w.offers.len() <= MAX_OFFERS);
+        // About one a day, each open for three: over a week there's soon something on offer.
+        let mut seen = false;
+        for _ in 0..7 * 24 {
+            run(&mut w, DAY_LEN / 24.0);
+            seen |= !w.offers.is_empty();
+            assert!(w.offers.len() <= MAX_OFFERS);
+        }
+        assert!(seen);
         assert!(w.offers.iter().all(|o| o.kind.fits(w.factions[o.faction].kind)));
     }
 }

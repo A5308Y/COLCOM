@@ -2,7 +2,7 @@
 //! character models (`characters.rs`), with the old code-built figure shown
 //! until a character is ready or if the models can't load.
 
-use super::characters::{self, Anim, CharacterLibrary, Rig};
+use super::characters::{self, Anim, CharacterLibrary, Pose, Rig};
 use super::input::UiState;
 use super::look::*;
 use super::terrain::{FLOOR_T, LEVEL_H};
@@ -11,7 +11,8 @@ use super::sim::Sim;
 use super::tile_point;
 use bevy::prelude::*;
 use my_world::defs::{ItemId, Special, WornPiece};
-use my_world::map::{Feature, Map, Pos, DIRS};
+use my_world::map::{turn_dir, Feature, Map, Pos, DIRS};
+use my_world::recreation::GET_UP;
 use my_world::pawn::{Job, Pawn, Task};
 use my_world::world::World as SimWorld;
 use std::collections::HashMap;
@@ -66,6 +67,11 @@ struct PawnVis {
     /// Drawn height, which lags behind the real one while falling.
     render_y: f32,
     fall_speed: f32,
+    /// Seated last frame, seconds of sitting down still to play, and how far
+    /// the character is moved onto the seat (0..1, glides).
+    sitting: bool,
+    sit_enter: f32,
+    sit_shift: f32,
 }
 
 #[derive(Resource, Default)]
@@ -194,6 +200,9 @@ fn spawn_pawn(
         swing: 0.0,
         render_y: f32::NAN,
         fall_speed: 0.0,
+        sitting: false,
+        sit_enter: 0.0,
+        sit_shift: 0.0,
     }
 }
 
@@ -234,6 +243,15 @@ fn facing(p: &Pawn, w: &SimWorld) -> Option<f32> {
             .find(|&nb| m.feature[m.idx(nb)].is_special(Special::Table))
             .map(|t| (t.0 as f32, t.1 as f32)),
         Some(Job::Work { target, .. }) => Some((target.0 as f32, target.1 as f32)),
+        Some(Job::Relax { at, .. }) => Some((at.0 as f32, at.1 as f32)),
+        // Sitting on a chair: the way it faces.
+        Some(Job::Sit { at, .. }) if at == p.pos => match m.feature[m.idx(at)] {
+            Feature::Built { kind, dir } => {
+                let (dx, dy) = DIRS[turn_dir(kind.def().front, dir) as usize];
+                Some((at.0 as f32 + dx as f32, at.1 as f32 + dy as f32))
+            }
+            _ => None,
+        },
         Some(Job::Tend { patient: target, .. } | Job::Feed { patient: target, .. }) => {
             w.pawn(target).map(|t| (t.x, t.y))
         }
@@ -358,7 +376,7 @@ fn sync_pawns(
     mut transforms: Query<&mut Transform>,
     mut visibility: Query<&mut Visibility>,
     mut mats: Query<&mut MeshMaterial3d<StandardMaterial>>,
-    mut rigs: Query<(&mut Rig, &mut AnimationPlayer, &mut AnimationTransitions)>,
+    mut rigs: Query<(&mut Rig, &mut AnimationPlayer)>,
 ) {
     let visuals = visuals.into_inner();
     let w = &sim.world;
@@ -537,36 +555,50 @@ fn sync_pawns(
             && w.battle.as_ref().is_some_and(|b| b.unit_of(p.id).is_some_and(|u| !b.units[u].passive));
 
         // An attack starts the weapon's cooldown: play the shot or blow
-        // (a deployed squad fires from the knee, so it stays down).
+        // (a deployed squad fires from the knee: the shot over kneeling legs).
         let deployed = w.battle.as_ref().is_some_and(|b| b.unit_of(p.id).is_some_and(|u| b.units[u].deployed));
-        if p.cooldown > v.last_cooldown + 0.05 && !lying && !deployed {
+        if p.cooldown > v.last_cooldown + 0.05 && !lying {
             let anim = characters::attack_anim(p);
             v.action = Some((anim, library.duration(anim), true));
         }
         v.last_cooldown = p.cooldown;
 
-        if let Some((r, player, transitions)) = rig.as_mut().filter(|_| rig_ready) {
-            let (anim, rate, restart) = if collapsed {
-                (Anim::Down, sim_rate, false)
+        // Sitting down onto a chair plays first; getting up plays while the simulation waits for it.
+        let seated = w.seated(p);
+        if seated && !v.sitting {
+            v.sit_enter = library.duration(Anim::SitEnter);
+        }
+        v.sitting = seated;
+        if let Some((r, player)) = rig.as_mut().filter(|_| rig_ready) {
+            let (pose, rate, restart) = if collapsed {
+                (Pose::full(Anim::Down), sim_rate, false)
             } else if tipped {
-                (Anim::Idle, 0.4 * sim_rate, false)
+                (Pose::full(Anim::Idle), 0.4 * sim_rate, false)
             } else if falling {
-                (Anim::Fall, 1.0, false)
+                (Pose::full(Anim::Fall), 1.0, false)
             } else if moving {
                 let (a, rate) = characters::locomotion(v.speed, sim_rate, p.running);
-                (a, rate, false)
+                (Pose::full(a), rate, false)
             } else if let Some((a, _, fresh)) = v.action {
-                (a, sim_rate, fresh)
+                (if deployed { Pose::split(Anim::Kneel, a) } else { Pose::full(a) }, sim_rate, fresh)
+            } else if seated && v.sit_enter > 0.0 {
+                (Pose::full(Anim::SitEnter), sim_rate, false)
+            } else if !seated && p.getting_up > 0.0 {
+                let rate = library.duration(Anim::SitExit) / GET_UP;
+                (Pose::full(Anim::SitExit), rate * sim_rate, false)
             } else {
                 (characters::activity(p, w, armed), sim_rate, false)
             };
-            characters::play(&library, r, player, transitions, anim, restart, rate);
+            // Arms out in front for whatever they carry.
+            let pose = if p.carrying.is_some() && !lying { pose.carrying() } else { pose };
+            characters::play(&library, r, player, pose, restart, rate, dt);
             characters::cover_body(r, in_bed, &mut visibility);
             characters::close_eyes(&mut commands, r, p.sleeping || p.downed || p.dead, &mut materials);
-            // Sitting leans back onto the seat: move forward and up onto the chair.
-            let sit = if anim == Anim::Sit { Vec3::new(0.0, 0.07, 0.18) } else { Vec3::ZERO };
+            // Sitting leans back onto the seat: move forward and up onto the chair (gliding there and back).
+            let target = if pose.sitting() { 1.0 } else { 0.0 };
+            v.sit_shift += (target - v.sit_shift) * (dt * 4.0 * sim_rate.max(1.0)).min(1.0);
             if let Ok(mut t) = transforms.get_mut(v.rig) {
-                t.translation = sit;
+                t.translation = Vec3::new(0.0, 0.07, 0.18) * v.sit_shift;
             }
             if v.rig_weapon.is_none() {
                 if let Some(hand) = r.hand {
@@ -577,6 +609,7 @@ fn sync_pawns(
             }
         }
 
+        v.sit_enter = (v.sit_enter - dt * sim_rate).max(0.0);
         if let Some((_, left, fresh)) = &mut v.action {
             *fresh = false;
             *left -= dt * sim_rate;

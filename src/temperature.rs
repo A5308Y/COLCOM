@@ -9,6 +9,9 @@
 //! which slows them, then downs and in the end kills them; warm again, it
 //! wears off. Above `HOT` they're hot.
 
+use crate::map::Pos;
+use crate::pawn::Pawn;
+use crate::pathing::ANY_DISTANCE;
 use crate::seasons::SEASON_LEN;
 use crate::world::World;
 use crate::DAY_LEN;
@@ -27,6 +30,11 @@ const WARMEST: f32 = 0.275;
 pub const COLD: f32 = 10.0;
 pub const FREEZING: f32 = 0.0;
 pub const HOT: f32 = 30.0;
+/// Hypothermia from which freezing colonists stop what they're doing to get
+/// warm somewhere (`Job::WarmUp`), and how warm a place must feel for that:
+/// warm enough for hypothermia to wear off quickly.
+pub const WARM_UP_AT: f32 = 0.1;
+const WARM_SPOT: f32 = FREEZING + 5.0;
 /// How long (game seconds) a small room takes to follow the outdoors most of the way.
 const ROOM_LAG: f32 = 0.2 * DAY_LEN;
 
@@ -62,6 +70,39 @@ impl World {
         match self.room_stats.get(r).filter(|_| r != 0) {
             Some(st) => st.temp,
             None => self.outdoor_temperature(),
+        }
+    }
+
+    /// Freezing where they are, with hypothermia setting in.
+    pub(crate) fn needs_warmth(&self, p: &Pawn) -> bool {
+        p.health.hypothermia >= WARM_UP_AT && p.felt < FREEZING
+    }
+
+    /// The nearest place they can walk to that feels warm enough to recover.
+    pub(crate) fn warm_spot(&self, p: &Pawn) -> Option<Pos> {
+        let warmth = p.warmth();
+        let outdoor = self.outdoor_temperature();
+        // Outdoors it's as cold everywhere: only rooms can be warmer.
+        if felt(outdoor, warmth) >= WARM_SPOT {
+            return None;
+        }
+        self.nearest_cell(p.pos, ANY_DISTANCE, |i| {
+            let c = self.map.pos(i);
+            self.map.room[i] != 0 && self.map.standable(c) && felt(self.temperature_at(c), warmth) >= WARM_SPOT
+        })
+    }
+
+    /// Warming up at `to` until the hypothermia is gone (looking again if it turns cold there).
+    pub(crate) fn run_warm_up(&mut self, p: &mut Pawn, to: Pos, dt: f32) {
+        if p.health.hypothermia <= 0.0 {
+            self.end_job(p);
+            return;
+        }
+        if !self.walk_to(p, to, false, dt) {
+            return;
+        }
+        if felt(self.temperature_at(to), p.warmth()) < WARM_SPOT {
+            self.end_job(p);
         }
     }
 
@@ -186,6 +227,50 @@ mod tests {
         let (pw, pb) = (w.pawn(warm).unwrap(), w.pawn(bare).unwrap());
         assert!(pw.felt > FREEZING && pw.health.hypothermia == 0.0, "{} felt", pw.felt);
         assert!(pb.health.hypothermia > 0.0);
+    }
+
+    #[test]
+    fn freezing_colonists_warm_up_indoors_then_carry_on() {
+        let mut w = quiet_world(14, 12, 1);
+        room(&mut w);
+        build(&mut w, (4, 4, Z), "fireplace");
+        build(&mut w, (5, 3, Z), "stove");
+        // A winter day: the fires have had a day to warm the room.
+        w.time = 3.0 * SEASON_LEN + 0.3 * DAY_LEN;
+        run(&mut w, DAY_LEN);
+        assert!(w.temperature_at((5, 5, Z)) > WARM_SPOT && w.outdoor_temperature() < FREEZING, "{} in, {} out", w.temperature_at((5, 5, Z)), w.outdoor_temperature());
+        let id = colonist(&mut w, (11, 9, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].priorities = [0; crate::pawn::WorkType::ALL.len()];
+        w.pawns[i].health.hypothermia = 0.3;
+        run(&mut w, 2.0);
+        assert!(matches!(w.pawn(id).unwrap().job, Some(crate::pawn::Job::WarmUp { .. })), "{:?}", w.pawn(id).unwrap().job);
+        // Once warm they're done with it (and free to go out again).
+        let mut warmed = false;
+        for _ in 0..14 * 30 {
+            run(&mut w, 1.0);
+            let i = w.pawn_index(id).unwrap();
+            (w.pawns[i].hunger, w.pawns[i].rest) = (100.0, 100.0);
+            let p = &w.pawns[i];
+            if p.health.hypothermia == 0.0 && !matches!(p.job, Some(crate::pawn::Job::WarmUp { .. })) {
+                warmed = true;
+                break;
+            }
+        }
+        assert!(warmed, "warmed up: {}", w.pawn(id).unwrap().health.hypothermia);
+    }
+
+    #[test]
+    fn with_nowhere_warm_they_carry_on() {
+        let mut w = quiet_world(12, 12, 1);
+        w.time = 3.0 * SEASON_LEN;
+        let id = colonist(&mut w, (8, 8, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].health.hypothermia = 0.3;
+        run(&mut w, 2.0);
+        let p = w.pawn(id).unwrap();
+        assert!(w.needs_warmth(p) && w.warm_spot(p).is_none());
+        assert!(!matches!(p.job, Some(crate::pawn::Job::WarmUp { .. })));
     }
 
     #[test]

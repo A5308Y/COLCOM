@@ -197,6 +197,10 @@ pub enum Job {
     Relax { at: Pos, stand: Pos },
     /// Stroll outdoors for fun, on to `to`.
     Stroll { to: Pos },
+    /// Sit on the chair at `at` for a while, until game second `until` (idle; see `recreation.rs`).
+    Sit { at: Pos, until: u32 },
+    /// Freezing: get warm at `to` (see `temperature.rs`).
+    WarmUp { to: Pos },
 }
 
 impl Job {
@@ -219,6 +223,8 @@ impl Job {
             Job::Surgery { .. } => "operating",
             Job::Relax { .. } => "having fun",
             Job::Stroll { .. } => "strolling",
+            Job::Sit { .. } => "sitting",
+            Job::WarmUp { .. } => "warming up",
         }
     }
 }
@@ -428,6 +434,9 @@ pub struct Pawn {
     /// What each hour of their day is for.
     #[serde(default = "crate::recreation::default_schedule")]
     pub schedule: [crate::recreation::Block; 24],
+    /// Seconds left standing up from a chair (they don't walk off before; see `recreation::GET_UP`).
+    #[serde(default)]
+    pub getting_up: f32,
     /// The temperature they feel (°C, updated every tick; see `temperature.rs`).
     #[serde(skip, default = "mild")]
     pub felt: f32,
@@ -490,6 +499,7 @@ impl Pawn {
             felt: mild(),
             joy: content_joy(),
             schedule: crate::recreation::default_schedule(),
+            getting_up: 0.0,
         }
     }
 

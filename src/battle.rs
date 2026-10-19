@@ -335,6 +335,13 @@ pub fn base_hit_chance(a: &Pawn, ranged: bool, d: f32) -> f32 {
 }
 
 impl World {
+    /// Whether unit `u` can go down on one knee (or, deployed, stand up):
+    /// squads that fight at range (a whole squad fights one way, like its leader).
+    pub fn can_deploy(&self, u: usize) -> bool {
+        let Some(unit) = self.battle.as_ref().and_then(|b| b.units.get(u)) else { return false };
+        unit.led && (unit.deployed || unit.members.first().and_then(|&id| self.pawn(id)).is_some_and(|p| p.attack().ranged))
+    }
+
     // ---------- parley ----------
 
     /// Goods worth about `value` from what's lying in the colony, most
@@ -649,9 +656,8 @@ impl World {
                 Ok(())
             }
             BattleOrder::Deploy => {
-                let unit = &self.battle.as_ref().unwrap().units[u];
-                if !unit.led {
-                    return Err("only squads deploy".into());
+                if !self.can_deploy(u) {
+                    return Err("only ranged squads deploy".into());
                 }
                 if ap < AP_DEPLOY {
                     return Err("not enough action points".into());
@@ -2039,6 +2045,24 @@ mod tests {
         assert_eq!(battle(&w).units[u].ap, AP_MAX - 2 * AP_DEPLOY, "standing up costs too");
         assert!(w.battle_order(BattleOrder::Deploy).is_ok(), "30 AP left is enough");
         assert!(w.battle_order(BattleOrder::Deploy).is_err(), "but not again");
+    }
+
+    #[test]
+    fn melee_squads_dont_deploy() {
+        let mut w = world(40, 20, 22);
+        let leader = colonist(&mut w, (5, 10, Z));
+        let member = colonist(&mut w, (5, 11, Z));
+        w.set_role(leader, Role::Leader).unwrap();
+        w.set_role(member, Role::Member(leader)).unwrap();
+        for id in [leader, member] {
+            let i = w.pawn_index(id).unwrap();
+            w.pawns[i].weapon = Some(item("club"));
+        }
+        fight(&mut w, 1, (16, 10, Z));
+        let u = battle(&w).unit_of(leader).unwrap();
+        assert!(battle(&w).units[u].led && !w.can_deploy(u));
+        w.battle_order(BattleOrder::Activate(u)).unwrap();
+        assert!(w.battle_order(BattleOrder::Deploy).is_err(), "a melee squad has nothing to aim");
     }
 
     #[test]

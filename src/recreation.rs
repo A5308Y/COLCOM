@@ -12,8 +12,9 @@
 //!
 //! Hunger, exhaustion and health come first whatever the hour.
 
+use crate::defs::Special;
 use crate::map::{Feature, Pos};
-use crate::pawn::{Job, Pawn};
+use crate::pawn::{Job, Pawn, Task};
 use crate::world::World;
 use crate::DAY_LEN;
 use serde::{Deserialize, Serialize};
@@ -60,6 +61,10 @@ pub const JOY_BORED: f32 = 30.0;
 pub const JOY_FULL: f32 = 98.0;
 /// How much fun a stroll is.
 const STROLL: f32 = 0.7;
+/// Sitting on a chair for a while: a little fun.
+const SIT: f32 = 0.3;
+/// Seconds it takes to stand up from a chair before walking off.
+pub const GET_UP: f32 = 1.2;
 
 impl World {
     /// Set what hour `hour` of colonist `id`'s day is for.
@@ -92,11 +97,16 @@ impl World {
                 continue;
             }
             let at = m.pos(i);
-            // Furniture, used from anywhere beside it.
+            // Furniture, used from anywhere beside it (from a free chair there if there is one).
             if let Feature::Built { kind, .. } = m.feature[i] {
                 let fun = kind.def().fun;
                 if fun > 0.0 {
-                    if let Some((stand, d)) = df.approach_build(m, at) {
+                    let chair = m
+                        .build_around(at, m.overhead_work(at))
+                        .filter(|&c| m.feature[m.idx(c)].is_special(Special::Seat) && self.seat_free(c, p.id))
+                        .filter_map(|c| df.dist(c).map(|d| (c, d)))
+                        .min_by_key(|&(_, d)| d);
+                    if let Some((stand, d)) = chair.or_else(|| df.approach_build(m, at)) {
                         consider(fun * self.fun_bonus(at) / (1.0 + d as f32 / 20.0), Job::Relax { at, stand });
                     }
                 }
@@ -116,6 +126,54 @@ impl World {
             None if !self.is_night() => self.stroll_spot(p.pos).map(|to| Job::Stroll { to }),
             None => None,
         }
+    }
+
+    /// Sitting on a chair (arrived, not passing through): eating at a table,
+    /// crafting at a bench with a chair at its front, playing at a chess
+    /// table, or just sitting.
+    pub fn seated(&self, p: &Pawn) -> bool {
+        let m = &self.map;
+        let settled = p.path.is_empty() && (p.x - p.pos.0 as f32).abs() < 0.05 && (p.y - p.pos.1 as f32).abs() < 0.05;
+        if !settled || !m.feature[m.idx(p.pos)].is_special(Special::Seat) {
+            return false;
+        }
+        match p.job {
+            Some(Job::Eat { picked: true, seat: Some(s), .. }) => s == p.pos,
+            Some(Job::Sit { at, .. }) => at == p.pos,
+            Some(Job::Relax { stand, .. }) => stand == p.pos,
+            Some(Job::Work { target, task: Task::Craft }) => m.front_cell(target) == Some(p.pos),
+            _ => false,
+        }
+    }
+
+    /// Nobody else is on the chair at `s` or on their way to it.
+    pub(crate) fn seat_free(&self, s: Pos, me: u32) -> bool {
+        !self.pawns.iter().any(|o| {
+            o.id != me
+                && !o.dead
+                && (o.pos == s
+                    || o.path_goal == Some(s)
+                    || matches!(o.job, Some(Job::Eat { seat: Some(t), .. }) | Some(Job::Sit { at: t, .. }) | Some(Job::Relax { stand: t, .. }) if t == s))
+        })
+    }
+
+    /// A free chair within `max` steps.
+    pub(crate) fn free_chair(&self, p: &Pawn, max: i32) -> Option<Pos> {
+        self.nearest_cell(p.pos, max, |i| {
+            self.map.feature[i].is_special(Special::Seat) && self.seat_free(self.map.pos(i), p.id)
+        })
+    }
+
+    /// Sitting on the chair at `at` until game second `until`.
+    pub(crate) fn run_sit(&mut self, p: &mut Pawn, at: Pos, until: u32, dt: f32) {
+        if !self.map.feature[self.map.idx(at)].is_special(Special::Seat) || self.time >= until as f32 {
+            self.end_job(p);
+            return;
+        }
+        if !self.walk_to(p, at, false, dt) {
+            return;
+        }
+        p.joy = (p.joy + JOY_GAIN * SIT * dt).min(100.0);
     }
 
     /// How much faster fun comes at `p`: a recreation room's bonus.
@@ -236,6 +294,64 @@ mod tests {
         assert!(p.joy > 85.0, "{}", p.joy);
         assert!(p.thoughts().iter().any(|t| t.0 == "Entertained"));
         assert!(!matches!(p.job, Some(Job::Relax { .. })), "and then stop");
+    }
+
+    #[test]
+    fn with_a_chair_at_the_chess_table_they_sit_down_to_play() {
+        let mut w = world();
+        build(&mut w, (8, 8, Z), "chess_table");
+        build(&mut w, (9, 7, Z), "chair");
+        let id = person(&mut w, (2, 2, Z), 20.0, Block::Anything);
+        run(&mut w, 2.0);
+        assert!(matches!(job(&w, id), Some(Job::Relax { stand: (9, 7, _), .. })), "{:?}", job(&w, id));
+        run(&mut w, 15.0);
+        assert!(w.seated(w.pawn(id).unwrap()));
+    }
+
+    #[test]
+    fn crafting_with_a_chair_at_the_bench_is_sitting() {
+        let mut w = world();
+        build(&mut w, (8, 8, Z), "crafting_bench");
+        let front = w.map.front_cell((8, 8, Z)).unwrap();
+        build(&mut w, front, "chair");
+        let id = person(&mut w, front, 100.0, Block::Anything);
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].job = Some(Job::Work { target: (8, 8, Z), task: Task::Craft });
+        assert!(w.seated(w.pawn(id).unwrap()));
+        w.pawns[i].job = Some(Job::Work { target: (8, 8, Z), task: Task::Construct });
+        assert!(!w.seated(w.pawn(id).unwrap()), "building isn't sitting");
+    }
+
+    #[test]
+    fn idle_colonists_sit_on_free_chairs_and_get_up_before_walking_off() {
+        let mut w = world();
+        build(&mut w, (6, 6, Z), "chair");
+        let id = person(&mut w, (4, 4, Z), 100.0, Block::Anything);
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].priorities = [0; crate::pawn::WorkType::ALL.len()];
+        let mut sat = false;
+        for _ in 0..400 {
+            run(&mut w, 1.0);
+            if w.seated(w.pawn(id).unwrap()) {
+                sat = true;
+                break;
+            }
+        }
+        assert!(sat, "sat down at some point");
+        // Taken: nobody else sits there.
+        let other = person(&mut w, (2, 2, Z), 100.0, Block::Anything);
+        assert_eq!(w.free_chair(w.pawn(other).unwrap(), 12), None);
+        // Done sitting: they stand up before going anywhere.
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].job = Some(Job::Sit { at: (6, 6, Z), until: w.time as u32 });
+        run(&mut w, 0.2);
+        let i = w.pawn_index(id).unwrap();
+        assert!(w.pawns[i].getting_up > 0.0);
+        w.pawns[i].job = Some(Job::Goto { to: (2, 6, Z) });
+        run(&mut w, 0.6);
+        assert_eq!(w.pawn(id).unwrap().pos, (6, 6, Z), "still getting up");
+        run(&mut w, 3.0);
+        assert_ne!(w.pawn(id).unwrap().pos, (6, 6, Z), "then off");
     }
 
     #[test]
