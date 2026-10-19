@@ -244,7 +244,8 @@ pub struct UiState {
     pub box_start: Option<Vec2>,
     /// Cell where a paint drag started (its level is used for the whole box).
     pub drag_start: Option<Pos>,
-    /// Under the cursor (last known, so drags can end over the UI).
+    /// Under the cursor: None over the UI, except during a paint drag (the
+    /// last cell over the map, so the drag can end over a panel).
     pub hover: Option<Hover>,
     pub show_work: bool,
     /// The Work window's tab: priorities (false) or schedules (true), and the block being painted.
@@ -537,8 +538,16 @@ fn update_hover(
     window: Single<&Window, With<PrimaryWindow>>,
     camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
     sim: Res<Sim>,
+    egui_input: Res<EguiWantsInput>,
     mut ui: ResMut<UiState>,
 ) {
+    // Over a panel or button the cursor points at no tile (unless a paint
+    // drag is under way: it ends where the cursor last was over the map).
+    if (egui_input.wants_any_pointer_input() || ui.over_dock(&window)) && ui.drag_start.is_none() {
+        ui.hover = None;
+        ui.wall_slot = None;
+        return;
+    }
     let (cam, gt) = *camera;
     let Some(cursor) = window.cursor_position() else { return };
     let Ok(ray) = cam.viewport_to_world(gt, cursor) else { return };
