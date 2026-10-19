@@ -7,6 +7,8 @@ use bevy_egui::egui::{self, Align2, Color32, RichText};
 use my_world::defs::ItemId;
 use my_world::expeditions::{Expedition, Faction, Stage};
 use my_world::map::Stack;
+use my_world::pawn::{Pawn, Role, Skill};
+use my_world::squads::{fights_at_range, style_name};
 use my_world::world::World as SimWorld;
 use my_world::DAY_LEN;
 use std::collections::BTreeMap;
@@ -162,23 +164,8 @@ fn planning(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
     ui.add_space(4.0);
 
     ui.label(RichText::new("Squad").strong());
-    for p in w.pawns.iter().filter(|p| p.is_living_colonist()) {
-        let mut going = plan.squad.contains(&p.id);
-        let weapon = p.weapon.map_or("unarmed".to_string(), |k| k.name().to_lowercase());
-        let able = p.active();
-        let mut text = format!("{} ({})", p.name, weapon);
-        if !able {
-            text += " - can't travel";
-        }
-        if ui.add_enabled(able, egui::Checkbox::new(&mut going, text)).changed() {
-            if going {
-                plan.squad.push(p.id);
-            } else {
-                plan.squad.retain(|&id| id != p.id);
-            }
-        }
-    }
-
+    ui.label(RichText::new(kind.squad_hint()).small().weak());
+    squad_picker(ui, w, &mut plan.squad);
     ui.add_space(4.0);
     let packed = stacks(&plan.pack);
     ui.label(RichText::new(format!("Pack (worth {:.0})", worth(&packed))).strong());
@@ -218,6 +205,93 @@ fn planning(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
     } else if cancel {
         st.plan = None;
         st.error = None;
+    }
+}
+
+/// The colony's squads: each leader with their members.
+fn squads(w: &SimWorld) -> Vec<(&Pawn, Vec<&Pawn>)> {
+    let colonists: Vec<&Pawn> = w.pawns.iter().filter(|p| p.is_living_colonist()).collect();
+    colonists
+        .iter()
+        .filter(|p| p.role == Role::Leader)
+        .map(|&l| (l, colonists.iter().copied().filter(|p| p.role == Role::Member(l.id)).collect()))
+        .collect()
+}
+
+fn pct(v: f32) -> String {
+    format!("{:.0}%", v * 100.0)
+}
+
+/// Who goes: whole squads with one click, or colonists one by one, with what
+/// matters on the road and in a fight.
+fn squad_picker(ui: &mut egui::Ui, w: &SimWorld, picked: &mut Vec<u32>) {
+    let squads = squads(w);
+    ui.horizontal_wrapped(|ui| {
+        for (l, members) in &squads {
+            let ids: Vec<u32> = std::iter::once(*l).chain(members.iter().copied()).filter(|p| p.active()).map(|p| p.id).collect();
+            let all = !ids.is_empty() && ids.iter().all(|id| picked.contains(id));
+            let text = format!("{}'s squad ({}, {})", l.name, ids.len(), style_name(fights_at_range(l)));
+            if ui.add_enabled(!ids.is_empty(), egui::Button::new(text).selected(all)).on_hover_text("Click to add the whole squad, again to take it off").clicked() {
+                if all {
+                    picked.retain(|id| !ids.contains(id));
+                } else {
+                    picked.extend(ids.into_iter().filter(|id| !picked.contains(id)).collect::<Vec<_>>());
+                }
+            }
+        }
+        if squads.is_empty() {
+            ui.label(RichText::new("No squads (set them up in a colonist's Combat tab).").small().weak());
+        }
+        if !picked.is_empty() && ui.button("Nobody").clicked() {
+            picked.clear();
+        }
+    });
+    let squad_of = |p: &Pawn| match p.role {
+        Role::Leader => "leader".to_string(),
+        Role::Member(l) => w.pawn(l).map_or(String::new(), |l| l.name.clone()),
+        Role::Civilian => "civilian".to_string(),
+        _ => String::new(),
+    };
+    egui::Grid::new("squad_pick").num_columns(8).striped(true).spacing([10.0, 2.0]).show(ui, |ui| {
+        for h in ["", "Squad", "Weapon", "Shoot", "Melee", "Armour", "Moving", "Health"] {
+            ui.label(RichText::new(h).small().strong());
+        }
+        ui.end_row();
+        for p in w.pawns.iter().filter(|p| p.is_living_colonist()) {
+            let able = p.active();
+            let mut going = picked.contains(&p.id);
+            let skills: Vec<String> = Skill::ALL.iter().map(|&s| format!("{} {}", s.name(), p.skill(s))).collect();
+            let check = ui.add_enabled(able, egui::Checkbox::new(&mut going, &p.name)).on_hover_text(skills.join("\n"));
+            if check.changed() {
+                if going {
+                    picked.push(p.id);
+                } else {
+                    picked.retain(|&id| id != p.id);
+                }
+            }
+            ui.label(RichText::new(squad_of(p)).small());
+            ui.label(RichText::new(p.weapon_name()).small());
+            ui.label(p.skill(Skill::Shooting).to_string());
+            ui.label(p.skill(Skill::Melee).to_string());
+            ui.label(pct(p.armor()));
+            ui.label(pct(p.pace()));
+            let hurt = p.health.hediffs.iter().filter(|d| !d.is_disease()).count();
+            let (text, color) = if !able {
+                ("can't travel".to_string(), WARN)
+            } else if hurt > 0 || p.health.hediffs.iter().any(|d| d.is_disease()) {
+                (format!("hurt or ill ({})", hurt.max(1)), Color32::from_rgb(230, 200, 120))
+            } else {
+                ("fine".to_string(), GOOD)
+            };
+            ui.label(RichText::new(text).small().color(color));
+            ui.end_row();
+        }
+    });
+    let going: Vec<&Pawn> = picked.iter().filter_map(|&id| w.pawn(id)).collect();
+    if !going.is_empty() {
+        let ranged = going.iter().filter(|p| fights_at_range(p)).count();
+        let best = going.iter().map(|p| p.skill(Skill::Shooting).max(p.skill(Skill::Melee))).max().unwrap_or(0);
+        ui.label(RichText::new(format!("{} going: {} ranged, {} melee; best fighter skill {}", going.len(), ranged, going.len() - ranged, best)).small());
     }
 }
 

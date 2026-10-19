@@ -105,7 +105,8 @@ for), and `<` goes back.
 - **Expeditions** (Expeditions button): about once a day a mission is offered by, or about, one of three
   neighbours: Riverford Traders, the Iron Pact (settlers) and the Ash Raiders (bandits). The ten
   missions are trade caravan, envoy, bandit camp, salvaging ruins, rescue, hunting, prospecting, escort
-  duty, peace talks and a strange signal. Plan one: pick who goes and pack goods from the colony (to
+  duty, peace talks and a strange signal. Plan one: pick who goes (whole squads with one click, or one by one from a table of weapon,
+  combat skills, armour, movement and health; hover a name for all skills) and pack goods from the colony (to
   sell, give or pay). The squad leaves the map for real game days. When something comes up, such as a
   toll on the road, an ambush or the mission itself, the journey waits for your choice (an alert and
   the button show it). Choices give or gain goods, change goodwill, cost days, risk injuries, bring

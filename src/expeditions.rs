@@ -141,6 +141,22 @@ impl MissionKind {
         }
     }
 
+    /// What counts when picking who goes.
+    pub fn squad_hint(self) -> &'static str {
+        match self {
+            MissionKind::Trade => "Bandits may block the road: armed colonists can push through.",
+            MissionKind::Envoy => "Nobody needs to fight; one or two envoys will do.",
+            MissionKind::BanditCamp | MissionKind::PeaceTalks => {
+                "Four or more fit colonists can face the raiders down without a fight; fights take weapons, skill and armour."
+            }
+            MissionKind::Rescue | MissionKind::Escort => "Expect a fight: weapons, skill and armour count.",
+            MissionKind::Ruins | MissionKind::Hunt | MissionKind::Prospect => {
+                "Some choices risk injuries to everyone who goes: send only as many as you can spare."
+            }
+            MissionKind::Signal => "Whatever's at the pod may fight back: bring weapons.",
+        }
+    }
+
     /// Goods are worth packing (to sell, give or pay).
     pub fn packs(self) -> bool {
         matches!(self, MissionKind::Trade | MissionKind::Envoy | MissionKind::Rescue | MissionKind::PeaceTalks)
