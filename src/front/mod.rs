@@ -5,6 +5,7 @@ mod audio;
 mod battle_ui;
 mod build_menu;
 mod camera;
+mod carry;
 mod characters;
 mod expeditions_ui;
 mod info;
@@ -53,6 +54,7 @@ impl Plugin for FrontPlugin {
             roofs::RoofsPlugin,
             characters::CharactersPlugin,
             pawns::PawnsPlugin,
+            carry::CarryPlugin,
             battle_ui::BattleUiPlugin,
             input::InputPlugin,
             ui::UiPlugin,

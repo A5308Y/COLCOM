@@ -12,8 +12,9 @@ use super::terrain::{FLOOR_T, LEVEL_H};
 use super::tile_center;
 use bevy::prelude::*;
 use bevy::gltf::GltfAssetLabel;
+use bevy::gltf::GltfMaterialName;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot, WorldInstanceReady};
-use my_world::defs::{defs, BuildId, BuildLook, ItemId, ModelPose, Part, PlantId, Shape, Special, Storage, WornPiece};
+use my_world::defs::{defs, BuildDef, BuildId, BuildLook, ItemId, ModelPose, Part, PlantId, Shape, Special, Storage, WornPiece};
 use my_world::map::{Feature, Map, Pos, DIRS};
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::{FRAC_PI_2, TAU};
@@ -152,6 +153,9 @@ fn setup_assets(
         for (path, scene) in stored.chain(worn) {
             models.entry(model_key(path, scene)).or_insert_with(|| server.load(GltfAssetLabel::Scene(scene).from_asset(path.to_string())));
         }
+    }
+    for model in d.builds.iter().filter_map(|build| build.model.as_ref()) {
+        models.entry(model_key(&model.path, 0)).or_insert_with(|| server.load(GltfAssetLabel::Scene(0).from_asset(model.path.clone())));
     }
     let assets = PropAssets {
         cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
@@ -552,7 +556,7 @@ fn spawn_decor(commands: &mut Commands, a: &PropAssets, key: DecorKey, pos: Pos,
     let def = key.kind.def();
     let root = decor_transform(pos, face, slot, lift);
     let pose = Pose { ghost: !key.built, ..default() };
-    let e = spawn_parts(commands, a, root, def.parts(), pose, &a.blanket_free);
+    let e = spawn_build_look(commands, a, def, root, pose, &a.blanket_free);
     if let Some(l) = def.light.as_ref().filter(|_| key.built) {
         let light = PointLight {
             color: Color::srgb(l.color.0, l.color.1, l.color.2),
@@ -657,14 +661,57 @@ pub fn attach_item_model(
     attach_model(commands, a.models[&model_key(&model.path, 0)].clone(), parent, transform, fallback);
 }
 
-fn attach_model(commands: &mut Commands, model: Handle<WorldAsset>, parent: Entity, transform: Transform, fallback: Entity) {
+fn attach_model(commands: &mut Commands, model: Handle<WorldAsset>, parent: Entity, transform: Transform, fallback: Entity) -> Entity {
     commands.spawn((
         WorldAssetRoot(model),
         transform,
         Visibility::default(),
         ChildOf(parent),
         ModelFallback(fallback),
-    )).observe(hide_model_fallback);
+    )).observe(hide_model_fallback).id()
+}
+
+#[derive(Component)]
+struct BuildStyle {
+    ghost: Option<Handle<StandardMaterial>>,
+    owner: Option<(String, Handle<StandardMaterial>)>,
+}
+
+impl BuildStyle {
+    fn material(&self, name: &str) -> Option<Handle<StandardMaterial>> {
+        self.ghost.clone().or_else(|| self.owner.as_ref().filter(|(label, _)| label == name).map(|(_, material)| material.clone()))
+    }
+}
+
+fn style_build_model(
+    ready: On<WorldInstanceReady>,
+    styles: Query<&BuildStyle>,
+    children: Query<&Children>,
+    mut surfaces: Query<(&GltfMaterialName, &mut MeshMaterial3d<StandardMaterial>)>,
+) {
+    let entity = ready.event().entity;
+    let Ok(style) = styles.get(entity) else { return };
+    for child in children.iter_descendants(entity) {
+        let Ok((name, mut surface)) = surfaces.get_mut(child) else { continue };
+        if let Some(material) = style.material(&name.0) {
+            surface.0 = material;
+        }
+    }
+}
+
+fn spawn_build_look(
+    commands: &mut Commands, a: &PropAssets, def: &BuildDef, transform: Transform, pose: Pose, owner: &Handle<StandardMaterial>,
+) -> Entity {
+    let Some(model) = &def.model else { return spawn_parts(commands, a, transform, def.parts(), pose, owner) };
+    let root = commands.spawn((transform, Visibility::default())).id();
+    let fallback = spawn_parts(commands, a, Transform::default(), def.parts(), pose, owner);
+    commands.entity(fallback).insert(ChildOf(root));
+    let scene = attach_model(commands, a.models[&model_key(&model.path, 0)].clone(), root, model_transform(&model.pose), fallback);
+    commands.entity(scene).insert(BuildStyle {
+        ghost: pose.ghost.then(|| a.blueprint.clone()),
+        owner: model.owner_material.as_ref().map(|name| (name.clone(), owner.clone())),
+    }).observe(style_build_model);
+    root
 }
 
 fn hide_model_fallback(ready: On<WorldInstanceReady>, fallbacks: Query<&ModelFallback>, mut commands: Commands) {
@@ -743,9 +790,8 @@ fn spawn_feature(
         }
         PropKey::Built { kind, dir, open, links, .. } => {
             let def = kind.def();
-            let parts = def.parts();
             let pose = Pose { ghost: false, open, dir, links };
-            let e = spawn_parts(commands, a, base.with_rotation(facing(dir)), parts, pose, &blanket);
+            let e = spawn_build_look(commands, a, def, base.with_rotation(facing(dir)), pose, &blanket);
             if let Some(l) = &def.light {
                 let light = (
                     PointLight {
@@ -767,9 +813,9 @@ fn spawn_feature(
             e
         }
         PropKey::Blueprint { kind, dir, over, .. } => match &kind.def().look {
-            BuildLook::Parts(parts) if !over => {
+            BuildLook::Parts(_) if !over => {
                 let pose = Pose { ghost: true, dir, ..default() };
-                spawn_parts(commands, a, base.with_rotation(facing(dir)), parts, pose, &blanket)
+                spawn_build_look(commands, a, kind.def(), base.with_rotation(facing(dir)), pose, &blanket)
             }
             // Over a standing wall: a shell just around it.
             _ => {
@@ -833,10 +879,68 @@ mod tests {
                 }
             }
         }
+        for model in defs().builds.iter().filter_map(|build| build.model.as_ref()) {
+            models.insert(model_key(&model.path, 0), scenes.add(WorldAsset::new(World::new())));
+        }
+        let mut materials = Assets::<StandardMaterial>::default();
         PropAssets {
             cube: Handle::default(), sphere: Handle::default(), cylinder: Handle::default(), cone: Handle::default(),
-            paints: HashMap::new(), metals: HashMap::new(), blueprint: Handle::default(), blanket_free: Handle::default(), models,
+            paints: HashMap::new(), metals: HashMap::new(), blueprint: materials.add(StandardMaterial::default()),
+            blanket_free: materials.add(StandardMaterial::default()), models,
         }
+    }
+
+    #[test]
+    fn furniture_shares_models_and_preserves_ghosts_owner_colors_and_lights() {
+        let a = test_assets();
+        let mut world = World::new();
+        let def = BuildId::named("bed").def();
+        let built = spawn_build_look(&mut world.commands(), &a, def, Transform::default(), Pose::default(), &a.blanket_free);
+        let ghost = spawn_build_look(&mut world.commands(), &a, def, Transform::default(), Pose { ghost: true, ..default() }, &a.blanket_free);
+        world.flush();
+        let mut count = 0;
+        for (scene, style) in world.query::<(&WorldAssetRoot, &BuildStyle)>().iter(&world) {
+            assert_eq!(scene.0, a.models[&model_key(&def.model.as_ref().unwrap().path, 0)]);
+            if style.ghost.is_some() {
+                for name in ["Timber", "Owner fabric", "Linen"] {
+                    assert_eq!(style.material(name), Some(a.blueprint.clone()));
+                }
+            } else {
+                assert_eq!(style.material("Owner fabric"), Some(a.blanket_free.clone()));
+                assert!(style.material("Timber").is_none());
+                assert!(style.material("Linen").is_none(), "pillows keep their original linen color");
+            }
+            count += 1;
+        }
+        assert_eq!(count, 2);
+        // Exercise the ready observers with nested glTF surfaces, as the loader supplies them.
+        let scenes: Vec<_> = world.query::<(Entity, &WorldAssetRoot)>().iter(&world).map(|(e, scene)| (e, scene.0.clone())).collect();
+        let mut spawner = bevy::world_serialization::WorldInstanceSpawner::default();
+        for (scene, handle) in scenes {
+            let node = world.spawn(ChildOf(scene)).id();
+            let fabric = world.spawn((ChildOf(node), GltfMaterialName("Owner fabric".into()), MeshMaterial3d::<StandardMaterial>(Handle::default()))).id();
+            let linen = world.spawn((ChildOf(node), GltfMaterialName("Linen".into()), MeshMaterial3d::<StandardMaterial>(Handle::default()))).id();
+            world.trigger(WorldInstanceReady { entity: scene, instance_id: spawner.spawn(handle) });
+            world.flush();
+            let style = world.get::<BuildStyle>(scene).unwrap();
+            assert_eq!(world.get::<MeshMaterial3d<StandardMaterial>>(fabric).unwrap().0, style.ghost.clone().unwrap_or_else(|| a.blanket_free.clone()));
+            assert_eq!(world.get::<MeshMaterial3d<StandardMaterial>>(linen).unwrap().0, style.ghost.clone().unwrap_or_default());
+            let fallback = world.get::<ModelFallback>(scene).unwrap().0;
+            assert_eq!(world.get::<Visibility>(fallback), Some(&Visibility::Hidden));
+        }
+        world.despawn(built);
+        world.despawn(ghost);
+        assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0);
+        let lamp = BuildId::named("lamp");
+        let pos = (3, 3, Z);
+        spawn_feature(&mut world.commands(), &a, PropKey::Blueprint { kind: lamp, dir: 0, over: false, snug: (0.0, 0.0) }, pos, 0.0, a.blanket_free.clone());
+        world.flush();
+        assert_eq!(world.query::<&PointLight>().iter(&world).count(), 0, "previews do not cast light");
+        spawn_feature(&mut world.commands(), &a, PropKey::Built { kind: lamp, dir: 0, owner: None, open: false, links: 0, snug: (0.0, 0.0) }, pos, 0.0, a.blanket_free.clone());
+        world.flush();
+        let light = world.query::<&PointLight>().single(&world).unwrap();
+        assert_eq!(light.intensity, lamp.def().light.as_ref().unwrap().intensity);
+        assert_eq!(light.range, lamp.def().light.as_ref().unwrap().range);
     }
 
     #[test]
@@ -990,6 +1094,68 @@ mod tests {
         }
         assert_eq!(checked, defs().items.len(), "every inventory item has been checked");
     }
+    #[test]
+    fn furniture_models_preserve_placement_storage_and_contact_surfaces() {
+        let mut checked = 0;
+        for def in defs().builds.iter().filter(|d| matches!(d.category.as_str(), "Furniture" | "Wall decor" | "Light")) {
+            let model = def.model.as_ref().expect("all room furnishings have a model");
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(&model.path);
+            let gltf: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let buffer = std::fs::read(path.with_file_name(gltf["buffers"][0]["uri"].as_str().unwrap())).unwrap();
+            let vectors = |index: &serde_json::Value| -> Vec<Vec3> {
+                let accessor = &gltf["accessors"][index.as_u64().unwrap() as usize];
+                let view = &gltf["bufferViews"][accessor["bufferView"].as_u64().unwrap() as usize];
+                let offset = (view["byteOffset"].as_u64().unwrap_or(0) + accessor["byteOffset"].as_u64().unwrap_or(0)) as usize;
+                buffer[offset..offset + accessor["count"].as_u64().unwrap() as usize * 12].chunks_exact(12).map(|v| {
+                    Vec3::new(f32::from_le_bytes(v[0..4].try_into().unwrap()), f32::from_le_bytes(v[4..8].try_into().unwrap()), f32::from_le_bytes(v[8..12].try_into().unwrap()))
+                }).collect()
+            };
+            let pose = model_transform(&model.pose);
+            let mut min = Vec3::splat(f32::INFINITY);
+            let mut max = Vec3::splat(f32::NEG_INFINITY);
+            let mut tops = Vec::new();
+            let mut triangles = 0;
+            for mesh in gltf["meshes"].as_array().unwrap() {
+                for primitive in mesh["primitives"].as_array().unwrap() {
+                    triangles += gltf["accessors"][primitive["indices"].as_u64().unwrap() as usize]["count"].as_u64().unwrap() / 3;
+                    for (p, normal) in vectors(&primitive["attributes"]["POSITION"]).into_iter().zip(vectors(&primitive["attributes"]["NORMAL"])) {
+                        let p = pose.transform_point(p);
+                        assert!(p.is_finite());
+                        min = min.min(p);
+                        max = max.max(p);
+                        if (pose.rotation * normal).y > 0.999 { tops.push(p.y); }
+                    }
+                }
+            }
+            assert!((1..=2000).contains(&triangles), "{}: {triangles} triangles", def.id);
+            let materials = gltf["materials"].as_array().unwrap();
+            assert!(materials.len() <= 5 && gltf.get("textures").is_none());
+            if let Some(name) = &model.owner_material {
+                assert!(materials.iter().any(|m| m["name"].as_str() == Some(name)));
+            }
+            assert!(min.y >= -1e-6 && max.y <= 0.921, "{} stays below the ceiling: {min:?} {max:?}", def.id);
+            assert!(min.x >= -0.5 && max.x <= 0.5 && min.z >= -0.5 && max.z <= 0.5, "{} stays in its tile", def.id);
+            if def.on_wall {
+                assert!(min.z >= -1e-6 && min.x >= -0.1 && max.x <= 0.1, "{} fits a wall slot", def.id);
+            } else {
+                assert!(min.y < 0.01, "{} rests on the floor", def.id);
+                if def.turnable() && def.special != Special::Seat {
+                    let (x, z) = DIRS[(def.front ^ 1) as usize];
+                    let back = Vec3::new(x as f32, 0.0, z as f32);
+                    let actual = (if x > 0 || z > 0 { max } else { min }).dot(back);
+                    let expected = def.parts().iter().map(|p| p.at.0 * back.x + p.at.2 * back.z + if x != 0 { p.size.0 / 2.0 } else { p.size.2 / 2.0 }).fold(0.0f32, f32::max);
+                    assert!((actual - expected).abs() < 0.01, "{} keeps its wall contact: {actual} vs {expected}", def.id);
+                }
+            }
+            let contact = match def.id.as_str() { "chair" => Some(0.325), "bed" => Some(0.33), "table" => Some(0.53), "operating_table" => Some(0.475), _ => None };
+            for height in contact.into_iter().chain(def.storage.iter().flat_map(|s| std::iter::once(s.height).chain(s.lower))) {
+                assert!(tops.iter().any(|y| (y - height).abs() < 0.001), "{} supports its users or stored items at {height}", def.id);
+            }
+            checked += 1;
+        }
+        assert_eq!(checked, 20);
+    }
+
     #[test]
     fn furniture_is_drawn_back_against_the_wall_behind_it() {
         let mut m = Map::flat(8, 8);

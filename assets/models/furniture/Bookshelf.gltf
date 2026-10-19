@@ -1,0 +1,424 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "My World make_rifle.py"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Bookshelf",
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Bookshelf",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2
+        },
+        {
+          "material": 1,
+          "attributes": {
+            "POSITION": 3,
+            "NORMAL": 4
+          },
+          "indices": 5
+        },
+        {
+          "material": 2,
+          "attributes": {
+            "POSITION": 6,
+            "NORMAL": 7
+          },
+          "indices": 8
+        },
+        {
+          "material": 3,
+          "attributes": {
+            "POSITION": 9,
+            "NORMAL": 10
+          },
+          "indices": 11
+        },
+        {
+          "material": 4,
+          "attributes": {
+            "POSITION": 12,
+            "NORMAL": 13
+          },
+          "indices": 14
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Timber",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.19599417930148813,
+          0.10048150993772331,
+          0.039681909478526005,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.87
+      }
+    },
+    {
+      "name": "Gunmetal",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.05925352111727415,
+          0.07323895587840543,
+          0.06838485415816624,
+          1
+        ],
+        "metallicFactor": 0.65,
+        "roughnessFactor": 0.64
+      }
+    },
+    {
+      "name": "Olive panels",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.10653922395082352,
+          0.12596738774090202,
+          0.05925352111727415,
+          1
+        ],
+        "metallicFactor": 0.12,
+        "roughnessFactor": 0.84
+      }
+    },
+    {
+      "name": "Fabric",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.3672464682101826,
+          0.4200332886842154,
+          0.31854677812509186,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.95
+      }
+    },
+    {
+      "name": "Trim",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.27383841647314605,
+          0.30699931892751636,
+          0.23302199930143813,
+          1
+        ],
+        "metallicFactor": 0.45,
+        "roughnessFactor": 0.65
+      }
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 576,
+      "type": "VEC3",
+      "min": [
+        -0.45,
+        0.0,
+        -0.3
+      ],
+      "max": [
+        0.45,
+        0.9,
+        0.0
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 576,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5125,
+      "count": 1008,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.442,
+        0.008000000000000007,
+        -0.3
+      ],
+      "max": [
+        0.442,
+        0.892,
+        -0.27999999999999997
+      ]
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5125,
+      "count": 84,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 288,
+      "type": "VEC3",
+      "min": [
+        -0.383,
+        0.30500000000000005,
+        -0.2375
+      ],
+      "max": [
+        0.28500000000000003,
+        0.7649999999999999,
+        -0.0025000000000000022
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 288,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5125,
+      "count": 504,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 9,
+      "componentType": 5126,
+      "count": 288,
+      "type": "VEC3",
+      "min": [
+        -0.29700000000000004,
+        0.305,
+        -0.2375
+      ],
+      "max": [
+        0.371,
+        0.78,
+        -0.0025000000000000022
+      ]
+    },
+    {
+      "bufferView": 10,
+      "componentType": 5126,
+      "count": 288,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 11,
+      "componentType": 5125,
+      "count": 504,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 12,
+      "componentType": 5126,
+      "count": 864,
+      "type": "VEC3",
+      "min": [
+        -0.3725,
+        0.41725,
+        -0.0035
+      ],
+      "max": [
+        0.3605,
+        0.73275,
+        0.0015
+      ]
+    },
+    {
+      "bufferView": 13,
+      "componentType": 5126,
+      "count": 864,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 14,
+      "componentType": 5125,
+      "count": 1512,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 6912,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 6912,
+      "byteLength": 6912,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 13824,
+      "byteLength": 4032,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 17856,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 18432,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 19008,
+      "byteLength": 336,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 19344,
+      "byteLength": 3456,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 22800,
+      "byteLength": 3456,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 26256,
+      "byteLength": 2016,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 28272,
+      "byteLength": 3456,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 31728,
+      "byteLength": 3456,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 35184,
+      "byteLength": 2016,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 37200,
+      "byteLength": 10368,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 47568,
+      "byteLength": 10368,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 57936,
+      "byteLength": 6048,
+      "target": 34963
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "Bookshelf.bin",
+      "byteLength": 63984
+    }
+  ]
+}

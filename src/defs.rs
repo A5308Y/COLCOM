@@ -400,6 +400,15 @@ fn construction_skill() -> Skill {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct BuildModel {
+    pub path: String,
+    pub pose: ModelPose,
+    /// Material replaced with the bed owner's blanket colour, when present.
+    #[serde(default)]
+    pub owner_material: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct BuildDef {
     pub id: String,
     pub name: String,
@@ -490,6 +499,8 @@ pub struct BuildDef {
     pub heat: f32,
     #[serde(default)]
     pub storage: Option<Storage>,
+    #[serde(default)]
+    pub model: Option<BuildModel>,
     pub look: BuildLook,
     /// Recipes made here (filled in from the recipes); a workbench if any.
     #[serde(skip)]
@@ -1174,6 +1185,12 @@ impl Defs {
             }
         }
         for d in &self.builds {
+            if let Some(model) = &d.model {
+                check_model(&d.id, &model.path, &[&model.pose])?;
+                if !matches!(d.look, BuildLook::Parts(_)) || d.parts().iter().any(|p| p.hinge || p.link.is_some() || p.filled.is_some()) {
+                    return Err(format!("{}: a build model needs static Parts as its loading fallback", d.id));
+                }
+            }
             if d.medical && d.special != Special::Bed {
                 return Err(format!("{}: only beds can be medical", d.id));
             }
@@ -1373,6 +1390,20 @@ mod tests {
         let helmet = &mut d.items[ItemId::named("steel_helmet").index()];
         helmet.apparel.as_mut().unwrap().pieces[0].model.as_mut().unwrap().pose.scale = f32::NAN;
         assert!(d.check().unwrap_err().contains("finite values"));
+    }
+
+    #[test]
+    fn build_models_are_optional_and_require_valid_static_fallbacks() {
+        let legacy: BuildDef = serde_json::from_str(r#"{"id":"legacy","name":"Legacy","category":"Furniture","cost":["wood",1],"work_time":1.0,"passable":false,"look":{"Parts":[]}}"#).unwrap();
+        assert!(legacy.model.is_none());
+        let mut d = Defs::parse(BUILT_IN).unwrap();
+        let bed = BuildId::named("bed").index();
+        d.builds[bed].model.as_mut().unwrap().pose.scale = 0.0;
+        assert!(d.check().unwrap_err().contains("positive scale"));
+        d.builds[bed].model.as_mut().unwrap().pose.scale = 1.0;
+        let BuildLook::Parts(parts) = &mut d.builds[bed].look else { panic!() };
+        parts[0].hinge = true;
+        assert!(d.check().unwrap_err().contains("static Parts"));
     }
 
     #[test]

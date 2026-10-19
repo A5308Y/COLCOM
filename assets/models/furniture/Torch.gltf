@@ -1,0 +1,301 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "My World make_rifle.py"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Torch",
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Torch",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2
+        },
+        {
+          "material": 1,
+          "attributes": {
+            "POSITION": 3,
+            "NORMAL": 4
+          },
+          "indices": 5
+        },
+        {
+          "material": 3,
+          "attributes": {
+            "POSITION": 6,
+            "NORMAL": 7
+          },
+          "indices": 8
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Timber",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.19599417930148813,
+          0.10048150993772331,
+          0.039681909478526005,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.87
+      }
+    },
+    {
+      "name": "Gunmetal",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.05925352111727415,
+          0.07323895587840543,
+          0.06838485415816624,
+          1
+        ],
+        "metallicFactor": 0.65,
+        "roughnessFactor": 0.64
+      }
+    },
+    {
+      "name": "Olive panels",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.10653922395082352,
+          0.12596738774090202,
+          0.05925352111727415,
+          1
+        ],
+        "metallicFactor": 0.12,
+        "roughnessFactor": 0.84
+      }
+    },
+    {
+      "name": "Warm diffuser",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.8688993866725532,
+          0.5225215539683921,
+          0.15487248594976835,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.88
+      },
+      "emissiveFactor": [
+        12,
+        5,
+        1
+      ]
+    },
+    {
+      "name": "Trim",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.27383841647314605,
+          0.30699931892751636,
+          0.23302199930143813,
+          1
+        ],
+        "metallicFactor": 0.45,
+        "roughnessFactor": 0.65
+      }
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.033,
+        0.030000000000000027,
+        -0.03300000000000002
+      ],
+      "max": [
+        0.033,
+        0.75,
+        0.03300000000000002
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.9238795325112868,
+        -1.0,
+        -0.9238795325112868
+      ],
+      "max": [
+        0.9238795325112868,
+        1.0,
+        0.9238795325112868
+      ]
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5125,
+      "count": 84,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 96,
+      "type": "VEC3",
+      "min": [
+        -0.15,
+        -1.0408340855860843e-17,
+        -0.15
+      ],
+      "max": [
+        0.15,
+        0.81,
+        0.15
+      ]
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 96,
+      "type": "VEC3",
+      "min": [
+        -0.923879532511287,
+        -1.0,
+        -0.923879532511287
+      ],
+      "max": [
+        0.9238795325112868,
+        1.0,
+        0.9238795325112868
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5125,
+      "count": 168,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 72,
+      "type": "VEC3",
+      "min": [
+        -0.05238401636242346,
+        0.73,
+        -0.05450607214005205
+      ],
+      "max": [
+        0.06818367684143113,
+        0.9099999999999999,
+        0.05791677410232182
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 72,
+      "type": "VEC3",
+      "min": [
+        -0.9024042860059572,
+        -1.0,
+        -0.979454513029566
+      ],
+      "max": [
+        0.8019750164258698,
+        0.6865302572834716,
+        0.9569931830794498
+      ]
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5125,
+      "count": 102,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 576,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1152,
+      "byteLength": 336,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1488,
+      "byteLength": 1152,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 2640,
+      "byteLength": 1152,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 3792,
+      "byteLength": 672,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 4464,
+      "byteLength": 864,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 5328,
+      "byteLength": 864,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 6192,
+      "byteLength": 408,
+      "target": 34963
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "Torch.bin",
+      "byteLength": 6600
+    }
+  ]
+}

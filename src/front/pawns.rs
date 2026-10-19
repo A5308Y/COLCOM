@@ -3,6 +3,7 @@
 //! until a character is ready or if the models can't load.
 
 use super::characters::{self, Anim, CharacterLibrary, Pose, Rig};
+use super::carry::CarryAnchor;
 use super::input::UiState;
 use super::look::*;
 use super::terrain::{FLOOR_T, LEVEL_H};
@@ -144,9 +145,8 @@ fn spawn_pawn(
     let cap = Transform::from_xyz(0.0, 1.06, -0.03).with_scale(Vec3::new(0.32, 0.22, 0.32));
     commands.spawn(mesh(&a.sphere, hair, cap, figure));
     let weapon = commands.spawn((Transform::default(), Visibility::Hidden, ChildOf(figure))).id();
-    // Carried things are held in front of the chest, by either body.
-    let carry_tf = Transform::from_xyz(0.0, 0.6 * SCALE, 0.32 * SCALE).with_scale(Vec3::splat(0.5));
-    let carry = commands.spawn((carry_tf, Visibility::Hidden, ChildOf(root))).id();
+    // Placement is driven by the palms after the current animation is evaluated.
+    let carry = commands.spawn((Transform::default(), Visibility::Hidden, ChildOf(root))).id();
     let blanket_mat = lit(materials, Rgb(p.color[0], p.color[1], p.color[2]).shade(0.8));
     // Placed at the bed's floor point each frame; the parts are relative to it
     // (bed head towards -Z): a lump over the body, and the blanket's edge
@@ -644,17 +644,20 @@ fn sync_pawns(
             }
         }
 
-        // Figure: legs and arms swing in opposite pairs; armed arms hold the weapon forward.
+        // Carrying also raises the fallback figure's arms to support the stack.
+        let carrying = p.carrying.is_some() && !lying;
         let stride = ((p.x + p.y) * PI * 1.6).sin() * 0.6 * v.swing;
         let swings = [
             (v.legs[0], stride),
             (v.legs[1], -stride),
-            (v.arms[0], if armed { -1.2 } else { -stride * 0.8 }),
-            (v.arms[1], if armed { -1.3 } else { stride * 0.8 }),
+            (v.arms[0], if carrying { -FRAC_PI_2 } else if armed { -1.2 } else { -stride * 0.8 }),
+            (v.arms[1], if carrying { -FRAC_PI_2 } else if armed { -1.3 } else { stride * 0.8 }),
         ];
         for (pivot, angle) in swings {
             if let Ok(mut t) = transforms.get_mut(pivot) {
-                t.rotation = Quat::from_rotation_x(angle);
+                let inward = if carrying && pivot == v.arms[0] { 0.35 }
+                    else if carrying && pivot == v.arms[1] { -0.35 } else { 0.0 };
+                t.rotation = Quat::from_rotation_y(inward) * Quat::from_rotation_x(angle);
             }
         }
         let weapons = [(Some(v.weapon), false), (v.rig_weapon, true)];
@@ -674,6 +677,14 @@ fn sync_pawns(
 
         // Whatever they're carrying, held in front.
         let carried = p.carrying.map(|s| s.kind).filter(|_| !lying);
+        if carried.is_some() {
+            let anchor = rig.as_ref().filter(|_| rig_ready).and_then(|(r, _)| {
+                Some(CarryAnchor::rig(v.root, r.bone("hand_l")?.0, r.bone("hand_r")?.0))
+            }).unwrap_or_else(|| CarryAnchor::figure(v.root, v.arms));
+            commands.entity(v.carry).insert(anchor);
+        } else {
+            commands.entity(v.carry).remove::<CarryAnchor>();
+        }
         if carried != v.carry_kind {
             props::replace_carried_item(&mut commands, &props, v.carry, carried);
             commands.entity(v.carry).insert(if carried.is_some() { Visibility::Inherited } else { Visibility::Hidden });

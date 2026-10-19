@@ -39,8 +39,10 @@ Commit each generated `.gltf` and matching `.bin` together.
 
 Every item definition now names a model. Ground poses center each stack inside a tile and place its
 lowest face just above the surface. Shelves apply their existing display scale. Hauling uses the same
-item scene at half scale in front of the colonist, and removes the previous scene when a stack changes
-or is dropped. Meshes/materials are shared with ground and shelf instances.
+item scene, aligned between the current animated palms after animation is evaluated. Its visible
+bounds determine the grip centre and scale; the display pose and hidden loading fallbacks are taken
+into account. The previous scene is removed when a stack changes or is dropped. Meshes/materials
+are shared with ground and shelf instances.
 
 Clothing follows the same modular system as armor: scene 0 assembles the item; scenes 1/2/3 of
 `SimpleClothes.gltf` and `Parka.gltf` attach Body/SleeveLeft/SleeveRight to `spine_03` and

@@ -297,6 +297,9 @@ harvested and every recipe made.
 - `assets/models/items/`: all remaining resources, components, food, medical supplies, prosthetics
   and clothing in the same faceted style; [asset notes](assets/models/items/README.md). Ground,
   shelf and carried stacks share models; clothing also has pieces attached to character bones.
+- `assets/models/furniture/`: 20 matching beds, tables, seats, storage pieces, lights and wall
+  furnishings; [asset notes](assets/models/furniture/README.md). Models preserve interaction heights,
+  owner-colored blankets and blue construction previews, with shape parts as loading fallbacks.
 - `assets/models/nature/`, `trees/`, `crops/`, `village/`: Quaternius packs converted from OBJ by
   `python3 tools/obj_to_gltf.py` (from `asset-sources/`)
 - `asset-sources/`: the original downloads (FBX, OBJ, Blender files). Not used by the game and not in

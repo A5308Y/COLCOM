@@ -662,6 +662,7 @@ mod tests {
             "models/characters/animations/UAL1_Standard.glb",
         ];
         files.extend(my_world::defs::ItemId::all().filter_map(|kind| kind.def().model.as_ref().map(|model| model.path.as_str())));
+        files.extend(my_world::defs::BuildId::all().filter_map(|kind| kind.def().model.as_ref().map(|model| model.path.as_str())));
         let handles: Vec<Handle<Gltf>> = files.iter().map(|f| app.world().resource::<AssetServer>().load(*f)).collect();
         for _ in 0..2000 {
             app.update();
