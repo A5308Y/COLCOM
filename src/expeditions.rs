@@ -898,21 +898,9 @@ impl World {
         }
     }
 
-    /// A cell at the edge of the map to arrive at.
+    /// A cell at the edge of the map to arrive at (where the colony can be walked to).
     fn edge_spot(&mut self) -> Option<Pos> {
-        let (w, h) = (self.map.w, self.map.h);
-        for _ in 0..200 {
-            let (x, y) = match self.rng.below(4) {
-                0 => (self.rng.below(w), 0),
-                1 => (self.rng.below(w), h - 1),
-                2 => (0, self.rng.below(h)),
-                _ => (w - 1, self.rng.below(h)),
-            };
-            if let Some(z) = self.map.surface(x, y) {
-                return Some((x, y, z));
-            }
-        }
-        None
+        self.random_edge_tile()
     }
 
     /// Expedition `k` is back: its people walk in at the edge, its goods are put down there.

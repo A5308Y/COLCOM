@@ -2,6 +2,7 @@
 
 use crate::defs::ItemId;
 use crate::map::{Feature, Pos, Stack};
+use crate::pathing::bfs;
 use crate::world::World;
 use crate::DAY_LEN;
 use serde::{Deserialize, Serialize};
@@ -107,20 +108,41 @@ impl World {
         self.push_log(format!("Raiders! {} at the edge of the colony, demanding goods.", who));
     }
 
-    fn random_edge_tile(&mut self) -> Option<Pos> {
+    /// A cell at the edge of the map to come in at, from which a colonist can
+    /// be reached on foot: not a pocket closed off by trees, cliffs or water.
+    /// Any edge cell if there are no colonists, or none can be reached.
+    pub(crate) fn random_edge_tile(&mut self) -> Option<Pos> {
         let (w, h) = (self.map.w, self.map.h);
-        for _ in 0..200 {
+        let colonists: Vec<Pos> = self.pawns.iter().filter(|p| p.is_living_colonist()).map(|p| p.pos).collect();
+        let mut fallback = None;
+        let mut checked = 0;
+        for _ in 0..400 {
             let (x, y) = match self.rng.below(4) {
                 0 => (self.rng.below(w), 0),
                 1 => (self.rng.below(w), h - 1),
                 2 => (0, self.rng.below(h)),
                 _ => (w - 1, self.rng.below(h)),
             };
-            if let Some(z) = self.map.surface(x, y) {
-                return Some((x, y, z));
+            let Some(z) = self.map.surface(x, y) else { continue };
+            let at = (x, y, z);
+            if !self.map.passable(at) {
+                continue;
+            }
+            if colonists.is_empty() {
+                return Some(at);
+            }
+            fallback.get_or_insert(at);
+            // A walk from here to someone (a few tries: each is a search of the map).
+            let df = bfs(&self.map, at);
+            if colonists.iter().any(|&c| df.dist(c).is_some()) {
+                return Some(at);
+            }
+            checked += 1;
+            if checked >= 40 {
+                break;
             }
         }
-        None
+        fallback
     }
 
     fn random_event(&mut self) {
@@ -207,6 +229,21 @@ mod tests {
     use super::*;
     use crate::map::FLAT_Z as Z;
     use crate::TICK;
+
+    #[test]
+    fn raiders_and_wanderers_come_in_where_they_can_reach_the_colony() {
+        let mut w = test_world();
+        // A row of trees cuts off the strip along the west edge.
+        for y in 0..24 {
+            let i = w.map.idx((2, y, Z));
+            w.map.set_feature(i, Feature::plant("tree"));
+        }
+        for _ in 0..50 {
+            let at = w.random_edge_tile().unwrap();
+            assert!(at.0 > 2, "never in the cut-off strip: {:?}", at);
+            assert!(w.map.passable(at));
+        }
+    }
 
     fn test_world() -> World {
         let mut w = crate::testing::quiet_world(24, 24, 6);

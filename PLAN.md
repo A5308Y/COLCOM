@@ -963,3 +963,7 @@ real play.
   Under way with decisions, the market and the journal, Factions); alerts for waiting decisions; the
   camera re-centres on a site. Possible later: faction raids by other factions, caravans visiting the
   colony, more varied site maps, a world map.
+- Reachable edge entries (2026-10-19): `World::random_edge_tile` (raids, wanderers, returning
+  expeditions and gifts) only picks a passable edge cell from which a living colonist can be reached on
+  foot (`bfs`, up to 40 tries), so nobody arrives in a pocket closed off by trees, cliffs or water.
+  Falls back to any edge cell if nobody can be reached. Trees stay impassable.
