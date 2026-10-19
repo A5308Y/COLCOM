@@ -145,11 +145,28 @@ class Rifle:
                 self.box((side * .044, .092, z), (.007, .014, .014), 3, bevel=.002)
         return self
 
-    def write(self):
+    def write(self, name="Rifle", out=OUT, pieces=None):
+        """Write one prop, or shared armour meshes with inventory and bone scenes.
+
+        `pieces`: (name, geometry, inventory translation) tuples. Scene zero
+        assembles them; scenes 1..N expose each mesh around its bone origin.
+        """
         blob = bytearray()
         gltf = {"asset": {"version": "2.0", "generator": "My World make_rifle.py"},
-                "scene": 0, "scenes": [{"nodes": [0]}], "nodes": [{"name": "Rifle", "mesh": 0}],
-                "meshes": [{"name": "Rifle", "primitives": []}], "materials": [], "accessors": [], "bufferViews": []}
+                "scene": 0, "scenes": [], "nodes": [],
+                "meshes": [], "materials": [], "accessors": [], "bufferViews": []}
+        if pieces:
+            gltf["nodes"].append({"name": name, "children": list(range(1, len(pieces) + 1))})
+            gltf["scenes"].append({"name": "Stored", "nodes": [0]})
+            for i, (label, _, at) in enumerate(pieces):
+                gltf["nodes"].append({"name": label, "mesh": i, "translation": at})
+            for i, (label, _, _) in enumerate(pieces):
+                gltf["scenes"].append({"name": label, "nodes": [len(gltf["nodes"])]})
+                gltf["nodes"].append({"name": label, "mesh": i})
+        else:
+            pieces = [(name, self, (0, 0, 0))]
+            gltf["scenes"] = [{"nodes": [0]}]
+            gltf["nodes"] = [{"name": name, "mesh": 0}]
 
         def accessor(values, kind, ctype, target):
             while len(blob) % 4:
@@ -165,24 +182,29 @@ class Rifle:
             gltf["accessors"].append(a)
             return len(gltf["accessors"]) - 1
 
-        triangles = 0
-        for i, (name, color, metal, rough) in enumerate(PALETTE):
-            material = {"name": name, "pbrMetallicRoughness": {
+        for i, (material_name, color, metal, rough) in enumerate(PALETTE):
+            material = {"name": material_name, "pbrMetallicRoughness": {
                 "baseColorFactor": [linear(c) for c in color] + [1], "metallicFactor": metal, "roughnessFactor": rough}}
             if i == 4:
                 material["emissiveFactor"] = [.65, .22, .025]
             gltf["materials"].append(material)
-            positions, normals, indices = self.groups[i]
-            gltf["meshes"][0]["primitives"].append({"material": i, "attributes": {
-                "POSITION": accessor(positions, "VEC3", 5126, 34962),
-                "NORMAL": accessor(normals, "VEC3", 5126, 34962)},
-                "indices": accessor(indices, "SCALAR", 5125, 34963)})
-            triangles += len(indices) // 3
-        gltf["buffers"] = [{"uri": "Rifle.bin", "byteLength": len(blob)}]
-        OUT.mkdir(parents=True, exist_ok=True)
-        (OUT / "Rifle.bin").write_bytes(blob)
-        (OUT / "Rifle.gltf").write_text(json.dumps(gltf, indent=2) + "\n")
-        print(f"Rifle: {triangles} triangles, {len(PALETTE)} materials, {len(blob):,} bytes")
+        triangles = 0
+        for label, geometry, _ in pieces:
+            mesh = {"name": label, "primitives": []}
+            for i, (positions, normals, indices) in enumerate(geometry.groups):
+                if not indices:
+                    continue
+                mesh["primitives"].append({"material": i, "attributes": {
+                    "POSITION": accessor(positions, "VEC3", 5126, 34962),
+                    "NORMAL": accessor(normals, "VEC3", 5126, 34962)},
+                    "indices": accessor(indices, "SCALAR", 5125, 34963)})
+                triangles += len(indices) // 3
+            gltf["meshes"].append(mesh)
+        gltf["buffers"] = [{"uri": name + ".bin", "byteLength": len(blob)}]
+        out.mkdir(parents=True, exist_ok=True)
+        (out / (name + ".bin")).write_bytes(blob)
+        (out / (name + ".gltf")).write_text(json.dumps(gltf, indent=2) + "\n")
+        print(f"{name}: {triangles} triangles, {len(PALETTE)} materials, {len(blob):,} bytes")
 
 
 if __name__ == "__main__":

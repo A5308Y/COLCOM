@@ -57,8 +57,6 @@ struct PawnVis {
     dressed: Option<(Vec<ItemId>, bool)>,
     /// Armour pieces on the character's bones.
     armor: Vec<Entity>,
-    /// The figure's breastplate and helmet (shown while the character isn't).
-    figure_armor: [Entity; 2],
     carry_kind: Option<ItemId>,
     dead: bool,
     yaw: f32,
@@ -88,7 +86,6 @@ struct PawnAssets {
     arm: Handle<Mesh>,
     sphere: Handle<Mesh>,
     cube: Handle<Mesh>,
-    metal: Handle<StandardMaterial>,
     wood: Handle<StandardMaterial>,
 }
 
@@ -108,7 +105,6 @@ fn setup(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut materials
         sphere: meshes.add(Sphere::new(0.5)),
         cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
         cylinder: meshes.add(Cylinder::new(0.5, 1.0)),
-        metal: lit(&mut materials, METAL),
         wood: lit(&mut materials, WOOD),
     });
 }
@@ -152,13 +148,6 @@ fn spawn_pawn(
     let cap = Transform::from_xyz(0.0, 1.06, -0.03).with_scale(Vec3::new(0.32, 0.22, 0.32));
     commands.spawn(mesh(&a.sphere, hair, cap, figure));
     let weapon = commands.spawn((Transform::default(), Visibility::Hidden, ChildOf(figure))).id();
-    // Armour on the figure: a shell over the torso, a cap over the head.
-    let plate = Transform::from_xyz(0.0, 0.6, 0.0).with_scale(Vec3::new(1.12, 0.9, 1.12));
-    let cap = Transform::from_xyz(0.0, 1.07, 0.0).with_scale(Vec3::new(0.34, 0.24, 0.34));
-    let figure_armor = [
-        commands.spawn((mesh(&a.torso, a.metal.clone(), plate, figure), Visibility::Hidden)).id(),
-        commands.spawn((mesh(&a.sphere, a.metal.clone(), cap, figure), Visibility::Hidden)).id(),
-    ];
     // Carried things are held in front of the chest, by either body.
     let carry_tf = Transform::from_xyz(0.0, 0.6 * SCALE, 0.28 * SCALE).with_scale(Vec3::splat(0.24 * SCALE));
     let carry = commands.spawn((mesh(&a.cube, a.wood.clone(), carry_tf, root), Visibility::Hidden)).id();
@@ -193,7 +182,6 @@ fn spawn_pawn(
         weapon_kind: None,
         dressed: None,
         armor: Vec::new(),
-        figure_armor,
         carry_kind: None,
         dead: false,
         yaw: 0.0,
@@ -230,12 +218,28 @@ pub(super) fn equip_visual(commands: &mut Commands, props: &PropAssets, root: En
             characters::model_hand_pose(pose)
         } else {
             let h = &kind.def().weapon.as_ref().unwrap().held;
-            // The old figure's grip is near the rear of its single weapon part.
-            Transform::from_xyz(h.at.0, h.at.1, h.at.2 - h.size.2 / 2.0 + 0.1)
+            let old = props::part_transform(h);
+            let axis = if old.scale.y > old.scale.z && old.scale.y > old.scale.x {
+                Vec3::Y * old.scale.y
+            } else {
+                Vec3::Z * old.scale.z
+            };
+            let at = old.translation - old.rotation * axis.normalize() * (axis.length() / 2.0 - 0.1).max(0.0);
+            Transform::from_translation(at)
                 .with_scale(Vec3::splat(characters::RIG_SCALE / SCALE)) * pose
         };
         props::attach_item_model(commands, props, kind, root, tf, fallback);
     }
+}
+
+/// A suit's integrated helmet and separate headgear can occupy the same bone.
+/// Draw the more protective one so their shells cannot overlap and flicker.
+fn worn_pieces(apparel: &[ItemId]) -> Vec<&'static WornPiece> {
+    let head = apparel.iter().filter(|k| k.def().apparel.as_ref().is_some_and(|a| a.pieces.iter().any(|p| p.bone == "Head")))
+        .max_by(|a, b| a.def().apparel.as_ref().unwrap().armor.total_cmp(&b.def().apparel.as_ref().unwrap().armor));
+    apparel.iter().flat_map(|kind| {
+        kind.def().apparel.iter().flat_map(|a| &a.pieces).filter(move |piece| piece.bone != "Head" || head == Some(kind))
+    }).collect()
 }
 
 /// Direction the pawn should face when not moving: the nearest enemy in a
@@ -443,12 +447,19 @@ fn sync_pawns(
             for e in v.armor.drain(..) {
                 commands.entity(e).despawn();
             }
-            let pieces: Vec<&WornPiece> =
-                p.apparel.iter().filter_map(|a| a.def().apparel.as_ref()).flat_map(|a| &a.pieces).collect();
-            for (e, bone) in v.figure_armor.into_iter().zip(["spine_03", "Head"]) {
-                if let Ok(mut vis) = visibility.get_mut(e) {
-                    *vis = if pieces.iter().any(|w| w.bone == bone) { Visibility::Inherited } else { Visibility::Hidden };
-                }
+            let pieces = worn_pieces(&p.apparel);
+            for piece in &pieces {
+                let (parent, at, turn) = match piece.bone.as_str() {
+                    "spine_03" => (v.figure, Vec3::new(0.0, 0.62, 0.0), Quat::IDENTITY),
+                    "Head" => (v.figure, Vec3::new(0.0, 0.90, 0.0), Quat::IDENTITY),
+                    "upperarm_l" => (v.arms[1], Vec3::ZERO, Quat::from_rotation_z(-FRAC_PI_2)),
+                    "upperarm_r" => (v.arms[0], Vec3::ZERO, Quat::from_rotation_z(FRAC_PI_2)),
+                    _ => continue,
+                };
+                let tf = Transform::from_translation(at).with_rotation(turn).with_scale(Vec3::splat(characters::RIG_SCALE / SCALE));
+                let e = props::spawn_worn(&mut commands, &props, tf, piece);
+                commands.entity(e).insert(ChildOf(parent));
+                v.armor.push(e);
             }
             if let Some((r, ..)) = rig.as_ref().filter(|_| rig_ready) {
                 for piece in &pieces {
@@ -457,7 +468,7 @@ fn sync_pawns(
                         continue;
                     };
                     // Undo the bone's turn at rest, so the parts sit in the character's own frame.
-                    let e = props::spawn_worn(&mut commands, &props, rest.inverse(), &piece.parts, piece.cloth);
+                    let e = props::spawn_worn(&mut commands, &props, Transform::from_rotation(rest.inverse()), piece);
                     commands.entity(e).insert(ChildOf(bone));
                     v.armor.push(e);
                 }
@@ -685,6 +696,23 @@ fn sync_pawns(
 mod tests {
     use super::*;
     use my_world::map::{Feature, FLAT_Z as Z};
+
+    #[test]
+    fn integrated_helmets_do_not_overlap_separate_headgear() {
+        let powered = ItemId::named("powered_armor");
+        let helmet = ItemId::named("steel_helmet");
+        let hat = ItemId::named("wool_hat");
+        for apparel in [vec![powered, helmet], vec![helmet, powered], vec![hat, powered]] {
+            let pieces = worn_pieces(&apparel);
+            let heads: Vec<_> = pieces.iter().filter(|p| p.bone == "Head").collect();
+            assert_eq!(heads.len(), 1);
+            assert!(heads[0].model.as_ref().unwrap().path.ends_with("PoweredArmor.gltf"));
+            assert_eq!(pieces.len(), 4, "body and both shoulders are still present");
+        }
+        let pieces = worn_pieces(&[ItemId::named("steel_armor"), helmet]);
+        assert_eq!(pieces.iter().filter(|p| p.bone == "Head").count(), 1);
+        assert!(pieces.iter().any(|p| p.model.as_ref().is_some_and(|m| m.path.ends_with("SteelHelmet.gltf"))));
+    }
 
     #[test]
     fn people_on_stairs_walk_up_the_steps() {

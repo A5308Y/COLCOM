@@ -1,0 +1,387 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "My World make_rifle.py"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Stored",
+      "nodes": [
+        0
+      ]
+    },
+    {
+      "name": "Helmet",
+      "nodes": [
+        2
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "SteelHelmet",
+      "children": [
+        1
+      ]
+    },
+    {
+      "name": "Helmet",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Helmet",
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Helmet",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2
+        },
+        {
+          "material": 1,
+          "attributes": {
+            "POSITION": 3,
+            "NORMAL": 4
+          },
+          "indices": 5
+        },
+        {
+          "material": 2,
+          "attributes": {
+            "POSITION": 6,
+            "NORMAL": 7
+          },
+          "indices": 8
+        },
+        {
+          "material": 4,
+          "attributes": {
+            "POSITION": 9,
+            "NORMAL": 10
+          },
+          "indices": 11
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Olive ceramic",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.10653922395082352,
+          0.12596738774090202,
+          0.05925352111727415,
+          1
+        ],
+        "metallicFactor": 0.12,
+        "roughnessFactor": 0.82
+      }
+    },
+    {
+      "name": "Parkerized steel",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.05087608817155679,
+          0.06372379528489175,
+          0.06838485415816624,
+          1
+        ],
+        "metallicFactor": 0.72,
+        "roughnessFactor": 0.63
+      }
+    },
+    {
+      "name": "Charcoal polymer",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.01341174889765847,
+          0.017389102368488736,
+          0.017389102368488736,
+          1
+        ],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.92
+      }
+    },
+    {
+      "name": "Exposed edges",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.19599417930148813,
+          0.21404114048223255,
+          0.1788675039555289,
+          1
+        ],
+        "metallicFactor": 0.65,
+        "roughnessFactor": 0.67
+      }
+    },
+    {
+      "name": "Amber optic",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.7874122893956174,
+          0.18731666848765954,
+          0.01341174889765847,
+          1
+        ],
+        "metallicFactor": 0.15,
+        "roughnessFactor": 0.4
+      },
+      "emissiveFactor": [
+        0.65,
+        0.22,
+        0.025
+      ]
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 200,
+      "type": "VEC3",
+      "min": [
+        -0.16449999999999998,
+        0.0665,
+        -0.167
+      ],
+      "max": [
+        0.16449999999999998,
+        0.296,
+        0.147
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 200,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5125,
+      "count": 330,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 144,
+      "type": "VEC3",
+      "min": [
+        -0.15849999999999997,
+        0.064,
+        -0.0655
+      ],
+      "max": [
+        0.15849999999999997,
+        0.176,
+        0.1635
+      ]
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 144,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5125,
+      "count": 252,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 144,
+      "type": "VEC3",
+      "min": [
+        -0.167,
+        0.1305,
+        -0.17450000000000002
+      ],
+      "max": [
+        0.167,
+        0.23299999999999998,
+        0.016
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 144,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5125,
+      "count": 252,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 9,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.10250000000000001,
+        0.1535,
+        0.1635
+      ],
+      "max": [
+        -0.0675,
+        0.1625,
+        0.17250000000000001
+      ]
+    },
+    {
+      "bufferView": 10,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 11,
+      "componentType": 5125,
+      "count": 84,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 2400,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 2400,
+      "byteLength": 2400,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 4800,
+      "byteLength": 1320,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 6120,
+      "byteLength": 1728,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 7848,
+      "byteLength": 1728,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 9576,
+      "byteLength": 1008,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 10584,
+      "byteLength": 1728,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 12312,
+      "byteLength": 1728,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 14040,
+      "byteLength": 1008,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 15048,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 15624,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 16200,
+      "byteLength": 336,
+      "target": 34963
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "SteelHelmet.bin",
+      "byteLength": 16536
+    }
+  ]
+}

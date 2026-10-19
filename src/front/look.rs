@@ -56,7 +56,6 @@ pub const QUARRY: Rgb = Rgb(0.95, 0.7, 0.35);
 pub const BLOOD: Rgb = Rgb(0.45, 0.03, 0.04);
 
 pub const WOOD: Rgb = Rgb(0.55, 0.37, 0.2);
-pub const METAL: Rgb = Rgb(0.25, 0.26, 0.28);
 
 /// Stable pseudo-random value in [0, 1) for a tile, so decoration doesn't flicker.
 pub fn hash(x: i32, y: i32, salt: u32) -> f32 {

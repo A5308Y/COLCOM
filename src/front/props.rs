@@ -13,7 +13,7 @@ use super::tile_center;
 use bevy::prelude::*;
 use bevy::gltf::GltfAssetLabel;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot, WorldInstanceReady};
-use my_world::defs::{defs, BuildId, BuildLook, ItemId, ModelPose, Part, PlantId, Shape, Special, Storage};
+use my_world::defs::{defs, BuildId, BuildLook, ItemId, ModelPose, Part, PlantId, Shape, Special, Storage, WornPiece};
 use my_world::map::{Feature, Map, Pos, DIRS};
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::{FRAC_PI_2, TAU};
@@ -149,6 +149,15 @@ fn setup_assets(
         alpha_mode: AlphaMode::Blend,
         ..default()
     });
+    let mut models = HashMap::new();
+    for item in &d.items {
+        let stored = item.model.iter().map(|model| (model.path.as_str(), 0));
+        let worn = item.apparel.iter().flat_map(|apparel| &apparel.pieces)
+            .filter_map(|piece| piece.model.as_ref()).map(|model| (model.path.as_str(), model.scene));
+        for (path, scene) in stored.chain(worn) {
+            models.entry(model_key(path, scene)).or_insert_with(|| server.load(GltfAssetLabel::Scene(scene).from_asset(path.to_string())));
+        }
+    }
     let assets = PropAssets {
         cube: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
         sphere: meshes.add(Sphere::new(0.5)),
@@ -158,9 +167,7 @@ fn setup_assets(
         metals,
         blueprint,
         blanket_free: lit(&mut materials, Rgb(0.55, 0.58, 0.62)),
-        models: d.items.iter().filter_map(|item| item.model.as_ref()).map(|model| {
-            (model.path.clone(), server.load(GltfAssetLabel::Scene(0).from_asset(model.path.clone())))
-        }).collect(),
+        models,
     };
     commands.insert_resource(assets);
 }
@@ -638,6 +645,10 @@ pub fn model_transform(pose: &ModelPose) -> Transform {
 #[derive(Component)]
 struct ModelFallback(Entity);
 
+fn model_key(path: &str, scene: usize) -> String {
+    format!("{path}#Scene{scene}")
+}
+
 /// Keep the cheap shape visible until this particular scene instance is ready.
 pub fn attach_item_model(
     commands: &mut Commands,
@@ -648,8 +659,12 @@ pub fn attach_item_model(
     fallback: Entity,
 ) {
     let Some(model) = kind.def().model.as_ref() else { return };
+    attach_model(commands, a.models[&model_key(&model.path, 0)].clone(), parent, transform, fallback);
+}
+
+fn attach_model(commands: &mut Commands, model: Handle<WorldAsset>, parent: Entity, transform: Transform, fallback: Entity) {
     commands.spawn((
-        WorldAssetRoot(a.models[&model.path].clone()),
+        WorldAssetRoot(model),
         transform,
         Visibility::default(),
         ChildOf(parent),
@@ -679,17 +694,22 @@ fn spawn_item_look(commands: &mut Commands, a: &PropAssets, kind: ItemId, transf
 /// Worn apparel: `parts` (in metres from the bone, in the character's own
 /// frame) under a root turned by `turn` (undoing the bone's own rest turn),
 /// in polished metal (armour) or plain colours (`cloth`: a parka, a hat).
-pub fn spawn_worn(commands: &mut Commands, a: &PropAssets, turn: Quat, parts: &[Part], cloth: bool) -> Entity {
-    let mut e = commands.spawn((Transform::from_rotation(turn), Visibility::default()));
-    e.with_children(|c| {
-        for p in parts {
+pub fn spawn_worn(commands: &mut Commands, a: &PropAssets, transform: Transform, piece: &WornPiece) -> Entity {
+    let root = commands.spawn((transform, Visibility::default())).id();
+    let mut fallback = commands.spawn((Transform::default(), Visibility::default(), ChildOf(root)));
+    fallback.with_children(|c| {
+        for p in &piece.parts {
             let t = part_transform(p);
-            let metal = a.metals.get(&p.color).filter(|_| !cloth);
+            let metal = a.metals.get(&p.color).filter(|_| !piece.cloth);
             let mat = metal.cloned().unwrap_or_else(|| a.paint(&p.color));
             c.spawn((Mesh3d(a.mesh(p.shape).clone()), MeshMaterial3d(mat), t));
         }
     });
-    e.id()
+    let fallback = fallback.id();
+    if let Some(model) = &piece.model {
+        attach_model(commands, a.models[&model_key(&model.path, model.scene)].clone(), root, model_transform(&model.pose), fallback);
+    }
+    root
 }
 
 fn spawn_feature(
@@ -795,13 +815,29 @@ mod tests {
     use super::*;
     use my_world::map::FLAT_Z as Z;
 
+    fn test_assets() -> PropAssets {
+        let mut scenes = Assets::<WorldAsset>::default();
+        let mut models = HashMap::new();
+        for kind in ItemId::all() {
+            let def = kind.def();
+            if let Some(model) = &def.model {
+                models.insert(model_key(&model.path, 0), scenes.add(WorldAsset::new(World::new())));
+            }
+            for piece in def.apparel.iter().flat_map(|a| &a.pieces) {
+                if let Some(model) = &piece.model {
+                    models.insert(model_key(&model.path, model.scene), scenes.add(WorldAsset::new(World::new())));
+                }
+            }
+        }
+        PropAssets {
+            cube: Handle::default(), sphere: Handle::default(), cylinder: Handle::default(), cone: Handle::default(),
+            paints: HashMap::new(), metals: HashMap::new(), blueprint: Handle::default(), blanket_free: Handle::default(), models,
+        }
+    }
+
     #[test]
     fn item_models_share_handles_and_equipping_removes_old_children() {
-        let a = PropAssets {
-            cube: Handle::default(), sphere: Handle::default(), cylinder: Handle::default(), cone: Handle::default(),
-            paints: HashMap::new(), metals: HashMap::new(), blueprint: Handle::default(), blanket_free: Handle::default(),
-            models: HashMap::from([("models/weapons/Rifle.gltf".into(), Handle::default())]),
-        };
+        let a = test_assets();
         let mut world = World::new();
         let rifle = ItemId::named("rifle");
         let held = world.spawn((Transform::default(), Visibility::Hidden)).id();
@@ -818,47 +854,111 @@ mod tests {
             assert_eq!(world.get::<Visibility>(fallback.0), Some(&Visibility::Inherited), "fallback stays visible until loaded");
         }
         assert_eq!(world.get::<Visibility>(held), Some(&Visibility::Hidden), "equipping preserves visibility");
-        let old_children: Vec<_> = world.get::<Children>(held).unwrap().iter().collect();
-        super::super::pawns::equip_visual(&mut world.commands(), &a, held, Some(ItemId::named("pistol")), true);
-        world.flush();
-        assert!(old_children.iter().all(|e| world.get_entity(*e).is_err()));
-        assert_eq!(world.get::<Children>(held).unwrap().len(), 1, "pistol uses its original shape");
-        assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 1, "only the stored rifle remains");
+        for kind in ItemId::all().filter(|k| k.def().weapon.is_some()) {
+            for in_hand in [true, false] {
+                let old_children: Vec<_> = world.get::<Children>(held).unwrap().iter().collect();
+                super::super::pawns::equip_visual(&mut world.commands(), &a, held, Some(kind), in_hand);
+                world.flush();
+                assert!(old_children.iter().all(|e| world.get_entity(*e).is_err()));
+                assert_eq!(world.get::<Children>(held).unwrap().len(), 2, "a model and fallback for {kind:?}");
+                assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 2, "only stored and equipped models remain");
+            }
+        }
         super::super::pawns::equip_visual(&mut world.commands(), &a, held, None, true);
         world.flush();
         assert!(world.get::<Children>(held).is_none_or(|c| c.is_empty()), "unequipping removes the visual");
         world.despawn(stored);
         assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0, "despawning removes the scene too");
+        let wood = spawn_item_look(&mut world.commands(), &a, ItemId::named("wood"), Transform::default());
+        world.flush();
+        assert!(world.get::<Children>(wood).is_some());
+        assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0, "ordinary items still use shapes");
     }
 
     #[test]
-    fn rifle_asset_fits_on_the_floor_and_stays_within_budget() {
-        let model = ItemId::named("rifle").def().model.as_ref().unwrap();
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(&model.path);
-        let gltf: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        let buffer = std::fs::read(path.with_file_name(gltf["buffers"][0]["uri"].as_str().unwrap())).unwrap();
-        let pose = model_transform(&model.ground);
-        let mut triangles = 0;
-        let mut min = Vec3::splat(f32::INFINITY);
-        let mut max = Vec3::splat(f32::NEG_INFINITY);
-        for primitive in gltf["meshes"][0]["primitives"].as_array().unwrap() {
-            let positions = &gltf["accessors"][primitive["attributes"]["POSITION"].as_u64().unwrap() as usize];
-            let view = &gltf["bufferViews"][positions["bufferView"].as_u64().unwrap() as usize];
-            let offset = view["byteOffset"].as_u64().unwrap() as usize;
-            for vertex in buffer[offset..offset + positions["count"].as_u64().unwrap() as usize * 12].chunks_exact(12) {
-                let xyz: Vec<f32> = vertex.chunks_exact(4).map(|v| f32::from_le_bytes(v.try_into().unwrap())).collect();
-                let p = pose.transform_point(Vec3::new(xyz[0], xyz[1], xyz[2]));
-                assert!(p.is_finite());
-                min = min.min(p);
-                max = max.max(p);
+    fn worn_armor_scenes_keep_fallbacks_and_despawn_with_their_owner() {
+        let a = test_assets();
+        let mut world = World::new();
+        for kind in ItemId::all().filter(|k| k.def().apparel.as_ref().is_some_and(|a| a.armor >= 0.1)) {
+            let owner = world.spawn((Transform::default(), Visibility::default())).id();
+            let pieces = &kind.def().apparel.as_ref().unwrap().pieces;
+            for piece in pieces {
+                let at = Transform::from_rotation(Quat::from_rotation_x(0.3));
+                let root = spawn_worn(&mut world.commands(), &a, at, piece);
+                world.commands().entity(root).insert(ChildOf(owner));
             }
-            triangles += gltf["accessors"][primitive["indices"].as_u64().unwrap() as usize]["count"].as_u64().unwrap() / 3;
+            world.flush();
+            assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), pieces.len());
+            for fallback in world.query::<&ModelFallback>().iter(&world) {
+                assert_eq!(world.get::<Visibility>(fallback.0), Some(&Visibility::Inherited));
+            }
+            world.despawn(owner);
+            assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0, "{kind:?} leaves no old bone pieces");
         }
-        assert!((1000..=2000).contains(&triangles), "{triangles} triangles");
-        assert!(gltf["materials"].as_array().unwrap().len() <= 5);
-        assert!(gltf.get("textures").is_none());
-        assert!(min.y >= 0.0 && min.y < 0.01, "rests above the surface: {min:?}");
-        assert!(min.x >= -0.5 && max.x <= 0.5, "fits inside one tile: {min:?} {max:?}");
+        let cloth = &ItemId::named("parka").def().apparel.as_ref().unwrap().pieces[0];
+        spawn_worn(&mut world.commands(), &a, Transform::default(), cloth);
+        world.flush();
+        assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0, "ordinary clothing keeps its shape visuals");
+        assert!(world.query::<&Mesh3d>().iter(&world).count() > 0);
+    }
+
+    #[test]
+    fn gear_assets_fit_on_the_floor_and_stay_within_budget() {
+        let mut checked = 0;
+        for kind in ItemId::all().filter(|k| k.def().weapon.is_some() || k.def().apparel.as_ref().is_some_and(|a| a.armor >= 0.1)) {
+            let model = kind.def().model.as_ref().expect("all weapons and armor have a model");
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(&model.path);
+            let gltf: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let buffer = std::fs::read(path.with_file_name(gltf["buffers"][0]["uri"].as_str().unwrap())).unwrap();
+            let pose = model_transform(&model.ground);
+            let mut triangles = 0;
+            for mesh in gltf["meshes"].as_array().unwrap() {
+                for primitive in mesh["primitives"].as_array().unwrap() {
+                    triangles += gltf["accessors"][primitive["indices"].as_u64().unwrap() as usize]["count"].as_u64().unwrap() / 3;
+                }
+            }
+            let mut min = Vec3::splat(f32::INFINITY);
+            let mut max = Vec3::splat(f32::NEG_INFINITY);
+            let mut stack: Vec<_> = gltf["scenes"][0]["nodes"].as_array().unwrap().iter().map(|n| (n.as_u64().unwrap() as usize, Vec3::ZERO)).collect();
+            let mut stored_meshes = HashSet::new();
+            while let Some((index, offset)) = stack.pop() {
+                let node = &gltf["nodes"][index];
+                let at = node["translation"].as_array().map_or(Vec3::ZERO, |v| Vec3::new(v[0].as_f64().unwrap() as f32, v[1].as_f64().unwrap() as f32, v[2].as_f64().unwrap() as f32)) + offset;
+                for child in node["children"].as_array().into_iter().flatten() {
+                    stack.push((child.as_u64().unwrap() as usize, at));
+                }
+                let Some(mesh) = node["mesh"].as_u64() else { continue };
+                stored_meshes.insert(mesh);
+                for primitive in gltf["meshes"][mesh as usize]["primitives"].as_array().unwrap() {
+                    let positions = &gltf["accessors"][primitive["attributes"]["POSITION"].as_u64().unwrap() as usize];
+                    let view = &gltf["bufferViews"][positions["bufferView"].as_u64().unwrap() as usize];
+                    let offset = view["byteOffset"].as_u64().unwrap() as usize;
+                    for vertex in buffer[offset..offset + positions["count"].as_u64().unwrap() as usize * 12].chunks_exact(12) {
+                        let xyz: Vec<f32> = vertex.chunks_exact(4).map(|v| f32::from_le_bytes(v.try_into().unwrap())).collect();
+                        let p = pose.transform_point(Vec3::new(xyz[0], xyz[1], xyz[2]) + at);
+                        assert!(p.is_finite());
+                        min = min.min(p);
+                        max = max.max(p);
+                    }
+                }
+            }
+            assert!((1..=2000).contains(&triangles), "{kind:?}: {triangles} triangles");
+            assert!(gltf["materials"].as_array().unwrap().len() <= 5);
+            assert!(gltf.get("textures").is_none());
+            assert!(min.y >= -1e-6 && min.y < 0.01, "{kind:?} rests above the surface: {min:?}");
+            assert!(min.x >= -0.5 && max.x <= 0.5 && min.z >= -0.5 && max.z <= 0.5, "{kind:?} fits inside one tile: {min:?} {max:?}");
+            for piece in kind.def().apparel.iter().flat_map(|a| &a.pieces) {
+                let worn = piece.model.as_ref().expect("armor has a model on every bone piece");
+                assert_eq!(worn.path, model.path, "stored and worn share one glTF and its materials");
+                let nodes = gltf["scenes"][worn.scene]["nodes"].as_array().expect("a bone scene exists");
+                for n in nodes {
+                    let node = &gltf["nodes"][n.as_u64().unwrap() as usize];
+                    assert!(stored_meshes.contains(&node["mesh"].as_u64().unwrap()), "bone pieces reuse the stored meshes");
+                }
+            }
+            checked += 1;
+        }
+        assert_eq!(checked, 9, "six weapons and three armor items");
     }
     #[test]
     fn furniture_is_drawn_back_against_the_wall_behind_it() {

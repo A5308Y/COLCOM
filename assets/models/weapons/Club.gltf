@@ -1,0 +1,365 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "My World make_rifle.py"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Club",
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Club",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2
+        },
+        {
+          "material": 1,
+          "attributes": {
+            "POSITION": 3,
+            "NORMAL": 4
+          },
+          "indices": 5
+        },
+        {
+          "material": 2,
+          "attributes": {
+            "POSITION": 6,
+            "NORMAL": 7
+          },
+          "indices": 8
+        },
+        {
+          "material": 3,
+          "attributes": {
+            "POSITION": 9,
+            "NORMAL": 10
+          },
+          "indices": 11
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Olive ceramic",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.10653922395082352,
+          0.12596738774090202,
+          0.05925352111727415,
+          1
+        ],
+        "metallicFactor": 0.12,
+        "roughnessFactor": 0.82
+      }
+    },
+    {
+      "name": "Parkerized steel",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.05087608817155679,
+          0.06372379528489175,
+          0.06838485415816624,
+          1
+        ],
+        "metallicFactor": 0.72,
+        "roughnessFactor": 0.63
+      }
+    },
+    {
+      "name": "Charcoal polymer",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.01341174889765847,
+          0.017389102368488736,
+          0.017389102368488736,
+          1
+        ],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.92
+      }
+    },
+    {
+      "name": "Exposed edges",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.19599417930148813,
+          0.21404114048223255,
+          0.1788675039555289,
+          1
+        ],
+        "metallicFactor": 0.65,
+        "roughnessFactor": 0.67
+      }
+    },
+    {
+      "name": "Amber optic",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.7874122893956174,
+          0.18731666848765954,
+          0.01341174889765847,
+          1
+        ],
+        "metallicFactor": 0.15,
+        "roughnessFactor": 0.4
+      },
+      "emissiveFactor": [
+        0.65,
+        0.22,
+        0.025
+      ]
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 288,
+      "type": "VEC3",
+      "min": [
+        -0.0525,
+        -0.08600000000000001,
+        -0.0475
+      ],
+      "max": [
+        0.0525,
+        0.5295000000000001,
+        0.0475
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 288,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5125,
+      "count": 504,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 248,
+      "type": "VEC3",
+      "min": [
+        -0.0605,
+        -0.1275,
+        -0.0515
+      ],
+      "max": [
+        0.0605,
+        0.5395,
+        0.0515
+      ]
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 248,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5125,
+      "count": 444,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 432,
+      "type": "VEC3",
+      "min": [
+        -0.0675,
+        -0.105,
+        -0.0335
+      ],
+      "max": [
+        0.0675,
+        0.477,
+        0.0335
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 432,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5125,
+      "count": 756,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 9,
+      "componentType": 5126,
+      "count": 40,
+      "type": "VEC3",
+      "min": [
+        -0.0605,
+        -0.10750000000000001,
+        -0.0515
+      ],
+      "max": [
+        0.0605,
+        0.5395,
+        0.0515
+      ]
+    },
+    {
+      "bufferView": 10,
+      "componentType": 5126,
+      "count": 40,
+      "type": "VEC3",
+      "min": [
+        -0.707106781186548,
+        0.707106781186547,
+        0.0
+      ],
+      "max": [
+        0.707106781186548,
+        0.7071067811865519,
+        0.0
+      ]
+    },
+    {
+      "bufferView": 11,
+      "componentType": 5125,
+      "count": 60,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 3456,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 3456,
+      "byteLength": 3456,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 6912,
+      "byteLength": 2016,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 8928,
+      "byteLength": 2976,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 11904,
+      "byteLength": 2976,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 14880,
+      "byteLength": 1776,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 16656,
+      "byteLength": 5184,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 21840,
+      "byteLength": 5184,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 27024,
+      "byteLength": 3024,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 30048,
+      "byteLength": 480,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 30528,
+      "byteLength": 480,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 31008,
+      "byteLength": 240,
+      "target": 34963
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "Club.bin",
+      "byteLength": 31248
+    }
+  ]
+}

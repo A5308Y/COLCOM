@@ -220,12 +220,23 @@ pub struct ApparelDef {
 pub struct WornPiece {
     pub bone: String,
     pub parts: Vec<Part>,
+    /// A shared scene authored around this bone; parts remain the loading fallback.
+    #[serde(default)]
+    pub model: Option<WornModel>,
     /// Hair is hidden under it (helmets).
     #[serde(default)]
     pub hides_hair: bool,
     /// Drawn as cloth rather than polished metal (a parka, a hat).
     #[serde(default)]
     pub cloth: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct WornModel {
+    pub path: String,
+    /// Scene zero is the stored item; scenes 1..N are separate bone pieces.
+    pub scene: usize,
+    pub pose: ModelPose,
 }
 
 /// A replacement for a lost limb, fitted by a doctor at an operating table.
@@ -1111,6 +1122,18 @@ impl Defs {
                 None => Ok(()),
             }
         };
+        let check_model = |whose: &str, path: &str, poses: &[&ModelPose]| -> Result<(), String> {
+            if path.is_empty() || !path.ends_with(".gltf") && !path.ends_with(".glb") {
+                return Err(format!("{}: model needs a glTF asset path", whose));
+            }
+            for pose in poses {
+                let values = [pose.at.0, pose.at.1, pose.at.2, pose.turn.0, pose.turn.1, pose.turn.2, pose.scale];
+                if pose.scale <= 0.0 || values.iter().any(|v| !v.is_finite()) {
+                    return Err(format!("{}: model transforms need finite values and positive scale", whose));
+                }
+            }
+            Ok(())
+        };
         for d in &self.items {
             if !known(&d.color) || d.color == "owner" {
                 return Err(format!("{}: no colour \"{}\" in the palette", d.id, d.color));
@@ -1120,15 +1143,7 @@ impl Defs {
             }
             parts(&d.id, &d.look)?;
             if let Some(model) = &d.model {
-                if model.path.is_empty() || !model.path.ends_with(".gltf") && !model.path.ends_with(".glb") {
-                    return Err(format!("{}: model needs a glTF asset path", d.id));
-                }
-                for pose in [&model.ground, &model.held] {
-                    let values = [pose.at.0, pose.at.1, pose.at.2, pose.turn.0, pose.turn.1, pose.turn.2, pose.scale];
-                    if pose.scale <= 0.0 || values.iter().any(|v| !v.is_finite()) {
-                        return Err(format!("{}: model transforms need finite values and positive scale", d.id));
-                    }
-                }
+                check_model(&d.id, &model.path, &[&model.ground, &model.held])?;
             }
             if d.pods.is_some_and(|(lo, hi)| lo == 0 || lo > hi) {
                 return Err(format!("{}: pods need 1 <= min <= max", d.id));
@@ -1141,6 +1156,9 @@ impl Defs {
             }
             for piece in d.apparel.iter().flat_map(|a| &a.pieces) {
                 parts(&d.id, &piece.parts)?;
+                if let Some(model) = &piece.model {
+                    check_model(&d.id, &model.path, &[&model.pose])?;
+                }
             }
             if d.prosthetic.as_ref().is_some_and(|p| p.fits.is_empty() || !(p.efficiency > 0.0 && p.efficiency <= 1.0)) {
                 return Err(format!("{}: a prosthetic fits some parts, with efficiency above 0 and up to 1", d.id));
@@ -1346,10 +1364,25 @@ mod tests {
         let rifle = ItemId::named("rifle").def();
         let model = rifle.model.as_ref().unwrap();
         assert!(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(&model.path).is_file());
-        assert!(ItemId::named("pistol").def().model.is_none());
+        assert!(ItemId::named("clothes").def().model.is_none());
         let mut d = Defs::parse(BUILT_IN).unwrap();
         d.items[ItemId::named("rifle").index()].model.as_mut().unwrap().held.scale = 0.0;
         assert!(d.check().unwrap_err().contains("positive scale"));
+        let mut d = Defs::parse(BUILT_IN).unwrap();
+        let helmet = &mut d.items[ItemId::named("steel_helmet").index()];
+        helmet.apparel.as_mut().unwrap().pieces[0].model.as_mut().unwrap().pose.scale = f32::NAN;
+        assert!(d.check().unwrap_err().contains("finite values"));
+    }
+
+    #[test]
+    fn armor_targets_bones_present_in_both_character_skeletons() {
+        for body in ["Superhero_Male_FullBody", "Superhero_Female_FullBody"] {
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("assets/models/characters/base/{body}.gltf"));
+            let gltf: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            for piece in ItemId::all().flat_map(|k| k.def().apparel.iter().flat_map(|a| &a.pieces)) {
+                assert!(gltf["nodes"].as_array().unwrap().iter().any(|n| n["name"].as_str() == Some(&piece.bone)), "{} missing {}", body, piece.bone);
+            }
+        }
     }
 
     #[test]

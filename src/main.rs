@@ -654,14 +654,14 @@ mod tests {
     fn character_models_load() {
         let mut app = App::new();
         app.add_plugins(DefaultPlugins.build().disable::<WinitPlugin>());
-        let files = [
+        let mut files = vec![
             "models/characters/base/Superhero_Male_FullBody.gltf",
             "models/characters/base/Superhero_Female_FullBody.gltf",
             "models/characters/outfits/Male_Ranger.gltf",
             "models/characters/hair/Hair_SimpleParted.gltf",
             "models/characters/animations/UAL1_Standard.glb",
-            "models/weapons/Rifle.gltf",
         ];
+        files.extend(my_world::defs::ItemId::all().filter_map(|kind| kind.def().model.as_ref().map(|model| model.path.as_str())));
         let handles: Vec<Handle<Gltf>> = files.iter().map(|f| app.world().resource::<AssetServer>().load(*f)).collect();
         for _ in 0..2000 {
             app.update();
@@ -692,6 +692,14 @@ mod tests {
             .add_plugins(EguiPlugin::default())
             .add_plugins(front::FrontPlugin)
             .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(16)));
+        {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            for (i, pawn) in sim.world.pawns.iter_mut().enumerate() {
+                let armor = if i % 2 == 0 { "steel_armor" } else { "powered_armor" };
+                pawn.apparel.push(my_world::defs::ItemId::named(armor));
+                pawn.apparel.push(my_world::defs::ItemId::named("steel_helmet"));
+            }
+        }
         let ready = |app: &mut App| {
             let mut q = app.world_mut().query::<(&front::Rig, &AnimationPlayer)>();
             q.iter(app.world()).filter(|(r, _)| r.ready()).count()
@@ -742,5 +750,7 @@ mod tests {
         assert!(checked >= held.len(), "each attachment contains weapon meshes");
         let mut names = app.world_mut().query::<&Name>();
         assert!(descendants.iter().any(|e| names.get(app.world(), *e).is_ok_and(|n| n.as_str() == "Rifle")), "the rifle model spawned in a hand");
+        assert!(names.iter(app.world()).any(|n| n.as_str() == "Chest"), "armor model spawned on a chest bone");
+        assert!(names.iter(app.world()).any(|n| n.as_str() == "Helmet"), "helmet model spawned on a head bone");
     }
 }

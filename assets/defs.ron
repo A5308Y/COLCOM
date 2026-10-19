@@ -472,6 +472,11 @@
             name: "Assault rifle",
             category: "Weapons",
             color: "plating",
+            model: Some((
+                path: "models/weapons/AssaultRifle.gltf",
+                ground: (at: (-0.073400, 0.050600, 0.000000), turn: (0.000000, 90.000000, 90.000000), scale: 0.8),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+            )),
             weapon: Some((
                 range: 18.0, damage: (9.0, 14.0), kind: Gunshot, cooldown: 1.8, sound: Some("rifle"), shots: 3,
                 held: (shape: Cube, color: "plating", at: (0.15, 0.62, 0.22), size: (0.06, 0.08, 0.56)),
@@ -487,6 +492,11 @@
             name: "Laser rifle",
             category: "Weapons",
             color: "optic",
+            model: Some((
+                path: "models/weapons/LaserRifle.gltf",
+                ground: (at: (-0.105000, 0.067000, 0.000000), turn: (0.000000, 90.000000, 90.000000), scale: 0.8),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+            )),
             weapon: Some((
                 range: 22.0, damage: (14.0, 20.0), kind: Burn, cooldown: 1.6, sound: Some("laser"), shots: 1,
                 held: (shape: Cube, color: "white", at: (0.15, 0.62, 0.22), size: (0.07, 0.08, 0.58)),
@@ -503,6 +513,11 @@
             name: "Pistol",
             category: "Weapons",
             color: "iron",
+            model: Some((
+                path: "models/weapons/Pistol.gltf",
+                ground: (at: (-0.057020, 0.039800, 0.000000), turn: (0.000000, 90.000000, 90.000000), scale: 0.8),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+            )),
             weapon: Some((
                 range: 7.0, damage: (7.0, 11.0), kind: Gunshot, cooldown: 1.3, sound: Some("pistol"),
                 held: (shape: Cube, color: "iron", at: (0.17, 0.62, 0.2), size: (0.05, 0.08, 0.22)),
@@ -518,6 +533,11 @@
             name: "Club",
             category: "Weapons",
             color: "wood",
+            model: Some((
+                path: "models/weapons/Club.gltf",
+                ground: (at: (0.164800, 0.059000, 0.000000), turn: (0.000000, 0.000000, 90.000000), scale: 0.8),
+                held: (at: (0.0, 0.0, 0.0), turn: (28.600000, 0.000000, 0.000000), scale: 1.0),
+            )),
             weapon: Some((
                 range: 1.5, damage: (8.0, 13.0), kind: Bruise, cooldown: 1.2,
                 held: (shape: Cube, color: "wood", at: (0.22, 0.72, 0.14), size: (0.08, 0.48, 0.08), turn: (28.6, 0.0, 0.0)),
@@ -532,6 +552,11 @@
             name: "Knife",
             category: "Weapons",
             color: "steel",
+            model: Some((
+                path: "models/weapons/Knife.gltf",
+                ground: (at: (-0.091200, 0.021400, 0.000000), turn: (0.000000, 90.000000, 90.000000), scale: 0.8),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+            )),
             weapon: Some((
                 range: 1.5, damage: (6.0, 11.0), kind: Cut, cooldown: 1.0,
                 held: (shape: Cube, color: "steel", at: (0.2, 0.62, 0.22), size: (0.03, 0.03, 0.26)),
@@ -560,9 +585,16 @@
             name: "Steel helmet",
             category: "Apparel",
             color: "steel",
+            model: Some((
+                path: "models/armor/SteelHelmet.gltf",
+                ground: (at: (0.000000, -0.039800, 0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 0.7),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+            )),
             apparel: Some((slot: Head, armor: 0.12, mood: 0.0, warmth: 1.0, pieces: [
                 // A dome over the head with an iron brim and a nose guard.
-                (bone: "Head", hides_hair: true, parts: [
+                (bone: "Head", hides_hair: true,
+                    model: Some((path: "models/armor/SteelHelmet.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
+                    parts: [
                     (shape: Sphere, color: "steel", at: (0.0, 0.18, -0.01), size: (0.26, 0.21, 0.27)),
                     (shape: Cylinder, color: "iron", at: (0.0, 0.14, -0.01), size: (0.27, 0.03, 0.28)),
                     (shape: Cube, color: "steel", at: (0.0, 0.09, 0.135), size: (0.02, 0.08, 0.015)),
@@ -623,19 +655,30 @@
             name: "Steel armour",
             category: "Apparel",
             color: "steel",
+            model: Some((
+                path: "models/armor/SteelArmor.gltf",
+                ground: (at: (0.000000, 0.156900, 0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 0.7),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+            )),
             apparel: Some((slot: Outer, armor: 0.35, mood: 0.0, warmth: 2.0, pieces: [
                 // A breastplate round the chest, raised at the front, with an iron collar and belt.
-                (bone: "spine_03", parts: [
+                (bone: "spine_03",
+                    model: Some((path: "models/armor/SteelArmor.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
+                    parts: [
                     (shape: Cylinder, color: "steel", at: (0.0, 0.0, -0.02), size: (0.44, 0.40, 0.35)),
                     (shape: Sphere, color: "steel", at: (0.0, 0.05, 0.08), size: (0.4, 0.33, 0.18)),
                     (shape: Cylinder, color: "iron", at: (0.0, 0.2, -0.02), size: (0.25, 0.05, 0.22)),
                     (shape: Cylinder, color: "iron", at: (0.0, -0.2, -0.02), size: (0.45, 0.06, 0.36)),
                 ]),
                 // Domed plates over the shoulders.
-                (bone: "upperarm_l", parts: [
+                (bone: "upperarm_l",
+                    model: Some((path: "models/armor/SteelArmor.gltf", scene: 2, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
+                    parts: [
                     (shape: Sphere, color: "steel", at: (0.02, 0.04, 0.0), size: (0.19, 0.13, 0.19)),
                 ]),
-                (bone: "upperarm_r", parts: [
+                (bone: "upperarm_r",
+                    model: Some((path: "models/armor/SteelArmor.gltf", scene: 3, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
+                    parts: [
                     (shape: Sphere, color: "steel", at: (-0.02, 0.04, 0.0), size: (0.19, 0.13, 0.19)),
                 ]),
             ])),
@@ -650,11 +693,18 @@
             name: "Powered armour",
             category: "Apparel",
             color: "plating",
+            model: Some((
+                path: "models/armor/PoweredArmor.gltf",
+                ground: (at: (0.000000, 0.156900, 0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 0.7),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
+            )),
             about: Some("Plate armour with motors and a sealed helmet; stops most of every blow."),
             // Its motors carry the weight and then some: a quarter faster.
             apparel: Some((slot: Outer, armor: 0.6, mood: 0.0, speed: 1.25, warmth: 12.0, pieces: [
                 // A heavy cuirass with a power pack on the back and a glowing core.
-                (bone: "spine_03", parts: [
+                (bone: "spine_03",
+                    model: Some((path: "models/armor/PoweredArmor.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
+                    parts: [
                     (shape: Cylinder, color: "plating", at: (0.0, 0.0, -0.02), size: (0.48, 0.44, 0.38)),
                     (shape: Sphere, color: "plating", at: (0.0, 0.05, 0.09), size: (0.44, 0.36, 0.2)),
                     (shape: Cube, color: "iron", at: (0.0, 0.02, -0.22), size: (0.3, 0.32, 0.12)),
@@ -662,16 +712,22 @@
                     (shape: Cylinder, color: "iron", at: (0.0, -0.22, -0.02), size: (0.49, 0.07, 0.39)),
                 ]),
                 // Big shoulder plates and armoured sleeves (the arm runs along x at rest).
-                (bone: "upperarm_l", parts: [
+                (bone: "upperarm_l",
+                    model: Some((path: "models/armor/PoweredArmor.gltf", scene: 2, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
+                    parts: [
                     (shape: Sphere, color: "plating", at: (0.03, 0.05, 0.0), size: (0.24, 0.17, 0.24)),
                     (shape: Cylinder, color: "plating", at: (0.15, 0.0, 0.0), size: (0.13, 0.22, 0.13), turn: (0.0, 0.0, 90.0)),
                 ]),
-                (bone: "upperarm_r", parts: [
+                (bone: "upperarm_r",
+                    model: Some((path: "models/armor/PoweredArmor.gltf", scene: 3, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
+                    parts: [
                     (shape: Sphere, color: "plating", at: (-0.03, 0.05, 0.0), size: (0.24, 0.17, 0.24)),
                     (shape: Cylinder, color: "plating", at: (-0.15, 0.0, 0.0), size: (0.13, 0.22, 0.13), turn: (0.0, 0.0, 90.0)),
                 ]),
                 // A sealed helmet with a glowing visor.
-                (bone: "Head", hides_hair: true, parts: [
+                (bone: "Head", hides_hair: true,
+                    model: Some((path: "models/armor/PoweredArmor.gltf", scene: 4, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
+                    parts: [
                     (shape: Sphere, color: "plating", at: (0.0, 0.15, -0.01), size: (0.29, 0.25, 0.3)),
                     (shape: Cube, color: "visor", at: (0.0, 0.1, 0.13), size: (0.18, 0.035, 0.04)),
                     (shape: Cylinder, color: "iron", at: (0.0, 0.0, -0.01), size: (0.22, 0.06, 0.23)),

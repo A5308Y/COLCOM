@@ -30,7 +30,7 @@ def unit(v):
     return tuple(x / math.sqrt(dot(v, v)) for x in v)
 
 
-def render(rifle, path, eye):
+def render(rifle, path, eye, focus=(0, .08, .175), scale=1040):
     width, height = 1200, 520
     pixels = bytearray(bytes((47, 53, 56)) * width * height)
     depths = [-math.inf] * (width * height)
@@ -40,8 +40,8 @@ def render(rifle, path, eye):
     light = unit((-0.5, 0.8, 0.5))
 
     def project(v):
-        p = (v[0], v[1] - .08, v[2] - .175)
-        return (width / 2 + dot(p, right) * 1040, height / 2 - dot(p, up) * 1040, dot(p, eye))
+        p = tuple(v[i] - focus[i] for i in range(3))
+        return (width / 2 + dot(p, right) * scale, height / 2 - dot(p, up) * scale, dot(p, eye))
 
     def edge(a, b, x, y):
         return (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0])
