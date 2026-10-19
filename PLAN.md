@@ -40,15 +40,15 @@
 | 1 | Bevy front end on the existing flat simulation: 3D view, camera, clicking, egui UI, macroquad removed | done |
 | 2 | 3D simulation: positions with a level, terrain from a height map, walking graph with slopes, job search over reachable cells, systems and tests moved over | done |
 | 3 | Multi-level gameplay: digging, stairs, floors, support rule, 3D rooms and roofs, layer view, building on any level | done |
-| 4 | Visual polish: walking/hop/fall animation, lamps, translucent water, fog, ambient occlusion, bloom, gunfire flashes | done (needs a visual check) |
+| 4 | Visual polish: walking/hop/fall animation, lamps, translucent water, fog, ambient occlusion, bloom, gunfire flashes | done |
 | 5 | Performance and saves: profiling, faster searches, versioned and compact save files | done |
 | 6 | Data-driven definitions: items, buildables, plants and recipes described in a data file, not code | done (recipes come with phase 7) |
-| 7 | Production chains: workbenches, job queues, Cooking/Crafting, new resources, stockpile filters | done (needs a visual check) |
-| 8 | More buildables: furniture, shelves, windows, torches, fences, room quality | done (needs a visual check) |
-| 9 | Sound: actions, ambience, interface | done with placeholder sounds (needs a listen) |
-| 10 | Graphics, Valheim-like (low poly, realistic movement): 10a art direction, 10b animated characters, 10c smoothed natural terrain, 10d glTF models, 10e atmosphere | 10a done; 10b done (needs a visual check) |
+| 7 | Production chains: workbenches, job queues, Cooking/Crafting, new resources, stockpile filters | done |
+| 8 | More buildables: furniture, shelves, windows, torches, fences, room quality | done |
+| 9 | Sound: actions, ambience, interface | done (Kenney and other real sounds, 2026-10-16) |
+| 10 | Graphics, Valheim-like (low poly, realistic movement): 10a art direction, 10b animated characters, 10c smoothed natural terrain, 10d glTF models, 10e atmosphere | 10a done; 10b done |
 | 11 | Follow camera: optional close third-person view of one colonist | later |
-| 12 | Turn-based battles (MENACE-style): squads and leaders, loadouts, safe zone, parley, battle UI; real-time combat removed | done (needs a play test) |
+| 12 | Turn-based battles (MENACE-style): squads and leaders, loadouts, safe zone, parley, battle UI; real-time combat removed | done (play-tested, the user is happy with them for now) |
 | – | Keyboard shortcuts: a thought-out scheme (all letters are taken; categories, rebinding?) | later |
 
 ## Next phases (agreed 2026-10-11)
@@ -161,10 +161,14 @@ normal play. Decisions:
 - **Turn order and time:** MENACE turn order (alternating single activations, one AP pool, no
   overwatch), and the whole colony stops during a battle.
 - **Real-time combat is removed:** drafting, auto-fire and the attack job.
-Milestones 12a (squads in normal play), 12b (battle core), 12c (battle UI) are done; 12d is tuning from
-real play.
+Milestones 12a (squads in normal play), 12b (battle core), 12c (battle UI) are done and play-tested
+(2026-10-19: the user likes the battles as they are). 12d (tuning, see the notes) is optional, only if
+play shows a need.
 
-- **10b done (2026-10-12, needs a visual check):** see the notes below.
+- **10b done (2026-10-12, checked visually):** see the notes below.
+
+Visual and sound checks (2026-10-19): everything built so far has been looked at and listened to in the
+game; nothing is waiting on a check.
 
 ## Working in this repo (handoff notes)
 
@@ -371,7 +375,7 @@ real play.
     clubs, against 22, 146 and 30 before).
   - **Removed:** drafting (`Pawn::drafted`, F, the Draft button, right-click orders), `Job::Attack` and
     `Job::Leave`, `auto_fire` and `raider_think`. Raiders exist only in battles. `SAVE_VERSION` is 5.
-  - **Left for 12d:** tuning from real play (AP costs, odds, morale, raid sizes and demand), a proper
+  - **Left for 12d (optional, 2026-10-19: battles are fine for now):** tuning from real play (AP costs, odds, morale, raid sizes and demand), a proper
     pick-up for loadouts that aren't in storage, prisoners, explosives and vehicles, overwatch-like
     reactions (MENACE has none), and showing the hit chance per member.
 
