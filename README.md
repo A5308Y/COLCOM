@@ -69,7 +69,7 @@ for), and `<` goes back.
 
 ### Systems
 
-- **Production:** click a workbench to give it bills ("make 5", "make until you have 20", "forever"). The
+- **Production:** click a workbench to give it bills ("make 5", "make until you have 20", "forever"; Shift+click on + or - changes the number by 5). The
   colonist doing a bill fetches what it lacks (haulers help too); right-click a bench with a colonist
   selected to have them do its bill now. Colonists with Cook or Craft work make it, and products get hauled to
   stockpiles. Chains: crops → meals (stove); wood → planks; stone → blocks; healroot → herbal medicine;

@@ -37,7 +37,7 @@ const HELP_ORDERS: [&str; 8] = [
 const HELP_REST: [&str; 51] = [
     "Colonists haul the materials to blueprints, then build them.",
     "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
-    "      make N, make until you have N, or forever. Haulers bring the ingredients; cooks and crafters make it.",
+    "      make N, make until you have N, or forever (Shift+click on + or - steps by 5). Haulers bring the ingredients; cooks and crafters make it.",
     "The build menu on the left lists everything (` hides it); hover an entry for details.",
     "Click a stockpile to set its priority and which items it takes; click a grow zone to pick its crop.",
     "Shelves are storage by themselves and hold four stacks; click one to set what goes on it (shelves",
@@ -1461,12 +1461,14 @@ fn bills(ui: &mut egui::Ui, w: &SimWorld, t: Pos, kind: my_world::defs::BuildId,
                     BillMode::Count(_) => BillMode::Count(n),
                     _ => BillMode::Until(n),
                 };
-                if ui.small_button("-").clicked() && n > 1 {
-                    let mode = with(n - 1);
+                // Shift+click steps by 5.
+                let step = if ui.input(|i| i.modifiers.shift) { 5 } else { 1 };
+                if ui.small_button("-").on_hover_text("Shift+click: 5 fewer").clicked() && n > 1 {
+                    let mode = with(n.saturating_sub(step).max(1));
                     actions.push(Box::new(move |w| w.set_bill(t, k, mode, b.suspended)));
                 }
-                if ui.small_button("+").clicked() {
-                    let mode = with(n + 1);
+                if ui.small_button("+").on_hover_text("Shift+click: 5 more").clicked() {
+                    let mode = with(n + step);
                     actions.push(Box::new(move |w| w.set_bill(t, k, mode, b.suspended)));
                 }
             }
