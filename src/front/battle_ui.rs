@@ -952,8 +952,8 @@ fn battle_panels(
                 unit_state(panel, unit);
                 panel.label(
                     RichText::new(format!(
-                        "Click a cell to move ({} AP a step), an enemy to attack ({} AP; members draw a sidearm when it suits better).",
-                        sim.world.step_ap(u), AP_ATTACK
+                        "Click a cell to move ({} AP a step), an enemy to attack ({} AP, {} if everyone uses a sidearm; rifles are clumsy up close, so members draw pistols there).",
+                        sim.world.step_ap(u), AP_ATTACK, my_world::battle::AP_SIDEARM_ATTACK
                     ))
                     .small()
                     .weak(),
@@ -1014,6 +1014,11 @@ fn battle_panels(
                 let enemy = &b.units[t];
                 panel.separator();
                 panel.label(RichText::new(format!("Enemy: {}", names(w, &enemy.members))).strong().color(Color32::from_rgb(255, 150, 130)));
+                if let Some(u) = my_unit(b).filter(|&u| !view.throwing && !w.attack_options(u, t).is_empty()) {
+                    let cost = w.attack_cost(u, t);
+                    let how = if cost < AP_ATTACK { " (sidearms: quick)" } else { "" };
+                    panel.label(format!("Attack: {} AP{}", cost, how));
+                }
                 if let Some(u) = my_unit(b).filter(|_| view.throwing) {
                     let reach = if w.throw_option(u, t).is_some() { "Click to throw the grenade" } else { "Out of throwing range or sight" };
                     panel.label(RichText::new(reach).color(Color32::from_rgb(255, 200, 120)));

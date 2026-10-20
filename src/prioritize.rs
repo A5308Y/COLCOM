@@ -28,7 +28,8 @@ impl World {
         // Gear lying here.
         if (self.res_item[i] == 0 || self.res_item[i] == p.id) && m.stacks(i).any(|s| s.kind.def().is_gear()) {
             jobs.push(Job::Equip { from: at, chosen: true, sidearm: false });
-            if self.first_gear(at).and_then(|k| k.def().weapon.as_ref()).is_some_and(|w| w.sidearm) {
+            let sidearm = self.first_gear(at).filter(|k| k.def().weapon.as_ref().is_some_and(|w| w.sidearm));
+            if sidearm.is_some_and(|k| crate::squads::sidearm_fits_squad(p, k)) {
                 jobs.push(Job::Equip { from: at, chosen: true, sidearm: true });
             }
         }

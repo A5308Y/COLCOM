@@ -22,7 +22,7 @@ the east: a squad of four mercenaries (assault rifles, flak armour, grenades, a 
 with laser rifles, powered armour and cyberware.
 Every weapon, apparel and belt item appears on a fighter (the assault rifleman carries a pistol sidearm
 and frag grenades; the geared fighter cargo trousers, tactical goggles, a field medkit and a club sidearm).
-A squad fights one way, its sidearms too; only lone fighters (Eve's knife) mix. The stockpile
+A ranged squad's sidearms are pistols; only melee squads and lone fighters (Eve's knife) carry other kinds. The stockpile
 also holds a spare of every weapon, apparel and belt item, medicine and cyberware for inspecting models
 and trying loadouts. Eve, the lone fighter north of the house at (14, 9), starts wearing powered armor
 (with bionic eyes and subdermal plating under it) and holding the laser rifle, ready to inspect from round 1. Restart the scenario with Shift+N to refresh an existing battle.
@@ -277,8 +277,12 @@ for), and `<` goes back.
   Loot that doesn't fit is left behind (the most valuable is taken first), and the journal says so.
 - **Combat:** drafted colonists shoot raiders in range with line of sight. Wounds land on body parts (see
   Health). Hurt raiders flee, and downed ones die if left lying. In battles nobody walks through an
-  enemy: units go round them, or can't get past. Members with a sidearm draw it when it does more harm
-  (a club fighter's pistol out of reach, say). A unit carrying grenades can throw one (*Grenade* button,
+  enemy: units go round them, or can't get past. Members with a sidearm draw it when it does more harm.
+  Rifles, assault rifles and laser rifles hit only a fifth as often at someone right next to them, so
+  riflemen draw their pistols in close quarters; an attack in which everyone uses their sidearm costs 25
+  AP instead of 40. A squad's style comes from main weapons only: a ranged squad's sidearms must shoot
+  (pistols; a melee sidearm stays holstered), while a melee squad may carry pistols to fire on the way in
+  (it still can't deploy). Lone fighters carry anything. A unit carrying grenades can throw one (*Grenade* button,
   then click an enemy unit within 6 cells and in sight: everyone in it is caught, whatever their cover);
   a unit with a medkit can tend everyone's wounds mid-battle (*Medkit*).
 

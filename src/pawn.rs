@@ -152,6 +152,9 @@ pub struct Attack {
     pub kind: DamageKind,
     pub cooldown: f32,
     pub ranged: bool,
+    /// A rifle-sized gun (ranged, too big for a sidearm): clumsy against
+    /// someone right next to them (`battle::CLOSE_QUARTERS`).
+    pub long_gun: bool,
     /// Heard when attacking.
     pub sound: &'static str,
 }
@@ -160,7 +163,7 @@ pub struct Attack {
 pub const CARRY_EACH: u32 = 60;
 
 const FISTS: Attack =
-    Attack { range: 1.5, damage: (3.0, 6.0), kind: DamageKind::Bruise, cooldown: 1.0, ranged: false, sound: "swing" };
+    Attack { range: 1.5, damage: (3.0, 6.0), kind: DamageKind::Bruise, cooldown: 1.0, ranged: false, long_gun: false, sound: "swing" };
 
 /// The numbers of weapon `kind`, or fists.
 pub fn attack_with(kind: Option<ItemId>) -> Attack {
@@ -171,6 +174,7 @@ pub fn attack_with(kind: Option<ItemId>) -> Attack {
             kind: w.kind,
             cooldown: w.cooldown,
             ranged: w.ranged(),
+            long_gun: w.ranged() && !w.sidearm,
             sound: w.sound.as_deref().unwrap_or("swing"),
         },
         None => FISTS,

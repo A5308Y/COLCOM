@@ -77,6 +77,12 @@ fn fighting(ui: &mut egui::Ui, p: &Pawn) {
         let chance = if ranged { base_hit_chance(p, true, 3.0) } else { base_hit_chance(p, false, 1.0) };
         let at = if ranged { "at 3 cells" } else { "of blows" };
         ui.label(format!("Sidearm {}: {} {} (drawn when it suits better)", side.name().to_lowercase(), pct(chance), at));
+        let quick = format!(
+            "An attack with sidearms only costs {} AP instead of {}. Rifles aim badly at someone right next to them; pistols don't.",
+            my_world::battle::AP_SIDEARM_ATTACK,
+            my_world::battle::AP_ATTACK
+        );
+        ui.label(RichText::new(quick).small().weak());
     }
     if p.aim_bonus() != 0.0 {
         ui.label(format!("Gear and implants: {:+.0}% to hit", p.aim_bonus() * 100.0));
@@ -160,7 +166,8 @@ pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction
     if let Some(c) = slot_choice(ui, w, p.id, "Weapon", weapon, |k| k.def().weapon.is_some()) {
         change = Some((weapon, c));
     }
-    let sidearm = |k: ItemId| k.def().weapon.as_ref().is_some_and(|w| w.sidearm);
+    // A ranged squad's sidearms shoot too; melee squads may take a pistol.
+    let sidearm = |k: ItemId| k.def().weapon.as_ref().is_some_and(|w| w.sidearm) && my_world::squads::sidearm_fits_squad(p, k);
     if let Some(c) = slot_choice(ui, w, p.id, "Sidearm", p.loadout_sidearm, sidearm) {
         actions.push(CombatAction::Sidearm(c));
     }

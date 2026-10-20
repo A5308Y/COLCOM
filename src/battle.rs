@@ -31,6 +31,11 @@ const DEPLOYED_TARGET: f32 = 0.8;
 /// Suppression from being attacked, and from each hit.
 const SUPPRESS_ATTACK: f32 = 15.0;
 const SUPPRESS_HIT: f32 = 10.0;
+/// An attack in which everyone uses their sidearm (quick to draw and fire).
+pub const AP_SIDEARM_ATTACK: i32 = 25;
+/// Long guns hit this share as often at someone right next to them (pistols and
+/// blows don't): a ranged squad caught in melee draws its pistols.
+pub const CLOSE_QUARTERS: f32 = 0.2;
 /// Suppression from a grenade going off in the unit.
 const SUPPRESS_BLAST: f32 = 30.0;
 /// Game seconds that pass per round (for bleeding, healing and hunger).
@@ -424,10 +429,11 @@ impl World {
                 p.wear(kind.id());
             }
         }
-        // A sidearm of the same kind: a squad fights one way, close in too.
+        // Riflemen carry pistols (a ranged squad fights at range, close in
+        // too); melee raiders may carry anything, a pistol to shoot on the way in.
         let ranged = p.main_attack().ranged;
-        let same_kind = |k: ItemId| Some(k) != p.weapon && attack_with(Some(k)).ranged == ranged;
-        p.sidearm = t.sidearms.iter().find(|(k, chance)| same_kind(k.id()) && rng.chance(*chance)).map(|(k, _)| k.id());
+        let fits = |k: ItemId| Some(k) != p.weapon && (!ranged || attack_with(Some(k)).ranged);
+        p.sidearm = t.sidearms.iter().find(|(k, chance)| fits(k.id()) && rng.chance(*chance)).map(|(k, _)| k.id());
         p.utility = t.belt.iter().find(|(_, _, chance)| rng.chance(*chance)).map(|(k, count, _)| Stack { kind: k.id(), count: *count });
         for (kind, chance) in &t.cyberware {
             let Some(c) = kind.id().def().cyberware.as_ref() else { continue };
@@ -743,13 +749,14 @@ impl World {
                 Ok(())
             }
             BattleOrder::Attack(t) => {
-                if ap < AP_ATTACK {
+                let cost = self.attack_cost(u, t);
+                if ap < cost {
                     return Err("not enough action points".into());
                 }
                 self.attack_unit(u, t)?;
                 // The attack may have ended the battle.
                 if let Some(b) = self.battle.as_mut() {
-                    b.units[u].ap -= AP_ATTACK;
+                    b.units[u].ap -= cost;
                 }
                 Ok(())
             }
@@ -1003,12 +1010,51 @@ impl World {
         }
     }
 
+    /// Whether `a` keeps their sidearm holstered: in a ranged squad (in a
+    /// battle, or by their role outside one) a melee sidearm isn't used, as
+    /// a squad fights one way. Melee squads may draw a pistol; lone fighters anything.
+    pub fn sidearm_barred(&self, a: &Pawn) -> bool {
+        let in_squad = match self.battle.as_ref().and_then(|b| b.unit_of(a.id).map(|u| &b.units[u])) {
+            Some(unit) => unit.led,
+            None => matches!(a.role, Role::Leader | Role::Member(_)),
+        };
+        in_squad && a.main_attack().ranged && !attack_with(a.sidearm).ranged
+    }
+
+    /// The weapons each attacker in unit `u` would use on unit `t` (on their first target in reach).
+    fn planned_weapons(&self, u: usize, t: usize) -> Vec<(u32, Option<ItemId>)> {
+        let options = self.attack_options(u, t);
+        let mut out: Vec<(u32, Option<ItemId>)> = Vec::new();
+        for &(a, o) in &options {
+            if out.iter().any(|x| x.0 == a) {
+                continue;
+            }
+            let (Some(pa), Some(po)) = (self.pawn(a), self.pawn(o)) else { continue };
+            out.push((a, self.choose_weapon(pa, pa.pos, po).flatten()));
+        }
+        out
+    }
+
+    /// AP for unit `u` to attack unit `t`: `AP_SIDEARM_ATTACK` if everyone
+    /// who can reach them would use their sidearm, else `AP_ATTACK`.
+    pub fn attack_cost(&self, u: usize, t: usize) -> i32 {
+        let planned = self.planned_weapons(u, t);
+        let quick = !planned.is_empty()
+            && planned.iter().all(|&(a, k)| self.pawn(a).is_some_and(|p| k.is_some() && k == p.sidearm && k != p.weapon));
+        if quick {
+            AP_SIDEARM_ATTACK
+        } else {
+            AP_ATTACK
+        }
+    }
+
     /// The weapon `a` would use on `o` from `from` (`Some(None)`: fists):
     /// of the main weapon and the sidearm, the one that reaches and does
     /// the most harm, likely hits counted. `None` if neither reaches.
     pub fn choose_weapon(&self, a: &Pawn, from: Pos, o: &Pawn) -> Option<Option<ItemId>> {
         let mut best: Option<(f32, Option<ItemId>)> = None;
-        for kind in a.weapons() {
+        let barred = self.sidearm_barred(a);
+        for kind in a.weapons().filter(|&k| !(barred && k.is_some() && k == a.sidearm && k != a.weapon)) {
             let w = attack_with(kind);
             if !self.reaches(&w, from, o) {
                 continue;
@@ -1033,11 +1079,7 @@ impl World {
         attackers.dedup();
         // Shots go round the unit: everyone's first, then the second shots (rifles fire two).
         // Each with the weapon they'd use on their first target in reach.
-        let weapon = |w: &World, a: u32| {
-            let o = options.iter().find(|o| o.0 == a)?;
-            w.choose_weapon(w.pawn(a)?, w.pawn(a)?.pos, w.pawn(o.1)?)
-        };
-        let chosen: Vec<(u32, Option<ItemId>)> = attackers.iter().map(|&a| (a, weapon(self, a).flatten())).collect();
+        let chosen = self.planned_weapons(u, t);
         let shots: Vec<(u32, u32)> =
             chosen.iter().map(|&(a, k)| (a, k.and_then(|k| k.def().weapon.as_ref()).map_or(1, |w| w.shots.max(1)))).collect();
         let most = shots.iter().map(|s| s.1).max().unwrap_or(1);
@@ -1149,8 +1191,12 @@ impl World {
     }
 
     /// Chance that `a`'s shot or blow with attack `w` hits `o` from `from`.
-    fn hit_chance_with(&self, a: &Pawn, w: &Attack, from: Pos, o: &Pawn) -> f32 {
-        let mut c = base_hit_chance(a, w.ranged, cell_dist(from, o.pos));
+    pub(crate) fn hit_chance_with(&self, a: &Pawn, w: &Attack, from: Pos, o: &Pawn) -> f32 {
+        let d = cell_dist(from, o.pos);
+        let mut c = base_hit_chance(a, w.ranged, d);
+        if w.long_gun && d < 1.5 {
+            c *= CLOSE_QUARTERS;
+        }
         let b = self.battle.as_ref();
         let unit = |id: u32| b.and_then(|b| b.unit_of(id).map(|u| &b.units[u]));
         if w.ranged {
@@ -2344,8 +2390,10 @@ mod tests {
         let (a, o) = (w.pawn(id).unwrap(), w.pawn(r).unwrap());
         assert_eq!(w.choose_weapon(a, a.pos, o), Some(Some(item("pistol"))));
         assert!(!w.pawn(id).unwrap().main_attack().ranged, "they still fight in melee (squads go by the main weapon)");
+        assert_eq!(w.attack_cost(u, t), AP_SIDEARM_ATTACK, "a quick sidearm attack");
         w.battle_order(BattleOrder::Activate(u)).unwrap();
         w.battle_order(BattleOrder::Attack(t)).unwrap();
+        assert_eq!(battle(&w).units[u].ap, AP_MAX - AP_SIDEARM_ATTACK);
         let mut drawn = false;
         for _ in 0..(3.0 / TICK) as usize {
             if w.battle.is_none() {
@@ -2356,6 +2404,52 @@ mod tests {
         }
         assert!(drawn, "the pistol was in hand for the shot");
         assert!(w.take_sounds().iter().any(|s| s.name == "pistol"));
+    }
+
+    #[test]
+    fn rifles_are_clumsy_up_close_so_riflemen_draw_pistols() {
+        let mut w = world(30, 20, 35);
+        let id = colonist(&mut w, (5, 10, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].weapon = Some(item("rifle"));
+        let (u, t, r) = duel(&mut w, id, (6, 10, Z));
+        let (a, o) = (w.pawn(id).unwrap(), w.pawn(r).unwrap());
+        let rifle = w.hit_chance_with(a, &attack_with(Some(item("rifle"))), a.pos, o);
+        let pistol = w.hit_chance_with(a, &attack_with(Some(item("pistol"))), a.pos, o);
+        assert!(rifle < pistol * 0.6, "rifle {} vs pistol {}", rifle, pistol);
+        assert_eq!(w.choose_weapon(a, a.pos, o), Some(Some(item("rifle"))), "without a sidearm, the rifle it is");
+        assert_eq!(w.attack_cost(u, t), AP_ATTACK);
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].equip_sidearm(item("pistol"));
+        let (a, o) = (w.pawn(id).unwrap(), w.pawn(r).unwrap());
+        assert_eq!(w.choose_weapon(a, a.pos, o), Some(Some(item("pistol"))), "up close, the pistol");
+        assert_eq!(w.attack_cost(u, t), AP_SIDEARM_ATTACK);
+        // Further off, the rifle again.
+        let ri = w.pawn_index(r).unwrap();
+        place(&mut w.pawns[ri], (12, 10, Z));
+        let (a, o) = (w.pawn(id).unwrap(), w.pawn(r).unwrap());
+        assert_eq!(w.choose_weapon(a, a.pos, o), Some(Some(item("rifle"))));
+    }
+
+    #[test]
+    fn ranged_squads_keep_melee_sidearms_holstered() {
+        let mut w = world(30, 20, 36);
+        let (lead, mate) = (colonist(&mut w, (5, 10, Z)), colonist(&mut w, (5, 11, Z)));
+        w.set_role(lead, Role::Leader).unwrap();
+        w.set_role(mate, Role::Member(lead)).unwrap();
+        for id in [lead, mate] {
+            let i = w.pawn_index(id).unwrap();
+            w.pawns[i].weapon = Some(item("rifle"));
+            // (Given directly: the loadout would refuse it.)
+            w.pawns[i].equip_sidearm(item("knife"));
+        }
+        fight(&mut w, 1, (29, 10, Z));
+        let r = raiders(&w)[0];
+        let ri = w.pawn_index(r).unwrap();
+        place(&mut w.pawns[ri], (6, 10, Z));
+        let (a, o) = (w.pawn(lead).unwrap(), w.pawn(r).unwrap());
+        assert!(w.sidearm_barred(a));
+        assert_eq!(w.choose_weapon(a, a.pos, o), Some(Some(item("rifle"))), "a ranged squad fights at range, even up close");
     }
 
     #[test]
@@ -2447,8 +2541,7 @@ mod tests {
         assert!(elite.iter().any(|p| p.apparel.contains(&item("powered_armor"))));
         let mercs: Vec<Pawn> = (0..4).flat_map(|s| raiders(3, 60 + s)).collect();
         for p in weak.iter().chain(&elite).chain(&mercs) {
-            let kinds: Vec<bool> = p.weapons().filter(|k| k.is_some()).map(|k| attack_with(k).ranged).collect();
-            assert!(kinds.windows(2).all(|k| k[0] == k[1]), "{}: a sidearm of the other kind", p.name);
+            assert!(!p.main_attack().ranged || p.sidearm.is_none_or(|k| attack_with(Some(k)).ranged), "{}: a rifleman with a melee sidearm", p.name);
         }
         assert!(elite.iter().map(|p| p.armor()).sum::<f32>() > weak.iter().map(|p| p.armor()).sum::<f32>() * 3.0);
     }

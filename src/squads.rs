@@ -23,6 +23,15 @@ pub(crate) fn conflicts(a: ItemId, b: ItemId) -> bool {
     }
 }
 
+/// Whether colonist `p` may carry `kind` as a sidearm: anyone outside a
+/// squad, and melee squads anything (a pistol to shoot while closing in);
+/// ranged squads only something that shoots, as they fight at range.
+pub fn sidearm_fits_squad(p: &Pawn, kind: ItemId) -> bool {
+    let in_squad = matches!(p.role, Role::Leader | Role::Member(_));
+    let shoots = kind.def().weapon.as_ref().is_some_and(|w| w.ranged());
+    !in_squad || !fights_at_range(p) || shoots
+}
+
 /// The loadout item for apparel `slot`, if any.
 pub fn loadout_worn(p: &Pawn, slot: Slot) -> Option<ItemId> {
     p.loadout.iter().copied().find(|k| k.def().apparel.as_ref().is_some_and(|a| a.covers(slot)))
@@ -115,6 +124,9 @@ impl World {
             return Err("too heavy for a sidearm".into());
         }
         let i = self.pawn_index(id).ok_or("no such colonist")?;
+        if let Some(k) = kind.filter(|&k| !sidearm_fits_squad(&self.pawns[i], k)) {
+            return Err(format!("a ranged squad's sidearms shoot too: no {}", k.name().to_lowercase()));
+        }
         self.pawns[i].loadout_sidearm = kind;
         Ok(())
     }
@@ -353,5 +365,21 @@ mod tests {
         let k = |s: &str| ItemId::named(s);
         w.set_loadout(ids[0], &[k("rifle"), k("wood"), k("clothes"), k("club"), k("steel_armor")]).unwrap();
         assert_eq!(w.pawn(ids[0]).unwrap().loadout, vec![k("clothes"), k("club"), k("steel_armor")]);
+    }
+
+    #[test]
+    fn ranged_squads_take_pistols_as_sidearms_melee_squads_anything() {
+        let (mut w, ids) = world();
+        let k = |s: &str| ItemId::named(s);
+        w.set_loadout(ids[0], &[k("rifle")]).unwrap();
+        assert!(w.set_loadout_sidearm(ids[0], Some(k("knife"))).is_ok(), "on their own, anything");
+        w.set_role(ids[0], Role::Leader).unwrap();
+        assert!(w.set_loadout_sidearm(ids[0], Some(k("knife"))).is_err(), "a ranged squad's sidearms shoot");
+        assert!(w.set_loadout_sidearm(ids[0], Some(k("pistol"))).is_ok());
+        assert!(w.set_loadout_sidearm(ids[0], Some(k("rifle"))).is_err(), "too heavy");
+        w.set_loadout(ids[1], &[k("club")]).unwrap();
+        w.set_role(ids[1], Role::Leader).unwrap();
+        assert!(w.set_loadout_sidearm(ids[1], Some(k("pistol"))).is_ok(), "a melee squad may shoot on the way in");
+        assert!(w.set_loadout_sidearm(ids[1], Some(k("knife"))).is_ok());
     }
 }

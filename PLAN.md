@@ -658,6 +658,15 @@ slopes, and old save versions); the newer note in the same topic says so.
   the colony's tier. In 20 AI-vs-AI runs of the battle scenario (mercenaries and an elite pair) the
   colony won 18.
 
+- Sidearms and squad styles (2026-10-20). Style stays the main weapon's (deploying, formation, AI).
+  `Attack::long_gun` (ranged, not a sidearm) hits × `CLOSE_QUARTERS` (0.2) against adjacent targets, so
+  `choose_weapon` picks a pistol up close (0.2 keeps even the assault rifle's three shots below one
+  pistol shot). `World::attack_cost`: `AP_SIDEARM_ATTACK` (25) when everyone attacking would use their
+  sidearm (`planned_weapons`), else `AP_ATTACK`; the AI checks it too. `squads::sidearm_fits_squad`:
+  ranged squads only ranged sidearms (loadout and right-click refuse others; `World::sidearm_barred`
+  keeps one given anyway holstered in battle), melee squads and lone fighters anything; raiders follow
+  the same rule. AI-vs-AI battle scenario: the colony still won 18 of 20.
+
 ### Seasons, temperature and power
 
 - Seasons, step 1 (2026-10-18): `src/seasons.rs`. A year of four `Season`s of `SEASON_DAYS` (5) days from

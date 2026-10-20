@@ -115,7 +115,7 @@ impl World {
         if let Some(t) = grenade {
             return BattleOrder::Throw(t);
         }
-        let attack = self.best_attack(u).filter(|_| unit.ap >= AP_ATTACK);
+        let attack = self.best_attack(u).filter(|&(t, _)| unit.ap >= self.attack_cost(u, t));
         if let Some((t, score)) = attack {
             // A squad staying put to fire goes down on one knee first (a fresh activation only).
             let staying = score >= GOOD_ODDS && !unit.moved && unit.ap == unit.ap_start;

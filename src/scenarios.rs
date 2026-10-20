@@ -317,16 +317,15 @@ mod tests {
     }
 
     #[test]
-    fn every_squad_fights_one_way_sidearms_too() {
+    fn ranged_squads_carry_only_ranged_sidearms() {
         let w = battle_world();
         for u in w.battle.as_ref().unwrap().units.iter().filter(|u| u.led) {
-            let kinds: Vec<bool> = u
-                .members
-                .iter()
-                .filter_map(|&id| w.pawn(id))
-                .flat_map(|p| p.weapons().filter(|k| k.is_some()).map(|k| crate::pawn::attack_with(k).ranged).collect::<Vec<_>>())
-                .collect();
-            assert!(kinds.windows(2).all(|k| k[0] == k[1]), "{:?} squad with mixed weapons: {:?}", u.side, kinds);
+            let members: Vec<&crate::pawn::Pawn> = u.members.iter().filter_map(|&id| w.pawn(id)).collect();
+            let ranged: Vec<bool> = members.iter().map(|p| p.main_attack().ranged).collect();
+            assert!(ranged.windows(2).all(|k| k[0] == k[1]), "{:?} squad with mixed main weapons", u.side);
+            for p in members.iter().filter(|p| p.main_attack().ranged) {
+                assert!(p.sidearm.is_none_or(|k| crate::pawn::attack_with(Some(k)).ranged), "{} has a melee sidearm", p.name);
+            }
         }
     }
 
