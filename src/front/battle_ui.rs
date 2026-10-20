@@ -104,7 +104,7 @@ const MORALE_LOSS_COLOR: Color32 = theme::RED;
 /// colour, and what it means.
 fn unit_tags(unit: &Unit) -> Vec<(&'static str, Color32, &'static str)> {
     let mut tags = Vec::new();
-    if unit.passive {
+    if unit.is_civilians() {
         tags.push(("SHELTERING", theme::GREEN, "A civilian: never acts, but can be attacked"));
     }
     if unit.broken() {
@@ -124,10 +124,10 @@ fn unit_tags(unit: &Unit) -> Vec<(&'static str, Color32, &'static str)> {
             "Suppression 50 or more: only 60% of its AP next round, aim x0.7, and morale doesn't recover",
         ));
     }
-    if unit.hunkered && !unit.passive {
+    if unit.is_hunkered() && !unit.is_civilians() {
         tags.push(("HUNKERED", theme::TEAL, "Keeping heads down: harder to hit (x0.75) until its next turn"));
     }
-    if unit.deployed {
+    if unit.is_deployed() {
         tags.push(("DEPLOYED", theme::TEAL, "Down on one knee: aim x1.25, harder to hit (x0.8), can't move"));
     }
     tags
@@ -296,7 +296,7 @@ fn update_reach(mut commands: Commands, sim: Res<Sim>, ui: Res<UiState>, mut are
     let m = &w.map;
     let key = w.battle.as_ref().and_then(|b| {
         // A deployed squad can't move: no area.
-        let u = my_unit(b).filter(|&u| !b.busy() && !b.units[u].deployed)?;
+        let u = my_unit(b).filter(|&u| !b.busy() && !b.units[u].is_deployed())?;
         let lead = w.pawn(*b.units[u].members.first()?)?;
         let others: Vec<Pos> = w.pawns.iter().filter(|p| p.active() && !b.units[u].members.contains(&p.id)).map(|p| p.pos).collect();
         Some((u, lead.pos, b.units[u].ap, ui.top_level(m), ui.roof_version, others))
@@ -528,7 +528,7 @@ fn draw_battle(sim: Res<Sim>, ui: Res<UiState>, area: Res<ReachArea>, mut gizmos
         let color = match unit.side {
             Faction::Raider => Color::srgb(0.95, 0.2, 0.15),
             _ if b.active == Some(u) => Color::srgb(1.0, 0.82, 0.1),
-            _ if unit.passive => Color::srgb(0.4, 0.85, 0.5),
+            _ if unit.is_civilians() => Color::srgb(0.4, 0.85, 0.5),
             _ if unit.acted => Color::srgb(0.55, 0.55, 0.6),
             _ => Color::srgb(0.35, 0.65, 1.0),
         };
@@ -760,7 +760,7 @@ fn battle_panels(
                 if !m.is_dead() && m.health.bleed_rate() > 0.0 {
                     painter.circle_filled(egui::pos2(rect.center().x, rect.top() - 3.0), 2.0, theme::RED);
                 }
-                if unit.led && unit.members.first() == Some(&id) {
+                if unit.is_squad() && unit.members.first() == Some(&id) {
                     painter.rect_stroke(rect.expand(1.0), 1.0, egui::Stroke::new(1.0, Color32::WHITE), egui::StrokeKind::Outside);
                 }
             }
@@ -781,7 +781,7 @@ fn battle_panels(
             }
             let color = match unit.side {
                 Faction::Raider => theme::RED,
-                _ if unit.passive => theme::GREEN,
+                _ if unit.is_civilians() => theme::GREEN,
                 _ => theme::TEAL,
             };
             let name = if unit.roster.len() > 1 {
@@ -971,7 +971,7 @@ fn battle_panels(
                 let deployable = w.can_deploy(u);
                 panel.horizontal(|row| {
                     if deployable {
-                        let (label, hint) = if unit.deployed {
+                        let (label, hint) = if unit.is_deployed() {
                             (format!("Stand up ({} AP)", AP_DEPLOY), "Back on their feet, so the squad can move")
                         } else {
                             (format!("Deploy ({} AP)", AP_DEPLOY), "Down on one knee: better aim, harder to hit; can't move until standing up")
@@ -1065,7 +1065,7 @@ fn battle_panels(
                     panel.label(RichText::new(format!("{} joins {} {}", p.name, l.name, rounds)).small().weak());
                 }
             }
-            let civilians = b.units.iter().filter(|u| u.passive && !u.out()).count();
+            let civilians = b.units.iter().filter(|u| u.is_civilians() && !u.out()).count();
             if civilians > 0 {
                 panel.label(RichText::new(format!("{} civilian(s) sheltering", civilians)).small().weak());
             }

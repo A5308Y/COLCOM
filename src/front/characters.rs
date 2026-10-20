@@ -810,10 +810,10 @@ pub fn activity(p: &Pawn, w: &SimWorld, armed: bool) -> Pose {
     // down on one knee aiming when deployed.
     if let Some(b) = &w.battle {
         if let Some(u) = b.unit_of(p.id) {
-            if b.units[u].deployed {
+            if b.units[u].is_deployed() {
                 return Pose::split(Anim::Kneel, Anim::Aim);
             }
-            if b.units[u].hunkered {
+            if b.units[u].is_hunkered() {
                 return Pose::full(Anim::Crouch);
             }
         }
@@ -1375,7 +1375,7 @@ mod tests {
         let b = w.battle.as_ref().unwrap();
         let u = (0..b.units.len()).find(|&u| w.can_deploy(u)).expect("a ranged squad");
         let member = b.units[u].members[0];
-        w.battle.as_mut().unwrap().units[u].deployed = true;
+        w.battle.as_mut().unwrap().units[u].stance = my_world::battle::Stance::Deployed;
         let p = w.pawn(member).unwrap();
         assert_eq!(activity(p, &w, true), Pose::split(Anim::Kneel, Anim::Aim));
     }

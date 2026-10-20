@@ -623,11 +623,11 @@ fn sync_pawns(
 
         // Weapon in hand when fighting in a battle (civilians just keep their heads down).
         let armed = !lying
-            && w.battle.as_ref().is_some_and(|b| b.unit_of(p.id).is_some_and(|u| !b.units[u].passive));
+            && w.battle.as_ref().is_some_and(|b| b.unit_of(p.id).is_some_and(|u| !b.units[u].is_civilians()));
 
         // An attack starts the weapon's cooldown: play the shot or blow
         // (a deployed squad fires from the knee: the shot over kneeling legs).
-        let deployed = w.battle.as_ref().is_some_and(|b| b.unit_of(p.id).is_some_and(|u| b.units[u].deployed));
+        let deployed = w.battle.as_ref().is_some_and(|b| b.unit_of(p.id).is_some_and(|u| b.units[u].is_deployed()));
         if p.cooldown > v.last_cooldown + 0.05 && !lying {
             let anim = characters::attack_anim(p);
             v.action = Some((anim, library.duration(anim), true));
@@ -792,7 +792,7 @@ mod tests {
         let visuals = world.resource::<PawnVisuals>();
         for pawn in sim.world.pawns.iter().filter(|p| {
             p.weapon.is_some() && sim.world.battle.as_ref().unwrap().unit_of(p.id)
-                .is_some_and(|u| !sim.world.battle.as_ref().unwrap().units[u].passive)
+                .is_some_and(|u| !sim.world.battle.as_ref().unwrap().units[u].is_civilians())
         }) {
             let name = &pawn.name;
             let v = &visuals.map[&pawn.id];

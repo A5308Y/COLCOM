@@ -638,7 +638,7 @@ mod tests {
             let w = &mut sim.world;
             let b = w.battle.as_ref().expect("the scenario starts in battle");
             assert_eq!(b.round, 1);
-            let u = (0..b.units.len()).find(|&u| b.units[u].side == my_world::pawn::Faction::Colony && b.units[u].led).unwrap();
+            let u = (0..b.units.len()).find(|&u| b.units[u].side == my_world::pawn::Faction::Colony && b.units[u].is_squad()).unwrap();
             let leader = b.units[u].members[0];
             w.battle_order(my_world::battle::BattleOrder::Activate(u)).unwrap();
             let lead = w.pawn(leader).unwrap().pos;

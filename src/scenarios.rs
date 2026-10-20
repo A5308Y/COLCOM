@@ -278,14 +278,14 @@ mod tests {
         assert_eq!(ada.role, Role::Leader);
         assert!(w.has_proper_quarters(ada), "Ada has a decent bedroom");
         let squad = &b.units[b.unit_of(ada.id).unwrap()];
-        assert!(squad.led);
+        assert!(squad.is_squad());
         assert_eq!(squad.members.len(), 3, "Ada and the two beside her");
         assert_eq!(b.arrivals.len(), 1, "one member is on the way");
         assert_eq!(b.arrivals[0].rounds, 2);
 
         let colony: Vec<_> = b.units.iter().filter(|u| u.side == Faction::Colony).collect();
-        assert_eq!(colony.iter().filter(|u| !u.led && !u.passive).count(), 2, "two lone fighters");
-        let civilians: Vec<_> = colony.iter().filter(|u| u.passive).collect();
+        assert_eq!(colony.iter().filter(|u| u.kind == crate::battle::UnitKind::Lone).count(), 2, "two lone fighters");
+        let civilians: Vec<_> = colony.iter().filter(|u| u.is_civilians()).collect();
         assert_eq!(civilians.len(), 1);
         let c = w.pawn(civilians[0].members[0]).unwrap();
         assert_eq!(w.map.zone[w.map.idx(c.pos)], Zone::Safe, "the civilian shelters in the house");
@@ -320,7 +320,7 @@ mod tests {
     #[test]
     fn ranged_squads_carry_only_ranged_sidearms() {
         let w = battle_world();
-        for u in w.battle.as_ref().unwrap().units.iter().filter(|u| u.led) {
+        for u in w.battle.as_ref().unwrap().units.iter().filter(|u| u.is_squad()) {
             let members: Vec<&crate::pawn::Pawn> = u.members.iter().filter_map(|&id| w.pawn(id)).collect();
             let ranged: Vec<bool> = members.iter().map(|p| p.main_attack().ranged).collect();
             assert!(ranged.windows(2).all(|k| k[0] == k[1]), "{:?} squad with mixed main weapons", u.side);
@@ -357,7 +357,7 @@ mod tests {
             assert_eq!(p.weapon, Some(item(weapon)), "{name}'s primary weapon is equipped");
             assert!(!p.is_dead() && !p.lying());
             let unit = &b.units[b.unit_of(p.id).expect("present in round one")];
-            assert!(!unit.passive, "{name} should display the weapon in hand");
+            assert!(!unit.is_civilians(), "{name} should display the weapon in hand");
         }
     }
 

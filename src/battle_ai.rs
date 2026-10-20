@@ -81,7 +81,7 @@ impl World {
                 score += chance;
             }
             // Prefer fighters over civilians cowering in the safe zone.
-            if b.units[t].passive {
+            if b.units[t].is_civilians() {
                 score *= 0.5;
             }
             if best.is_none_or(|(_, s)| score > s) {
@@ -97,8 +97,8 @@ impl World {
         if unit.broken() {
             return match unit.side {
                 // To run, a deployed squad has to stand up first.
-                Faction::Raider if unit.deployed && unit.ap >= AP_DEPLOY + AP_MOVE => BattleOrder::Deploy,
-                Faction::Raider if !unit.moved && !unit.deployed => self.flee_order(u),
+                Faction::Raider if unit.is_deployed() && unit.ap >= AP_DEPLOY + AP_MOVE => BattleOrder::Deploy,
+                Faction::Raider if !unit.moved && !unit.is_deployed() => self.flee_order(u),
                 _ if unit.ap >= AP_HUNKER => BattleOrder::Hunker,
                 _ => BattleOrder::End,
             };
@@ -110,7 +110,7 @@ impl World {
             return BattleOrder::Medkit;
         }
         let grenade = (0..b.units.len())
-            .filter(|&t| b.units[t].members.len() >= 2 && !b.units[t].passive)
+            .filter(|&t| b.units[t].members.len() >= 2 && !b.units[t].is_civilians())
             .find(|&t| self.throw_option(u, t).is_some_and(|o| affords(o.1)));
         if let Some(t) = grenade {
             return BattleOrder::Throw(t);
@@ -119,18 +119,18 @@ impl World {
         if let Some((t, score)) = attack {
             // A squad staying put to fire goes down on one knee first (a fresh activation only).
             let staying = score >= GOOD_ODDS && !unit.moved && unit.ap == unit.ap_start;
-            if !unit.deployed && staying && unit.ap >= AP_DEPLOY + AP_ATTACK && self.can_deploy(u) {
+            if !unit.is_deployed() && staying && unit.ap >= AP_DEPLOY + AP_ATTACK && self.can_deploy(u) {
                 return BattleOrder::Deploy;
             }
-            if score >= GOOD_ODDS || unit.moved || unit.deployed {
+            if score >= GOOD_ODDS || unit.moved || unit.is_deployed() {
                 return BattleOrder::Attack(t);
             }
         }
         // To move, a deployed squad stands up first.
-        if unit.deployed && !unit.moved && unit.ap >= AP_DEPLOY + 2 * AP_MOVE && self.best_spot(u).is_some() {
+        if unit.is_deployed() && !unit.moved && unit.ap >= AP_DEPLOY + 2 * AP_MOVE && self.best_spot(u).is_some() {
             return BattleOrder::Deploy;
         }
-        if !unit.moved && !unit.deployed && unit.ap >= AP_MOVE {
+        if !unit.moved && !unit.is_deployed() && unit.ap >= AP_MOVE {
             if let Some(to) = self.best_spot(u) {
                 return BattleOrder::Move(to);
             }

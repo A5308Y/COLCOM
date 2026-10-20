@@ -111,8 +111,7 @@ pub struct Unit {
     pub side: Faction,
     /// Pawn ids still fighting; a squad's leader comes first.
     pub members: Vec<PawnId>,
-    /// A squad (led by `members[0]`) rather than a lone fighter.
-    pub led: bool,
+    pub kind: UnitKind,
     /// Everyone who has fought in it, the fallen too (to show losses).
     #[serde(default)]
     pub roster: Vec<PawnId>,
@@ -121,33 +120,64 @@ pub struct Unit {
     pub ap_start: i32,
     pub acted: bool,
     pub moved: bool,
-    pub hunkered: bool,
-    /// A squad down on one knee: better aim, harder to hit, can't move.
-    #[serde(default)]
-    pub deployed: bool,
+    pub stance: Stance,
     pub suppression: f32,
     pub morale: f32,
-    /// Civilians: never act, but can be attacked.
-    pub passive: bool,
+}
+
+/// How a unit holds itself between orders.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+pub enum Stance {
+    #[default]
+    Standing,
+    /// Heads down: harder to hit until the unit's next turn (civilians always).
+    Hunkered,
+    /// A squad down on one knee: better aim, harder to hit, can't move.
+    Deployed,
+}
+
+/// What a unit is, fixed when the battle starts.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum UnitKind {
+    /// One fighter on their own.
+    Lone,
+    /// A squad led by `members[0]`.
+    Squad,
+    /// Civilians sheltering in the safe zone: never act, but can be attacked.
+    Civilians,
 }
 
 impl Unit {
-    fn new(side: Faction, members: Vec<PawnId>, led: bool, morale: f32) -> Unit {
+    fn new(side: Faction, members: Vec<PawnId>, kind: UnitKind, morale: f32) -> Unit {
         Unit {
             side,
             roster: members.clone(),
             members,
-            led,
+            kind,
             ap: AP_MAX,
             ap_start: AP_MAX,
             acted: false,
             moved: false,
-            hunkered: false,
-            deployed: false,
+            stance: Stance::Standing,
             suppression: 0.0,
             morale,
-            passive: false,
         }
+    }
+
+    pub fn is_squad(&self) -> bool {
+        self.kind == UnitKind::Squad
+    }
+
+    pub fn is_civilians(&self) -> bool {
+        self.kind == UnitKind::Civilians
+    }
+
+    pub fn is_hunkered(&self) -> bool {
+        self.stance == Stance::Hunkered
+    }
+
+    pub fn is_deployed(&self) -> bool {
+        self.stance == Stance::Deployed
     }
 
     /// Nobody left in it.
@@ -172,7 +202,7 @@ impl Unit {
 
     /// Takes part in the turn order.
     pub fn can_act(&self) -> bool {
-        !self.out() && !self.passive
+        !self.out() && !self.is_civilians()
     }
 }
 
@@ -359,7 +389,7 @@ impl World {
     /// squads that fight at range (a whole squad fights one way, like its leader).
     pub fn can_deploy(&self, u: usize) -> bool {
         let Some(unit) = self.battle.as_ref().and_then(|b| b.units.get(u)) else { return false };
-        unit.led && (unit.deployed || unit.members.first().and_then(|&id| self.pawn(id)).is_some_and(|p| p.main_attack().ranged))
+        unit.is_squad() && (unit.is_deployed() || unit.members.first().and_then(|&id| self.pawn(id)).is_some_and(|p| p.main_attack().ranged))
     }
 
     // ---------- parley ----------
@@ -522,8 +552,8 @@ impl World {
                 members.push(id);
             }
             if !members.is_empty() {
-                let led = members.len() > 1;
-                b.units.push(Unit::new(Faction::Raider, members, led, 60.0));
+                let kind = if members.len() > 1 { UnitKind::Squad } else { UnitKind::Lone };
+                b.units.push(Unit::new(Faction::Raider, members, kind, 60.0));
             }
         }
 
@@ -570,7 +600,7 @@ impl World {
                 }
             }
             let morale = self.unit_morale(&members) + 10.0;
-            b.units.push(Unit::new(Faction::Colony, members, true, morale));
+            b.units.push(Unit::new(Faction::Colony, members, UnitKind::Squad, morale));
         }
         for &(id, role, _) in &colonists {
             let alone = match role {
@@ -581,7 +611,7 @@ impl World {
             };
             if alone {
                 let morale = self.unit_morale(&[id]);
-                b.units.push(Unit::new(Faction::Colony, vec![id], false, morale));
+                b.units.push(Unit::new(Faction::Colony, vec![id], UnitKind::Lone, morale));
             }
         }
         // Civilians run to the safe zone (if there is one) and keep their heads down.
@@ -597,9 +627,8 @@ impl World {
                 let i = self.pawn_index(id).unwrap();
                 place(&mut self.pawns[i], c);
             }
-            let mut u = Unit::new(Faction::Colony, vec![id], false, 50.0);
-            u.passive = true;
-            u.hunkered = true;
+            let mut u = Unit::new(Faction::Colony, vec![id], UnitKind::Civilians, 50.0);
+            u.stance = Stance::Hunkered;
             b.units.push(u);
         }
         // Everyone runs while the battle lasts.
@@ -710,7 +739,10 @@ impl World {
             }
             let b = self.battle.as_mut().unwrap();
             b.active = Some(u);
-            b.units[u].hunkered = false;
+            // Hunkering lasts until the unit's next turn; deploying until it stands up.
+            if b.units[u].is_hunkered() {
+                b.units[u].stance = Stance::Standing;
+            }
             b.units[u].moved = false;
             return Ok(());
         }
@@ -730,7 +762,7 @@ impl World {
                     return Err("not enough action points".into());
                 }
                 let b = self.battle.as_mut().unwrap();
-                b.units[u].deployed = !b.units[u].deployed;
+                b.units[u].stance = if b.units[u].is_deployed() { Stance::Standing } else { Stance::Deployed };
                 b.units[u].ap -= AP_DEPLOY;
                 Ok(())
             }
@@ -739,13 +771,14 @@ impl World {
                     return Err("not enough action points".into());
                 }
                 let b = self.battle.as_mut().unwrap();
-                b.units[u].hunkered = true;
+                // Taking cover means getting up off one knee.
+                b.units[u].stance = Stance::Hunkered;
                 b.units[u].ap = 0;
                 self.end_activation();
                 Ok(())
             }
             BattleOrder::Move(to) => {
-                if self.battle.as_ref().unwrap().units[u].deployed {
+                if self.battle.as_ref().unwrap().units[u].is_deployed() {
                     return Err(format!("deployed: stand up first ({} AP)", AP_DEPLOY));
                 }
                 let cost = self.move_cost(u, to)?;
@@ -1037,7 +1070,7 @@ impl World {
     /// a squad fights one way. Melee squads may draw a pistol; lone fighters anything.
     pub fn sidearm_barred(&self, a: &Pawn) -> bool {
         let in_squad = match self.battle.as_ref().and_then(|b| b.unit_of(a.id).map(|u| &b.units[u])) {
-            Some(unit) => unit.led,
+            Some(unit) => unit.is_squad(),
             None => matches!(a.role, Role::Leader | Role::Member(_)),
         };
         in_squad && a.main_attack().ranged && !attack_with(a.sidearm).ranged
@@ -1192,7 +1225,7 @@ impl World {
             .copied()
             .filter(|&o| self.pawn(o).is_some_and(|o| o.active() && self.can_attack(&self.pawns[ai], o)))
             .collect();
-        if unit.led && targets.len() > 1 {
+        if unit.is_squad() && targets.len() > 1 {
             let leader = unit.members[0];
             targets.retain(|&o| o != leader);
         }
@@ -1227,13 +1260,13 @@ impl World {
         let unit = |id: PawnId| b.and_then(|b| b.unit_of(id).map(|u| &b.units[u]));
         if w.ranged {
             c *= self.cover(from, o.pos).hit_factor();
-            if unit(o.id).is_some_and(|u| u.hunkered) {
+            if unit(o.id).is_some_and(|u| u.is_hunkered()) {
                 c *= 0.75;
             }
-            if unit(o.id).is_some_and(|u| u.deployed) {
+            if unit(o.id).is_some_and(|u| u.is_deployed()) {
                 c *= DEPLOYED_TARGET;
             }
-            if unit(a.id).is_some_and(|u| u.deployed) {
+            if unit(a.id).is_some_and(|u| u.is_deployed()) {
                 c *= DEPLOYED_AIM;
             }
             if from.2 > o.pos.2 {
@@ -1370,7 +1403,7 @@ impl World {
         let side = |s: Faction| -> Vec<Pos> {
             b.units
                 .iter()
-                .filter(|u| u.side == s && !u.passive)
+                .filter(|u| u.side == s && !u.is_civilians())
                 .flat_map(|u| u.members.iter().filter_map(|&id| self.pawn(id)).map(|p| p.pos))
                 .collect()
         };
@@ -1405,7 +1438,7 @@ impl World {
                 None => {
                     let morale = self.unit_morale(&[a.pawn]);
                     let b = self.battle.as_mut().unwrap();
-                    b.units.push(Unit::new(Faction::Colony, vec![a.pawn], false, morale));
+                    b.units.push(Unit::new(Faction::Colony, vec![a.pawn], UnitKind::Lone, morale));
                     self.battle_event(format!("{} arrives; their leader is down, so they fight alone.", name));
                 }
             }
@@ -1436,13 +1469,13 @@ impl World {
                 continue;
             }
             u.morale -= 20.0 * lost as f32;
-            if u.led && !u.members.contains(&before[0]) {
+            if u.is_squad() && !u.members.contains(&before[0]) {
                 u.morale -= 20.0;
                 if let (Some(l), false) = (self.pawn(before[0]), u.out()) {
                     events.push(format!("{}'s squad lost its leader.", l.name));
                 }
             }
-            if !was_broken && u.broken() && !u.out() && !u.passive {
+            if !was_broken && u.broken() && !u.out() && !u.is_civilians() {
                 let who = self.pawn(u.members[0]).map_or(String::new(), |p| p.name.clone());
                 events.push(match u.side {
                     Faction::Raider => format!("{}'s group loses its nerve and runs.", who),
@@ -1692,7 +1725,7 @@ mod tests {
         let squad = &b.units[b.unit_of(lead).unwrap()];
         assert_eq!(squad.members, vec![lead, mate]);
         let alone = &b.units[b.unit_of(odd).unwrap()];
-        assert!(!alone.led && alone.members == vec![odd], "the clubber fights alone");
+        assert!(!alone.is_squad() && alone.members == vec![odd], "the clubber fights alone");
         assert!(b.events.iter().any(|e| e.contains("fight alone")), "{:?}", b.events);
         // Raider squads are armed alike too.
         for u in b.units.iter().filter(|u| u.side == Faction::Raider) {
@@ -1776,13 +1809,13 @@ mod tests {
         let squad = &b.units[b.unit_of(leader).unwrap()];
         assert_eq!(squad.members, vec![leader, near], "the near one is with the leader");
         assert_eq!(w.pawn(near).unwrap().pos, w.pawn(leader).unwrap().pos, "a squad holds one cell");
-        assert!(squad.led);
+        assert!(squad.is_squad());
         // 12 cells away: 10 beyond the leader's side, run in one round.
         assert_eq!(b.arrivals.len(), 1);
         assert_eq!((b.arrivals[0].pawn, b.arrivals[0].rounds), (far, 1));
         assert_eq!(b.units[b.unit_of(lone).unwrap()].members, vec![lone], "fights alone");
         let civilians = &b.units[b.unit_of(civ).unwrap()];
-        assert!(civilians.passive && !civilians.can_act());
+        assert!(civilians.is_civilians() && !civilians.can_act());
         assert_eq!(w.map.zone[w.map.idx(w.pawn(civ).unwrap().pos)], Zone::Safe, "ran to the safe zone");
 
         // A round later, the far member stands beside the leader.
@@ -1841,7 +1874,7 @@ mod tests {
         assert_eq!(w.unit_cell(u), Some((5, 10, Z)));
         // Another unit's cell can't be shared.
         let lone = colonist(&mut w, (9, 10, Z));
-        w.battle.as_mut().unwrap().units.push(Unit::new(Faction::Colony, vec![lone], false, 50.0));
+        w.battle.as_mut().unwrap().units.push(Unit::new(Faction::Colony, vec![lone], UnitKind::Lone, 50.0));
         w.battle_order(BattleOrder::Activate(u)).unwrap();
         assert!(w.move_cost(u, (9, 10, Z)).is_err(), "taken by another unit");
         // The limp costs AP too: 17 a step at 60% (too far to (10, 12), 7 cells).
@@ -2217,7 +2250,7 @@ mod tests {
         fight(&mut w, 3, (14, 10, Z));
         let t = battle(&w).units.iter().position(|u| u.side == Faction::Raider).unwrap();
         let leader = battle(&w).units[t].members[0];
-        assert!(battle(&w).units[t].led);
+        assert!(battle(&w).units[t].is_squad());
         for _ in 0..200 {
             let picked = w.pick_target(i, t).unwrap();
             assert_ne!(picked, leader, "not the leader while others stand");
@@ -2330,16 +2363,41 @@ mod tests {
 
         w.battle_order(BattleOrder::Activate(u)).unwrap();
         w.battle_order(BattleOrder::Deploy).unwrap();
-        assert!(battle(&w).units[u].deployed);
+        assert!(battle(&w).units[u].is_deployed());
         assert_eq!(battle(&w).units[u].ap, AP_MAX - AP_DEPLOY);
         assert!(ours(&w) > aim, "better aim deployed");
         assert!(theirs(&w) < exposed, "harder to hit");
         assert!(w.battle_order(BattleOrder::Move((6, 12, Z))).is_err(), "deployed: stand up first");
         w.battle_order(BattleOrder::Deploy).unwrap();
-        assert!(!battle(&w).units[u].deployed);
+        assert!(!battle(&w).units[u].is_deployed());
         assert_eq!(battle(&w).units[u].ap, AP_MAX - 2 * AP_DEPLOY, "standing up costs too");
         assert!(w.battle_order(BattleOrder::Deploy).is_ok(), "30 AP left is enough");
         assert!(w.battle_order(BattleOrder::Deploy).is_err(), "but not again");
+    }
+
+    #[test]
+    fn hunkering_stands_a_deployed_squad_up() {
+        let mut w = world(40, 20, 22);
+        let leader = colonist(&mut w, (5, 10, Z));
+        let member = colonist(&mut w, (5, 11, Z));
+        w.set_role(leader, Role::Leader).unwrap();
+        w.set_role(member, Role::Member(leader)).unwrap();
+        for id in [leader, member] {
+            let i = w.pawn_index(id).unwrap();
+            w.pawns[i].weapon = Some(item("rifle"));
+        }
+        fight(&mut w, 1, (16, 10, Z));
+        let r = raiders(&w)[0];
+        let ri = w.pawn_index(r).unwrap();
+        w.pawns[ri].weapon = Some(item("rifle"));
+        let u = battle(&w).unit_of(leader).unwrap();
+        let theirs = |w: &World| w.hit_chance(w.pawn(r).unwrap(), w.pawn(leader).unwrap());
+        let exposed = theirs(&w);
+        w.battle_order(BattleOrder::Activate(u)).unwrap();
+        w.battle_order(BattleOrder::Deploy).unwrap();
+        w.battle_order(BattleOrder::Hunker).unwrap();
+        assert_eq!(battle(&w).units[u].stance, Stance::Hunkered);
+        assert!((theirs(&w) - exposed * 0.75).abs() < 1e-5, "cover from hunkering alone, not stacked on deploying");
     }
 
     #[test]
@@ -2355,7 +2413,7 @@ mod tests {
         }
         fight(&mut w, 1, (16, 10, Z));
         let u = battle(&w).unit_of(leader).unwrap();
-        assert!(battle(&w).units[u].led && !w.can_deploy(u));
+        assert!(battle(&w).units[u].is_squad() && !w.can_deploy(u));
         w.battle_order(BattleOrder::Activate(u)).unwrap();
         assert!(w.battle_order(BattleOrder::Deploy).is_err(), "a melee squad has nothing to aim");
     }
