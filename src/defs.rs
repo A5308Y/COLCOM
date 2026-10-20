@@ -210,6 +210,15 @@ pub struct ApparelDef {
     /// What shows on the wearer: shapes fixed to the character's bones.
     #[serde(default)]
     pub pieces: Vec<WornPiece>,
+    /// Deforming fabric fitted to each outfit; pieces remain loading fallbacks.
+    #[serde(default)]
+    pub skinned: Option<SkinnedApparel>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SkinnedApparel {
+    pub male: String,
+    pub female: String,
 }
 
 /// Part of a piece of apparel as worn, following one bone of the character
@@ -1170,6 +1179,10 @@ impl Defs {
                 if let Some(model) = &piece.model {
                     check_model(&d.id, &model.path, &[&model.pose])?;
                 }
+            }
+            if let Some(skin) = d.apparel.as_ref().and_then(|a| a.skinned.as_ref()) {
+                check_model(&d.id, &skin.male, &[])?;
+                check_model(&d.id, &skin.female, &[])?;
             }
             if d.prosthetic.as_ref().is_some_and(|p| p.fits.is_empty() || !(p.efficiency > 0.0 && p.efficiency <= 1.0)) {
                 return Err(format!("{}: a prosthetic fits some parts, with efficiency above 0 and up to 1", d.id));

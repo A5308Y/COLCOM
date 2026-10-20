@@ -662,6 +662,11 @@ mod tests {
             "models/characters/animations/UAL1_Standard.glb",
         ];
         files.extend(my_world::defs::ItemId::all().filter_map(|kind| kind.def().model.as_ref().map(|model| model.path.as_str())));
+        for kind in my_world::defs::ItemId::all() {
+            if let Some(skin) = kind.def().apparel.as_ref().and_then(|a| a.skinned.as_ref()) {
+                files.extend([skin.male.as_str(), skin.female.as_str()]);
+            }
+        }
         files.extend(my_world::defs::BuildId::all().filter_map(|kind| kind.def().model.as_ref().map(|model| model.path.as_str())));
         let handles: Vec<Handle<Gltf>> = files.iter().map(|f| app.world().resource::<AssetServer>().load(*f)).collect();
         for _ in 0..2000 {
@@ -753,5 +758,29 @@ mod tests {
         assert!(descendants.iter().any(|e| names.get(app.world(), *e).is_ok_and(|n| n.as_str() == "Rifle")), "the rifle model spawned in a hand");
         assert!(names.iter(app.world()).any(|n| n.as_str() == "Chest"), "armor model spawned on a chest bone");
         assert!(names.iter(app.world()).any(|n| n.as_str() == "Helmet"), "helmet model spawned on a head bone");
+        // Switching from armor to fabric must use live skinned joints in gun poses.
+        {
+            let mut sim = app.world_mut().resource_mut::<front::Sim>();
+            sim.world.pawns[0].apparel = vec![my_world::defs::ItemId::named("clothes")];
+            sim.world.pawns[1].apparel = vec![my_world::defs::ItemId::named("parka")];
+        }
+        let cloth_skins = |app: &mut App| {
+            let mut query = app.world_mut().query::<(&Name, &bevy::mesh::skinning::SkinnedMesh)>();
+            query.iter(app.world()).filter(|(name, _)| name.as_str().starts_with("SimpleClothes") || name.as_str().starts_with("Parka"))
+                .map(|(name, skin)| (name.to_string(), skin.joints.clone())).collect::<Vec<_>>()
+        };
+        // Material groups become separate mesh entities; check both parts of
+        // each garment rather than assuming a fixed number of primitives.
+        let parts = ["SimpleClothes", "Parka"].map(|item| ["Fabric", "NativeArms"].map(|part| (item, part)));
+        let complete = |skins: &[(String, Vec<Entity>)]| parts.iter().flatten().all(|(item, part)| skins.iter().any(|(name, _)| name.starts_with(*item) && name.contains(*part)));
+        let mut skins = Vec::new();
+        for _ in 0..2000 {
+            app.update();
+            skins = cloth_skins(&mut app);
+            if complete(&skins) && skins.iter().flat_map(|(_, joints)| joints).all(|&joint| app.world().get::<bevy::animation::AnimatedBy>(joint).is_some()) { break; }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(complete(&skins), "fabric and native arms on both clothed characters");
+        assert!(skins.iter().flat_map(|(_, joints)| joints).all(|&joint| app.world().get::<bevy::animation::AnimatedBy>(joint).is_some()), "clothes follow the character animation, with no imported bind-pose joints left");
     }
 }

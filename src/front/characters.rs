@@ -12,7 +12,8 @@ use super::look::{hash, pawn_look, Rgb};
 use bevy::animation::{AnimatedBy, AnimationTargetId};
 use bevy::gltf::{Gltf, GltfAssetLabel, GltfMaterialName, GltfNode};
 use bevy::prelude::*;
-use bevy::world_serialization::{WorldAssetRoot, WorldInstanceReady};
+use bevy::mesh::skinning::SkinnedMesh;
+use bevy::world_serialization::{WorldAsset, WorldAssetRoot, WorldInstanceReady};
 use my_world::defs::ItemId;
 use my_world::map::{Desig, Feature};
 use my_world::pawn::{Faction, Job, Pawn, Task};
@@ -223,6 +224,12 @@ pub struct Rig {
     /// The outfit part (the body below the head), hidden under a blanket in bed.
     outfit: Entity,
     covered: bool,
+    female: bool,
+    /// Native torso/arms are replaced only after deforming clothing is ready.
+    upper_body: Vec<Entity>,
+    garment: Option<Entity>,
+    garment_ready: bool,
+    garment_materials: Vec<AssetId<StandardMaterial>>,
     /// Eye meshes and their own material; closed eyes are painted like eyelids.
     eyes: Vec<(Entity, Handle<StandardMaterial>)>,
     lids: Option<Handle<StandardMaterial>>,
@@ -373,6 +380,11 @@ pub fn spawn_rig(commands: &mut Commands, assets: &AssetServer, p: &Pawn, parent
         hand: None,
         outfit: parts[0],
         covered: false,
+        female,
+        upper_body: Vec::new(),
+        garment: None,
+        garment_ready: false,
+        garment_materials: Vec::new(),
         eyes: Vec::new(),
         lids: None,
         // The textures' skin is darker than the tone it's tinted by.
@@ -416,6 +428,11 @@ fn rig_part(
         return;
     };
     rig.pending = rig.pending.saturating_sub(1);
+    if part == rig.outfit {
+        rig.upper_body.extend(children.iter_descendants(part).filter(|&e| {
+            names.get(e).is_ok_and(|n| n.as_str().ends_with("_Body") || n.as_str().ends_with("_Arms"))
+        }));
+    }
 
     if let Some(armature) =
         children.iter_descendants(part).find(|&e| names.get(e).is_ok_and(|n| n.as_str() == "Armature"))
@@ -483,6 +500,18 @@ pub fn prepare(commands: &mut Commands, library: &CharacterLibrary, rig_entity: 
 
 /// Grey a dead pawn's character, or restore its colours.
 impl Rig {
+    pub fn female(&self) -> bool { self.female }
+
+    pub fn reset_garment(&mut self, commands: &mut Commands) {
+        self.garment = None;
+        self.garment_ready = false;
+        self.own.retain(|(handle, _)| !self.garment_materials.contains(&handle.id()));
+        self.garment_materials.clear();
+        for &e in &self.upper_body {
+            commands.entity(e).insert(Visibility::Inherited);
+        }
+    }
+
     /// A bone, and its turn in the character's frame at rest.
     pub fn bone(&self, name: &str) -> Option<(Entity, Quat)> {
         self.bones.get(name).copied()
@@ -534,6 +563,76 @@ pub fn cover_body(rig: &mut Rig, covered: bool, visibility: &mut Query<&mut Visi
     if let Ok(mut vis) = visibility.get_mut(rig.outfit) {
         *vis = if covered { Visibility::Hidden } else { Visibility::Inherited };
     }
+    if let Some(e) = rig.garment.filter(|_| rig.garment_ready) {
+        if let Ok(mut vis) = visibility.get_mut(e) {
+            *vis = if covered { Visibility::Hidden } else { Visibility::Inherited };
+        }
+    }
+}
+
+#[derive(Component)]
+struct GarmentBinding {
+    character: Entity,
+    fallbacks: Vec<Entity>,
+}
+
+/// Clothing is a single skin driven by the live character skeleton, not rigid sleeves.
+pub fn spawn_garment(commands: &mut Commands, scene: Handle<WorldAsset>, character: Entity, rig: &mut Rig, fallbacks: Vec<Entity>) -> Entity {
+    let e = commands.spawn((WorldAssetRoot(scene), Transform::default(), Visibility::Hidden,
+        ChildOf(character), GarmentBinding { character, fallbacks })).observe(bind_garment).id();
+    rig.garment = Some(e);
+    e
+}
+
+fn bind_garment(
+    ready: On<WorldInstanceReady>,
+    mut commands: Commands,
+    bindings: Query<&GarmentBinding>,
+    children: Query<&Children>,
+    names: Query<&Name>,
+    skins: Query<&SkinnedMesh>,
+    surfaces: Query<(&GltfMaterialName, &MeshMaterial3d<StandardMaterial>)>,
+    mut rigs: Query<&mut Rig>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let root = ready.event().entity;
+    let Ok(binding) = bindings.get(root) else { return };
+    let Ok(mut rig) = rigs.get_mut(binding.character) else { return };
+    if rig.garment != Some(root) { return; }
+    let descendants: Vec<_> = children.iter_descendants(root).collect();
+    let mut replacements = Vec::new();
+    for &e in &descendants {
+        let Ok(skin) = skins.get(e) else { continue };
+        let joints: Option<Vec<_>> = skin.joints.iter().map(|&joint| {
+            let name = names.get(joint).ok()?;
+            rig.bone(name.as_str()).map(|(entity, _)| entity)
+        }).collect();
+        let Some(joints) = joints else {
+            warn!("garment has a joint missing from the character skeleton");
+            return;
+        };
+        replacements.push((e, SkinnedMesh { joints, ..skin.clone() }));
+    }
+    if replacements.is_empty() { return; }
+    for (e, skin) in replacements { commands.entity(e).insert(skin); }
+    // Imported bind-pose bones are no longer needed once the skin uses the live rig.
+    for &e in &descendants {
+        if names.get(e).is_ok_and(|n| n.as_str() == "Armature") { commands.entity(e).despawn(); }
+        if let Ok((name, surface)) = surfaces.get(e) {
+            if !name.0.starts_with("MI_") { continue; }
+            let tint = if name.0.starts_with("MI_Regular") { rig.skin } else { rig.clothes };
+            if let Some(mut own) = materials.get(&surface.0).cloned() {
+                own.base_color = tint;
+                let handle = materials.add(own);
+                rig.garment_materials.push(handle.id());
+                rig.own.push((handle.clone(), tint));
+                commands.entity(e).insert(MeshMaterial3d(handle));
+            }
+        }
+    }
+    for &e in binding.fallbacks.iter().chain(&rig.upper_body) { commands.entity(e).insert(Visibility::Hidden); }
+    commands.entity(root).insert(if rig.covered { Visibility::Hidden } else { Visibility::Inherited });
+    rig.garment_ready = true;
 }
 
 /// Play `pose`: its clip nodes fade in over `BLEND` (real time `dt`) and
@@ -706,6 +805,111 @@ pub fn model_hand_pose(pose: Transform) -> Transform {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deforming_clothes_use_live_joints_and_restore_the_native_outfit() {
+        let mut world = World::new();
+        world.init_resource::<Assets<StandardMaterial>>();
+        let outfit = world.spawn(Visibility::Inherited).id();
+        let torso = world.spawn((Visibility::Inherited, ChildOf(outfit))).id();
+        let arms = world.spawn((Visibility::Inherited, ChildOf(outfit))).id();
+        let live = world.spawn((Name::new("upperarm_l"), Transform::default())).id();
+        let mut rig = Rig {
+            pending: 0, hand: None, outfit, covered: false, female: false,
+            upper_body: vec![torso, arms], garment: None, garment_ready: false, garment_materials: Vec::new(),
+            eyes: Vec::new(), lids: None, lid_color: Color::WHITE, closed: false,
+            clothes: Color::WHITE, skin: Color::WHITE, hair: Color::WHITE, variant: false,
+            own: Vec::new(), bones: HashMap::from([("upperarm_l".into(), (live, Quat::IDENTITY))]),
+            hair_parts: Vec::new(), animated: true, layers: Vec::new(),
+        };
+        let character = world.spawn_empty().id();
+        let fallback = world.spawn(Visibility::Inherited).id();
+        let scene = Handle::<WorldAsset>::default();
+        let garment = spawn_garment(&mut world.commands(), scene.clone(), character, &mut rig, vec![fallback]);
+        world.entity_mut(character).insert(rig);
+        world.flush();
+        let armature = world.spawn((Name::new("Armature"), ChildOf(garment))).id();
+        let imported = world.spawn((Name::new("upperarm_l"), ChildOf(armature))).id();
+        let cloth = world.spawn((SkinnedMesh { joints: vec![imported], ..default() }, ChildOf(garment))).id();
+        assert_eq!(world.get::<Visibility>(torso), Some(&Visibility::Inherited), "loading retains the original torso");
+        assert_eq!(world.get::<Visibility>(garment), Some(&Visibility::Hidden));
+        let mut spawner = bevy::world_serialization::WorldInstanceSpawner::default();
+        world.trigger(WorldInstanceReady { entity: garment, instance_id: spawner.spawn(scene) });
+        world.flush();
+        assert_eq!(world.get::<SkinnedMesh>(cloth).unwrap().joints, vec![live], "the imported bind-pose bones never drive the worn skin");
+        assert!(world.get_entity(armature).is_err());
+        for e in [torso, arms, fallback] {
+            assert_eq!(world.get::<Visibility>(e), Some(&Visibility::Hidden), "no doubled torso or rigid sleeve");
+        }
+        assert_eq!(world.get::<Visibility>(garment), Some(&Visibility::Inherited));
+        let mut rig = world.entity_mut(character).take::<Rig>().unwrap();
+        let mut state = bevy::ecs::system::SystemState::<Query<&mut Visibility>>::new(&mut world);
+        cover_body(&mut rig, true, &mut state.get_mut(&mut world).unwrap());
+        assert_eq!(world.get::<Visibility>(garment), Some(&Visibility::Hidden), "clothes stay under the bed blanket");
+        cover_body(&mut rig, false, &mut state.get_mut(&mut world).unwrap());
+        assert_eq!(world.get::<Visibility>(garment), Some(&Visibility::Inherited));
+        rig.reset_garment(&mut world.commands());
+        world.despawn(garment);
+        world.flush();
+        for e in [torso, arms] { assert_eq!(world.get::<Visibility>(e), Some(&Visibility::Inherited)); }
+        assert!(world.get_entity(cloth).is_err(), "switching outfits removes the old skin");
+        assert!(rig.garment.is_none() && !rig.garment_ready);
+    }
+
+    #[test]
+    fn deforming_clothing_assets_match_the_outfits_and_have_valid_skin_weights() {
+        let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
+        for item in ["clothes", "parka"] {
+            let skin = ItemId::named(item).def().apparel.as_ref().unwrap().skinned.as_ref().unwrap();
+            for (sex, path) in [("Male", &skin.male), ("Female", &skin.female)] {
+                let path = assets.join(path);
+                let model: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+                let native_path = assets.join(format!("models/characters/outfits/{sex}_Peasant.gltf"));
+                let native: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&native_path).unwrap()).unwrap();
+                let bytes = std::fs::read(path.with_file_name(model["buffers"][0]["uri"].as_str().unwrap())).unwrap();
+                let native_bytes = std::fs::read(native_path.with_file_name(native["buffers"][0]["uri"].as_str().unwrap())).unwrap();
+                let slice = |g: &serde_json::Value, accessor: usize| {
+                    let a = &g["accessors"][accessor];
+                    let v = &g["bufferViews"][a["bufferView"].as_u64().unwrap() as usize];
+                    (v["byteOffset"].as_u64().unwrap_or(0) + a["byteOffset"].as_u64().unwrap_or(0)) as usize
+                };
+                let joints = model["skins"][0]["joints"].as_array().unwrap();
+                let native_joints = native["skins"][0]["joints"].as_array().unwrap();
+                assert_eq!(joints.len(), native_joints.len());
+                for (a, b) in joints.iter().zip(native_joints) {
+                    assert_eq!(model["nodes"][a.as_u64().unwrap() as usize]["name"], native["nodes"][b.as_u64().unwrap() as usize]["name"]);
+                }
+                let bind = slice(&model, model["skins"][0]["inverseBindMatrices"].as_u64().unwrap() as usize);
+                let native_bind = slice(&native, native["skins"][0]["inverseBindMatrices"].as_u64().unwrap() as usize);
+                assert_eq!(&bytes[bind..bind + joints.len() * 64], &native_bytes[native_bind..native_bind + joints.len() * 64], "{item}/{sex} keeps its matching bind pose");
+                let fabric = model["meshes"][0]["primitives"].as_array().unwrap();
+                let triangles: u64 = fabric.iter().map(|p| model["accessors"][p["indices"].as_u64().unwrap() as usize]["count"].as_u64().unwrap() / 3).sum();
+                assert!((1..=1800).contains(&triangles));
+                let attrs = &fabric[0]["attributes"];
+                let weight = attrs["WEIGHTS_0"].as_u64().unwrap() as usize;
+                let joint = attrs["JOINTS_0"].as_u64().unwrap() as usize;
+                let count = model["accessors"][weight]["count"].as_u64().unwrap() as usize;
+                assert_eq!(model["accessors"][joint]["count"].as_u64().unwrap() as usize, count);
+                let wo = slice(&model, weight);
+                let jo = slice(&model, joint);
+                for i in 0..count {
+                    let weights: Vec<_> = bytes[wo + i * 16..wo + (i + 1) * 16].chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+                    assert!(weights.iter().all(|w| w.is_finite() && (0.0..=1.0).contains(w)));
+                    assert!((weights.iter().sum::<f32>() - 1.0).abs() < 1e-5);
+                    for b in bytes[jo + i * 8..jo + (i + 1) * 8].chunks_exact(2) {
+                        assert!((u16::from_le_bytes(b.try_into().unwrap()) as usize) < joints.len());
+                    }
+                }
+                let arm_triangles = |g: &serde_json::Value, index: usize| -> u64 {
+                    g["meshes"][index]["primitives"].as_array().unwrap().iter().map(|p| g["accessors"][p["indices"].as_u64().unwrap() as usize]["count"].as_u64().unwrap()).sum()
+                };
+                assert_eq!(arm_triangles(&model, 1), arm_triangles(&native, 0), "the native hands/arms are retained");
+                for image in model["images"].as_array().unwrap() {
+                    assert!(path.parent().unwrap().join(image["uri"].as_str().unwrap()).is_file());
+                }
+            }
+        }
+    }
 
     /// The models only use vertex attributes Bevy loads: anything else makes
     /// it warn on every load (extra colour and texture sets, more than four

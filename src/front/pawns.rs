@@ -239,6 +239,11 @@ fn worn_pieces(apparel: &[ItemId]) -> Vec<&'static WornPiece> {
     }).collect()
 }
 
+fn deforming_clothes(apparel: &[ItemId]) -> Option<ItemId> {
+    let outer = apparel.iter().any(|k| k.def().apparel.as_ref().is_some_and(|a| a.slot == Slot::Outer && !a.pieces.is_empty()));
+    apparel.iter().copied().find(|k| k.def().apparel.as_ref().is_some_and(|a| a.skinned.is_some() && (!outer || a.slot != Slot::Body)))
+}
+
 /// Direction the pawn should face when not moving: the nearest enemy in a
 /// battle, what it's working on, or the table it's eating at.
 fn facing(p: &Pawn, w: &SimWorld) -> Option<f32> {
@@ -467,7 +472,10 @@ fn sync_pawns(
                 commands.entity(e).insert(ChildOf(parent));
                 v.armor.push(e);
             }
-            if let Some((r, ..)) = rig.as_ref().filter(|_| rig_ready) {
+            if let Some((r, ..)) = rig.as_mut().filter(|_| rig_ready) {
+                r.reset_garment(&mut commands);
+                let fabric = deforming_clothes(&p.apparel).map(|k| k.def().apparel.as_ref().unwrap());
+                let mut fabric_fallbacks = Vec::new();
                 for piece in &pieces {
                     let Some((bone, rest)) = r.bone(&piece.bone) else {
                         warn!("no bone \"{}\" for armour", piece.bone);
@@ -476,6 +484,14 @@ fn sync_pawns(
                     // Undo the bone's turn at rest, so the parts sit in the character's own frame.
                     let e = props::spawn_worn(&mut commands, &props, Transform::from_rotation(rest.inverse()), piece);
                     commands.entity(e).insert(ChildOf(bone));
+                    v.armor.push(e);
+                    if fabric.is_some_and(|a| a.pieces.iter().any(|p| std::ptr::eq(p, *piece))) {
+                        fabric_fallbacks.push(e);
+                    }
+                }
+                if let Some(skin) = fabric.and_then(|a| a.skinned.as_ref()) {
+                    let path = if r.female() { &skin.female } else { &skin.male };
+                    let e = characters::spawn_garment(&mut commands, props.model(path, 0), v.rig, r, fabric_fallbacks);
                     v.armor.push(e);
                 }
                 r.show_hair(!pieces.iter().any(|w| w.hides_hair), &mut visibility);
@@ -707,6 +723,17 @@ fn sync_pawns(
 mod tests {
     use super::*;
     use my_world::map::{Feature, FLAT_Z as Z};
+
+    #[test]
+    fn deforming_clothes_follow_outer_layer_selection() {
+        let clothes = ItemId::named("clothes");
+        let parka = ItemId::named("parka");
+        assert_eq!(deforming_clothes(&[clothes]), Some(clothes));
+        assert_eq!(deforming_clothes(&[clothes, parka]), Some(parka));
+        for outer in ["steel_armor", "powered_armor"] {
+            assert_eq!(deforming_clothes(&[clothes, ItemId::named(outer)]), None);
+        }
+    }
 
     #[test]
     fn integrated_helmets_do_not_overlap_separate_headgear() {

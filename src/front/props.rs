@@ -78,6 +78,9 @@ pub struct PropAssets {
 }
 
 impl PropAssets {
+    pub fn model(&self, path: &str, scene: usize) -> Handle<WorldAsset> {
+        self.models[&model_key(path, scene)].clone()
+    }
     pub fn paint(&self, color: &str) -> Handle<StandardMaterial> {
         // Unknown colours are caught when the definitions load.
         self.paints.get(color).unwrap_or(&self.blanket_free).clone()
@@ -152,6 +155,11 @@ fn setup_assets(
             .filter_map(|piece| piece.model.as_ref()).map(|model| (model.path.as_str(), model.scene));
         for (path, scene) in stored.chain(worn) {
             models.entry(model_key(path, scene)).or_insert_with(|| server.load(GltfAssetLabel::Scene(scene).from_asset(path.to_string())));
+        }
+        if let Some(skin) = item.apparel.as_ref().and_then(|a| a.skinned.as_ref()) {
+            for path in [&skin.male, &skin.female] {
+                models.entry(model_key(path, 0)).or_insert_with(|| server.load(GltfAssetLabel::Scene(0).from_asset(path.clone())));
+            }
         }
     }
     for model in d.builds.iter().filter_map(|build| build.model.as_ref()) {
@@ -876,6 +884,11 @@ mod tests {
             for piece in def.apparel.iter().flat_map(|a| &a.pieces) {
                 if let Some(model) = &piece.model {
                     models.insert(model_key(&model.path, model.scene), scenes.add(WorldAsset::new(World::new())));
+                }
+            }
+            if let Some(skin) = def.apparel.as_ref().and_then(|a| a.skinned.as_ref()) {
+                for path in [&skin.male, &skin.female] {
+                    models.insert(model_key(path, 0), scenes.add(WorldAsset::new(World::new())));
                 }
             }
         }

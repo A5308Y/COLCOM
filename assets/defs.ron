@@ -721,7 +721,8 @@
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
             // `armor`: share of each blow's damage it stops; `mood` while worn.
-            apparel: Some((slot: Body, armor: 0.06, mood: 3.0, warmth: 4.0, pieces: [
+            apparel: Some((slot: Body, armor: 0.06, mood: 3.0, warmth: 4.0,
+                skinned: Some((male: "models/items/SimpleClothesMale.gltf", female: "models/items/SimpleClothesFemale.gltf")), pieces: [
                 (bone: "spine_03",
                     model: Some((path: "models/items/SimpleClothes.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
                     (shape: Cylinder, color: "dye", at: (0.0, -0.01, -0.02), size: (0.40, 0.43, 0.31)),
@@ -778,7 +779,8 @@
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
             about: Some("A tailored padded coat with a folded, fur-lined hood: worn over clothes instead of armour, it keeps out the winter cold."),
-            apparel: Some((slot: Outer, armor: 0.04, mood: 1.0, warmth: 14.0, pieces: [
+            apparel: Some((slot: Outer, armor: 0.04, mood: 1.0, warmth: 14.0,
+                skinned: Some((male: "models/items/ParkaMale.gltf", female: "models/items/ParkaFemale.gltf")), pieces: [
                 // A padded coat round the body, a hood lying on the shoulders, fur trim.
                 (bone: "spine_03",
                     model: Some((path: "models/items/Parka.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [

@@ -301,6 +301,8 @@ harvested and every recipe made.
 - `assets/models/items/`: all remaining resources, components, food, medical supplies, prosthetics
   and clothing in the same faceted style; [asset notes](assets/models/items/README.md). Ground,
   shelf and carried stacks share models; clothing also has pieces attached to character bones.
+  Simple clothes and parkas use body-specific deforming skins for aiming and movement;
+  [gun-pose review command](assets/models/items/README.md#validation).
 - `assets/models/furniture/`: 20 matching beds, tables, seats, storage pieces, lights and wall
   furnishings; [asset notes](assets/models/furniture/README.md). Models preserve interaction heights,
   owner-colored blankets and blue construction previews, with shape parts as loading fallbacks.
