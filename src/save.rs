@@ -7,7 +7,7 @@ use crate::DAY_LEN;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Bump whenever the save format changes incompatibly.
-pub const SAVE_VERSION: u32 = 10;
+pub const SAVE_VERSION: u32 = 11;
 
 #[derive(Serialize)]
 struct SaveOut<'a> {

@@ -1,6 +1,6 @@
 //! Pawns (colonists and raiders): needs, skills, mood, weapons and jobs.
 
-use crate::defs::{defs, ItemId, PlantId, Slot};
+use crate::defs::{defs, ItemId, PlantId, RoomId, Slot};
 use crate::health::{DamageKind, Health, Part};
 use crate::map::{Pos, Stack};
 use crate::rng::Rng;
@@ -369,8 +369,8 @@ pub enum Memory {
     AteWithoutTable,
     WonBattle,
     LostBattle,
-    /// Slept in a themed room (index into `defs().rooms`) that has a thought.
-    RoomThought(u8),
+    /// Slept in a themed room that has a thought.
+    RoomThought(RoomId),
     SleptOnSpot,
 }
 
@@ -439,8 +439,8 @@ impl Memory {
     }
 }
 
-fn room_thought(k: u8) -> Option<&'static (String, f32)> {
-    defs().rooms.get(k as usize)?.effects.thought.as_ref()
+fn room_thought(k: RoomId) -> Option<&'static (String, f32)> {
+    k.def().effects.thought.as_ref()
 }
 
 /// Walking pace in cells per second (a cell is about 1.8 m: a brisk walk).

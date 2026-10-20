@@ -84,6 +84,7 @@ def_id!(ItemId, ItemDef, items, "item");
 def_id!(BuildId, BuildDef, builds, "buildable");
 def_id!(PlantId, PlantDef, plants, "plant");
 def_id!(RecipeId, RecipeDef, recipes, "recipe");
+def_id!(RoomId, RoomDef, rooms, "room kind");
 
 /// A bone of the character skeleton that gear attaches to, written by its
 /// glTF node name in the definitions (`"spine_03"`, `"Head"`).

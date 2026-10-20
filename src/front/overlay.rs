@@ -46,13 +46,13 @@ pub fn draw(
 
     // Themed rooms: their name over the middle of the floor, in the floor's colour.
     if distance < 70.0 {
-        for st in w.room_stats.iter().filter(|s| s.kind.is_some()) {
+        for (st, kind) in w.room_stats.iter().filter_map(|s| Some((s, s.kind?))) {
             let (cx, cy) = (st.centre.0.round() as usize, st.centre.1.round() as usize);
             if st.level > ui.top_at(m, cx.min(m.w - 1), cy.min(m.h - 1)) {
                 continue;
             }
             let Some(at) = to_screen(tile_point(st.centre.0, st.centre.1, st.level as f32) + Vec3::Y * 0.15) else { continue };
-            let room = &my_world::defs::defs().rooms[st.kind.unwrap()];
+            let room = kind.def();
             let (r, g, b) = room.floor;
             let c = Color32::from_rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);
             let light = c.lerp_to_gamma(Color32::WHITE, 0.55);

@@ -982,7 +982,7 @@ impl World {
             };
             p.add_memory(memory);
             if let Some((k, _)) = themed.filter(|(_, e)| e.thought.is_some()) {
-                p.add_memory(Memory::RoomThought(k as u8));
+                p.add_memory(Memory::RoomThought(k));
             }
             self.end_job(p);
         }

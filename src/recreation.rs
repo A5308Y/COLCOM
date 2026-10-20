@@ -438,7 +438,7 @@ mod tests {
         w.map.recompute_rooms();
         w.update_room_stats();
         let (k, e) = w.room_effects((4, 4, Z)).expect("a themed room");
-        assert_eq!(crate::defs::defs().rooms[k].id, "recreation");
+        assert_eq!(k.def().id, "recreation");
         assert!(e.fun > 1.0);
     }
 }

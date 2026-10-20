@@ -18,7 +18,7 @@ use bevy_egui::egui::{self, Align2, Color32, RichText};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::health::{CyberSlot, HediffKind};
 use my_world::decor::DecorState;
-use my_world::defs::{defs, ItemCategory, ItemId, PlantId, RoomDef, Slot, Special};
+use my_world::defs::{defs, ItemCategory, ItemId, PlantId, RoomDef, RoomId, Slot, Special};
 use my_world::map::{Block, Feature, Pos, Zone};
 use my_world::pawn::{Pawn, PawnId, Role, Skill, WorkPriority, WorkType};
 use my_world::production::{BillMode, StorePriority};
@@ -207,13 +207,12 @@ fn room_perks(ui: &mut egui::Ui, room: &RoomDef, indent: &str) {
 /// The room's theme if it has one, and a checklist towards each kind of
 /// themed room, closest first (the closest unfinished one open).
 fn room_themes(ui: &mut egui::Ui, r: &RoomStats) {
-    let rooms = &defs().rooms;
-    if let Some(k) = r.kind {
-        ui.label(theme::caps(&rooms[k].name, 19.0).color(room_color(&rooms[k])));
-        ui.label(RichText::new(&rooms[k].about).weak());
-        room_perks(ui, &rooms[k], "");
+    if let Some(room) = r.kind.map(RoomId::def) {
+        ui.label(theme::caps(&room.name, 19.0).color(room_color(room)));
+        ui.label(RichText::new(&room.about).weak());
+        room_perks(ui, room, "");
     }
-    let mut order: Vec<(usize, Progress)> = rooms.iter().enumerate().map(|(k, room)| (k, r.progress(room))).collect();
+    let mut order: Vec<(RoomId, Progress)> = RoomId::all().map(|k| (k, r.progress(k.def()))).collect();
     // Closest first: the most needs met, as a share.
     order.sort_by(|a, b| {
         let share = |p: &Progress| {
@@ -225,7 +224,7 @@ fn room_themes(ui: &mut egui::Ui, r: &RoomStats) {
     let open = order.iter().find(|(k, p)| Some(*k) != r.kind && !p.done()).map(|(k, _)| *k);
     theme::section(ui, "Room themes");
     for (k, p) in order {
-        let room = &rooms[k];
+        let room = k.def();
         let (met, of) = p.score();
         let status = if p.done() { "all there".to_string() } else { format!("{}/{}", met, of) };
         let header = RichText::new(format!("{} ({})", room.name, status)).color(room_color(room));
@@ -254,7 +253,8 @@ fn rooms_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState, rig: &mut Came
         ui.label(RichText::new("Doors and windows in the walls count. Beds and workbenches the theme doesn't ask for spoil it.").small().weak());
         let room_h = (ctx.viewport_rect().height() - 260.0).max(200.0);
         egui::ScrollArea::vertical().max_height(room_h).show(ui, |ui| {
-            for (k, room) in defs().rooms.iter().enumerate() {
+            for k in RoomId::all() {
+                let room = k.def();
                 ui.separator();
                 let mine: Vec<&RoomStats> = w.room_stats.iter().filter(|r| r.kind == Some(k)).collect();
                 ui.horizontal(|ui| {

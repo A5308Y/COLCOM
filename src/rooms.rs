@@ -8,7 +8,7 @@
 //! good thought for sleepers, faster work, learning and spare products at
 //! its workbenches.
 
-use crate::defs::{defs, BuildId, RoomDef, RoomEffects};
+use crate::defs::{defs, BuildId, RoomDef, RoomEffects, RoomId};
 use crate::map::Pos;
 use crate::world::World;
 use std::collections::HashSet;
@@ -28,7 +28,7 @@ pub struct RoomStats {
     /// How many of each buildable are in it, or in its walls (doors, windows).
     pub counts: Vec<u32>,
     /// The themed room it is (index into `defs().rooms`), if any.
-    pub kind: Option<usize>,
+    pub kind: Option<RoomId>,
     /// Middle of its floor (cell coordinates) and its level, for labels.
     pub centre: (f32, f32),
     pub level: usize,
@@ -107,7 +107,7 @@ impl RoomStats {
 
     /// The name of its themed kind, if it has one.
     pub fn kind_name(&self) -> Option<&'static str> {
-        self.kind.map(|k| defs().rooms[k].name.as_str())
+        self.kind.map(RoomId::name)
     }
 
     pub fn score(&self) -> f32 {
@@ -136,10 +136,10 @@ impl World {
         self.room_stats.get(r)
     }
 
-    /// The themed room at `p` (index into `defs().rooms`) and what it does.
-    pub fn room_effects(&self, p: Pos) -> Option<(usize, &'static RoomEffects)> {
+    /// The themed room at `p` and what it does.
+    pub fn room_effects(&self, p: Pos) -> Option<(RoomId, &'static RoomEffects)> {
         let k = self.room_at(p)?.kind?;
-        Some((k, &defs().rooms[k].effects))
+        Some((k, &k.def().effects))
     }
 
     /// Recount every room (one pass over the map).
@@ -209,7 +209,7 @@ impl World {
         }
         for st in stats.iter_mut().filter(|s| s.size > 0) {
             st.centre = (st.centre.0 / st.size as f32, st.centre.1 / st.size as f32);
-            st.kind = defs().rooms.iter().position(|room| st.progress(room).done());
+            st.kind = RoomId::all().find(|k| st.progress(k.def()).done());
         }
         self.room_stats = stats;
         // Their temperatures, from where their cells were.
@@ -303,7 +303,8 @@ mod tests {
 
     #[test]
     fn every_room_kind_can_be_made() {
-        for (k, room) in defs().rooms.iter().enumerate() {
+        for k in RoomId::all() {
+            let room = k.def();
             let mut w = room_world();
             // Things in the walls go in the walls, the rest inside (the room is 3×3: (6..=8, 6..=8)).
             let mut wall = [(6, 5), (7, 5), (8, 5), (6, 9), (7, 9), (8, 9), (9, 6), (9, 8)].into_iter();
@@ -372,7 +373,7 @@ mod tests {
         assert!(w.room_effects((6, 6, Z)).is_none(), "no table yet");
         place(&mut w, (8, 8, Z), "table");
         let (k, e) = w.room_effects((6, 6, Z)).expect("a workshop");
-        assert_eq!(defs().rooms[k].id, "workshop");
+        assert_eq!(k.def().id, "workshop");
         assert!(e.work > 1.0 && e.learn > 1.0);
     }
 
