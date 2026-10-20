@@ -57,9 +57,11 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
   Done: explicit arms in those, plus `cover_at`, the shaken-unit order, faction colours
   and the expedition alerts. `affords` checks nested effects. Catch-alls that only pick out
   one variant (accessors such as `Zone::stockpile`) or match numbers and strings stay.
-- [ ] **Decoration and furniture-move states:** `Decor { delivered, built, remove }` and
+- [x] **Decoration and furniture-move states:** `Decor { delivered, built, remove }` and
   `Move { lifted, bills, owner }`. Model them as state enums whose fields only exist in
   the right state. Both change the save format.
+  Done: `DecorState { Planned { delivered }, Up, ComingDown }` (save format 9) and
+  `MoveState { Standing, Lifted { bills, owner } }` (save format 10).
 - [ ] **Indices into def and world tables:** `RoomStats.kind: Option<usize>` (add `RoomId`
   through `def_id!`), and `Zone::Stockpile(u16)` (add `StockpileId`).
 - [ ] Later, if worthwhile:

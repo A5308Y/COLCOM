@@ -1280,10 +1280,10 @@ fn wall_decor(ui: &mut egui::Ui, w: &SimWorld, t: Pos, look_up: &mut Option<Info
 fn furniture_move(ui: &mut egui::Ui, w: &SimWorld, t: Pos, move_from: &mut Option<Pos>, actions: &mut Vec<Action>) {
     let cell = |p: Pos| format!("cell {}, {}", p.0, p.1);
     let (text, call_off) = if let Some(mv) = w.move_from(t) {
-        let how = if mv.lifted { "Packed up" } else { "Waiting to be packed up" };
+        let how = if mv.is_lifted() { "Packed up" } else { "Waiting to be packed up" };
         (format!("{}: moving {} to {}.", how, mv.kind.name().to_lowercase(), cell(mv.to)), "Leave it here")
     } else if let Some(mv) = w.move_to(t) {
-        let how = if mv.lifted { "packed up, waiting to be set down here" } else { "waiting to be packed up" };
+        let how = if mv.is_lifted() { "packed up, waiting to be set down here" } else { "waiting to be packed up" };
         (format!("{} from {}: {}.", mv.kind.name(), cell(mv.from), how), "Call off the move")
     } else {
         if w.movable(t).is_some() {

@@ -1215,7 +1215,7 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
     // Furniture on the move: where it stands (until packed up), an arrow to where it goes.
     let moving = Color::srgb(0.4, 0.85, 1.0);
     for mv in &w.moves {
-        if !mv.lifted && mv.from.2 <= ui.top_at(m, mv.from.0, mv.from.1) {
+        if !mv.is_lifted() && mv.from.2 <= ui.top_at(m, mv.from.0, mv.from.1) {
             floor_outline(&mut gizmos, mv.from, 0.12, moving);
         }
         move_arrow(&mut gizmos, mv.from, mv.to, moving);

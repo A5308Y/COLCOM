@@ -19,15 +19,33 @@ pub struct Move {
     pub kind: BuildId,
     pub from: Pos,
     pub to: Pos,
-    /// Packed up: gone from `from`, waiting to be set down at `to`.
-    pub lifted: bool,
-    /// A workbench's bills, kept while it's packed up.
-    pub bills: Vec<Bill>,
-    /// Who slept in it, if it's a bed.
-    pub owner: Option<PawnId>,
+    pub state: MoveState,
     /// How it was turned where it stood.
     #[serde(default)]
     pub dir: u8,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum MoveState {
+    /// Still standing at `from`, waiting to be packed up.
+    Standing,
+    /// Packed up: gone from `from`, waiting to be set down at `to`, with a
+    /// workbench's bills and whoever slept in it if it's a bed.
+    Lifted { bills: Vec<Bill>, owner: Option<PawnId> },
+}
+
+impl Move {
+    pub fn is_lifted(&self) -> bool {
+        matches!(self.state, MoveState::Lifted { .. })
+    }
+
+    /// Whose bed it is, while it's packed up.
+    pub fn owner(&self) -> Option<PawnId> {
+        match self.state {
+            MoveState::Lifted { owner, .. } => owner,
+            MoveState::Standing => None,
+        }
+    }
 }
 
 impl World {
@@ -74,7 +92,7 @@ impl World {
         // Moving it instead of taking it down.
         self.map.desig[fi] = None;
         self.map.feature[ti] = Feature::blueprint(kind, 0, dir);
-        self.moves.push(Move { kind, from, to, lifted: false, bills: Vec::new(), owner: None, dir: was });
+        self.moves.push(Move { kind, from, to, state: MoveState::Standing, dir: was });
         true
     }
 
@@ -96,7 +114,7 @@ impl World {
         if self.is_move_blueprint(&mv) {
             self.map.feature[ti] = Feature::None;
         }
-        if mv.lifted {
+        if mv.is_lifted() {
             self.unpack(&mv);
         }
         true
@@ -118,7 +136,7 @@ impl World {
 
     /// Pack up the furniture at `from` (a builder finished `Task::Uninstall`).
     pub(crate) fn lift(&mut self, from: Pos) {
-        let Some(k) = self.moves.iter().position(|m| m.from == from && !m.lifted) else { return };
+        let Some(k) = self.moves.iter().position(|m| m.from == from && !m.is_lifted()) else { return };
         let fi = self.map.idx(from);
         if self.map.feature[fi].structure_id() != Some(self.moves[k].kind) {
             return;
@@ -126,10 +144,7 @@ impl World {
         let bills = self.bench_at(from).map(|b| b.bills.clone()).unwrap_or_default();
         let owner = if self.map.feature[fi].is_bed() { self.bed_owner(from) } else { None };
         let storage = self.moves[k].kind.def().storage.is_some();
-        let mv = &mut self.moves[k];
-        mv.lifted = true;
-        mv.bills = bills;
-        mv.owner = owner;
+        self.moves[k].state = MoveState::Lifted { bills, owner };
         self.map.set_feature(fi, Feature::None);
         self.sound("built", Some(from));
         if storage {
@@ -140,7 +155,7 @@ impl World {
     /// The blueprint at `to` was built: if it was a move, finish it (bills
     /// and owner come along). Returns whether it was one.
     pub(crate) fn finish_move(&mut self, to: Pos) -> bool {
-        let Some(k) = self.moves.iter().position(|m| m.to == to && m.lifted) else { return false };
+        let Some(k) = self.moves.iter().position(|m| m.to == to && m.is_lifted()) else { return false };
         let mv = self.moves.remove(k);
         self.set_down(&mv, to);
         true
@@ -162,14 +177,16 @@ impl World {
         self.map.set_feature(i, Feature::Built { kind: mv.kind, dir });
         // Shove anything lying here out of the way.
         self.map.move_items(i, at);
-        if !mv.bills.is_empty() {
-            if let Some(b) = self.bench_mut(at) {
-                b.bills = mv.bills.clone();
+        if let MoveState::Lifted { bills, owner } = &mv.state {
+            if !bills.is_empty() {
+                if let Some(b) = self.bench_mut(at) {
+                    b.bills = bills.clone();
+                }
+                self.choose_recipes();
             }
-            self.choose_recipes();
-        }
-        if let Some(id) = mv.owner {
-            self.assign_bed(at, Some(id));
+            if let Some(id) = *owner {
+                self.assign_bed(at, Some(id));
+            }
         }
         if mv.kind.def().storage.is_some() {
             self.sync_containers();
@@ -184,7 +201,7 @@ impl World {
             .iter()
             .filter(|mv| {
                 let blueprint = self.is_move_blueprint(mv);
-                let there = mv.lifted || self.map.feature[self.map.idx(mv.from)].structure_id() == Some(mv.kind);
+                let there = mv.is_lifted() || self.map.feature[self.map.idx(mv.from)].structure_id() == Some(mv.kind);
                 !blueprint || !there
             })
             .map(|mv| mv.to)

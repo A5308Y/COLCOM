@@ -259,7 +259,7 @@ impl World {
         if wt == WorkType::Construction && m.desig[i] == Some(Desig::Deconstruct) && m.deconstructable(pos) {
             return work(Task::Deconstruct);
         }
-        if wt == WorkType::Construction && self.move_from(pos).is_some_and(|mv| !mv.lifted) {
+        if wt == WorkType::Construction && self.move_from(pos).is_some_and(|mv| !mv.is_lifted()) {
             return work(Task::Uninstall);
         }
         match m.feature[i] {
@@ -276,7 +276,7 @@ impl World {
                 }
                 // Moved furniture needs no materials, only to be packed up first.
                 if let Some(mv) = self.move_to(pos) {
-                    return if mv.lifted { work(Task::Construct) } else { None };
+                    return if mv.is_lifted() { work(Task::Construct) } else { None };
                 }
                 // Materials come in the order of the cost list.
                 let Some((material, _)) = def.missing(delivered) else {
@@ -456,7 +456,7 @@ impl World {
         };
         if self.work_on(p, skill, time, rates, dt) {
             // Setting down their own bed: `p` is a copy, so it's given back here.
-            let own_bed = task == Task::Construct && self.move_to(target).is_some_and(|mv| mv.owner == Some(p.id));
+            let own_bed = task == Task::Construct && self.move_to(target).is_some_and(|mv| mv.owner() == Some(p.id));
             self.complete_work(target, task, &p.name);
             if own_bed {
                 p.bed = Some(target);
@@ -478,14 +478,14 @@ impl World {
             Task::Sow(_) => plantable(m, i),
             Task::Construct => match f {
                 Feature::Blueprint { kind, delivered, .. } => match self.move_to(target) {
-                    Some(mv) => mv.lifted,
+                    Some(mv) => mv.is_lifted(),
                     None => delivered >= kind.def().total_cost(),
                 },
                 _ => false,
             },
             Task::Craft => self.bench_at(target).is_some_and(|b| b.ready()),
             Task::Uninstall => {
-                self.move_from(target).is_some_and(|mv| !mv.lifted && f.structure_id() == Some(mv.kind))
+                self.move_from(target).is_some_and(|mv| !mv.is_lifted() && f.structure_id() == Some(mv.kind))
             }
             Task::Decorate => self.decor_job(target).is_some(),
         }
