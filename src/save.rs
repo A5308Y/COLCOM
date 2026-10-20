@@ -216,7 +216,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<Option<PawnId>>(), 4, "a free cell costs no more than an id");
         let mut w = World::new(42);
         let id = w.pawns[0].id;
-        w.res_target[7] = Some(id);
+        w.res_target.set(7, Some(id));
         w.pawns[0].life = Life::Downed { time: 12.5 };
         let loaded = from_json(&to_json(&w).unwrap()).unwrap();
         assert_eq!(loaded.res_target, w.res_target);

@@ -162,6 +162,7 @@ impl World {
         let list = self.map.decor.entry(i).or_default();
         list.push(Decor { kind, face, slot, state: DecorState::Planned { delivered: 0 } });
         list.sort_by_key(|d| (d.face, d.slot));
+        self.map.mark_changed();
         true
     }
 
@@ -179,6 +180,7 @@ impl World {
                 self.drop_decor(p, d);
             }
         }
+        self.map.mark_changed();
         true
     }
 
@@ -244,6 +246,7 @@ impl World {
         let DecorState::Planned { delivered } = &mut d.state else { return 0 };
         let used = need.count.min(carry.count);
         *delivered += used;
+        self.map.mark_changed();
         used
     }
 
@@ -260,6 +263,7 @@ impl World {
     /// A builder finished with the wall at `p`: the next thing is up, or down.
     pub(crate) fn finish_decor(&mut self, p: Pos) {
         let Some((d, _)) = self.decor_job(p) else { return };
+        self.map.mark_changed();
         let i = self.map.idx(p) as u32;
         let list = self.map.decor.get_mut(&i).unwrap();
         let k = list.iter().position(|x| *x == d).unwrap();
@@ -295,6 +299,7 @@ impl World {
             if !keep.is_empty() {
                 self.map.decor.insert(i, keep);
             }
+            if !lost.is_empty() { self.map.mark_changed(); }
             for d in lost {
                 self.drop_decor(p, d);
             }

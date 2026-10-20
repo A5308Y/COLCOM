@@ -90,8 +90,9 @@ impl World {
         let was = self.facing_of(from);
         let dir = if kind.def().turnable() { dir } else { was };
         // Moving it instead of taking it down.
-        self.map.desig[fi] = None;
+        self.map.set_desig(fi, None);
         self.map.feature[ti] = Feature::blueprint(kind, 0, dir);
+        self.map.mark_changed();
         self.moves.push(Move { kind, from, to, state: MoveState::Standing, dir: was });
         true
     }
@@ -113,6 +114,7 @@ impl World {
         let ti = self.map.idx(mv.to);
         if self.is_move_blueprint(&mv) {
             self.map.feature[ti] = Feature::None;
+            self.map.mark_changed();
         }
         if mv.is_lifted() {
             self.unpack(&mv);

@@ -225,7 +225,7 @@ impl World {
         for z in 0..self.map.d {
             let i = self.map.idx((x, y, z));
             if self.map.desig[i] == Some(Desig::Mine) {
-                self.map.desig[i] = None;
+                self.map.set_desig(i, None);
             }
         }
         self.index_quarries();
@@ -355,7 +355,11 @@ impl World {
             let (dig, stairs, _) = self.quarry_plan(k);
             if let Some(p) = stairs {
                 let i = self.map.idx(p);
-                self.map.feature[i] = Feature::blueprint(stairs_kind, 0, self.quarries[k].out);
+                let feature = Feature::blueprint(stairs_kind, 0, self.quarries[k].out);
+                if self.map.feature[i] != feature {
+                    self.map.feature[i] = feature;
+                    self.map.mark_changed();
+                }
             }
             let m = &mut self.map;
             // Only the layer being dug is marked (marks from before, deeper down, come off).
@@ -363,7 +367,7 @@ impl World {
                 for z in 0..m.d {
                     let i = m.idx((x as usize, y as usize, z));
                     if m.desig[i] == Some(Desig::Mine) && !dig.contains(&(x as usize, y as usize, z)) {
-                        m.desig[i] = None;
+                        m.set_desig(i, None);
                     }
                 }
             }
@@ -373,14 +377,14 @@ impl World {
                     let ai = m.idx(a);
                     if let Feature::Plant { kind, .. } = m.feature[ai] {
                         if m.desig[ai].is_none() {
-                            m.desig[ai] = kind.def().harvest.desig;
+                            m.set_desig(ai, kind.def().harvest.desig);
                         }
                         continue;
                     }
                 }
                 let i = m.idx(p);
                 if m.desig[i].is_none() {
-                    m.desig[i] = Some(Desig::Mine);
+                    m.set_desig(i, Some(Desig::Mine));
                 }
             }
         }

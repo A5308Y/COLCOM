@@ -375,7 +375,7 @@ impl World {
             Step::Arrived => {
                 let i = self.map.idx(from);
                 let got = take(self, i);
-                self.res_item[i] = None;
+                self.res_item.set(i, None);
                 match got {
                     Some(s) => {
                         p.carrying = Some(s);
@@ -540,7 +540,7 @@ impl World {
             }
             return;
         }
-        self.map.desig[i] = None;
+        self.map.set_desig(i, None);
         let drop = |m: &mut Map, at: Pos, drops: Vec<(ItemId, u32)>| {
             for (kind, count) in drops.into_iter().filter(|d| d.1 > 0) {
                 m.drop_item(at, Stack { kind, count });
@@ -815,7 +815,7 @@ impl World {
                 Step::Unreachable => self.end_job(p),
                 Step::Arrived => {
                     let fi = self.map.idx(from);
-                    self.res_item[fi] = None;
+                    self.res_item.set(fi, None);
                     let carried = p.carrying.map_or(0, |c| c.count);
                     let here = self.pick_up_kind(fi, to, deliver, p.carrying);
                     // Gone, or not what's already in hand: carry on with what we have.
@@ -850,7 +850,7 @@ impl World {
                     let more = if deliver { None } else { self.gather_next(p.pos, kind, to, load - total) };
                     p.job = Some(match more {
                         Some(next) => {
-                            self.res_item[self.map.idx(next)] = Some(p.id);
+                            self.res_item.set(self.map.idx(next), Some(p.id));
                             Job::Haul { from: next, to, deliver, picked: false }
                         }
                         None => Job::Haul { from, to, deliver, picked: true },
@@ -887,6 +887,7 @@ impl World {
                         Feature::Blueprint { kind, delivered, dir, over } => {
                             let used = self.delivery_need(to).filter(|n| n.kind == carry.kind).map_or(0, |n| n.count).min(carry.count);
                             self.map.feature[ti] = Feature::Blueprint { kind, delivered: delivered + used, dir, over };
+                            self.map.mark_changed();
                             used
                         }
                         _ if self.bench_at(to).is_some() => self.stock_bench(to, carry),
@@ -899,9 +900,9 @@ impl World {
                 // The rest to the next blueprint nearby that needs it.
                 if let Some(next) = p.carrying.filter(|_| deliver).and_then(|c| self.next_delivery(p.pos, c.kind, p.id)) {
                     if self.res_target[ti] == Some(p.id) {
-                        self.res_target[ti] = None;
+                        self.res_target.set(ti, None);
                     }
-                    self.res_target[self.map.idx(next)] = Some(p.id);
+                    self.res_target.set(self.map.idx(next), Some(p.id));
                     p.job = Some(Job::Haul { from: to, to: next, deliver: true, picked: true });
                     return;
                 }

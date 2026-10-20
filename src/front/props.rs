@@ -1,8 +1,8 @@
 //! Per-tile 3D objects: plants, structures, blueprints and items, built from
 //! the parts listed in their definitions (`assets/defs.ron`).
 //!
-//! Each frame the wanted object for every tile is compared with what is
-//! spawned; changed tiles get their entity replaced.
+//! Compare map props when the map changes. Doors, beds and graves also
+//! follow pawn state each frame; changed props get their entity replaced.
 
 use super::audio::SoundQueue;
 use super::input::{box_cells, hollow, order_target, Tool, UiState};
@@ -45,6 +45,9 @@ type ItemsKey = [Option<ItemKey>; 4];
 #[derive(Resource, Default)]
 struct Props {
     generation: Option<u64>,
+    changes: Option<u64>,
+    /// Props whose appearance also follows pawns (doors, beds and graves).
+    dynamic: Vec<usize>,
     /// Layer view level and roof cut version the visibilities were last set for.
     view: Option<(usize, u64)>,
     /// Spawned objects per cell (flat arrays: cheaper than maps when scanning every cell each frame).
@@ -299,6 +302,8 @@ fn sync_props(
         props.items = vec![None; m.len()];
         props.generation = Some(sim.generation);
         props.view = None;
+        props.changes = None;
+        props.dynamic.clear();
     }
 
     // Layer view changed: show or hide everything by level.
@@ -316,6 +321,9 @@ fn sync_props(
         props.view = Some(view);
     }
 
+    let map_changed = props.changes != Some(m.changes());
+    props.changes = Some(m.changes());
+    let dynamic = std::mem::take(&mut props.dynamic);
     let mut owners: HashMap<Pos, (PawnId, [f32; 3])> = HashMap::new();
     for p in w.pawns.iter().filter(|p| !p.is_dead()) {
         if let Some(b) = p.bed {
@@ -324,7 +332,12 @@ fn sync_props(
     }
     let filled: HashSet<Pos> = w.pawns.iter().filter(|p| p.is_buried()).map(|p| p.pos).collect();
 
-    for i in 0..m.len() {
+    let cells = (0..if map_changed { m.len() } else { 0 })
+        .chain(dynamic.iter().copied().filter(|_| !map_changed));
+    for i in cells {
+        if map_changed && m.feature[i].structure().is_some_and(|d| matches!(d.special, Special::Door | Special::Bed | Special::Grave)) {
+            props.dynamic.push(i);
+        }
         let pos = m.pos(i);
         let want = match m.feature[i] {
             Feature::None => None,
@@ -430,6 +443,11 @@ fn sync_props(
                 props.items[i] = Some((key, e));
             }
         }
+    }
+
+    if !map_changed {
+        props.dynamic = dynamic;
+        return;
     }
 
     // What hangs on walls: each wall shelf holds the next of its wall's stacks.
@@ -898,6 +916,57 @@ mod tests {
             paints: HashMap::new(), metals: HashMap::new(), blueprint: materials.add(StandardMaterial::default()),
             blanket_free: materials.add(StandardMaterial::default()), models,
         }
+    }
+
+    #[test]
+    fn cached_props_follow_map_edits_pawns_visibility_and_world_replacement() {
+        use bevy::ecs::system::RunSystemOnce;
+        use my_world::rng::Rng;
+        use my_world::world::World as SimWorld;
+        let mut w = SimWorld::with_map(Map::flat(8, 8), Rng::new(1));
+        let door = (3, 3, Z);
+        let di = w.map.idx(door);
+        w.map.set_feature(di, Feature::built("door"));
+        let id = w.spawn_colonist((0, 0, Z));
+        let mut sim = Sim::new(None);
+        sim.replace(w);
+        let mut world = World::new();
+        world.insert_resource(sim);
+        world.insert_resource(UiState::new());
+        world.insert_resource(Props::default());
+        world.insert_resource(test_assets());
+        world.insert_resource(Assets::<StandardMaterial>::default());
+        world.insert_resource(SoundQueue::default());
+        world.run_system_once(sync_props).unwrap();
+        let original = world.resource::<Props>().features[di].unwrap().1;
+        world.run_system_once(sync_props).unwrap();
+        assert_eq!(world.resource::<Props>().features[di].unwrap().1, original);
+        // Movement changes a door's appearance without changing the map.
+        let revision = world.resource::<Sim>().world.map.changes();
+        {
+            let mut sim = world.resource_mut::<Sim>();
+            let p = sim.world.pawns.iter_mut().find(|p| p.id == id).unwrap();
+            p.x = door.0 as f32;
+            p.y = door.1 as f32;
+        }
+        world.run_system_once(sync_props).unwrap();
+        let (key, open) = world.resource::<Props>().features[di].unwrap();
+        assert!(matches!(key, PropKey::Built { open: true, .. }));
+        assert_ne!(open, original);
+        assert_eq!(world.resource::<Sim>().world.map.changes(), revision);
+        world.resource_mut::<UiState>().view_level = Some(Z - 1);
+        world.run_system_once(sync_props).unwrap();
+        assert_eq!(world.get::<Visibility>(open), Some(&Visibility::Hidden));
+        world.resource_mut::<Sim>().world.map.set_feature(di, Feature::built("shelf"));
+        world.run_system_once(sync_props).unwrap();
+        let shelf = world.resource::<Props>().features[di].unwrap().1;
+        assert_ne!(shelf, open);
+        assert_eq!(world.get::<Visibility>(shelf), Some(&Visibility::Hidden));
+        let replacement = SimWorld::with_map(Map::flat(8, 8), Rng::new(2));
+        world.resource_mut::<Sim>().replace(replacement);
+        world.run_system_once(sync_props).unwrap();
+        assert!(world.resource::<Props>().features[di].is_none());
+        assert!(world.get_entity(shelf).is_err());
     }
 
     #[test]

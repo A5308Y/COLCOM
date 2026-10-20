@@ -381,12 +381,27 @@ pub struct Map {
     /// walls a roof reaches over may have changed), so the front end knows to redraw.
     #[serde(skip)]
     pub roof_changes: u64,
+    /// Bumped when map content used by props, markers or labels changes.
+    #[serde(skip)]
+    changes: u64,
     /// Something that held things up changed; check for falling.
     #[serde(skip)]
     pub support_dirty: bool,
 }
 
 impl Map {
+    /// Map content revision, paired with the front end's world generation.
+    pub fn changes(&self) -> u64 { self.changes.wrapping_add(self.roof_changes) }
+
+    pub(crate) fn mark_changed(&mut self) { self.changes = self.changes.wrapping_add(1); }
+
+    pub(crate) fn set_desig(&mut self, i: usize, desig: Option<Desig>) {
+        if self.desig[i] != desig {
+            self.desig[i] = desig;
+            self.mark_changed();
+        }
+    }
+
     /// All air.
     pub fn empty(w: usize, h: usize, d: usize) -> Map {
         let n = w * h * d;
@@ -411,6 +426,7 @@ impl Map {
             roof_wanted: Vec::new(),
             roof_gaps: Vec::new(),
             roof_changes: 0,
+            changes: 0,
             support_dirty: false,
         };
         m.recompute_rooms();
@@ -530,6 +546,20 @@ impl Map {
         let up = self.above(p).filter(|&a| self.ladder_dir(p).is_some() && self.standable(a));
         let down = self.below(p).filter(|&b| self.ladder_dir(b).is_some() && self.standable(b));
         flat.chain(up).chain(down)
+    }
+
+    /// Standable cells with a walking step into `p` (the reverse walking graph).
+    pub fn walk_predecessors(&self, p: Pos) -> impl Iterator<Item = Pos> + '_ {
+        let horizontal = DIRS.into_iter().flat_map(move |(dx, dy)| {
+            (-1..=1).filter_map(move |dz| {
+                let q = self.at(p.0 as i32 - dx, p.1 as i32 - dy, p.2 as i32 + dz)?;
+                (self.standable(q) && self.step(q, dx, dy) == Some(p)).then_some(q)
+            })
+        });
+        let vertical = [self.below(p), self.above(p)].into_iter().flatten().filter(move |&q| {
+            self.standable(q) && self.walk_neighbors(q).any(|nb| nb == p)
+        });
+        horizontal.chain(vertical)
     }
 
     /// Rising direction of stairs (or a ladder) in cell `p`, if there are any.
@@ -758,11 +788,13 @@ impl Map {
         if self.feature[i].blocks_room() != f.blocks_room() {
             self.rooms_dirty = true;
         }
+        if self.feature[i] != f { self.mark_changed(); }
         self.feature[i] = f;
     }
 
     pub fn set_block(&mut self, i: usize, b: Block) {
         if self.block[i] != b {
+            self.mark_changed();
             self.rooms_dirty = true;
             self.support_dirty = true;
         }
@@ -771,6 +803,7 @@ impl Map {
 
     pub fn set_floor(&mut self, i: usize, on: bool) {
         if self.floor[i] != on {
+            self.mark_changed();
             self.rooms_dirty = true;
             self.support_dirty = true;
         }
@@ -865,6 +898,7 @@ impl Map {
 
     /// Replace what's in cell `i` (empty stacks left out).
     pub fn set_stacks(&mut self, i: usize, stacks: Vec<Stack>) {
+        self.mark_changed();
         let mut rest = stacks.into_iter().filter(|s| s.count > 0);
         self.items[i] = rest.next();
         let more: Vec<Stack> = rest.collect();

@@ -563,7 +563,7 @@ impl World {
             };
             if let Some((kind, side)) = kind {
                 if self.take_gear(p, i, kind, side) {
-                    self.res_item[i] = None;
+                    self.res_item.set(i, None);
                     let what = kind.name().to_lowercase();
                     let msg = if side { format!("{} took {} as a sidearm.", p.name, what) } else { format!("{} picked up {}.", p.name, what) };
                     self.push_log(msg);

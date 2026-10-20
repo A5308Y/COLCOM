@@ -46,6 +46,7 @@ fn install_theme(mut contexts: EguiContexts) -> Result {
 
 fn draw_ui(
     mut contexts: EguiContexts,
+    mut labels: Local<overlay::MapLabels>,
     mut sim: ResMut<Sim>,
     mut st: ResMut<UiState>,
     mut rig: ResMut<CameraRig>,
@@ -62,7 +63,7 @@ fn draw_ui(
     st.dock_width = left;
     let mut view = ctx.viewport_rect();
     view.min.x += left;
-    overlay::draw(&ctx, &sim.world, cam, gt, rig.distance, &st, view);
+    overlay::draw(&ctx, &sim.world, cam, gt, rig.distance, &st, view, sim.generation, &mut labels);
     // The selection box while dragging with the Select tool.
     if let (Some(a), Some(b)) = (st.box_start, ctx.pointer_latest_pos()) {
         let a = egui::pos2(a.x, a.y);

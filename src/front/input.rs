@@ -1184,25 +1184,41 @@ pub fn cell_outline(gizmos: &mut Gizmos, t: Pos, color: Color) {
     gizmos.cube(Transform::from_translation(c).with_scale(Vec3::new(1.03, LEVEL_H * 1.03, 1.03)), color);
 }
 
-fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<ButtonInput<KeyCode>>) {
+#[derive(Default)]
+struct DesignationMarkers {
+    key: Option<(u64, u64)>,
+    cells: Vec<(Pos, Desig, bool)>,
+}
+
+fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<ButtonInput<KeyCode>>, mut markers: Local<DesignationMarkers>) {
     let w = &sim.world;
     let m = &w.map;
 
-    for i in 0..m.len() {
-        let Some(d) = m.desig[i] else { continue };
-        let p = m.pos(i);
-        if p.2 > ui.top_at(m, p.0, p.1) {
-            continue;
-        }
-        match d {
-            Desig::Mine if m.block[i].solid() => cell_outline(&mut gizmos, p, Color::srgb(0.45, 0.8, 1.0)),
-            Desig::Mine => floor_outline(&mut gizmos, p, 0.12, Color::srgb(0.45, 0.8, 1.0)),
-            Desig::Chop => floor_outline(&mut gizmos, p, 0.12, Color::srgb(1.0, 0.6, 0.1)),
-            Desig::Forage => floor_outline(&mut gizmos, p, 0.12, Color::srgb(1.0, 0.5, 0.75)),
-            Desig::Fill => cell_outline(&mut gizmos, p, Color::srgb(0.75, 0.55, 0.3)),
-            Desig::Deconstruct if m.feature[i].is_block() => cell_outline(&mut gizmos, p, Color::srgb(1.0, 0.3, 0.25)),
-            Desig::Deconstruct => floor_outline(&mut gizmos, p, 0.12, Color::srgb(1.0, 0.3, 0.25)),
-        }
+    let key = (sim.generation, m.changes());
+    if markers.key != Some(key) {
+        markers.cells = m.desig.iter().enumerate().filter_map(|(i, &d)| {
+            let d = d?;
+            let solid = match d {
+                Desig::Mine => m.block[i].solid(),
+                Desig::Deconstruct => m.feature[i].is_block(),
+                Desig::Fill => true,
+                Desig::Chop | Desig::Forage => false,
+            };
+            Some((m.pos(i), d, solid))
+        }).collect();
+        markers.key = Some(key);
+    }
+    for &(p, d, solid) in &markers.cells {
+        if p.2 > ui.top_at(m, p.0, p.1) { continue; }
+        let color = match d {
+            Desig::Mine => Color::srgb(0.45, 0.8, 1.0),
+            Desig::Chop => Color::srgb(1.0, 0.6, 0.1),
+            Desig::Forage => Color::srgb(1.0, 0.5, 0.75),
+            Desig::Fill => Color::srgb(0.75, 0.55, 0.3),
+            Desig::Deconstruct => Color::srgb(1.0, 0.3, 0.25),
+        };
+        if solid { cell_outline(&mut gizmos, p, color); }
+        else { floor_outline(&mut gizmos, p, 0.12, color); }
     }
 
     // Furniture on the move: where it stands (until packed up), an arrow to where it goes.

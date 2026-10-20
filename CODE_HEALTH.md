@@ -103,13 +103,22 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
   with an accumulated dt.
   Done: both run in the once-a-second pass with a 1 s step. `--example profile`:
   0.185 → 0.167 ms per tick.
-- [ ] **`World::release` scans three full-map reservation vectors** on every job end.
+- [x] **`World::release` scans three full-map reservation vectors** on every job end.
   Keep a per-pawn list of reserved cells instead.
-- [ ] **Pathing.** Every BFS allocates and clears about 900 KB. The trapped check runs a
+  Done: reservation tables keep an owner index, updated on every reservation change
+  and rebuilt when deserializing. Release visits only that pawn's cells; saves are unchanged.
+- [x] **Pathing.** Every BFS allocates and clears about 900 KB. The trapped check runs a
   BFS per colonist per second. Do one BFS seeded from the map edges, exit early once the
   goal is reached, and reuse buffers.
-- [ ] **Front end.** `sync_props`, `draw_markers` and the overlay rebuild from the whole
+  Done: one reverse walking search from the edges for all colonists; nearest-cell and
+  movement searches stop early, preserving tie order. Full fields reuse pooled buffers
+  and clear only reached cells. Local release `--example profile`: 0.167 → 0.063 ms
+  per tick for the reservation and pathing changes together.
+- [x] **Front end.** `sync_props`, `draw_markers` and the overlay rebuild from the whole
   map every frame. Gate them on a map change counter, as `roof_changes` already does.
+  Done: map revisions gate prop scans, designation lists and item/blueprint labels.
+  Pawn-dependent props (doors, beds, graves), camera projection and view visibility
+  still update each frame.
 
 ## 5. Tests
 

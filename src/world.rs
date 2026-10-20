@@ -86,12 +86,9 @@ pub struct World {
     pub pawns: Vec<Pawn>,
     /// Per-tile reservations by pawn (None = free): work targets, item stacks
     /// being picked up, and stockpile cells being delivered to.
-    #[serde(with = "crate::save::rle")]
-    pub res_target: Vec<Option<PawnId>>,
-    #[serde(with = "crate::save::rle")]
-    pub res_item: Vec<Option<PawnId>>,
-    #[serde(with = "crate::save::rle")]
-    pub res_cell: Vec<Option<PawnId>>,
+    pub res_target: crate::reservations::Reservations,
+    pub res_item: crate::reservations::Reservations,
+    pub res_cell: crate::reservations::Reservations,
     /// (patient, doctor) pairs, so two doctors don't treat the same patient.
     #[serde(default)]
     pub res_patient: Vec<(PawnId, PawnId)>,
@@ -204,9 +201,9 @@ impl World {
         World {
             map,
             pawns: Vec::new(),
-            res_target: vec![None; n],
-            res_item: vec![None; n],
-            res_cell: vec![None; n],
+            res_target: crate::reservations::Reservations::new(n),
+            res_item: crate::reservations::Reservations::new(n),
+            res_cell: crate::reservations::Reservations::new(n),
             res_patient: Vec::new(),
             clock: (DAY_LEN * 0.25) as f64,
             rng,
@@ -243,7 +240,7 @@ impl World {
 
     /// The nearest cell `from` can walk to, within `max` steps, that passes `test`.
     pub(crate) fn nearest_cell(&self, from: Pos, max: i32, test: impl FnMut(usize) -> bool) -> Option<Pos> {
-        bfs(&self.map, from).nearest(max, test).map(|i| self.map.pos(i))
+        crate::pathing::nearest(&self.map, from, max, test).map(|i| self.map.pos(i))
     }
 
     /// The nearest cell in `df` (within `max` steps) holding a stack that
@@ -531,6 +528,7 @@ impl World {
                 let rate = if kind.def().sow.is_some() { season.crop_growth() } else { 1.0 };
                 let growth = if t > 0.0 { (growth + dt * rate / t).min(1.0) } else { 1.0 };
                 self.map.feature[i] = Feature::Plant { kind, growth };
+                self.map.mark_changed();
             }
         }
         self.regrow_timer -= dt;
@@ -757,10 +755,11 @@ impl World {
         self.trapped = if self.battle.is_some() {
             Vec::new()
         } else {
+            let edges = crate::pathing::edge_reach(&self.map);
             self.pawns
                 .iter()
                 .filter(|p| p.is_colonist() && p.active())
-                .filter(|p| !self.reaches_edge(p.pos))
+                .filter(|p| !edges.contains(&self.map, p.pos))
                 .map(|p| p.id)
                 .collect()
         };
@@ -907,13 +906,9 @@ impl World {
     // ---------- jobs, reservations, movement ----------
 
     pub(crate) fn release(&mut self, id: PawnId) {
-        for v in [&mut self.res_target, &mut self.res_item, &mut self.res_cell] {
-            for r in v.iter_mut() {
-                if *r == Some(id) {
-                    *r = None;
-                }
-            }
-        }
+        self.res_target.release(id);
+        self.res_item.release(id);
+        self.res_cell.release(id);
         self.res_patient.retain(|&(_, doctor)| doctor != id);
     }
 
@@ -922,24 +917,24 @@ impl World {
         match job {
             Job::Work { target, .. } => {
                 let i = self.map.idx(target);
-                self.res_target[i] = Some(id);
+                self.res_target.set(i, Some(id));
             }
             Job::Haul { from, to, deliver, .. } => {
                 let (fi, ti) = (self.map.idx(from), self.map.idx(to));
-                self.res_item[fi] = Some(id);
+                self.res_item.set(fi, Some(id));
                 if deliver {
-                    self.res_target[ti] = Some(id);
+                    self.res_target.set(ti, Some(id));
                 } else {
-                    self.res_cell[ti] = Some(id);
+                    self.res_cell.set(ti, Some(id));
                 }
             }
             Job::Eat { from, .. } | Job::Equip { from, .. } => {
                 let i = self.map.idx(from);
-                self.res_item[i] = Some(id);
+                self.res_item.set(i, Some(id));
             }
             Job::Relax { at, .. } => {
                 let i = self.map.idx(at);
-                self.res_target[i] = Some(id);
+                self.res_target.set(i, Some(id));
             }
             Job::Sleep { bed: Some(b) } => p.bed = Some(b),
             // Hospital beds and operating tables stay nobody's.
@@ -947,14 +942,14 @@ impl World {
             Job::Surgery { patient, prosthetic, .. } => {
                 if let Some(at) = prosthetic {
                     let i = self.map.idx(at);
-                    self.res_item[i] = Some(id);
+                    self.res_item.set(i, Some(id));
                 }
                 self.res_patient.push((patient, id));
             }
             Job::Tend { patient, medicine, .. } => {
                 if let Some(m) = medicine {
                     let i = self.map.idx(m);
-                    self.res_item[i] = Some(id);
+                    self.res_item.set(i, Some(id));
                 }
                 if patient != id {
                     self.res_patient.push((patient, id));
@@ -969,12 +964,12 @@ impl World {
             }
             Job::Feed { patient, food, .. } => {
                 let i = self.map.idx(food);
-                self.res_item[i] = Some(id);
+                self.res_item.set(i, Some(id));
                 self.res_patient.push((patient, id));
             }
             Job::Bury { corpse, grave, .. } => {
                 let i = self.map.idx(grave);
-                self.res_target[i] = Some(id);
+                self.res_target.set(i, Some(id));
                 self.res_patient.push((corpse, id));
             }
             _ => {}
@@ -1018,13 +1013,16 @@ impl World {
                 Reach::Build => self.map.build_around(goal, self.map.overhead_work(goal)).any(|c| c == p.pos),
             };
             if !at_goal {
-                let df = if climb { crate::pathing::bfs_climbing(&self.map, p.pos) } else { bfs(&self.map, p.pos) };
-                let stand = match reach {
-                    Reach::Build => df.approach_build(&self.map, goal),
-                    _ => df.approach(&self.map, goal, reach == Reach::Beside),
+                let m = &self.map;
+                let stand = |c: Pos| c == p.pos || !m.storage_furniture(m.idx(c));
+                let goals: Vec<Pos> = match reach {
+                    Reach::Build => m.build_around(goal, m.overhead_work(goal))
+                        .filter(|&c| !m.storage_furniture(m.idx(c))).collect(),
+                    Reach::On => vec![goal],
+                    Reach::Beside => std::iter::once(goal).chain(m.around(goal)).filter(|&c| stand(c)).collect(),
                 };
-                match stand {
-                    Some((stand, _)) => p.path = df.path_to(stand),
+                match crate::pathing::path_to_any(m, p.pos, &goals, climb) {
+                    Some(path) => p.path = path,
                     None => {
                         p.path_goal = None;
                         return Step::Unreachable;
@@ -1141,8 +1139,9 @@ impl World {
             return false;
         }
         let i = self.map.idx(p);
+        self.map.mark_changed();
         match order {
-            Order::Desig(d) => self.map.desig[i] = Some(d),
+            Order::Desig(d) => self.map.set_desig(i, Some(d)),
             Order::Zone(Zone::None) if self.map.quarry_at(p.0, p.1).is_some() => {
                 self.remove_quarry_column(p.0, p.1);
                 if !self.container_at(i) {
@@ -1177,7 +1176,7 @@ impl World {
                 self.map.feature[i] = Feature::Blueprint { kind, delivered: 0, dir: crate::map::Dir::PlusX, over };
             }
             Order::Cancel => {
-                self.map.desig[i] = None;
+                self.map.set_desig(i, None);
                 self.cancel_move(p);
                 self.cancel_blueprint(p);
             }
@@ -1195,6 +1194,7 @@ impl World {
                 self.map.rooms_dirty = true;
             }
             self.map.feature[i] = over.map_or(Feature::None, |(kind, dir)| Feature::Built { kind, dir });
+            self.map.mark_changed();
             let at = self.map.landing(p);
             for (item, count) in kind.def().delivered_split(delivered) {
                 self.map.drop_item(at, Stack { kind: item, count });
@@ -1239,6 +1239,7 @@ impl World {
         match &mut self.map.feature[i] {
             Feature::Blueprint { dir: d, .. } => {
                 *d = dir;
+                self.map.mark_changed();
                 true
             }
             _ => false,
@@ -1252,16 +1253,19 @@ impl World {
         let Some(roof) = defs().roof() else { return };
         let m = &mut self.map;
         let mut wanted = vec![false; m.len()];
+        let mut changed = false;
         for &i in &m.roof_wanted {
             wanted[i] = true;
             if m.feature[i] == Feature::None {
                 m.feature[i] = Feature::blueprint(roof, 0, crate::map::Dir::PlusX);
+                changed = true;
             }
         }
         for (i, &keep) in wanted.iter().enumerate() {
             if let Feature::Blueprint { kind, delivered, .. } = m.feature[i] {
                 if kind == roof && !keep {
                     m.feature[i] = Feature::None;
+                    changed = true;
                     let at = m.landing(m.pos(i));
                     for (item, count) in kind.def().delivered_split(delivered) {
                         m.drop_item(at, Stack { kind: item, count });
@@ -1269,6 +1273,7 @@ impl World {
                 }
             }
         }
+        if changed { m.mark_changed(); }
     }
 
     /// Run `f` on a copy of pawn `id` with full access to the world.

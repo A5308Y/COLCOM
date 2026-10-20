@@ -6,7 +6,7 @@ use super::{tile_center, tile_point};
 use super::theme;
 use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, FontId, Pos2};
-use my_world::map::Feature;
+use my_world::map::{Feature, Pos};
 use my_world::pawn::{Faction, Job, PawnId};
 use my_world::world::World as SimWorld;
 
@@ -24,6 +24,34 @@ fn bar(painter: &egui::Painter, center: Pos2, width: f32, frac: f32, fill: Color
     painter.rect_filled(inner, 1.0, fill);
 }
 
+#[derive(Default)]
+pub struct MapLabels {
+    key: Option<(u64, u64)>,
+    labels: Vec<(Pos, f32, String, Color32)>,
+}
+
+impl MapLabels {
+    fn update(&mut self, w: &SimWorld, generation: u64) {
+        let m = &w.map;
+        let key = (generation, m.changes());
+        if self.key == Some(key) { return; }
+        self.labels.clear();
+        for i in 0..m.len() {
+            let pos = m.pos(i);
+            if m.has_items(i) {
+                let total: u32 = m.stacks(i).map(|s| s.count).sum();
+                self.labels.push((pos, 0.45, total.to_string(), Color32::WHITE));
+            }
+            if let Feature::Blueprint { kind, delivered, .. } = m.feature[i] {
+                if !m.roof_blueprint(i) {
+                    self.labels.push((pos, 1.35, format!("{}/{}", delivered, kind.def().total_cost()), theme::TEAL));
+                }
+            }
+        }
+        self.key = Some(key);
+    }
+}
+
 /// Anything hidden by the layer view or hidden roofs is skipped (`ui`).
 /// `view` is the part of the screen showing the world (not covered by docked panels).
 pub fn draw(
@@ -34,6 +62,8 @@ pub fn draw(
     distance: f32,
     ui: &UiState,
     view: egui::Rect,
+    generation: u64,
+    labels: &mut MapLabels,
 ) {
     let painter = ctx
         .layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("world_overlay")))
@@ -104,29 +134,45 @@ pub fn draw(
     }
 
     if distance < 24.0 {
-        for i in 0..m.len() {
-            let pos = m.pos(i);
-            if pos.2 > ui.top_at(m, pos.0, pos.1) {
-                continue;
-            }
-            let c = tile_center(pos) + Vec3::Y * 0.45;
-            if m.has_items(i) {
-                // All of it (a shelf's stacks together).
-                let total: u32 = m.stacks(i).map(|s| s.count).sum();
-                if let Some(sp) = to_screen(c) {
-                    shadow_text(&painter, sp, Align2::CENTER_BOTTOM, &total.to_string(), 12.0, Color32::WHITE);
-                }
-            }
-            // Roofs are many cheap cells: their counts would only clutter the view.
-            if let Feature::Blueprint { kind, delivered, .. } = m.feature[i] {
-                if m.roof_blueprint(i) {
-                    continue;
-                }
-                if let Some(sp) = to_screen(c + Vec3::Y * 0.9) {
-                    let label = format!("{}/{}", delivered, kind.def().total_cost());
-                    shadow_text(&painter, sp, Align2::CENTER_BOTTOM, &label, 12.0, theme::TEAL);
-                }
+        labels.update(w, generation);
+        for (pos, lift, label, color) in &labels.labels {
+            if pos.2 > ui.top_at(m, pos.0, pos.1) { continue; }
+            if let Some(sp) = to_screen(tile_center(*pos) + Vec3::Y * *lift) {
+                shadow_text(&painter, sp, Align2::CENTER_BOTTOM, label, 12.0, *color);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use my_world::defs::{BuildId, ItemId};
+    use my_world::map::{Map, Stack, Dir, FLAT_Z};
+    use my_world::rng::Rng;
+
+    #[test]
+    fn labels_update_after_pickup_delivery_and_world_replacement() {
+        let mut w = SimWorld::with_map(Map::flat(5, 5), Rng::new(1));
+        let at = (2, 2, FLAT_Z);
+        let i = w.map.idx(at);
+        let item = ItemId::named("wood");
+        w.map.drop_item(at, Stack { kind: item, count: 10 });
+        let mut labels = MapLabels::default();
+        labels.update(&w, 1);
+        assert_eq!(labels.labels[0].2, "10");
+        w.map.take_item(i, item, 4);
+        labels.update(&w, 1);
+        assert_eq!(labels.labels[0].2, "6");
+        let kind = BuildId::named("wall");
+        w.map.set_feature(i, Feature::blueprint(kind, 0, Dir::PlusX));
+        labels.update(&w, 1);
+        assert_eq!(labels.labels.len(), 2);
+        w.map.set_feature(i, Feature::blueprint(kind, 1, Dir::PlusX));
+        labels.update(&w, 1);
+        assert!(labels.labels[1].2.starts_with("1/"));
+        let replacement = SimWorld::with_map(Map::flat(5, 5), Rng::new(2));
+        labels.update(&replacement, 2);
+        assert!(labels.labels.is_empty());
     }
 }

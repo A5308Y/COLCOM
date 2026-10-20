@@ -8,14 +8,54 @@ pub const ANY_DISTANCE: i32 = i32::MAX;
 
 /// Distances from one start cell to every cell a pawn can walk to.
 pub struct DistField {
-    /// Steps from the start plus one; 0 = unreachable. (Zero-initialised
-    /// arrays are nearly free to allocate, which matters at 100k+ cells.)
+    /// Steps from the start plus one; 0 = unreachable.
     steps: Vec<u32>,
     parent: Vec<u32>,
     /// Reached cells, nearest first.
     pub order: Vec<usize>,
     w: usize,
     h: usize,
+    queue: VecDeque<Pos>,
+}
+
+// Fields can coexist (e.g. ordinary and climbing searches). Return their
+// storage on drop, clearing only previously reached cells when reused.
+#[derive(Default)]
+struct Buffers {
+    steps: Vec<u32>,
+    parent: Vec<u32>,
+    order: Vec<usize>,
+    queue: VecDeque<Pos>,
+}
+
+thread_local! {
+    static FIELDS: std::cell::RefCell<Vec<Buffers>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+impl Buffers {
+    fn take(len: usize) -> Self {
+        let mut b = FIELDS.with_borrow_mut(|pool| pool.pop().unwrap_or_default());
+        for &i in &b.order { b.steps[i] = 0; }
+        b.steps.resize(len, 0);
+        b.order.clear();
+        b.queue.clear();
+        b
+    }
+}
+
+impl Drop for DistField {
+    fn drop(&mut self) {
+        FIELDS.with_borrow_mut(|pool| {
+            if pool.len() < 4 {
+                pool.push(Buffers {
+                    steps: std::mem::take(&mut self.steps),
+                    parent: std::mem::take(&mut self.parent),
+                    order: std::mem::take(&mut self.order),
+                    queue: std::mem::take(&mut self.queue),
+                });
+            }
+        });
+    }
 }
 
 /// BFS over walkable cells. The start cell is always included, even if it
@@ -39,69 +79,185 @@ pub fn bfs_avoiding(map: &Map, start: Pos, blocked: impl Fn(usize) -> bool) -> D
     search(map, start, blocked, false, false)
 }
 
+/// How a cell was reached from its neighbour in a search.
+#[derive(Clone, Copy, PartialEq)]
+enum Step {
+    /// Walked onto: searched on from.
+    Walk,
+    /// Climbed onto by a trapped pawn: searched on from.
+    Climb,
+    /// Storage reached from beside it: a dead end, not searched on from.
+    Shelf,
+}
+
+/// The cells one step from `p`, in the order every search takes them.
+fn successors(map: &Map, p: Pos, shelves: bool, climb: bool, mut visit: impl FnMut(Pos, Step)) {
+    for nb in map.walk_neighbors(p) {
+        visit(nb, Step::Walk);
+    }
+    // Over furniture, for a pawn who'd otherwise be stuck.
+    if climb {
+        for (dx, dy) in crate::map::DIRS {
+            let Some(nb) = map.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32) else { continue };
+            if map.climbable(nb) {
+                visit(nb, Step::Climb);
+            }
+        }
+        // Up a pit's wall, hand over hand, and over its rim at the top.
+        let up = map.above(p).filter(|&a| map.cling(a));
+        let headroom = map.above(p).is_some_and(|a| map.open(a));
+        let rims = crate::map::DIRS.into_iter().filter_map(|(dx, dy)| {
+            let wall = map.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32)?;
+            let top = map.above(wall)?;
+            (headroom && map.solid(wall) && map.standable(top)).then_some(top)
+        });
+        for nb in up.into_iter().chain(rims) {
+            visit(nb, Step::Climb);
+        }
+    }
+    // Reached from here, but a dead end: not queued.
+    if shelves {
+        for nb in map.reach_neighbors(p) {
+            visit(nb, Step::Shelf);
+        }
+    }
+}
+
 fn search(map: &Map, start: Pos, blocked: impl Fn(usize) -> bool, shelves: bool, climb: bool) -> DistField {
-    let n = map.len();
-    let mut steps = vec![0u32; n];
-    let mut parent = vec![0u32; n];
-    let mut order = Vec::new();
+    search_until(map, start, blocked, shelves, climb, &[])
+}
+
+fn search_until(map: &Map, start: Pos, blocked: impl Fn(usize) -> bool, shelves: bool, climb: bool, goals: &[Pos]) -> DistField {
+    let Buffers { mut steps, mut parent, mut order, mut queue } = Buffers::take(map.len());
+    parent.resize(map.len(), 0);
     let si = map.idx(start);
     steps[si] = 1;
     order.push(si);
-    let mut q = VecDeque::new();
-    q.push_back(start);
-    while let Some(p) = q.pop_front() {
+    queue.push_back(start);
+    let mut goal_step = goals.contains(&start).then_some(1);
+    while let Some(p) = queue.pop_front() {
         let pi = map.idx(p);
         let d = steps[pi];
-        for nb in map.walk_neighbors(p) {
+        if goal_step.is_some_and(|best| d >= best) { break; }
+        successors(map, p, shelves, climb, |nb, how| {
             let ni = map.idx(nb);
-            if steps[ni] == 0 && !blocked(ni) {
+            if steps[ni] == 0 && (how != Step::Walk || !blocked(ni)) {
                 steps[ni] = d + 1;
                 parent[ni] = pi as u32;
                 order.push(ni);
-                q.push_back(nb);
-            }
-        }
-        // Over furniture, for a pawn who'd otherwise be stuck.
-        if climb {
-            for (dx, dy) in crate::map::DIRS {
-                let Some(nb) = map.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32) else { continue };
-                let ni = map.idx(nb);
-                if steps[ni] == 0 && map.climbable(nb) {
-                    steps[ni] = d + 1;
-                    parent[ni] = pi as u32;
-                    order.push(ni);
-                    q.push_back(nb);
+                if goals.contains(&nb) { goal_step = Some(d + 1); }
+                if how != Step::Shelf {
+                    queue.push_back(nb);
                 }
             }
-            // Up a pit's wall, hand over hand, and over its rim at the top.
-            let up = map.above(p).filter(|&a| map.cling(a));
-            let headroom = map.above(p).is_some_and(|a| map.open(a));
-            let rims = crate::map::DIRS.into_iter().filter_map(|(dx, dy)| {
-                let wall = map.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32)?;
-                let top = map.above(wall)?;
-                (headroom && map.solid(wall) && map.standable(top)).then_some(top)
-            });
-            for nb in up.into_iter().chain(rims) {
-                let ni = map.idx(nb);
-                if steps[ni] == 0 {
-                    steps[ni] = d + 1;
-                    parent[ni] = pi as u32;
-                    order.push(ni);
-                    q.push_back(nb);
-                }
-            }
-        }
-        // Reached from here, but a dead end: not queued.
-        for nb in map.reach_neighbors(p).filter(|_| shelves) {
-            let ni = map.idx(nb);
-            if steps[ni] == 0 {
-                steps[ni] = d + 1;
-                parent[ni] = pi as u32;
-                order.push(ni);
+        });
+    }
+    DistField { steps, parent, order, w: map.w, h: map.h, queue }
+}
+
+/// A shortest path to the nearest goal; ties follow the goals' order, as
+/// in `DistField::approach`. Finish its BFS layer to preserve that ordering.
+pub fn path_to_any(map: &Map, start: Pos, goals: &[Pos], climb: bool) -> Option<Vec<Pos>> {
+    if goals.is_empty() { return None; }
+    let df = search_until(map, start, |_| false, true, climb, goals);
+    let goal = goals.iter().filter_map(|&p| df.dist(p).map(|d| (p, d))).min_by_key(|&(_, d)| d)?.0;
+    Some(df.path_to(goal))
+}
+
+/// Cells from which an edge can be walked to. Traverse the walking graph
+/// backwards: stairs and unusual starting cells need not have symmetric edges.
+pub struct EdgeReach {
+    field: DistField,
+}
+
+impl EdgeReach {
+    pub fn contains(&self, map: &Map, p: Pos) -> bool {
+        self.field.dist(p).is_some() || (!map.standable(p) && map.walk_neighbors(p).any(|nb| self.field.dist(nb).is_some()))
+    }
+}
+
+pub fn edge_reach(map: &Map) -> EdgeReach {
+    let Buffers { mut steps, parent, mut order, mut queue } = Buffers::take(map.len());
+    for z in 0..map.d {
+        let boundary = (0..map.w).flat_map(|x| [(x, 0, z), (x, map.h - 1, z)])
+            .chain((0..map.h).flat_map(|y| [(0, y, z), (map.w - 1, y, z)]));
+        for p in boundary {
+            let i = map.idx(p);
+            if steps[i] == 0 && map.standable(p) {
+                steps[i] = 1;
+                order.push(i);
+                queue.push_back(p);
             }
         }
     }
-    DistField { steps, parent, order, w: map.w, h: map.h }
+    while let Some(p) = queue.pop_front() {
+        for nb in map.walk_predecessors(p) {
+            let i = map.idx(nb);
+            if steps[i] == 0 {
+                steps[i] = 1;
+                order.push(i);
+                queue.push_back(nb);
+            }
+        }
+    }
+    EdgeReach { field: DistField { steps, parent, order, w: map.w, h: map.h, queue } }
+}
+
+/// Scratch space for `nearest`, kept between searches: cells are marked
+/// with the search's number, so nothing has to be cleared or allocated.
+struct Scratch {
+    seen: Vec<u32>,
+    search: u32,
+    queue: VecDeque<(Pos, u32)>,
+}
+
+thread_local! {
+    static SCRATCH: std::cell::RefCell<Scratch> =
+        const { std::cell::RefCell::new(Scratch { seen: Vec::new(), search: 0, queue: VecDeque::new() }) };
+}
+
+/// The cell `bfs(map, start).nearest(max, test)` would find, but stopping
+/// there instead of searching the whole map first.
+pub fn nearest(map: &Map, start: Pos, max: i32, mut test: impl FnMut(usize) -> bool) -> Option<usize> {
+    SCRATCH.with_borrow_mut(|s| {
+        let n = map.len();
+        if s.seen.len() != n || s.search == u32::MAX {
+            s.seen = vec![0; n];
+            s.search = 0;
+        }
+        s.search += 1;
+        let mark = s.search;
+        s.queue.clear();
+        let si = map.idx(start);
+        s.seen[si] = mark;
+        if max >= 0 && test(si) {
+            return Some(si);
+        }
+        s.queue.push_back((start, 0));
+        while let Some((p, d)) = s.queue.pop_front() {
+            if d as i64 + 1 > max as i64 {
+                return None;
+            }
+            let mut found = None;
+            let Scratch { seen, queue, .. } = s;
+            successors(map, p, true, false, |nb, how| {
+                let ni = map.idx(nb);
+                if found.is_some() || seen[ni] == mark {
+                    return;
+                }
+                seen[ni] = mark;
+                if test(ni) {
+                    found = Some(ni);
+                } else if how != Step::Shelf {
+                    queue.push_back((nb, d + 1));
+                }
+            });
+            if found.is_some() {
+                return found;
+            }
+        }
+        None
+    })
 }
 
 impl DistField {
@@ -273,6 +429,68 @@ mod tests {
         let at = |x: usize| m.idx((x, 1, Z));
         assert_eq!(df.nearest(ANY_DISTANCE, |i| i == at(7) || i == at(4)), Some(at(4)), "the nearer of two");
         assert_eq!(df.nearest(2, |i| i == at(4)), None, "too far");
+    }
+
+    #[test]
+    fn early_search_matches_full_fields_and_reuses_buffers() {
+        for (w, h) in [(12, 8), (3, 3), (15, 9)] {
+            let mut m = Map::flat(w, h);
+            let wall = m.idx((w / 2, h / 2, Z));
+            m.feature[wall] = Feature::built("wall");
+            let shelf = m.idx((1, 1, Z));
+            m.feature[shelf] = Feature::built("shelf");
+            let start = (0, 0, Z);
+            let df = bfs(&m, start);
+            for limit in [-1, 0, 1, 5, ANY_DISTANCE] {
+                for target in 0..m.len() {
+                    assert_eq!(nearest(&m, start, limit, |i| i == target), df.nearest(limit, |i| i == target));
+                }
+            }
+            for goal in [(w - 1, h - 1, Z), (1, 1, Z), (w / 2, h / 2, Z)] {
+                let goals: Vec<_> = std::iter::once(goal).chain(m.around(goal))
+                    .filter(|&c| !m.storage_furniture(m.idx(c))).collect();
+                for climb in [false, true] {
+                    let full = if climb { bfs_climbing(&m, start) } else { bfs(&m, start) };
+                    let expected = full.approach(&m, goal, true).map(|(at, _)| full.path_to(at));
+                    assert_eq!(path_to_any(&m, start, &goals, climb), expected);
+                }
+            }
+            // A fresh full field must not inherit marks from an early exit.
+            let again = bfs(&m, start);
+            assert_eq!(again.order, df.order);
+            assert_eq!(again.steps, df.steps);
+        }
+    }
+
+    #[test]
+    fn edge_field_matches_forward_search_on_slopes_stairs_and_blocked_starts() {
+        let mut maps = vec![Map::flat(7, 7), Map::generate(12, 10, 10, &mut crate::rng::Rng::new(42))];
+        let m = &mut maps[0];
+        for x in 2..5 {
+            for y in 2..5 {
+                if x == 2 || x == 4 || y == 2 || y == 4 {
+                    let i = m.idx((x, y, Z));
+                    m.feature[i] = Feature::built("wall");
+                }
+            }
+        }
+        let stair = m.idx((1, 1, Z));
+        m.feature[stair] = Feature::built("stairs");
+        let ladder = m.idx((5, 5, Z));
+        m.feature[ladder] = Feature::built("ladder");
+        let above = m.idx((5, 5, Z + 1));
+        m.floor[above] = true;
+        for m in maps {
+            let edges = edge_reach(&m);
+            for i in 0..m.len() {
+                let p = m.pos(i);
+                let expected = bfs(&m, p).order.iter().any(|&j| {
+                    let q = m.pos(j);
+                    (q.0 == 0 || q.1 == 0 || q.0 + 1 == m.w || q.1 + 1 == m.h) && m.standable(q)
+                });
+                assert_eq!(edges.contains(&m, p), expected, "start {p:?}");
+            }
+        }
     }
 
 }
