@@ -7,7 +7,6 @@ Standard library only. Weapons are grip-authored in metres; armour scenes
 are authored in the skeleton's upright frame, relative to each named bone.
 """
 
-import math
 from pathlib import Path
 import sys
 
@@ -18,69 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class Gear(Rifle):
-    def section(self, rings, material, sides=8, smooth=False, roundness=2):
-        """Closed tapered body; rings are (height, half-width, half-depth, Z)."""
-        def curve(v):
-            return math.copysign(abs(v) ** (2 / roundness), v)
-        rings = [[(rx * curve(math.cos(i * math.tau / sides)), y, z - rz * curve(math.sin(i * math.tau / sides)))
-                  for i in range(sides)] for y, rx, rz, z in rings]
-        self.face(list(reversed(rings[0])), material)
-        start = len(self.groups[material][0])
-        for a, b in zip(rings, rings[1:]):
-            for i in range(sides):
-                j = (i + 1) % sides
-                self.face([a[i], a[j], b[j], b[i]], material)
-        if smooth:
-            positions, normals, _ = self.groups[material]
-            sums = {}
-            for p, n in zip(positions[start:], normals[start:]):
-                total = sums.setdefault(tuple(p), [0.0, 0.0, 0.0])
-                for axis in range(3):
-                    total[axis] += n[axis]
-            for i in range(start, len(positions)):
-                n = sums[tuple(positions[i])]
-                length = math.sqrt(sum(v * v for v in n))
-                normals[i] = tuple(v / length for v in n)
-        self.face(rings[-1], material)
-
-    def panel(self, points, material, lift=.012, thickness=.008):
-        """Convex +Z-facing plate with a raised, faceted center and closed back."""
-        if sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(points, points[1:] + points[:1])) < 0:
-            points = list(reversed(points))
-        center = tuple(sum(p[i] for p in points) / len(points) + (lift if i == 2 else 0) for i in range(3))
-        back = [(x, y, z - thickness) for x, y, z in points]
-        back_center = tuple(sum(p[i] for p in back) / len(back) for i in range(3))
-        for i, a in enumerate(points):
-            j = (i + 1) % len(points)
-            self.face([back[j], back[i], back_center], material)
-            self.face([a, points[j], center], material)
-            self.face([back[i], back[j], points[j], a], material)
-
-    def add(self, other, at=(0, 0, 0), turn=(0, 0, 0)):
-        def rotate(v):
-            x, y, z = v
-            a, b, c = [math.radians(t) for t in turn]
-            y, z = y * math.cos(a) - z * math.sin(a), y * math.sin(a) + z * math.cos(a)
-            x, z = x * math.cos(b) + z * math.sin(b), -x * math.sin(b) + z * math.cos(b)
-            x, y = x * math.cos(c) - y * math.sin(c), x * math.sin(c) + y * math.cos(c)
-            return (x, y, z)
-
-        for target, (positions, normals, indices) in zip(self.groups, other.groups):
-            offset = len(target[0])
-            target[0].extend(tuple(p[i] + at[i] for i in range(3)) for p in map(rotate, positions))
-            target[1].extend(map(rotate, normals))
-            target[2].extend(i + offset for i in indices)
-        return self
-
-    def shell(self, rings, material=0):
-        """Open-bottom octagonal helmet shell, with a closed faceted crown."""
-        rings = [[(rx * math.cos(i * math.tau / 8), y, -.01 - rz * math.sin(i * math.tau / 8))
-                  for i in range(8)] for y, rx, rz in rings]
-        for lower, upper in zip(rings, rings[1:]):
-            for i in range(8):
-                j = (i + 1) % 8
-                self.face([lower[i], lower[j], upper[j], upper[i]], material)
-        self.face(rings[-1], material)
+    """Frontier mesh with the weapon palette as its default."""
 
 
 def grip(g):

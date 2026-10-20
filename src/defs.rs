@@ -1411,6 +1411,15 @@ impl Defs {
 
     /// Everything the game relies on: unique ids, known colours, sensible numbers.
     fn check(&self) -> Result<(), String> {
+        self.check_ids()?;
+        self.check_items()?;
+        self.check_builds()?;
+        self.check_plants()?;
+        self.check_recipes()?;
+        self.check_raider_tiers()
+    }
+
+    fn check_ids(&self) -> Result<(), String> {
         fn unique<'a>(what: &str, ids: impl Iterator<Item = &'a String>) -> Result<(), String> {
             let mut seen = std::collections::HashSet::new();
             for id in ids {
@@ -1429,37 +1438,44 @@ impl Defs {
             return Err("too many definitions".into());
         }
 
-        let known = |c: &str| {
-            c == "owner" || self.palette.contains_key(c) || self.glow.contains_key(c) || self.clear.contains_key(c)
-        };
-        let parts = |whose: &str, parts: &[Part]| -> Result<(), String> {
-            match parts.iter().find(|p| !known(&p.color)) {
-                Some(p) => Err(format!("{}: no colour \"{}\" in the palette", whose, p.color)),
-                None => Ok(()),
+        Ok(())
+    }
+
+    fn known_colour(&self, c: &str) -> bool {
+        c == "owner" || self.palette.contains_key(c) || self.glow.contains_key(c) || self.clear.contains_key(c)
+    }
+
+    fn check_parts(&self, whose: &str, parts: &[Part]) -> Result<(), String> {
+        match parts.iter().find(|p| !self.known_colour(&p.color)) {
+            Some(p) => Err(format!("{}: no colour \"{}\" in the palette", whose, p.color)),
+            None => Ok(()),
+        }
+    }
+
+    fn check_model(whose: &str, path: &str, poses: &[&ModelPose]) -> Result<(), String> {
+        if path.is_empty() || !path.ends_with(".gltf") && !path.ends_with(".glb") {
+            return Err(format!("{}: model needs a glTF asset path", whose));
+        }
+        for pose in poses {
+            let values = [pose.at.0, pose.at.1, pose.at.2, pose.turn.0, pose.turn.1, pose.turn.2, pose.scale];
+            if pose.scale <= 0.0 || values.iter().any(|v| !v.is_finite()) {
+                return Err(format!("{}: model transforms need finite values and positive scale", whose));
             }
-        };
-        let check_model = |whose: &str, path: &str, poses: &[&ModelPose]| -> Result<(), String> {
-            if path.is_empty() || !path.ends_with(".gltf") && !path.ends_with(".glb") {
-                return Err(format!("{}: model needs a glTF asset path", whose));
-            }
-            for pose in poses {
-                let values = [pose.at.0, pose.at.1, pose.at.2, pose.turn.0, pose.turn.1, pose.turn.2, pose.scale];
-                if pose.scale <= 0.0 || values.iter().any(|v| !v.is_finite()) {
-                    return Err(format!("{}: model transforms need finite values and positive scale", whose));
-                }
-            }
-            Ok(())
-        };
+        }
+        Ok(())
+    }
+
+    fn check_items(&self) -> Result<(), String> {
         for d in &self.items {
-            if !known(&d.color) || d.color == "owner" {
+            if !self.known_colour(&d.color) || d.color == "owner" {
                 return Err(format!("{}: no colour \"{}\" in the palette", d.id, d.color));
             }
             if d.look.is_empty() {
                 return Err(format!("{}: needs a look", d.id));
             }
-            parts(&d.id, &d.look)?;
+            self.check_parts(&d.id, &d.look)?;
             if let Some(model) = &d.model {
-                check_model(&d.id, &model.path, &[&model.ground, &model.held])?;
+                Self::check_model(&d.id, &model.path, &[&model.ground, &model.held])?;
             }
             if d.pods.is_some_and(|(lo, hi)| lo == 0 || lo > hi) {
                 return Err(format!("{}: pods need 1 <= min <= max", d.id));
@@ -1471,14 +1487,14 @@ impl Defs {
                 return Err(format!("{}: poison must be 0..1, nutrition and medicine not negative", d.id));
             }
             for piece in d.apparel.iter().flat_map(|a| &a.pieces) {
-                parts(&d.id, &piece.parts)?;
+                self.check_parts(&d.id, &piece.parts)?;
                 if let Some(model) = &piece.model {
-                    check_model(&d.id, &model.path, &[&model.pose])?;
+                    Self::check_model(&d.id, &model.path, &[&model.pose])?;
                 }
             }
             if let Some(skin) = d.apparel.as_ref().and_then(|a| a.skinned.as_ref()) {
-                check_model(&d.id, &skin.male, &[])?;
-                check_model(&d.id, &skin.female, &[])?;
+                Self::check_model(&d.id, &skin.male, &[])?;
+                Self::check_model(&d.id, &skin.female, &[])?;
             }
             if let Some(c) = &d.cyberware {
                 if c.fits.is_empty() || !(c.efficiency > 0.0 && c.efficiency <= 2.0) || c.speed <= 0.0 || !(0.0..0.9).contains(&c.armor) {
@@ -1511,15 +1527,19 @@ impl Defs {
                 if w.range <= 0.0 || w.cooldown <= 0.0 || w.damage.0 <= 0.0 || w.damage.0 > w.damage.1 {
                     return Err(format!("{}: weapon needs range, cooldown and 0 < min <= max damage", d.id));
                 }
-                parts(&d.id, std::slice::from_ref(&w.held))?;
+                self.check_parts(&d.id, std::slice::from_ref(&w.held))?;
             }
             if d.apparel.as_ref().is_some_and(|a| !(0.0..0.9).contains(&a.armor)) {
                 return Err(format!("{}: armour must be 0 to 0.9", d.id));
             }
         }
+        Ok(())
+    }
+
+    fn check_builds(&self) -> Result<(), String> {
         for d in &self.builds {
             if let Some(model) = &d.model {
-                check_model(&d.id, &model.path, &[&model.pose])?;
+                Self::check_model(&d.id, &model.path, &[&model.pose])?;
                 if !matches!(d.look, BuildLook::Parts(_)) || d.parts().iter().any(|p| p.hinge || p.link.is_some() || p.filled.is_some()) {
                     return Err(format!("{}: a build model needs static Parts as its loading fallback", d.id));
                 }
@@ -1545,7 +1565,7 @@ impl Defs {
             if !(d.comfort > 0.0 && d.comfort <= 1.0) {
                 return Err(format!("{}: comfort must be above 0 and up to 1", d.id));
             }
-            parts(&d.id, d.parts())?;
+            self.check_parts(&d.id, d.parts())?;
             if let BuildLook::Opening { width, bottom, top, .. } = d.look {
                 // Walked through only if it's a door.
                 if !(0.0 < width && width < 1.0 && 0.0 <= bottom && bottom < top && top <= 1.0) || d.passable != (d.special == Special::Door) {
@@ -1573,6 +1593,10 @@ impl Defs {
         if self.builds.iter().filter(|d| d.special == Special::Roof).count() > 1 {
             return Err("only one buildable can be the roof".into());
         }
+        Ok(())
+    }
+
+    fn check_plants(&self) -> Result<(), String> {
         let mut wild = 0.0;
         for d in &self.plants {
             if d.stages.is_empty() || d.stages[0].from != 0.0 || d.stages.iter().any(|s| s.variants.is_empty()) {
@@ -1583,7 +1607,7 @@ impl Defs {
             }
             for s in &d.stages {
                 for v in &s.variants {
-                    parts(&d.id, v)?;
+                    self.check_parts(&d.id, v)?;
                 }
             }
             if d.sow.is_some() && d.grow_time <= 0.0 {
@@ -1600,6 +1624,10 @@ impl Defs {
         if wild >= 1.0 {
             return Err("wild plant densities add up to 1 or more".into());
         }
+        Ok(())
+    }
+
+    fn check_recipes(&self) -> Result<(), String> {
         for r in &self.recipes {
             if r.ingredients.is_empty() || r.products.is_empty() || r.time <= 0.0 {
                 return Err(format!("{}: needs ingredients, products and a work time", r.id));
@@ -1615,6 +1643,10 @@ impl Defs {
                 return Err(format!("{}: a workbench can't be a block", r.id));
             }
         }
+        Ok(())
+    }
+
+    fn check_raider_tiers(&self) -> Result<(), String> {
         let weapons = self.start_weapons.iter().chain(self.raider_tiers.iter().flat_map(|t| t.weapons.iter().map(|w| &w.0)));
         for w in weapons {
             if self.items[w.id().index()].weapon.is_none() {
@@ -1893,5 +1925,4 @@ mod tests {
         assert!(d.recipes.iter().all(|r| r.id != "salvage_mechanical_components"), "components themselves aren't");
         assert!(ItemId::named("mechanical_components").def().about.as_deref().is_some_and(|a| a.contains("Gears")));
     }
-
 }

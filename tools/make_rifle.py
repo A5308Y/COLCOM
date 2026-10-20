@@ -5,10 +5,9 @@ Run from anywhere: python3 tools/make_rifle.py
 Metres, +Y up, +Z muzzle; origin is the right-hand grip. See the asset README.
 """
 
-import json
 import math
 from pathlib import Path
-import struct
+from asset_helpers import Mesh
 
 OUT = Path(__file__).resolve().parents[1] / "assets/models/weapons"
 # sRGB swatches; glTF factors are linear. (name, color, metallic, roughness)
@@ -21,75 +20,10 @@ PALETTE = [
 ]
 
 
-def linear(v):
-    return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
-
-
-class Rifle:
+class Rifle(Mesh):
     def __init__(self, palette=None):
-        self.palette = PALETTE if palette is None else palette
-        self.emissive = {4: [.65, .22, .025]} if palette is None else {}
-        self.groups = [[[], [], []] for _ in self.palette]
-
-    def face(self, points, material):
-        positions, normals, indices = self.groups[material]
-        a, b, c = points[:3]
-        u, v = [b[i] - a[i] for i in range(3)], [c[i] - a[i] for i in range(3)]
-        n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
-        length = math.sqrt(sum(x * x for x in n))
-        assert length > 1e-10
-        start = len(positions)
-        positions.extend(points)
-        normals.extend([[x / length for x in n]] * len(points))
-        for i in range(1, len(points) - 1):
-            indices.extend((start, start + i, start + i + 1))
-
-    def box(self, center, size, material, bevel=0.006, tilt=0, worn=False):
-        """Chamfered rectangular extrusion; broad planes, narrow edge highlights."""
-        x, y, z = [v / 2 for v in size]
-        b = min(bevel, x * 0.4, y * 0.4, z * 0.4)
-        rings = []
-        for depth, inset in [(-z, 0), (z, 0)]:
-            xx, yy = x - inset, y - inset
-            ring = [(xx - b, -yy), (xx, -yy + b), (xx, yy - b), (xx - b, yy),
-                    (-xx + b, yy), (-xx, yy - b), (-xx, -yy + b), (-xx + b, -yy)]
-            if b == 0:
-                ring = [(xx, -yy), (xx, yy), (-xx, yy), (-xx, -yy)]
-            angle = math.radians(tilt)
-            rings.append([(center[0] + px,
-                           center[1] + py * math.cos(angle) - depth * math.sin(angle),
-                           center[2] + py * math.sin(angle) + depth * math.cos(angle)) for px, py in ring])
-        self.face(list(reversed(rings[0])), material)
-        self.face(rings[-1], material)
-        for j in range(len(rings) - 1):
-            for i in range(len(rings[0])):
-                k = (i + 1) % len(rings[0])
-                edge = 3 if worn and i in (2, 4) else material
-                self.face([rings[j][i], rings[j][k], rings[j + 1][k], rings[j + 1][i]], edge)
-
-    def profile(self, points, width, material):
-        """Extrude a convex counterclockwise silhouette in the Y/Z plane."""
-        area = sum(points[i][0] * points[(i + 1) % len(points)][1]
-                   - points[(i + 1) % len(points)][0] * points[i][1] for i in range(len(points)))
-        if area < 0:
-            points = list(reversed(points))
-        rings = [[(x, y, z) for y, z in points] for x in (-width / 2, width / 2)]
-        self.face(list(reversed(rings[0])), material)
-        self.face(rings[1], material)
-        for i in range(len(points)):
-            j = (i + 1) % len(points)
-            self.face([rings[0][i], rings[0][j], rings[1][j], rings[1][i]], material)
-
-    def tube(self, y, z0, z1, radius, material, bore=0, sides=8):
-        rings = [[(math.cos(i * math.tau / sides) * r, y + math.sin(i * math.tau / sides) * r, z)
-                  for i in range(sides)] for z, r in [(z0, radius), (z1, radius), (z1, bore), (z0, bore)]]
-        for a, b in [(0, 1), (1, 2), (2, 3), (3, 0)] if bore else [(0, 1)]:
-            for i in range(sides):
-                j = (i + 1) % sides
-                self.face([rings[a][i], rings[a][j], rings[b][j], rings[b][i]], material)
-        if not bore:
-            self.face(list(reversed(rings[0])), material)
-            self.face(rings[1], material)
+        super().__init__(PALETTE if palette is None else palette,
+                         {4: [.65, .22, .025]} if palette is None else {})
 
     def build(self):
         # Receiver and overhanging olive shell. Grip stays at the origin.
@@ -148,65 +82,7 @@ class Rifle:
         return self
 
     def write(self, name="Rifle", out=OUT, pieces=None):
-        """Write one prop, or shared armour meshes with inventory and bone scenes.
-
-        `pieces`: (name, geometry, inventory translation) tuples. Scene zero
-        assembles them; scenes 1..N expose each mesh around its bone origin.
-        """
-        blob = bytearray()
-        gltf = {"asset": {"version": "2.0", "generator": "My World make_rifle.py"},
-                "scene": 0, "scenes": [], "nodes": [],
-                "meshes": [], "materials": [], "accessors": [], "bufferViews": []}
-        if pieces:
-            gltf["nodes"].append({"name": name, "children": list(range(1, len(pieces) + 1))})
-            gltf["scenes"].append({"name": "Stored", "nodes": [0]})
-            for i, (label, _, at) in enumerate(pieces):
-                gltf["nodes"].append({"name": label, "mesh": i, "translation": at})
-            for i, (label, _, _) in enumerate(pieces):
-                gltf["scenes"].append({"name": label, "nodes": [len(gltf["nodes"])]})
-                gltf["nodes"].append({"name": label, "mesh": i})
-        else:
-            pieces = [(name, self, (0, 0, 0))]
-            gltf["scenes"] = [{"nodes": [0]}]
-            gltf["nodes"] = [{"name": name, "mesh": 0}]
-
-        def accessor(values, kind, ctype, target):
-            while len(blob) % 4:
-                blob.append(0)
-            flat = [v for row in values for v in row] if kind == "VEC3" else values
-            data = struct.pack(f"<{len(flat)}{'f' if ctype == 5126 else 'I'}", *flat)
-            view = len(gltf["bufferViews"])
-            gltf["bufferViews"].append({"buffer": 0, "byteOffset": len(blob), "byteLength": len(data), "target": target})
-            blob.extend(data)
-            a = {"bufferView": view, "componentType": ctype, "count": len(values), "type": kind}
-            if kind == "VEC3":
-                a.update(min=[min(p[i] for p in values) for i in range(3)], max=[max(p[i] for p in values) for i in range(3)])
-            gltf["accessors"].append(a)
-            return len(gltf["accessors"]) - 1
-
-        for i, (material_name, color, metal, rough) in enumerate(self.palette):
-            material = {"name": material_name, "pbrMetallicRoughness": {
-                "baseColorFactor": [linear(c) for c in color] + [1], "metallicFactor": metal, "roughnessFactor": rough}}
-            if i in self.emissive:
-                material["emissiveFactor"] = self.emissive[i]
-            gltf["materials"].append(material)
-        triangles = 0
-        for label, geometry, _ in pieces:
-            mesh = {"name": label, "primitives": []}
-            for i, (positions, normals, indices) in enumerate(geometry.groups):
-                if not indices:
-                    continue
-                mesh["primitives"].append({"material": i, "attributes": {
-                    "POSITION": accessor(positions, "VEC3", 5126, 34962),
-                    "NORMAL": accessor(normals, "VEC3", 5126, 34962)},
-                    "indices": accessor(indices, "SCALAR", 5125, 34963)})
-                triangles += len(indices) // 3
-            gltf["meshes"].append(mesh)
-        gltf["buffers"] = [{"uri": name + ".bin", "byteLength": len(blob)}]
-        out.mkdir(parents=True, exist_ok=True)
-        (out / (name + ".bin")).write_bytes(blob)
-        (out / (name + ".gltf")).write_text(json.dumps(gltf, indent=2) + "\n")
-        print(f"{name}: {triangles} triangles, {len(self.palette)} materials, {len(blob):,} bytes")
+        super().write(name, out, pieces)
 
 
 if __name__ == "__main__":

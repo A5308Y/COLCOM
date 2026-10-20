@@ -67,7 +67,7 @@ impl World {
     /// The temperature at `p`: its room's, or the outdoor one.
     pub fn temperature_at(&self, p: crate::map::Pos) -> f32 {
         let r = self.map.room.get(self.map.idx(p)).copied().unwrap_or(0) as usize;
-        match self.room_stats.get(r).filter(|_| r != 0) {
+        match self.derived.room_stats.get(r).filter(|_| r != 0) {
             Some(st) => st.temp,
             None => self.outdoor_temperature(),
         }
@@ -112,10 +112,10 @@ impl World {
     pub(crate) fn update_temperatures(&mut self, dt: f32) {
         let outdoor = self.outdoor_temperature();
         let n = self.map.len();
-        if self.cell_temp.len() != n {
-            self.cell_temp = vec![f32::NAN; n];
+        if self.derived.cell_temp.len() != n {
+            self.derived.cell_temp = vec![f32::NAN; n];
         }
-        let rooms = self.room_stats.len();
+        let rooms = self.derived.room_stats.len();
         // Recounting an unchanged room must preserve its temperature exactly.
         // Summing its repeated f32 value in f32 can round the mean on each
         // recount (including load); keep the accumulation and division in f64.
@@ -123,13 +123,13 @@ impl World {
         let mut known = vec![0usize; rooms];
         for i in 0..n {
             let r = self.map.room.get(i).copied().unwrap_or(0) as usize;
-            if r != 0 && r < rooms && !self.cell_temp[i].is_nan() {
-                sum[r] += self.cell_temp[i] as f64;
+            if r != 0 && r < rooms && !self.derived.cell_temp[i].is_nan() {
+                sum[r] += self.derived.cell_temp[i] as f64;
                 known[r] += 1;
             }
         }
         for r in 1..rooms {
-            let st = &mut self.room_stats[r];
+            let st = &mut self.derived.room_stats[r];
             if st.size == 0 {
                 continue;
             }
@@ -142,7 +142,7 @@ impl World {
         }
         for i in 0..n {
             let r = self.map.room.get(i).copied().unwrap_or(0) as usize;
-            self.cell_temp[i] = if r != 0 && r < rooms { self.room_stats[r].temp } else { f32::NAN };
+            self.derived.cell_temp[i] = if r != 0 && r < rooms { self.derived.room_stats[r].temp } else { f32::NAN };
         }
     }
 }
@@ -165,13 +165,13 @@ mod tests {
         assert_ne!(r, 0);
         for temperature in [6.916_224_5f32, -6.916_224_5, 21.5] {
             for (i, &room) in w.map.room.iter().enumerate() {
-                if room == r { w.cell_temp[i] = temperature; }
+                if room == r { w.derived.cell_temp[i] = temperature; }
             }
             for _ in 0..10 {
                 w.update_room_stats();
                 assert_eq!(w.temperature_at((4, 4, Z)).to_bits(), temperature.to_bits());
                 assert!(w.map.room.iter().enumerate().filter(|&(_, &room)| room == r)
-                    .all(|(i, _)| w.cell_temp[i].to_bits() == temperature.to_bits()));
+                    .all(|(i, _)| w.derived.cell_temp[i].to_bits() == temperature.to_bits()));
             }
         }
     }

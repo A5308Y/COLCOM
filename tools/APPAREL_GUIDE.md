@@ -11,7 +11,8 @@ instead of inventing another skeleton, glTF writer or runtime attachment system.
 | Shirt, jacket, coat or exposed hands | [make_skinned_clothes.py](make_skinned_clothes.py) | `build`, `bare_arms`, torso/sleeve weights, trouser-weight transfer for long hems, `attachment` for details |
 | Trousers, leg guards and included boots | [make_skinned_legs.py](make_skinned_legs.py) | `lower_body`, native leg weights, continuous raised guards and fitted cargo pockets |
 | Enclosed, close-fitting powered suit | [make_skinned_power_armor.py](make_skinned_power_armor.py) | `sealed_body`, `BodySurface`, one continuous shell, shallow skinned details |
-| Writing skinned glTF | [skinned_asset.py](skinned_asset.py) | `SkinnedAsset`; preserve the source skeleton and inverse bind matrices |
+| Writing skinned glTF | [asset_helpers.py](asset_helpers.py) | `SkinnedAsset`; preserve the source skeleton and inverse bind matrices |
+| Mesh primitives, glTF buffers and math | [asset_helpers.py](asset_helpers.py) | `Mesh`, `GltfBuffer`, `write_gltf`, `unit`, `matrix`; generators and CPU previews share these |
 | Sampling actual animation | [gltf_pose.py](gltf_pose.py), [preview_clothes_poses.py](preview_clothes_poses.py) | Existing animation clips, layered poses and weapon grip |
 | Ground/shelf prop or loading fallback | [make_items.py](make_items.py), [make_gear.py](make_gear.py) | Static scene assembly and bone-local fallback pieces |
 | Equipping and body visibility | [characters.rs](../src/front/characters.rs), [pawns.rs](../src/front/pawns.rs) | `spawn_garment`, live bone rebinding, cleanup and outer-layer precedence |

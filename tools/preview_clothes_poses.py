@@ -9,7 +9,8 @@ from pathlib import Path
 import sys
 
 sys.dont_write_bytecode = True
-from gltf_pose import Gltf, deform, matrix, multiply, point, unit
+from asset_helpers import matrix, multiply, point, unit
+from gltf_pose import Gltf, deform
 from make_gear import Gear, power_helmet, laser_rifle
 from make_rifle import PALETTE, Rifle
 from preview_gear import write_gallery

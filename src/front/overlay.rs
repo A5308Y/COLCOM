@@ -77,7 +77,7 @@ pub fn draw(
 
     // Themed rooms: their name over the middle of the floor, in the floor's colour.
     if distance < 70.0 {
-        for (st, kind) in w.room_stats.iter().filter_map(|s| Some((s, s.kind?))) {
+        for (st, kind) in w.derived.room_stats.iter().filter_map(|s| Some((s, s.kind?))) {
             let (cx, cy) = (st.centre.0.round() as usize, st.centre.1.round() as usize);
             if st.level > ui.top_at(m, cx.min(m.w - 1), cy.min(m.h - 1)) {
                 continue;

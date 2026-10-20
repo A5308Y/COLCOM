@@ -256,13 +256,13 @@ impl World {
                 }
                 let top = (from..m.d).rev().find(|&z| {
                     let i = m.idx((x, y, z));
-                    m.block[i].solid() && !self.quarry_out_of_reach.contains(&i)
+                    m.block[i].solid() && !self.derived.quarry_out_of_reach.contains(&i)
                 })?;
                 // Beside water: left standing as a rim (from here down), so the lake stays put.
                 let wet = DIRS.iter().any(|&(dx, dy)| {
                     m.at(x as i32 + dx, y as i32 + dy, top as i32).is_some_and(|q| m.block[m.idx(q)] == Block::Water)
                 });
-                (!wet && !self.quarry_out_of_reach.contains(&m.idx((x, y, top)))).then_some((x, y, top))
+                (!wet && !self.derived.quarry_out_of_reach.contains(&m.idx((x, y, top)))).then_some((x, y, top))
             })
             .collect()
     }
@@ -331,11 +331,11 @@ impl World {
             .pawns
             .iter()
             .filter(|p| p.is_living_colonist())
-            .min_by_key(|p| self.trapped.contains(&p.id))
+            .min_by_key(|p| self.derived.trapped.contains(&p.id))
             .map(|p| p.pos);
         let reach = from.filter(|_| !self.quarries.is_empty()).map(|f| crate::pathing::bfs(&self.map, f));
-        self.quarry_unreachable = vec![0; self.quarries.len()];
-        self.quarry_out_of_reach.clear();
+        self.derived.quarry_unreachable = vec![0; self.quarries.len()];
+        self.derived.quarry_out_of_reach.clear();
         if let Some(df) = &reach {
             for k in 0..self.quarries.len() {
                 // Down each column past what can't be reached, to what can.
@@ -345,8 +345,8 @@ impl World {
                         break;
                     }
                     for p in out {
-                        self.quarry_out_of_reach.insert(self.map.idx(p));
-                        self.quarry_unreachable[k] += 1;
+                        self.derived.quarry_out_of_reach.insert(self.map.idx(p));
+                        self.derived.quarry_unreachable[k] += 1;
                     }
                 }
             }
@@ -533,7 +533,7 @@ mod tests {
         let df = crate::pathing::bfs(&w.map, (corner.0 as usize, corner.1 as usize, q.bottom()));
         assert!(df.dist((1, 1, 8)).is_some(), "a way back up");
         assert!(w.map.count_items(item("stone")) > 0, "stone came out");
-        assert!(w.trapped.is_empty(), "nobody was shut in");
+        assert!(w.derived.trapped.is_empty(), "nobody was shut in");
     }
 
     #[test]
@@ -575,7 +575,7 @@ mod tests {
                 p.rest = 100.0;
             }
             w.update_trapped();
-            assert!(w.trapped.is_empty(), "shut in at {:?}", w.pawns.iter().filter(|p| w.trapped.contains(&p.id)).map(|p| p.pos).collect::<Vec<_>>());
+            assert!(w.derived.trapped.is_empty(), "shut in at {:?}", w.pawns.iter().filter(|p| w.derived.trapped.contains(&p.id)).map(|p| p.pos).collect::<Vec<_>>());
         }
         assert_eq!(w.quarry_state(0), QuarryState::Done);
     }
@@ -638,7 +638,7 @@ mod tests {
         colonist(&mut w, (1, 1, 8));
         paint(&mut w, 4, 4, 8, 7);
         w.update_quarries();
-        assert_eq!(w.quarry_unreachable, vec![0], "the shaft cell can be dug");
+        assert_eq!(w.derived.quarry_unreachable, vec![0], "the shaft cell can be dug");
         // Walled off from everyone: the colonist is shut in a box of rock.
         for (x, y) in [(0, 0), (1, 0), (2, 0), (0, 1), (2, 1), (0, 2), (1, 2), (2, 2)] {
             for z in 8..10 {
@@ -647,7 +647,7 @@ mod tests {
             }
         }
         w.update_quarries();
-        assert!(w.quarry_unreachable[0] > 0);
+        assert!(w.derived.quarry_unreachable[0] > 0);
     }
 
     #[test]

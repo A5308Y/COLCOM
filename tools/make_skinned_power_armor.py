@@ -12,11 +12,10 @@ from pathlib import Path
 import sys
 
 sys.dont_write_bytecode = True
-from gltf_pose import Gltf, deform, multiply, unit
+from asset_helpers import SkinnedAsset, linear, multiply, unit
+from gltf_pose import Gltf, deform
 from make_gear import (POWER_PALETTE, power_chest, power_shoulder, power_forearm,
                        power_hip, power_leg, power_boot)
-from make_rifle import linear
-from skinned_asset import SkinnedAsset
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -498,7 +497,7 @@ def armor_form(suit, indices, names, origins):
     return shell, plate
 
 
-def write(sex):
+def write(sex, out=None):
     source = Gltf(ROOT / f"assets/models/characters/outfits/{sex}_Peasant.gltf")
     suit, suit_indices = sealed_body(source)
     names = [source.data['nodes'][j]['name'] for j in source.data['skins'][0]['joints']]
@@ -605,7 +604,8 @@ def write(sex):
     flat, flat_indices = facet_normals(shell, shell_indices)
     mesh('Shell', [(mat, flat, ids) for mat, ids in flat_indices.items()])
     mesh('Details', [(i, plates[i], plate_indices[i]) for i in (3, 4)])
-    asset.write(ROOT / f'assets/models/armor/{name}.gltf')
+    out = Path(out) if out is not None else ROOT / "assets/models/armor"
+    asset.write(out / f"{name}.gltf")
     count = sum(len(plate_indices[i])//3 for i in (3, 4))
     print(f'{name}: {count} fitted detail triangles + {len(suit_indices)//3} continuous metal shell triangles; {len(asset.blob):,} bytes')
 

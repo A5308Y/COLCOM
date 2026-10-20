@@ -670,41 +670,14 @@ fn best_chance(w: &SimWorld, u: usize, target: PawnId) -> Option<f32> {
         .reduce(f32::max)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn battle_panels(
-    mut contexts: EguiContexts,
-    mut sim: ResMut<Sim>,
-    mut ui: ResMut<UiState>,
-    mut view: ResMut<BattleView>,
-    area: Res<ReachArea>,
-    time: Res<Time>,
-    mut sounds: ResMut<SoundQueue>,
-    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
-) -> Result {
-    let ctx = contexts.ctx_mut()?.clone();
-    parley_dialog(&ctx, &mut sim, &mut sounds);
-    let w = &sim.world;
-    let Some(b) = &w.battle else {
-        view.announced = None;
-        view.last.clear();
-        view.popups.clear();
-        return Ok(());
-    };
-    let mut orders = Vec::new();
-    let mut end_all = false;
-    let mut toggle_throw = false;
-    // Nothing to throw with once the acting unit changes or runs out.
-    if my_unit(b).is_none_or(|u| belt(w, &b.units[u], is_grenade).0 == 0) {
-        view.throwing = false;
-    }
-
+fn round_banner(ctx: &egui::Context, b: &Battle, view: &mut BattleView, dt: f32) {
     // "Round N" in the middle of the screen when a round starts, fading away.
     if view.announced != Some(b.round) {
         view.announced = Some(b.round);
         view.banner = BANNER_SECS;
     }
     if view.banner > 0.0 {
-        view.banner -= time.delta_secs();
+        view.banner -= dt;
         let shown = BANNER_SECS - view.banner;
         let alpha = (shown / 0.25).min(view.banner / 0.6).clamp(0.0, 1.0);
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("round_banner")));
@@ -715,120 +688,123 @@ fn battle_panels(
         painter.text(at + egui::vec2(2.0, 2.0), Align2::CENTER_CENTER, &text, big.clone(), fade(Color32::from_black_alpha(200)));
         painter.text(at, Align2::CENTER_CENTER, text, big, fade(theme::WARN));
     }
+}
 
-    // Each unit's plate over its square, from the top: state chips, its
-    // name, a bar per member (health while standing, dark red when downed,
-    // grey and crossed out when dead, a red dot when bleeding; the leader's
-    // outlined), then morale and suppression with a mark where they tip over.
-    update_popups(&mut view, b, time.delta_secs());
-    {
-        let (cam, gt) = *camera;
-        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("squad_status")));
-        for (u, unit) in b.units.iter().enumerate().filter(|(_, u)| !u.out()) {
-            let Some(lead) = unit.members.first().and_then(|&id| w.pawn(id)) else { continue };
-            if !ui.shows_at(&w.map, lead.x, lead.y, lead.z) {
-                continue;
-            }
-            let Ok(p) = cam.world_to_viewport(gt, tile_point(lead.x, lead.y, lead.z) + Vec3::Y * 1.25) else { continue };
-            let (bw, gap, bh) = (12.0, 3.0, 5.0);
-            let pips = unit.roster.len() as f32 * (bw + gap) - gap;
-            let width = pips.max(48.0);
-            let left = p.x - pips / 2.0;
-            for (k, &id) in unit.roster.iter().enumerate() {
-                let Some(m) = w.pawn(id) else { continue };
-                let x = left + k as f32 * (bw + gap);
-                let rect = egui::Rect::from_min_size(egui::pos2(x, p.y), egui::vec2(bw, bh));
-                painter.rect_filled(rect, 1.0, Color32::from_black_alpha(190));
-                if m.is_dead() {
-                    painter.line_segment([rect.left_top(), rect.right_bottom()], egui::Stroke::new(1.5, Color32::from_gray(150)));
-                    painter.line_segment([rect.left_bottom(), rect.right_top()], egui::Stroke::new(1.5, Color32::from_gray(150)));
-                } else if !m.active() {
-                    painter.rect_filled(rect, 1.0, Color32::from_rgb(110, 25, 25));
-                } else {
-                    let h = m.health.summary().clamp(0.0, 1.0);
-                    let fill = if h > 0.7 {
-                        theme::GREEN
-                    } else if h > 0.4 {
-                        theme::AMBER
-                    } else {
-                        theme::RED
-                    };
-                    let mut inner = rect;
-                    inner.set_width(bw * h.max(0.1));
-                    painter.rect_filled(inner, 1.0, fill);
-                }
-                if !m.is_dead() && m.health.bleed_rate() > 0.0 {
-                    painter.circle_filled(egui::pos2(rect.center().x, rect.top() - 3.0), 2.0, theme::RED);
-                }
-                if unit.leader() == Some(id) {
-                    painter.rect_stroke(rect.expand(1.0), 1.0, egui::Stroke::new(1.0, Color32::WHITE), egui::StrokeKind::Outside);
-                }
-            }
-            // Morale and suppression, with a tick at the threshold.
-            let bars_left = p.x - width / 2.0;
-            for (row, value, fill, mark) in [
-                (0, unit.morale, morale_color(unit.morale), BROKEN),
-                (1, unit.suppression, SUPPRESSION_COLOR, PINNED),
-            ] {
-                let y = p.y + bh + 3.0 + row as f32 * 5.0;
-                let rect = egui::Rect::from_min_size(egui::pos2(bars_left, y), egui::vec2(width, 3.0));
-                painter.rect_filled(rect.expand(1.0), 1.0, Color32::from_black_alpha(190));
-                let mut inner = rect;
-                inner.set_width(width * (value / 100.0).clamp(0.0, 1.0));
-                painter.rect_filled(inner, 0.0, fill);
-                let tx = bars_left + width * mark / 100.0;
-                painter.line_segment([egui::pos2(tx, y - 1.0), egui::pos2(tx, y + 4.0)], egui::Stroke::new(1.0, Color32::WHITE));
-            }
-            let color = match unit.side {
-                Faction::Raider => theme::RED,
-                Faction::Colony if unit.is_civilians() => theme::GREEN,
-                Faction::Colony => theme::TEAL,
-            };
-            let name = if unit.roster.len() > 1 {
-                format!("{} ({}/{})", lead.name, unit.members.len(), unit.roster.len())
+fn draw_unit_plates(
+    ctx: &egui::Context, w: &SimWorld, b: &Battle, ui: &UiState,
+    view: &BattleView, camera: (&Camera, &GlobalTransform),
+) {
+    let (cam, gt) = camera;
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("squad_status")));
+    for (u, unit) in b.units.iter().enumerate().filter(|(_, u)| !u.out()) {
+        let Some(lead) = unit.members.first().and_then(|&id| w.pawn(id)) else { continue };
+        if !ui.shows_at(&w.map, lead.x, lead.y, lead.z) {
+            continue;
+        }
+        let Ok(p) = cam.world_to_viewport(gt, tile_point(lead.x, lead.y, lead.z) + Vec3::Y * 1.25) else { continue };
+        let (bw, gap, bh) = (12.0, 3.0, 5.0);
+        let pips = unit.roster.len() as f32 * (bw + gap) - gap;
+        let width = pips.max(48.0);
+        let left = p.x - pips / 2.0;
+        for (k, &id) in unit.roster.iter().enumerate() {
+            let Some(m) = w.pawn(id) else { continue };
+            let x = left + k as f32 * (bw + gap);
+            let rect = egui::Rect::from_min_size(egui::pos2(x, p.y), egui::vec2(bw, bh));
+            painter.rect_filled(rect, 1.0, Color32::from_black_alpha(190));
+            if m.is_dead() {
+                painter.line_segment([rect.left_top(), rect.right_bottom()], egui::Stroke::new(1.5, Color32::from_gray(150)));
+                painter.line_segment([rect.left_bottom(), rect.right_top()], egui::Stroke::new(1.5, Color32::from_gray(150)));
+            } else if !m.active() {
+                painter.rect_filled(rect, 1.0, Color32::from_rgb(110, 25, 25));
             } else {
-                lead.name.clone()
-            };
-            let mut top = p.y - 2.0;
-            shadow_text(&painter, egui::pos2(p.x, top), Align2::CENTER_BOTTOM, &name, 12.0, color);
-            top -= 15.0;
-            // State chips in a row above the name.
-            let tags = unit_tags(unit);
-            if !tags.is_empty() {
-                let font = egui::FontId::proportional(10.5);
-                let galleys: Vec<_> = tags
-                    .iter()
-                    .map(|(label, c, _)| (painter.layout_no_wrap(label.to_string(), font.clone(), *c), *c))
-                    .collect();
-                let total: f32 = galleys.iter().map(|(g, _)| g.size().x + 8.0).sum::<f32>() + 3.0 * (galleys.len() - 1) as f32;
-                let mut x = p.x - total / 2.0;
-                for (g, c) in galleys {
-                    let size = g.size() + egui::vec2(8.0, 2.0);
-                    let rect = egui::Rect::from_min_size(egui::pos2(x, top - size.y), size);
-                    painter.rect_filled(rect, 3.0, Color32::from_black_alpha(200));
-                    painter.rect_stroke(rect, 3.0, egui::Stroke::new(1.0, c), egui::StrokeKind::Inside);
-                    painter.galley(rect.min + egui::vec2(4.0, 1.0), g, c);
-                    x += size.x + 3.0;
-                }
-                top -= 18.0;
+                let h = m.health.summary().clamp(0.0, 1.0);
+                let fill = if h > 0.7 {
+                    theme::GREEN
+                } else if h > 0.4 {
+                    theme::AMBER
+                } else {
+                    theme::RED
+                };
+                let mut inner = rect;
+                inner.set_width(bw * h.max(0.1));
+                painter.rect_filled(inner, 1.0, fill);
             }
-            // What just happened to it, rising and fading.
-            let mine: Vec<&Popup> = view.popups.iter().filter(|q| q.unit == u).collect();
-            for (k, q) in mine.iter().enumerate() {
-                let t = q.age / POPUP_SECS;
-                let alpha = ((1.0 - t) * 3.0).min(1.0).min(q.age / 0.12).clamp(0.0, 1.0);
-                let c = q.color;
-                let c = Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (255.0 * alpha) as u8);
-                let y = top - 4.0 - k as f32 * 17.0 - t * 28.0;
-                let size = if q.kind == PopupKind::State { 17.0 } else { 14.0 };
-                shadow_text(&painter, egui::pos2(p.x, y), Align2::CENTER_BOTTOM, &q.text, size, c);
+            if !m.is_dead() && m.health.bleed_rate() > 0.0 {
+                painter.circle_filled(egui::pos2(rect.center().x, rect.top() - 3.0), 2.0, theme::RED);
+            }
+            if unit.leader() == Some(id) {
+                painter.rect_stroke(rect.expand(1.0), 1.0, egui::Stroke::new(1.0, Color32::WHITE), egui::StrokeKind::Outside);
             }
         }
+        // Morale and suppression, with a tick at the threshold.
+        let bars_left = p.x - width / 2.0;
+        for (row, value, fill, mark) in [
+            (0, unit.morale, morale_color(unit.morale), BROKEN),
+            (1, unit.suppression, SUPPRESSION_COLOR, PINNED),
+        ] {
+            let y = p.y + bh + 3.0 + row as f32 * 5.0;
+            let rect = egui::Rect::from_min_size(egui::pos2(bars_left, y), egui::vec2(width, 3.0));
+            painter.rect_filled(rect.expand(1.0), 1.0, Color32::from_black_alpha(190));
+            let mut inner = rect;
+            inner.set_width(width * (value / 100.0).clamp(0.0, 1.0));
+            painter.rect_filled(inner, 0.0, fill);
+            let tx = bars_left + width * mark / 100.0;
+            painter.line_segment([egui::pos2(tx, y - 1.0), egui::pos2(tx, y + 4.0)], egui::Stroke::new(1.0, Color32::WHITE));
+        }
+        let color = match unit.side {
+            Faction::Raider => theme::RED,
+            Faction::Colony if unit.is_civilians() => theme::GREEN,
+            Faction::Colony => theme::TEAL,
+        };
+        let name = if unit.roster.len() > 1 {
+            format!("{} ({}/{})", lead.name, unit.members.len(), unit.roster.len())
+        } else {
+            lead.name.clone()
+        };
+        let mut top = p.y - 2.0;
+        shadow_text(&painter, egui::pos2(p.x, top), Align2::CENTER_BOTTOM, &name, 12.0, color);
+        top -= 15.0;
+        // State chips in a row above the name.
+        let tags = unit_tags(unit);
+        if !tags.is_empty() {
+            let font = egui::FontId::proportional(10.5);
+            let galleys: Vec<_> = tags
+                .iter()
+                .map(|(label, c, _)| (painter.layout_no_wrap(label.to_string(), font.clone(), *c), *c))
+                .collect();
+            let total: f32 = galleys.iter().map(|(g, _)| g.size().x + 8.0).sum::<f32>() + 3.0 * (galleys.len() - 1) as f32;
+            let mut x = p.x - total / 2.0;
+            for (g, c) in galleys {
+                let size = g.size() + egui::vec2(8.0, 2.0);
+                let rect = egui::Rect::from_min_size(egui::pos2(x, top - size.y), size);
+                painter.rect_filled(rect, 3.0, Color32::from_black_alpha(200));
+                painter.rect_stroke(rect, 3.0, egui::Stroke::new(1.0, c), egui::StrokeKind::Inside);
+                painter.galley(rect.min + egui::vec2(4.0, 1.0), g, c);
+                x += size.x + 3.0;
+            }
+            top -= 18.0;
+        }
+        // What just happened to it, rising and fading.
+        let mine: Vec<&Popup> = view.popups.iter().filter(|q| q.unit == u).collect();
+        for (k, q) in mine.iter().enumerate() {
+            let t = q.age / POPUP_SECS;
+            let alpha = ((1.0 - t) * 3.0).min(1.0).min(q.age / 0.12).clamp(0.0, 1.0);
+            let c = q.color;
+            let c = Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (255.0 * alpha) as u8);
+            let y = top - 4.0 - k as f32 * 17.0 - t * 28.0;
+            let size = if q.kind == PopupKind::State { 17.0 } else { 14.0 };
+            shadow_text(&painter, egui::pos2(p.x, y), Align2::CENTER_BOTTOM, &q.text, size, c);
+        }
     }
+}
 
+fn draw_battle_odds(
+    ctx: &egui::Context, w: &SimWorld, b: &Battle, ui: &UiState,
+    area: &ReachArea, camera: (&Camera, &GlobalTransform),
+) {
     // Hit chances over the enemies the acting unit can reach.
     if let Some(u) = my_unit(b) {
-        let (cam, gt) = *camera;
+        let (cam, gt) = camera;
         let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("battle_odds")));
         // Over an enemy: what attacking means, by the target.
         let target = ui.hover.and_then(|h| Some((h, hovered_enemy(w, b, h.stand)?)));
@@ -918,12 +894,149 @@ fn battle_panels(
             painter.text(pos, Align2::CENTER_BOTTOM, text, font, color);
         }
     }
+}
 
+#[derive(Default)]
+struct BattleActions {
+    orders: Vec<BattleOrder>,
+    toggle_throw: bool,
+    end_all: bool,
+}
+
+fn active_unit_panel(
+    panel: &mut egui::Ui, w: &SimWorld, b: &Battle, ui: &UiState,
+    view: &BattleView, actions: &mut BattleActions,
+) {
+    if let Some(u) = my_unit(b) {
+        let unit = &b.units[u];
+        panel.separator();
+        panel.label(RichText::new(names(w, &unit.members)).strong());
+        panel.add(
+            theme::bar(unit.ap as f32 / unit.ap_start.max(AP_MAX) as f32)
+                .text(format!("{} action points", unit.ap))
+                .fill(theme::TEAL),
+        );
+        if unit.held_down() {
+            let text = format!("Pinned down: only {} AP this round, {} AP a step", unit.ap_start, w.step_ap(u));
+            panel.label(RichText::new(text).color(SUPPRESSION_COLOR));
+        }
+        unit_state(panel, unit);
+        panel.label(
+            RichText::new(format!(
+                "Click a cell to move ({} AP a step), an enemy to attack ({} AP, {} if everyone uses a sidearm; rifles are clumsy up close, so members draw pistols there).",
+                w.step_ap(u), AP_ATTACK, my_world::battle::AP_SIDEARM_ATTACK
+            ))
+            .small()
+            .weak(),
+        );
+        if let Some(h) = ui.hover.filter(|_| !b.busy()) {
+            if let Ok(cost) = w.move_cost(u, h.stand) {
+                let cover = DIRS
+                    .iter()
+                    .filter_map(|&(dx, dy)| w.map.at(h.stand.0 as i32 + dx, h.stand.1 as i32 + dy, h.stand.2 as i32))
+                    .map(|c| w.cover_at(c))
+                    .max()
+                    .unwrap_or(Cover::None);
+                panel.label(format!("Move there: {} AP, {} nearby", cost, cover.name()));
+            }
+        }
+        let deployable = w.can_deploy(u);
+        panel.horizontal(|row| {
+            if deployable {
+                let (label, hint) = if unit.is_deployed() {
+                    (format!("Stand up ({} AP)", AP_DEPLOY), "Back on their feet, so the squad can move")
+                } else {
+                    (format!("Deploy ({} AP)", AP_DEPLOY), "Down on one knee: better aim, harder to hit; can't move until standing up")
+                };
+                if row.add_enabled(unit.ap >= AP_DEPLOY, egui::Button::new(label)).on_hover_text(hint).clicked() {
+                    actions.orders.push(BattleOrder::Deploy);
+                }
+            }
+            let (grenades, throw_ap) = belt(w, unit, is_grenade);
+            if grenades > 0 {
+                let label = format!("Grenade ×{} ({} AP)", grenades, throw_ap);
+                let hint = "Then click an enemy unit in range: everyone in it is caught, whatever their cover";
+                if row.add_enabled(unit.ap >= throw_ap, egui::Button::new(label).selected(view.throwing)).on_hover_text(hint).clicked() {
+                    actions.toggle_throw = true;
+                }
+            }
+            let (medkits, medkit_ap) = belt(w, unit, is_medkit);
+            if medkits > 0 {
+                let label = format!("Medkit ×{} ({} AP)", medkits, medkit_ap);
+                let ready = unit.ap >= medkit_ap && w.medkit_option(u).is_some();
+                let hint = "Tend everyone's wounds in the unit (only when someone needs it)";
+                if row.add_enabled(ready, egui::Button::new(label)).on_hover_text(hint).clicked() {
+                    actions.orders.push(BattleOrder::Medkit);
+                }
+            }
+            if row.add_enabled(unit.ap >= AP_HUNKER, egui::Button::new("Hunker down")).on_hover_text("Better cover until the next round; ends the turn").clicked() {
+                actions.orders.push(BattleOrder::Hunker);
+            }
+            if row.button("End turn (Space)").clicked() {
+                actions.orders.push(BattleOrder::End);
+            }
+        });
+    }
+}
+
+fn roster_panel(panel: &mut egui::Ui, w: &SimWorld, b: &Battle, actions: &mut BattleActions) {
+    panel.separator();
+    panel.horizontal(|row| {
+        row.label(theme::caps("Your units", 15.0).color(theme::AMBER));
+        let waiting = b.units.iter().any(|u| u.side == Faction::Colony && u.can_act() && !u.acted);
+        let button = egui::Button::new("End all turns").small();
+        if row
+            .add_enabled(waiting && !b.colony_passes, button)
+            .on_hover_text("Every unit that hasn't acted yet ends its turn this round")
+            .clicked()
+        {
+            actions.end_all = true;
+        }
+    });
+    for (u, unit) in b.units.iter().enumerate().filter(|(_, u)| u.side == Faction::Colony && u.can_act()) {
+        let status = if b.active_unit() == Some(u) {
+            "acting".to_string()
+        } else if unit.acted {
+            "done".to_string()
+        } else {
+            format!("{} AP", unit.ap)
+        };
+        let standing = if unit.roster.len() > 1 {
+            format!(" - {}/{} standing", unit.members.len(), unit.roster.len())
+        } else {
+            String::new()
+        };
+        let state: Vec<String> = unit_tags(unit).iter().map(|t| t.0.to_lowercase()).collect();
+        let state = if state.is_empty() { String::new() } else { format!(" - {}", state.join(", ")) };
+        let text = format!("{}{} - {}{}", names(w, &unit.members), standing, status, state);
+        let ready = !unit.acted && b.side_to_act == Faction::Colony;
+        if panel.add_enabled(ready, egui::Button::new(text).small()).clicked() {
+            actions.orders.push(BattleOrder::Activate(u));
+        }
+    }
+    for a in &b.arrivals {
+        if let (Some(p), Some(l)) = (w.pawn(a.pawn), w.pawn(a.leader)) {
+            let rounds = if a.rounds == 1 { "next round".to_string() } else { format!("in {} rounds", a.rounds) };
+            panel.label(RichText::new(format!("{} joins {} {}", p.name, l.name, rounds)).small().weak());
+        }
+    }
+    let civilians = b.units.iter().filter(|u| u.is_civilians() && !u.out()).count();
+    if civilians > 0 {
+        panel.label(RichText::new(format!("{} civilian(s) sheltering", civilians)).small().weak());
+    }
+    let raiders: usize = b.units.iter().filter(|u| u.side == Faction::Raider).map(|u| u.members.len()).sum();
+    panel.label(RichText::new(format!("{} raider(s) still fighting", raiders)).color(theme::RED));
+}
+
+fn battle_command_panel(
+    ctx: &egui::Context, w: &SimWorld, b: &Battle, ui: &UiState,
+    view: &BattleView, actions: &mut BattleActions,
+) {
     theme::FieldWindow::new(format!("Battle - round {}", b.round))
         .id(egui::Id::new("battle_panel"))
         .anchor(Align2::RIGHT_TOP, [-8.0, 92.0])
         .default_width(300.0)
-        .show(&ctx, |panel| {
+        .show(ctx, |panel| {
             let turn = if b.side_to_act == Faction::Raider {
                 RichText::new("The raiders are moving...").color(theme::RED)
             } else if b.active.is_none() {
@@ -935,76 +1048,7 @@ fn battle_panels(
             if !b.moving.is_empty() && !b.hurry {
                 panel.label(RichText::new("Click to hurry the walk along (5x).").small().weak());
             }
-            if let Some(u) = my_unit(b) {
-                let unit = &b.units[u];
-                panel.separator();
-                panel.label(RichText::new(names(w, &unit.members)).strong());
-                panel.add(
-                    theme::bar(unit.ap as f32 / unit.ap_start.max(AP_MAX) as f32)
-                        .text(format!("{} action points", unit.ap))
-                        .fill(theme::TEAL),
-                );
-                if unit.held_down() {
-                    let text = format!("Pinned down: only {} AP this round, {} AP a step", unit.ap_start, sim.world.step_ap(u));
-                    panel.label(RichText::new(text).color(SUPPRESSION_COLOR));
-                }
-                unit_state(panel, unit);
-                panel.label(
-                    RichText::new(format!(
-                        "Click a cell to move ({} AP a step), an enemy to attack ({} AP, {} if everyone uses a sidearm; rifles are clumsy up close, so members draw pistols there).",
-                        sim.world.step_ap(u), AP_ATTACK, my_world::battle::AP_SIDEARM_ATTACK
-                    ))
-                    .small()
-                    .weak(),
-                );
-                if let Some(h) = ui.hover.filter(|_| !b.busy()) {
-                    if let Ok(cost) = w.move_cost(u, h.stand) {
-                        let cover = DIRS
-                            .iter()
-                            .filter_map(|&(dx, dy)| w.map.at(h.stand.0 as i32 + dx, h.stand.1 as i32 + dy, h.stand.2 as i32))
-                            .map(|c| w.cover_at(c))
-                            .max()
-                            .unwrap_or(Cover::None);
-                        panel.label(format!("Move there: {} AP, {} nearby", cost, cover.name()));
-                    }
-                }
-                let deployable = w.can_deploy(u);
-                panel.horizontal(|row| {
-                    if deployable {
-                        let (label, hint) = if unit.is_deployed() {
-                            (format!("Stand up ({} AP)", AP_DEPLOY), "Back on their feet, so the squad can move")
-                        } else {
-                            (format!("Deploy ({} AP)", AP_DEPLOY), "Down on one knee: better aim, harder to hit; can't move until standing up")
-                        };
-                        if row.add_enabled(unit.ap >= AP_DEPLOY, egui::Button::new(label)).on_hover_text(hint).clicked() {
-                            orders.push(BattleOrder::Deploy);
-                        }
-                    }
-                    let (grenades, throw_ap) = belt(w, unit, is_grenade);
-                    if grenades > 0 {
-                        let label = format!("Grenade ×{} ({} AP)", grenades, throw_ap);
-                        let hint = "Then click an enemy unit in range: everyone in it is caught, whatever their cover";
-                        if row.add_enabled(unit.ap >= throw_ap, egui::Button::new(label).selected(view.throwing)).on_hover_text(hint).clicked() {
-                            toggle_throw = true;
-                        }
-                    }
-                    let (medkits, medkit_ap) = belt(w, unit, is_medkit);
-                    if medkits > 0 {
-                        let label = format!("Medkit ×{} ({} AP)", medkits, medkit_ap);
-                        let ready = unit.ap >= medkit_ap && w.medkit_option(u).is_some();
-                        let hint = "Tend everyone's wounds in the unit (only when someone needs it)";
-                        if row.add_enabled(ready, egui::Button::new(label)).on_hover_text(hint).clicked() {
-                            orders.push(BattleOrder::Medkit);
-                        }
-                    }
-                    if row.add_enabled(unit.ap >= AP_HUNKER, egui::Button::new("Hunker down")).on_hover_text("Better cover until the next round; ends the turn").clicked() {
-                        orders.push(BattleOrder::Hunker);
-                    }
-                    if row.button("End turn (Space)").clicked() {
-                        orders.push(BattleOrder::End);
-                    }
-                });
-            }
+            active_unit_panel(panel, w, b, ui, view, actions);
             if let Some((msg, _)) = &view.message {
                 panel.label(RichText::new(msg).color(theme::AMBER));
             }
@@ -1025,69 +1069,64 @@ fn battle_panels(
                 unit_state(panel, enemy);
             }
 
-            panel.separator();
-            panel.horizontal(|row| {
-                row.label(theme::caps("Your units", 15.0).color(theme::AMBER));
-                let waiting = b.units.iter().any(|u| u.side == Faction::Colony && u.can_act() && !u.acted);
-                let button = egui::Button::new("End all turns").small();
-                if row
-                    .add_enabled(waiting && !b.colony_passes, button)
-                    .on_hover_text("Every unit that hasn't acted yet ends its turn this round")
-                    .clicked()
-                {
-                    end_all = true;
-                }
-            });
-            for (u, unit) in b.units.iter().enumerate().filter(|(_, u)| u.side == Faction::Colony && u.can_act()) {
-                let status = if b.active_unit() == Some(u) {
-                    "acting".to_string()
-                } else if unit.acted {
-                    "done".to_string()
-                } else {
-                    format!("{} AP", unit.ap)
-                };
-                let standing = if unit.roster.len() > 1 {
-                    format!(" - {}/{} standing", unit.members.len(), unit.roster.len())
-                } else {
-                    String::new()
-                };
-                let state: Vec<String> = unit_tags(unit).iter().map(|t| t.0.to_lowercase()).collect();
-                let state = if state.is_empty() { String::new() } else { format!(" - {}", state.join(", ")) };
-                let text = format!("{}{} - {}{}", names(w, &unit.members), standing, status, state);
-                let ready = !unit.acted && b.side_to_act == Faction::Colony;
-                if panel.add_enabled(ready, egui::Button::new(text).small()).clicked() {
-                    orders.push(BattleOrder::Activate(u));
-                }
-            }
-            for a in &b.arrivals {
-                if let (Some(p), Some(l)) = (w.pawn(a.pawn), w.pawn(a.leader)) {
-                    let rounds = if a.rounds == 1 { "next round".to_string() } else { format!("in {} rounds", a.rounds) };
-                    panel.label(RichText::new(format!("{} joins {} {}", p.name, l.name, rounds)).small().weak());
-                }
-            }
-            let civilians = b.units.iter().filter(|u| u.is_civilians() && !u.out()).count();
-            if civilians > 0 {
-                panel.label(RichText::new(format!("{} civilian(s) sheltering", civilians)).small().weak());
-            }
-            let raiders: usize = b.units.iter().filter(|u| u.side == Faction::Raider).map(|u| u.members.len()).sum();
-            panel.label(RichText::new(format!("{} raider(s) still fighting", raiders)).color(theme::RED));
+            roster_panel(panel, w, b, actions);
 
             panel.separator();
             for e in b.events.iter().rev().take(6).rev() {
                 panel.label(RichText::new(e).small());
             }
         });
+}
 
-    for order in orders {
+#[allow(clippy::too_many_arguments)]
+fn battle_panels(
+    mut contexts: EguiContexts,
+    mut sim: ResMut<Sim>,
+    mut ui: ResMut<UiState>,
+    mut view: ResMut<BattleView>,
+    area: Res<ReachArea>,
+    time: Res<Time>,
+    mut sounds: ResMut<SoundQueue>,
+    camera: Single<(&Camera, &GlobalTransform), With<MainCamera>>,
+) -> Result {
+    let ctx = contexts.ctx_mut()?.clone();
+    parley_dialog(&ctx, &mut sim, &mut sounds);
+    let w = &sim.world;
+    let Some(b) = &w.battle else {
+        view.announced = None;
+        view.last.clear();
+        view.popups.clear();
+        return Ok(());
+    };
+    // Nothing to throw with once the acting unit changes or runs out.
+    if my_unit(b).is_none_or(|u| belt(w, &b.units[u], is_grenade).0 == 0) {
+        view.throwing = false;
+    }
+
+    round_banner(&ctx, b, &mut view, time.delta_secs());
+
+    // Each unit's plate over its square, from the top: state chips, its
+    // name, a bar per member (health while standing, dark red when downed,
+    // grey and crossed out when dead, a red dot when bleeding; the leader's
+    // outlined), then morale and suppression with a mark where they tip over.
+    update_popups(&mut view, b, time.delta_secs());
+    draw_unit_plates(&ctx, w, b, &ui, &view, *camera);
+
+    draw_battle_odds(&ctx, w, b, &ui, &area, *camera);
+
+    let mut actions = BattleActions::default();
+    battle_command_panel(&ctx, w, b, &ui, &view, &mut actions);
+
+    for order in actions.orders {
         match sim.world.battle_order(order) {
             Ok(()) => sounds.play("ui_click", None),
             Err(_) => sounds.play("ui_click", None),
         }
     }
-    if toggle_throw {
+    if actions.toggle_throw {
         view.throwing = !view.throwing;
     }
-    if end_all && sim.world.end_colony_turns().is_ok() {
+    if actions.end_all && sim.world.end_colony_turns().is_ok() {
         sounds.play("ui_click", None);
     }
     // Show the acting unit in the inspector when its turn starts (it can be

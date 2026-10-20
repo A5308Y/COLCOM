@@ -182,7 +182,7 @@ fn update_chunks(
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let m = &sim.world.map;
-    let kinds: Vec<u8> = sim.world.room_stats.iter().map(|r| r.kind.map_or(0, |k| k.index() as u8 + 1)).collect();
+    let kinds: Vec<u8> = sim.world.derived.room_stats.iter().map(|r| r.kind.map_or(0, |k| k.index() as u8 + 1)).collect();
     let season = Season::ALL.iter().position(|&s| s == sim.world.season()).unwrap_or(0) as u8;
     let cut = Cut { level: ui.top_level(m), columns: &ui.roof_cut, kinds: &kinds, season };
     let chunks = chunks.into_inner();

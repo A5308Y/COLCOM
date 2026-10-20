@@ -531,7 +531,6 @@ impl World {
 
     fn complete_work(&mut self, target: Pos, task: Task, who: &str) {
         let i = self.map.idx(target);
-        let f = self.map.feature[i];
         if task == Task::Craft {
             if let Some(r) = self.finish_recipe(target) {
                 let made: Vec<String> =
@@ -541,11 +540,6 @@ impl World {
             return;
         }
         self.map.set_desig(i, None);
-        let drop = |m: &mut Map, at: Pos, drops: Vec<(ItemId, u32)>| {
-            for (kind, count) in drops.into_iter().filter(|d| d.1 > 0) {
-                m.drop_item(at, Stack { kind, count });
-            }
-        };
         match task {
             Task::Harvest(kind) => {
                 self.map.set_feature(i, Feature::None);
@@ -553,7 +547,7 @@ impl World {
                     self.sound(s, Some(target));
                 }
                 let y = &kind.def().harvest.yields;
-                drop(&mut self.map, target, vec![(y.item, y.count)]);
+                self.drop_work_yields(target, vec![(y.item, y.count)]);
             }
             Task::Sow(kind) => self.map.set_feature(i, Feature::Plant { kind, growth: 0.0 }),
             Task::Fill => {
@@ -579,102 +573,118 @@ impl World {
                         Block::Rock => Some(&defs().rock_drops),
                         Block::Ore => Some(&defs().ore_drops),
                         Block::Copper => Some(&defs().copper_drops),
-                        _ => None,
+                        Block::Air | Block::Soil | Block::Water => None,
                     };
                     if let Some(r) = yields {
-                        drop(&mut self.map, target, vec![(r.item, r.count)]);
+                        self.drop_work_yields(target, vec![(r.item, r.count)]);
                     }
                 }
             }
-            Task::Deconstruct => {
-                if let Some(def) = f.structure() {
-                    // What was to be built over it can now be built from scratch.
-                    let next = match f {
-                        Feature::Blueprint { kind, delivered, dir, .. } => Feature::blueprint(kind, delivered, dir),
-                        _ => Feature::None,
-                    };
-                    self.map.set_feature(i, next);
-                    self.sound("built", Some(target));
-                    drop(&mut self.map, target, def.drops());
-                    if def.storage.is_some() {
-                        self.sync_containers();
-                    }
-                } else if self.map.floor[i] {
-                    self.map.set_floor(i, false);
-                    self.sound("built", Some(target));
-                    let at = self.map.landing(target);
-                    if let Some(floor) = defs().floor() {
-                        drop(&mut self.map, at, floor.def().drops());
-                    }
-                } else if self.map.roof[i] {
-                    // Marked again if the room is still closed (`mark_roofs`).
-                    self.map.set_roof(i, false);
-                    self.sound("built", Some(target));
-                    let at = self.map.landing(target);
-                    if let Some(roof) = defs().roof() {
-                        drop(&mut self.map, at, roof.def().drops());
-                    }
-                }
-            }
+            Task::Deconstruct => self.complete_deconstruction(target),
             Task::Craft => {}
             Task::Uninstall => self.lift(target),
             Task::Decorate => {
                 self.finish_decor(target);
                 self.sound("built", Some(target));
             }
-            Task::Construct => {
-                if let Feature::Blueprint { .. } = f {
-                    if self.finish_move(target) {
-                        self.sound("built", Some(target));
-                        return;
-                    }
+            Task::Construct => self.complete_construction(target),
+        }
+    }
+
+    fn drop_work_yields(&mut self, at: Pos, drops: Vec<(ItemId, u32)>) {
+        for (kind, count) in drops.into_iter().filter(|d| d.1 > 0) {
+            self.map.drop_item(at, Stack { kind, count });
+        }
+    }
+
+    fn complete_deconstruction(&mut self, target: Pos) {
+        let i = self.map.idx(target);
+        let f = self.map.feature[i];
+        if let Some(def) = f.structure() {
+            // What was to be built over it can now be built from scratch.
+            let next = match f {
+                Feature::Blueprint { kind, delivered, dir, .. } => Feature::blueprint(kind, delivered, dir),
+                _ => Feature::None,
+            };
+            self.map.set_feature(i, next);
+            self.sound("built", Some(target));
+            self.drop_work_yields(target, def.drops());
+            if def.storage.is_some() {
+                self.sync_containers();
+            }
+        } else if self.map.floor[i] {
+            self.map.set_floor(i, false);
+            self.sound("built", Some(target));
+            let at = self.map.landing(target);
+            if let Some(floor) = defs().floor() {
+                self.drop_work_yields(at, floor.def().drops());
+            }
+        } else if self.map.roof[i] {
+            // Marked again if the room is still closed (`mark_roofs`).
+            self.map.set_roof(i, false);
+            self.sound("built", Some(target));
+            let at = self.map.landing(target);
+            if let Some(roof) = defs().roof() {
+                self.drop_work_yields(at, roof.def().drops());
+            }
+        }
+    }
+
+    fn complete_construction(&mut self, target: Pos) {
+        let i = self.map.idx(target);
+        let f = self.map.feature[i];
+        if let Feature::Blueprint { .. } = f {
+            if self.finish_move(target) {
+                self.sound("built", Some(target));
+                return;
+            }
+        }
+        if let Feature::Blueprint { kind, dir, over, .. } = f {
+            // The wall (door, window) it replaces comes down, giving back what it would.
+            if let Some((old, _)) = over {
+                self.drop_work_yields(target, old.def().drops());
+                self.map.rooms_dirty = true;
+            }
+            match kind.def().special {
+                Special::Floor => {
+                    self.map.set_feature(i, Feature::None);
+                    self.map.set_roof(i, false);
+                    self.map.set_floor(i, true);
                 }
-                if let Feature::Blueprint { kind, dir, over, .. } = f {
-                    // The wall (door, window) it replaces comes down, giving back what it would.
-                    if let Some((old, _)) = over {
-                        drop(&mut self.map, target, old.def().drops());
-                        self.map.rooms_dirty = true;
-                    }
-                    match kind.def().special {
-                        Special::Floor => {
-                            self.map.set_feature(i, Feature::None);
-                            self.map.set_roof(i, false);
-                            self.map.set_floor(i, true);
-                        }
-                        Special::Roof => {
-                            self.map.set_feature(i, Feature::None);
-                            self.map.set_roof(i, true);
-                        }
-                        Special::Stairs => {
-                            // As their blueprint faces (a quarry's out of their shaft).
-                            let dir = self.quarry_stairs_dir(target).unwrap_or(dir);
-                            self.map.set_feature(i, Feature::Built { kind, dir });
-                            // A roof over them or where they're walked onto would block the way up:
-                            // take it down.
-                            let over: Vec<Pos> = [Some(target), self.map.stairs_foot(target)]
-                                .into_iter()
-                                .flatten()
-                                .filter_map(|c| self.map.above(c))
-                                .collect();
-                            for a in over {
-                                let ai = self.map.idx(a);
-                                if self.map.roof[ai] {
-                                    self.map.set_roof(ai, false);
-                                    if let Some(roof) = defs().roof() {
-                                        drop(&mut self.map, target, roof.def().drops());
-                                    }
-                                }
+                Special::Roof => {
+                    self.map.set_feature(i, Feature::None);
+                    self.map.set_roof(i, true);
+                }
+                Special::Stairs => {
+                    // As their blueprint faces (a quarry's out of their shaft).
+                    let dir = self.quarry_stairs_dir(target).unwrap_or(dir);
+                    self.map.set_feature(i, Feature::Built { kind, dir });
+                    // A roof over them or where they're walked onto would block the way up:
+                    // take it down.
+                    let over: Vec<Pos> = [Some(target), self.map.stairs_foot(target)]
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|c| self.map.above(c))
+                        .collect();
+                    for a in over {
+                        let ai = self.map.idx(a);
+                        if self.map.roof[ai] {
+                            self.map.set_roof(ai, false);
+                            if let Some(roof) = defs().roof() {
+                                self.drop_work_yields(target, roof.def().drops());
                             }
                         }
-                        _ => self.map.set_feature(i, Feature::Built { kind, dir }),
-                    }
-                    self.sound("built", Some(target));
-                    // Shove anything lying here out of the way (onto the shelf, if it is one).
-                    self.map.move_items(i, target);
-                    if kind.def().storage.is_some() {
-                        self.sync_containers();
                     }
                 }
+                Special::None | Special::Bed | Special::Door | Special::Table | Special::Seat | Special::Grave => {
+                    self.map.set_feature(i, Feature::Built { kind, dir });
+                }
+            }
+            self.sound("built", Some(target));
+            // Shove anything lying here out of the way (onto the shelf, if it is one).
+            self.map.move_items(i, target);
+            if kind.def().storage.is_some() {
+                self.sync_containers();
             }
         }
     }

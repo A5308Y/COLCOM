@@ -287,39 +287,9 @@ fn sync_props(
     let w = &sim.world;
     let m = &w.map;
     let hidden = |pos: Pos| pos.2 > ui.top_at(m, pos.0, pos.1);
-    let view = (ui.top_level(m), ui.roof_version);
-    if props.generation != Some(sim.generation) || props.features.len() != m.len() {
-        for (_, e) in props.features.drain(..).flatten() {
-            commands.entity(e).despawn();
-        }
-        for (_, e) in props.items.drain(..).flatten() {
-            commands.entity(e).despawn();
-        }
-        for (_, (_, e)) in props.decor.drain() {
-            commands.entity(e).despawn();
-        }
-        props.features = vec![None; m.len()];
-        props.items = vec![None; m.len()];
-        props.generation = Some(sim.generation);
-        props.view = None;
-        props.changes = None;
-        props.dynamic.clear();
-    }
+    props.reset(&mut commands, sim.generation, m.len());
 
-    // Layer view changed: show or hide everything by level.
-    if props.view != Some(view) {
-        for i in 0..m.len() {
-            let vis = if hidden(m.pos(i)) { Visibility::Hidden } else { Visibility::Inherited };
-            for e in [props.features[i].map(|f| f.1), props.items[i].map(|f| f.1)].into_iter().flatten() {
-                commands.entity(e).insert(vis);
-            }
-        }
-        for (&(i, _, _), &(_, e)) in &props.decor {
-            let vis = if hidden(m.pos(i as usize)) { Visibility::Hidden } else { Visibility::Inherited };
-            commands.entity(e).insert(vis);
-        }
-        props.view = Some(view);
-    }
+    props.sync_visibility(&mut commands, m, &ui);
 
     let map_changed = props.changes != Some(m.changes());
     props.changes = Some(m.changes());
@@ -339,49 +309,7 @@ fn sync_props(
             props.dynamic.push(i);
         }
         let pos = m.pos(i);
-        let want = match m.feature[i] {
-            Feature::None => None,
-            Feature::Plant { kind, growth } => Some(PropKey::Plant { kind, stage: kind.def().stage(growth) as u8 }),
-            // To be built over a wall that's drawn with the terrain.
-            Feature::Blueprint { kind, over: Some(_), .. } => Some(PropKey::Blueprint { kind, dir: Dir::PlusX, over: true, snug: (0.0, 0.0) }),
-            // Drawn with the terrain.
-            f if f.is_block() => None,
-            Feature::Built { kind, dir } => Some({
-                let def = kind.def();
-                let owner = (def.special == Special::Bed).then(|| owners.get(&pos).map(|o| o.0)).flatten();
-                let open = match def.special {
-                    Special::Door => w.pawns.iter().any(|p| {
-                        !p.is_dead()
-                            && (p.x - pos.0 as f32).abs() < 0.9
-                            && (p.y - pos.1 as f32).abs() < 0.9
-                            && (p.z - pos.2 as f32).abs() < 0.9
-                    }),
-                    Special::Grave => !filled.contains(&pos),
-                    _ => false,
-                };
-                // Modelled spanning x; a quarter turn when the walls run along y.
-                let dir = if def.along_walls {
-                    if m.runs_along_x(pos) {
-                        Dir::PlusX
-                    } else {
-                        Dir::MinusY
-                    }
-                } else if def.special == Special::Seat {
-                    seat_dir(m, pos, def.front, dir)
-                } else {
-                    dir
-                };
-                let linked = def.parts().iter().any(|p| p.link.is_some());
-                let links = if linked { links(m, pos, kind) } else { 0 };
-                let snug = snug(m, pos, kind, dir);
-                PropKey::Built { kind, dir, owner, open, links, snug: (snug.x, snug.y) }
-            }),
-            Feature::Blueprint { kind, dir, .. } => {
-                let dir = if kind.def().turnable() { dir } else { Dir::PlusX };
-                let snug = snug(m, pos, kind, dir);
-                Some(PropKey::Blueprint { kind, dir, over: false, snug: (snug.x, snug.y) })
-            }
-        };
+        let want = prop_key(w, i, &owners, &filled);
         let have = props.features[i].map(|(k, _)| k);
         // A door swinging open.
         let door = matches!(m.feature[i], Feature::Built { kind, .. } if kind.def().special == Special::Door);
@@ -403,7 +331,7 @@ fn sync_props(
                 // Doors and windows fill their cell like the walls they sit in, floor or not.
                 let in_wall = match m.feature[i] {
                     Feature::Built { kind, .. } | Feature::Blueprint { kind, .. } => kind.def().along_walls,
-                    _ => false,
+                    Feature::None | Feature::Plant { .. } => false,
                 };
                 let lift = if m.floor[i] && !in_wall { FLOOR_T } else { 0.0 };
                 let e = spawn_feature(&mut commands, &assets, key, pos, lift, blanket);
@@ -414,35 +342,7 @@ fn sync_props(
             }
         }
 
-        let mut want: ItemsKey = [None; 4];
-        for (slot, s) in want.iter_mut().zip(m.stacks(i)) {
-            *slot = Some(ItemKey { kind: s.kind, big: s.count >= 25 });
-        }
-        // What wall shelves hold is drawn on them (with the rest of the wall's things).
-        let want_item = (want[0].is_some() && m.wall_shelves(i) == 0).then_some(want);
-        let have_item = props.items[i].map(|(k, _)| k);
-        if want_item != have_item {
-            if let Some((_, e)) = props.items[i].take() {
-                commands.entity(e).despawn();
-            }
-            if let Some(key) = want_item {
-                let storage = m.feature[i].structure().and_then(|d| d.storage.as_ref());
-                let lift = if m.floor[i] { FLOOR_T } else { 0.0 };
-                let e = match storage {
-                    Some(st) if st.slots > 1 => spawn_shelf_items(&mut commands, &assets, key, pos, lift, st),
-                    _ => spawn_item(&mut commands, &assets, key[0].unwrap(), pos, lift + storage.map_or(0.0, |s| s.height)),
-                };
-                // On a shelf pushed back against a wall: with it.
-                if storage.is_some() {
-                    let s = built_snug(m, pos);
-                    commands.entity(e).entry::<Transform>().and_modify(move |mut t| t.translation += Vec3::new(s.x, 0.0, s.y));
-                }
-                if hidden(pos) {
-                    commands.entity(e).insert(Visibility::Hidden);
-                }
-                props.items[i] = Some((key, e));
-            }
-        }
+        sync_items(&mut commands, &assets, props, m, &ui, i);
     }
 
     if !map_changed {
@@ -450,6 +350,134 @@ fn sync_props(
         return;
     }
 
+    sync_decor(&mut commands, &assets, props, m, &ui);
+}
+
+impl Props {
+    fn reset(&mut self, commands: &mut Commands, generation: u64, len: usize) {
+        if self.generation != Some(generation) || self.features.len() != len {
+            for (_, e) in self.features.drain(..).flatten() {
+                commands.entity(e).despawn();
+            }
+            for (_, e) in self.items.drain(..).flatten() {
+                commands.entity(e).despawn();
+            }
+            for (_, (_, e)) in self.decor.drain() {
+                commands.entity(e).despawn();
+            }
+            self.features = vec![None; len];
+            self.items = vec![None; len];
+            self.generation = Some(generation);
+            self.view = None;
+            self.changes = None;
+            self.dynamic.clear();
+        }
+    }
+
+    fn sync_visibility(&mut self, commands: &mut Commands, m: &Map, ui: &UiState) {
+        let hidden = |pos: Pos| pos.2 > ui.top_at(m, pos.0, pos.1);
+        let view = (ui.top_level(m), ui.roof_version);
+        // Layer view changed: show or hide everything by level.
+        if self.view != Some(view) {
+            for i in 0..m.len() {
+                let vis = if hidden(m.pos(i)) { Visibility::Hidden } else { Visibility::Inherited };
+                for e in [self.features[i].map(|f| f.1), self.items[i].map(|f| f.1)].into_iter().flatten() {
+                    commands.entity(e).insert(vis);
+                }
+            }
+            for (&(i, _, _), &(_, e)) in &self.decor {
+                let vis = if hidden(m.pos(i as usize)) { Visibility::Hidden } else { Visibility::Inherited };
+                commands.entity(e).insert(vis);
+            }
+            self.view = Some(view);
+        }
+    }
+}
+
+fn prop_key(w: &my_world::world::World, i: usize, owners: &HashMap<Pos, (PawnId, [f32; 3])>, filled: &HashSet<Pos>) -> Option<PropKey> {
+    let m = &w.map;
+    let pos = m.pos(i);
+    match m.feature[i] {
+        Feature::None => None,
+        Feature::Plant { kind, growth } => Some(PropKey::Plant { kind, stage: kind.def().stage(growth) as u8 }),
+        // To be built over a wall that's drawn with the terrain.
+        Feature::Blueprint { kind, over: Some(_), .. } => Some(PropKey::Blueprint { kind, dir: Dir::PlusX, over: true, snug: (0.0, 0.0) }),
+        // Drawn with the terrain.
+        f if f.is_block() => None,
+        Feature::Built { kind, dir } => Some({
+            let def = kind.def();
+            let owner = (def.special == Special::Bed).then(|| owners.get(&pos).map(|o| o.0)).flatten();
+            let open = match def.special {
+                Special::Door => w.pawns.iter().any(|p| {
+                    !p.is_dead()
+                        && (p.x - pos.0 as f32).abs() < 0.9
+                        && (p.y - pos.1 as f32).abs() < 0.9
+                        && (p.z - pos.2 as f32).abs() < 0.9
+                }),
+                Special::Grave => !filled.contains(&pos),
+                Special::None | Special::Floor | Special::Roof | Special::Stairs | Special::Bed | Special::Table | Special::Seat => false,
+            };
+            // Modelled spanning x; a quarter turn when the walls run along y.
+            let dir = if def.along_walls {
+                if m.runs_along_x(pos) {
+                    Dir::PlusX
+                } else {
+                    Dir::MinusY
+                }
+            } else if def.special == Special::Seat {
+                seat_dir(m, pos, def.front, dir)
+            } else {
+                dir
+            };
+            let linked = def.parts().iter().any(|p| p.link.is_some());
+            let links = if linked { links(m, pos, kind) } else { 0 };
+            let snug = snug(m, pos, kind, dir);
+            PropKey::Built { kind, dir, owner, open, links, snug: (snug.x, snug.y) }
+        }),
+        Feature::Blueprint { kind, dir, .. } => {
+            let dir = if kind.def().turnable() { dir } else { Dir::PlusX };
+            let snug = snug(m, pos, kind, dir);
+            Some(PropKey::Blueprint { kind, dir, over: false, snug: (snug.x, snug.y) })
+        }
+    }
+}
+
+fn sync_items(commands: &mut Commands, assets: &PropAssets, props: &mut Props, m: &Map, ui: &UiState, i: usize) {
+    let hidden = |pos: Pos| pos.2 > ui.top_at(m, pos.0, pos.1);
+    let pos = m.pos(i);
+    let mut want: ItemsKey = [None; 4];
+    for (slot, s) in want.iter_mut().zip(m.stacks(i)) {
+        *slot = Some(ItemKey { kind: s.kind, big: s.count >= 25 });
+    }
+    // What wall shelves hold is drawn on them (with the rest of the wall's things).
+    let want_item = (want[0].is_some() && m.wall_shelves(i) == 0).then_some(want);
+    let have_item = props.items[i].map(|(k, _)| k);
+    if want_item != have_item {
+        if let Some((_, e)) = props.items[i].take() {
+            commands.entity(e).despawn();
+        }
+        if let Some(key) = want_item {
+            let storage = m.feature[i].structure().and_then(|d| d.storage.as_ref());
+            let lift = if m.floor[i] { FLOOR_T } else { 0.0 };
+            let e = match storage {
+                Some(st) if st.slots > 1 => spawn_shelf_items(commands, assets, key, pos, lift, st),
+                _ => spawn_item(commands, assets, key[0].unwrap(), pos, lift + storage.map_or(0.0, |s| s.height)),
+            };
+            // On a shelf pushed back against a wall: with it.
+            if storage.is_some() {
+                let s = built_snug(m, pos);
+                commands.entity(e).entry::<Transform>().and_modify(move |mut t| t.translation += Vec3::new(s.x, 0.0, s.y));
+            }
+            if hidden(pos) {
+                commands.entity(e).insert(Visibility::Hidden);
+            }
+            props.items[i] = Some((key, e));
+        }
+    }
+}
+
+fn sync_decor(commands: &mut Commands, assets: &PropAssets, props: &mut Props, m: &Map, ui: &UiState) {
+    let hidden = |pos: Pos| pos.2 > ui.top_at(m, pos.0, pos.1);
     // What hangs on walls: each wall shelf holds the next of its wall's stacks.
     let mut want: HashMap<(u32, Dir, u8), DecorKey> = HashMap::new();
     for (&i, list) in &m.decor {
@@ -472,7 +500,7 @@ fn sync_props(
         }
         let pos = m.pos(k.0 as usize);
         let lift = if m.floor[k.0 as usize] { FLOOR_T } else { 0.0 };
-        let e = spawn_decor(&mut commands, &assets, key, pos, k.1, k.2, lift);
+        let e = spawn_decor(commands, assets, key, pos, k.1, k.2, lift);
         if hidden(pos) {
             commands.entity(e).insert(Visibility::Hidden);
         }

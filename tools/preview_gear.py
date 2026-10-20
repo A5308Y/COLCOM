@@ -11,7 +11,8 @@ import sys
 
 sys.dont_write_bytecode = True
 from make_gear import models
-from preview_rifle import cross, dot, render, unit
+from asset_helpers import cross, dot, unit
+from preview_rifle import render
 
 
 def write_gallery(entries, out, title="weapons &amp; armor", subtitle="Frontier gear and fitted flak jackets; powered armor uses graphite, titanium and ion cyan."):

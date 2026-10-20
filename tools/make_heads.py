@@ -13,7 +13,10 @@ triangle list; eyes and eyebrows are kept as they are.
 
 import json
 import os
+from pathlib import Path
 import struct
+
+from asset_helpers import GltfBuffer, write_gltf
 
 BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "models", "characters", "base")
 CHARACTERS = ["Superhero_Male_FullBody", "Superhero_Female_FullBody"]
@@ -41,17 +44,18 @@ def read_accessor(g, blob, index):
     return out
 
 
-def make_head(name):
+def make_head(name, out=None):
+    out = Path(out) if out is not None else Path(BASE)
     path = os.path.join(BASE, name + ".gltf")
-    g = json.load(open(path))
+    g = json.loads(Path(path).read_text())
     assert len(g["buffers"]) == 1, "expects one buffer"
-    blob = open(os.path.join(BASE, g["buffers"][0]["uri"]), "rb").read()
+    blob = (Path(BASE) / g["buffers"][0]["uri"]).read_bytes()
     joint_names = [g["nodes"][j]["name"] for j in g["skins"][0]["joints"]]
     head_joints = {k for k, n in enumerate(joint_names) if n in HEAD_BONES}
 
     # The body is the mesh with the most triangles (eyes and eyebrows are small).
     body = max(range(len(g["meshes"])), key=lambda m: sum(g["accessors"][p["indices"]]["count"] for p in g["meshes"][m]["primitives"]))
-    extra = bytearray()
+    buffer = GltfBuffer(g, buffer=1)
     kept_total = 0
     for prim in g["meshes"][body]["primitives"]:
         joints = read_accessor(g, blob, prim["attributes"]["JOINTS_0"])
@@ -64,20 +68,11 @@ def make_head(name):
             if all(head[i] for i in tri):
                 kept.extend(tri)
         kept_total += len(kept) // 3
-        while len(extra) % 4:
-            extra.append(0)
-        g["bufferViews"].append({"buffer": 1, "byteOffset": len(extra), "byteLength": len(kept) * 4, "target": 34963})
-        extra.extend(struct.pack("<%dI" % len(kept), *kept))
-        g["accessors"].append({"bufferView": len(g["bufferViews"]) - 1, "componentType": 5125, "count": len(kept), "type": "SCALAR"})
-        prim["indices"] = len(g["accessors"]) - 1
+        prim["indices"] = buffer.accessor(kept, "SCALAR", 5125, 34963)
 
     head_name = name.replace("_FullBody", "") + "_Head"
-    g["buffers"].append({"uri": head_name + ".bin", "byteLength": len(extra)})
     g["meshes"][body]["name"] = head_name
-    with open(os.path.join(BASE, head_name + ".bin"), "wb") as f:
-        f.write(extra)
-    with open(os.path.join(BASE, head_name + ".gltf"), "w") as f:
-        json.dump(g, f, separators=(",", ":"))
+    write_gltf(out / (head_name + ".gltf"), g, buffer.blob, buffer=1, compact=True)
     print(f"{head_name}: kept {kept_total} of the body's triangles")
 
 

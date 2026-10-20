@@ -53,7 +53,7 @@ impl World {
         } else {
             r
         };
-        let Some(room) = self.room_stats.get(r).filter(|_| r != 0) else { return false };
+        let Some(room) = self.derived.room_stats.get(r).filter(|_| r != 0) else { return false };
         if d.heat > 0.0 {
             room.temp < HEAT_BELOW
         } else {
@@ -99,14 +99,14 @@ impl World {
         stored = (stored + spare * hours).min(capacity);
         let used: f32 = running.iter().filter_map(|&i| self.map.feature[i as usize].structure()?.power).map(|p| p.draw).sum();
         self.stored_wh = stored;
-        self.running = running;
-        self.power = PowerState { made, peak, used, stored, capacity, unpowered };
+        self.derived.running = running;
+        self.derived.power = PowerState { made, peak, used, stored, capacity, unpowered };
     }
 
     /// What the heater or cooler at cell `i` is doing (None if it isn't one).
     pub fn device_state(&self, i: usize) -> Option<DeviceState> {
         self.map.feature[i].structure()?.power.filter(|p| p.draw > 0.0)?;
-        Some(if self.running.contains(&(i as u32)) {
+        Some(if self.derived.running.contains(&(i as u32)) {
             DeviceState::Running
         } else if self.device_wants(i) {
             DeviceState::NoPower
@@ -153,13 +153,13 @@ mod tests {
         w.set_time(3.0 * SEASON_LEN + 0.3 * DAY_LEN);
         let heater = w.map.idx((4, 4, Z));
         run(&mut w, 0.3 * DAY_LEN);
-        assert_eq!(w.device_state(heater), Some(DeviceState::Running), "{:?}", w.power);
-        assert!(w.power.made > 0.0 && w.stored_wh > 0.0, "the sun runs it and charges the battery");
+        assert_eq!(w.device_state(heater), Some(DeviceState::Running), "{:?}", w.derived.power);
+        assert!(w.derived.power.made > 0.0 && w.stored_wh > 0.0, "the sun runs it and charges the battery");
         assert!(w.temperature_at((3, 3, Z)) > w.outdoor_temperature() + 10.0);
         // Night: the battery carries on, until it runs dry.
         run(&mut w, 0.4 * DAY_LEN);
         assert!(w.is_night());
-        assert_eq!(w.power.made, 0.0);
+        assert_eq!(w.derived.power.made, 0.0);
     }
 
     #[test]
@@ -169,7 +169,7 @@ mod tests {
         let heater = w.map.idx((4, 4, Z));
         run(&mut w, 2.0);
         assert_eq!(w.device_state(heater), Some(DeviceState::NoPower));
-        assert_eq!(w.power.unpowered, 1);
+        assert_eq!(w.derived.power.unpowered, 1);
     }
 
     #[test]

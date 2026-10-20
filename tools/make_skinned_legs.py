@@ -8,10 +8,9 @@ from pathlib import Path
 import sys
 sys.dont_write_bytecode = True
 
-from gltf_pose import Gltf, unit
-from make_rifle import linear
+from asset_helpers import SkinnedAsset, linear, unit
+from gltf_pose import Gltf
 from make_skinned_power_armor import BodySurface
-from skinned_asset import SkinnedAsset
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -112,7 +111,7 @@ def guard_panels(vertices, triangles, boots, origins):
     return vertices,groups
 
 
-def write(sex, guarded):
+def write(sex, guarded, out=None):
     source = Gltf(ROOT / f'assets/models/characters/outfits/{sex}_Peasant.gltf')
     vertices, triangles, boots = lower_body(source)
     origins = {source.data['nodes'][i].get('name'): tuple(m[k][3] for k in range(3)) for i, m in source.globals().items()}
@@ -187,7 +186,8 @@ def write(sex, guarded):
         mesh('Pads', vertices, [[], pad_indices, [], [], []])
     else:
         mesh('Pockets', detail_vertices, detail_groups)
-    asset.write(ROOT / f'assets/models/items/{name}.gltf')
+    out = Path(out) if out is not None else ROOT / "assets/models/items"
+    asset.write(out / f"{name}.gltf")
     print(f'{name}: {sum(len(ids)//3 for ids in groups)+(len(pad_indices)//3 if guarded else sum(len(ids)//3 for ids in detail_groups))} triangles')
 
 

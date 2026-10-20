@@ -565,6 +565,30 @@ impl World {
             }
         }
 
+        self.form_raider_units(&parley, &mut b);
+        let colonists: Vec<(PawnId, Role, Pos)> = self.pawns.iter()
+            .filter(|p| p.is_colonist() && p.active()).map(|p| (p.id, p.role, p.pos)).collect();
+        self.form_colony_units(&colonists, &mut b);
+        self.shelter_civilians(&colonists, &mut b);
+
+        // Everyone runs while the battle lasts.
+        for p in self.pawns.iter_mut() {
+            p.running = true;
+        }
+        let raiders = parley.raiders();
+        let who = if raiders == 1 { "1 raider attacks".to_string() } else { format!("{} raiders attack", raiders) };
+        b.events.push(format!("Battle! {}.", who));
+        // A field radio in a unit: more action points from the first round.
+        for u in b.units.iter_mut() {
+            let bonus = self.ap_bonus(&u.members);
+            u.ap += bonus;
+            u.ap_start += bonus;
+        }
+        self.battle = Some(b);
+        self.push_log(format!("Battle! {} the colony.", who));
+    }
+
+    fn form_raider_units(&mut self, parley: &Parley, b: &mut Battle) {
         // Raiders come in squads near where they entered.
         let df = bfs(&self.map, parley.entry);
         // Each squad stands on one cell, a few cells from the next.
@@ -585,11 +609,10 @@ impl World {
                 b.units.push(Unit::new(Faction::Raider, members, kind, 60.0));
             }
         }
+    }
 
+    fn form_colony_units(&mut self, colonists: &[(PawnId, Role, Pos)], b: &mut Battle) {
         // The colony: squads around their leaders, lone fighters where they stand.
-        let ready = |p: &Pawn| p.is_colonist() && p.active();
-        let colonists: Vec<(PawnId, Role, Pos)> =
-            self.pawns.iter().filter(|p| ready(p)).map(|p| (p.id, p.role, p.pos)).collect();
         let leaders: Vec<(PawnId, Pos)> =
             colonists.iter().filter(|c| c.1 == Role::Leader).map(|c| (c.0, c.2)).collect();
         let ranged = |w: &World, id: PawnId| w.pawn(id).is_some_and(|p| p.main_attack().ranged);
@@ -599,7 +622,7 @@ impl World {
         for &(leader, at) in &leaders {
             let df = bfs(&self.map, at);
             let mut members = vec![leader];
-            for &(id, role, pos) in &colonists {
+            for &(id, role, pos) in colonists {
                 if role != Role::Member(leader) {
                     continue;
                 }
@@ -631,23 +654,26 @@ impl World {
             let morale = self.unit_morale(&members) + 10.0;
             b.units.push(Unit::new(Faction::Colony, members, UnitKind::Squad { leader: Some(leader) }, morale));
         }
-        for &(id, role, _) in &colonists {
+        for &(id, role, _) in colonists {
             let alone = match role {
                 Role::Fighter => true,
                 // A member whose leader can't fight fights alone.
                 Role::Member(l) => !leaders.iter().any(|&(lid, _)| lid == l) || misfits.contains(&id),
-                _ => false,
+                Role::Leader | Role::Civilian => false,
             };
             if alone {
                 let morale = self.unit_morale(&[id]);
                 b.units.push(Unit::new(Faction::Colony, vec![id], UnitKind::Lone, morale));
             }
         }
+    }
+
+    fn shelter_civilians(&mut self, colonists: &[(PawnId, Role, Pos)], b: &mut Battle) {
         // Civilians run to the safe zone (if there is one) and keep their heads down.
         let mut safe: Vec<Pos> =
             (0..self.map.len()).filter(|&i| self.map.zone[i] == Zone::Safe).map(|i| self.map.pos(i)).collect();
         safe.retain(|&c| self.map.standable(c));
-        for &(id, role, pos) in &colonists {
+        for &(id, role, pos) in colonists {
             if role != Role::Civilian {
                 continue;
             }
@@ -660,21 +686,6 @@ impl World {
             u.stance = Stance::Hunkered;
             b.units.push(u);
         }
-        // Everyone runs while the battle lasts.
-        for p in self.pawns.iter_mut() {
-            p.running = true;
-        }
-        let raiders = parley.raiders();
-        let who = if raiders == 1 { "1 raider attacks".to_string() } else { format!("{} raiders attack", raiders) };
-        b.events.push(format!("Battle! {}.", who));
-        // A field radio in a unit: more action points from the first round.
-        for u in b.units.iter_mut() {
-            let bonus = self.ap_bonus(&u.members);
-            u.ap += bonus;
-            u.ap_start += bonus;
-        }
-        self.battle = Some(b);
-        self.push_log(format!("Battle! {} the colony.", who));
     }
 
     /// Starting morale: how the members feel.

@@ -1,7 +1,7 @@
 # Project instructions
 
-Before picking up roadmap work from `PLAN.md`, check [CODE_HEALTH.md](CODE_HEALTH.md): its
-open items come first. Tick items off as they land.
+Before picking up roadmap work from `PLAN.md`, check for `CODE_HEALTH.md`. If present,
+its open items come first. Tick items off as they land and remove the backlog when complete.
 
 ## Types and data modelling
 

@@ -31,46 +31,7 @@ def palette(primary, secondary=STEEL, edge=CREAM, accent=AMBER, metal=0):
 
 
 class Item(Gear):
-    def cylinder(self, at, radius, height, material, axis="y", bore=0, sides=8):
-        piece = Item(self.palette)
-        piece.tube(0, -height / 2, height / 2, radius, material, bore=bore, sides=sides)
-        self.add(piece, at, {"x": (0, 90, 0), "y": (90, 0, 0), "z": (0, 0, 0)}[axis])
-
-    def rock(self, at, size, material=0, seed=0, flecks=None):
-        """A closed irregular six-sided lump, with a stable flat bottom."""
-        rings = []
-        for level, factor in [(-.5, .68), (-.03, 1), (.30, .64)]:
-            rings.append([(at[0] + size[0] / 2 * factor * (1 + .15 * math.sin(i * 7 + seed)) * math.cos(-i * math.tau / 6),
-                           at[1] + level * size[1],
-                           at[2] + size[2] / 2 * factor * (1 + .12 * math.cos(i * 9 + seed)) * math.sin(-i * math.tau / 6)) for i in range(6)])
-        self.face(list(reversed(rings[0])), material)
-        for k in range(2):
-            for i in range(6):
-                j = (i + 1) % 6
-                mat = flecks if flecks is not None and (i + seed + k) % 3 == 0 else material
-                self.face([rings[k][i], rings[k][j], rings[k + 1][j], rings[k + 1][i]], mat)
-        tip = (at[0] + .02 * size[0], at[1] + .5 * size[1], at[2])
-        for i in range(6):
-            self.face([rings[-1][i], rings[-1][(i + 1) % 6], tip], material)
-
-    def straps(self, width, height, depth, positions=(-.12, .12)):
-        for x in positions:
-            self.box((x, height, 0), (.024, .012, depth + .008), 2, bevel=.002)
-            for z in (-depth / 2, depth / 2):
-                self.box((x, height / 2, z), (.024, height, .009), 2, bevel=.002)
-
-    def ball(self, at, radius, material, squash=1.0, sides=10):
-        """A smooth closed ovoid; `squash` scales its height."""
-        piece = Item(self.palette)
-        rings = [(radius * squash * math.sin(a), radius * math.cos(a) + 1e-4, radius * math.cos(a) + 1e-4, 0)
-                 for a in [math.radians(d) for d in (-80, -45, 0, 45, 80)]]
-        piece.section(rings, material, sides=sides, smooth=True)
-        self.add(piece, at)
-
-    def cross_mark(self, y, size=.12, z=0):
-        self.box((0, y, z), (size * .28, .009, size), 4, bevel=.001)
-        for side in (-1, 1):
-            self.box((side * size * .32, y, z), (size * .36, .009, size * .28), 4, bevel=.001)
+    """Inventory mesh using the shared primitive and assembly helpers."""
 
 
 def wood():

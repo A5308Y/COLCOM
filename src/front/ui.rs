@@ -258,7 +258,7 @@ fn rooms_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState, rig: &mut Came
             for k in RoomId::all() {
                 let room = k.def();
                 ui.separator();
-                let mine: Vec<&RoomStats> = w.room_stats.iter().filter(|r| r.kind == Some(k)).collect();
+                let mine: Vec<&RoomStats> = w.derived.room_stats.iter().filter(|r| r.kind == Some(k)).collect();
                 ui.horizontal(|ui| {
                     ui.label(theme::caps(&room.name, 15.0).color(room_color(room)));
                     ui.label(RichText::new(&room.about).weak());
@@ -602,7 +602,7 @@ fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
         .anchor(Align2::RIGHT_BOTTOM, [-8.0, -8.0])
         .show(ctx, |ui| {
             // The colony's grid: what the panels make now, what's used, what's stored.
-            let g = sim.world.power;
+            let g = sim.world.derived.power;
             if g.peak > 0.0 || g.capacity > 0.0 || g.used > 0.0 || g.unpowered > 0 {
                 theme::section(ui, "Power");
                 ui.label(format!("Solar {:.0} W now (up to {:.1} kW), using {:.0} W", g.made, g.peak / 1000.0, g.used));
@@ -1197,7 +1197,7 @@ fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<
         QuarryState::Done => format!("Dug out down to level {}.", bottom),
     };
     ui.label(state);
-    let stuck = w.quarry_unreachable.get(k).copied().unwrap_or(0);
+    let stuck = w.derived.quarry_unreachable.get(k).copied().unwrap_or(0);
     if stuck > 0 {
         let why = format!(
             "{} cell(s) nobody can get to (a ledge, or a pillar too tall to climb) are left standing; it digs on around and under them. Build a way up to have them dug.",

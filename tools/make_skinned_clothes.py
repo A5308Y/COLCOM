@@ -11,11 +11,10 @@ from pathlib import Path
 import sys
 
 sys.dont_write_bytecode = True
-from gltf_pose import Gltf, deform, multiply, unit
+from asset_helpers import SkinnedAsset, linear, multiply, unit
+from gltf_pose import Gltf, deform
 from make_items import palette
 from make_items import Item
-from make_rifle import linear
-from skinned_asset import SkinnedAsset
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -238,11 +237,11 @@ def build(sex, parka, *, details=True):
     return source, vertices, triangles, groups
 
 
-def write(sex, parka):
+def write(sex, parka, out=None):
     source, vertices, triangles, materials = build(sex, parka)
     body, arms = bare_arms(source)
     name = ("Parka" if parka else "SimpleClothes") + sex
-    out = ROOT / "assets/models/items"
+    out = Path(out) if out is not None else ROOT / "assets/models/items"
     asset = SkinnedAsset(source, "My World make_skinned_clothes.py; Quaternius CC0 tailoring")
     g, accessor = asset.data, asset.accessor
 

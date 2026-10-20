@@ -68,7 +68,7 @@ fn check(w: &World) -> Result<(), String> {
     cells("res_target", w.res_target.len())?;
     cells("res_item", w.res_item.len())?;
     cells("res_cell", w.res_cell.len())?;
-    cells("cell_temp", w.cell_temp.len())?;
+    cells("cell_temp", w.derived.cell_temp.len())?;
     if let Some(&i) = m.shelved.keys().chain(m.decor.keys()).find(|&&i| i as usize >= n) {
         return Err(format!("something is stored in cell {} outside the map", i));
     }
@@ -143,6 +143,35 @@ mod tests {
     }
 
     #[test]
+    fn cached_state_keeps_the_version_16_save_layout() {
+        let mut w = World::with_map(crate::map::Map::flat(8, 8), crate::rng::Rng::new(42));
+        let id = w.spawn_colonist((3, 3, crate::map::FLAT_Z));
+        w.derived.cell_temp[0] = 21.5;
+        w.derived.running.insert(7);
+        w.derived.power.unpowered = 2;
+        w.derived.trapped.push(id);
+        w.derived.quarry_unreachable.push(3);
+        w.derived.quarry_out_of_reach.insert(12);
+        let json = to_json(&w).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(value["version"], 16);
+        let fields = value["world"].as_object().unwrap();
+        for name in ["cell_temp", "running", "power", "trapped", "quarry_unreachable", "quarry_out_of_reach"] {
+            assert!(fields.contains_key(name), "{name} remains at the save's world level");
+        }
+        assert!(!fields.contains_key("derived"));
+        assert!(!fields.contains_key("room_stats"), "rebuilt on load");
+        let loaded = from_json(&json).unwrap();
+        assert_eq!(loaded.derived.cell_temp[0], 21.5);
+        assert_eq!(loaded.derived.running, w.derived.running);
+        assert_eq!(loaded.derived.power, w.derived.power);
+        assert_eq!(loaded.derived.trapped, w.derived.trapped);
+        assert_eq!(loaded.derived.quarry_unreachable, w.derived.quarry_unreachable);
+        assert_eq!(loaded.derived.quarry_out_of_reach, w.derived.quarry_out_of_reach);
+        assert!(loaded.derived.room_stats.is_empty());
+    }
+
+    #[test]
     fn loading_restores_what_the_last_second_worked_out() {
         let mut w = World::new(42);
         // A walled, roofed room to be warm in.
@@ -165,17 +194,17 @@ mod tests {
         // As the last once-a-second pass left it: the room warmed up, a heater on.
         for i in 0..w.map.len() {
             if w.map.room[i] == room {
-                w.cell_temp[i] = 21.5;
+                w.derived.cell_temp[i] = 21.5;
             }
         }
-        w.running.insert(w.map.idx((10, 10, z)) as u32);
+        w.derived.running.insert(w.map.idx((10, 10, z)) as u32);
         let loaded = crate::world::World::load_json(&w.save_json().unwrap()).unwrap();
         let bits = |v: &[f32]| v.iter().map(|t| t.to_bits()).collect::<Vec<_>>();
-        assert_eq!(bits(&loaded.cell_temp), bits(&w.cell_temp), "rooms as warm as they were");
-        assert_eq!(loaded.running, w.running);
-        assert_eq!(loaded.power, w.power);
-        assert_eq!(loaded.trapped, w.trapped);
-        assert_eq!(loaded.quarry_out_of_reach, w.quarry_out_of_reach);
+        assert_eq!(bits(&loaded.derived.cell_temp), bits(&w.derived.cell_temp), "rooms as warm as they were");
+        assert_eq!(loaded.derived.running, w.derived.running);
+        assert_eq!(loaded.derived.power, w.derived.power);
+        assert_eq!(loaded.derived.trapped, w.derived.trapped);
+        assert_eq!(loaded.derived.quarry_out_of_reach, w.derived.quarry_out_of_reach);
     }
 
     #[test]

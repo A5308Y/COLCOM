@@ -13,28 +13,13 @@ import struct
 import sys
 
 sys.dont_write_bytecode = True
+from asset_helpers import matrix, multiply
 from make_gear import Gear, armor
 from preview_gear import write_gallery
 
 ROOT = Path(__file__).resolve().parents[1]
 BONES = ["spine_03", "upperarm_l", "upperarm_r", "Head", "lowerarm_l", "lowerarm_r",
          "pelvis", "thigh_l", "thigh_r", "calf_l", "calf_r", "foot_l", "foot_r"]
-
-
-def multiply(a, b):
-    return [[sum(a[i][k] * b[k][j] for k in range(4)) for j in range(4)] for i in range(4)]
-
-
-def matrix(node):
-    x, y, z, w = node.get("rotation", (0, 0, 0, 1))
-    t, s = node.get("translation", (0, 0, 0)), node.get("scale", (1, 1, 1))
-    m = [[1-2*y*y-2*z*z, 2*x*y-2*z*w, 2*x*z+2*y*w, t[0]],
-         [2*x*y+2*z*w, 1-2*x*x-2*z*z, 2*y*z-2*x*w, t[1]],
-         [2*x*z-2*y*w, 2*y*z+2*x*w, 1-2*x*x-2*y*y, t[2]], [0, 0, 0, 1]]
-    for i in range(3):
-        for j in range(3):
-            m[i][j] *= s[j]
-    return m
 
 
 def fit_preview(body, powered=False, clothing=None):

@@ -1,38 +1,10 @@
 """Small glTF reader and CPU skinning helpers for garment generation/review."""
 import bisect
 import json
-import math
 from pathlib import Path
 import struct
 
-IDENTITY = [[int(i == j) for j in range(4)] for i in range(4)]
-
-
-def multiply(a, b):
-    return [[sum(a[i][k] * b[k][j] for k in range(4)) for j in range(4)] for i in range(4)]
-
-
-def point(m, p, w=1):
-    return tuple(sum(m[i][j] * p[j] for j in range(3)) + m[i][3] * w for i in range(3))
-
-
-def unit(v):
-    n = math.sqrt(sum(x * x for x in v))
-    return tuple(x / n for x in v) if n > 1e-12 else (0, 1, 0)
-
-
-def matrix(n):
-    if "matrix" in n:
-        return [[n["matrix"][j * 4 + i] for j in range(4)] for i in range(4)]
-    x, y, z, w = n.get("rotation", (0, 0, 0, 1))
-    t, s = n.get("translation", (0, 0, 0)), n.get("scale", (1, 1, 1))
-    m = [[1-2*y*y-2*z*z, 2*x*y-2*z*w, 2*x*z+2*y*w, t[0]],
-         [2*x*y+2*z*w, 1-2*x*x-2*z*z, 2*y*z-2*x*w, t[1]],
-         [2*x*z-2*y*w, 2*y*z+2*x*w, 1-2*x*x-2*y*y, t[2]], [0, 0, 0, 1]]
-    for i in range(3):
-        for j in range(3):
-            m[i][j] *= s[j]
-    return m
+from asset_helpers import IDENTITY, matrix, multiply, point, unit
 
 
 class Gltf:

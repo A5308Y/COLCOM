@@ -133,7 +133,7 @@ impl World {
         if r == 0 {
             return None;
         }
-        self.room_stats.get(r)
+        self.derived.room_stats.get(r)
     }
 
     /// The themed room at `p` and what it does.
@@ -166,7 +166,7 @@ impl World {
                 st.beauty += d.beauty;
                 st.lit |= d.light.is_some();
                 // Heaters and coolers only while they run.
-                if d.power.is_none_or(|p| p.draw <= 0.0) || self.running.contains(&(i as u32)) {
+                if d.power.is_none_or(|p| p.draw <= 0.0) || self.derived.running.contains(&(i as u32)) {
                     st.heat += d.heat;
                 }
             }
@@ -211,7 +211,7 @@ impl World {
             st.centre = (st.centre.0 / st.size as f32, st.centre.1 / st.size as f32);
             st.kind = RoomId::all().find(|k| st.progress(k.def()).done());
         }
-        self.room_stats = stats;
+        self.derived.room_stats = stats;
         // Their temperatures, from where their cells were.
         self.update_temperatures(0.0);
     }

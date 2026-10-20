@@ -80,6 +80,35 @@ pub(crate) enum Step {
     Unreachable,
 }
 
+/// Results cached by the colony's periodic passes.
+///
+/// Only `room_stats` can be rebuilt without advancing the simulation. Temperatures
+/// have thermal history, and the remaining fields record the last periodic pass:
+/// persist those results so loading between passes preserves the next tick.
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct Derived {
+    /// Each cell's room temperature as last worked out (NaN outside rooms).
+    /// Rooms warm and cool over time, so this is saved. See `temperature.rs`.
+    #[serde(with = "crate::save::rle_nan")]
+    pub cell_temp: Vec<f32>,
+    /// Cells of the heaters and coolers running this second, and how the grid
+    /// did (saved: what had power depends on the batteries at the time).
+    pub running: std::collections::BTreeSet<u32>,
+    pub power: crate::power::PowerState,
+    /// Per quarry, how many of the cells marked to dig nobody can get to
+    /// (counted once a second in `update_quarries`; saved with the rest of
+    /// that second's results, so loading doesn't change what happens next).
+    pub quarry_unreachable: Vec<usize>,
+    /// Those cells (indices): left standing for now, so the layers go on around them.
+    pub quarry_out_of_reach: std::collections::BTreeSet<usize>,
+    /// Quality per room id (index 0 unused). Derived, so not saved.
+    #[serde(skip)]
+    pub room_stats: Vec<RoomStats>,
+    /// Colonists who can't walk to the edge of the map (shut in by
+    /// furniture, walls or doors), checked once a second. They climb out.
+    pub trapped: Vec<PawnId>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct World {
     pub map: Map,
@@ -114,31 +143,18 @@ pub struct World {
     /// Furniture being moved (see `moving.rs`).
     #[serde(default)]
     pub moves: Vec<Move>,
-    /// Each cell's room temperature as last worked out (NaN outside rooms).
-    /// Rooms warm and cool over time, so this is saved. See `temperature.rs`.
-    #[serde(with = "crate::save::rle_nan")]
-    pub cell_temp: Vec<f32>,
+    /// Cached colony-pass results. Flattened to preserve the version-16 save layout;
+    /// `Derived` marks explicitly which fields are saved and which are rebuilt.
+    #[serde(flatten)]
+    pub derived: Derived,
     /// Charge in the colony's batteries (watt-hours; see `power.rs`).
     #[serde(default)]
     pub stored_wh: f32,
-    /// Cells of the heaters and coolers running this second, and how the grid
-    /// did (saved: what had power depends on the batteries at the time).
-    pub running: std::collections::BTreeSet<u32>,
-    pub power: crate::power::PowerState,
     /// Areas dug out level by level (see `quarry.rs`).
     #[serde(default)]
     pub quarries: Vec<crate::quarry::Quarry>,
-    /// Per quarry, how many of the cells marked to dig nobody can get to
-    /// (counted once a second in `update_quarries`; saved with the rest of
-    /// that second's results, so loading doesn't change what happens next).
-    pub quarry_unreachable: Vec<usize>,
-    /// Those cells (indices): left standing for now, so the layers go on around them.
-    pub quarry_out_of_reach: std::collections::BTreeSet<usize>,
     /// Counts down to the next once-a-second pass over benches and rooms.
     pub colony_timer: f32,
-    /// Quality per room id (index 0 unused). Derived, so not saved.
-    #[serde(skip)]
-    pub room_stats: Vec<RoomStats>,
     /// A raid waiting for an answer: pay, or fight (the colony stops meanwhile).
     #[serde(default)]
     pub parley: Option<Parley>,
@@ -148,9 +164,6 @@ pub struct World {
     /// Sounds since the front end last took them (see `take_sounds`).
     #[serde(skip)]
     pub sounds: Vec<SoundEvent>,
-    /// Colonists who can't walk to the edge of the map (shut in by
-    /// furniture, walls or doors), checked once a second. They climb out.
-    pub trapped: Vec<PawnId>,
     /// The neighbouring factions, the missions on offer, and squads away (see `expeditions`).
     #[serde(default)]
     pub factions: Vec<crate::expeditions::Faction>,
@@ -219,17 +232,11 @@ impl World {
             moves: Vec::new(),
             quarries: Vec::new(),
             stored_wh: 0.0,
-            running: Default::default(),
-            power: Default::default(),
-            cell_temp: vec![f32::NAN; n],
-            quarry_unreachable: Vec::new(),
-            quarry_out_of_reach: Default::default(),
+            derived: Derived { cell_temp: vec![f32::NAN; n], ..Default::default() },
             colony_timer: 0.0,
-            room_stats: Vec::new(),
             parley: None,
             battle: None,
             sounds: Vec::new(),
-            trapped: Vec::new(),
             factions: crate::expeditions::starting_factions(),
             offers: Vec::new(),
             expeditions: Vec::new(),
@@ -327,7 +334,7 @@ impl World {
                 | crate::expeditions::Stage::Back { .. } => {}
             }
         }
-        for p in self.trapped.iter().filter_map(|&id| self.pawn(id)) {
+        for p in self.derived.trapped.iter().filter_map(|&id| self.pawn(id)) {
             out.push((format!("{} is trapped (climbing out)", p.name), true));
         }
         let colonists: Vec<&Pawn> = self.pawns.iter().filter(|p| p.is_living_colonist()).collect();
@@ -364,8 +371,8 @@ impl World {
         for p in colonists.iter().filter(|p| p.health.hypothermia > 0.05) {
             out.push((format!("{} is freezing (hypothermia {:.0}%)", p.name, p.health.hypothermia * 100.0), true));
         }
-        if self.power.unpowered > 0 {
-            out.push((format!("Not enough power: {} heater(s)/cooler(s) off", self.power.unpowered), false));
+        if self.derived.power.unpowered > 0 {
+            out.push((format!("Not enough power: {} heater(s)/cooler(s) off", self.derived.power.unpowered), false));
         }
         let doomed = self.crops_frost_will_kill();
         if doomed > 0 && self.season_left() < 1.5 * DAY_LEN {
@@ -752,7 +759,7 @@ impl World {
 
     /// Once a second: who is shut in.
     pub(crate) fn update_trapped(&mut self) {
-        self.trapped = if self.battle.is_some() {
+        self.derived.trapped = if self.battle.is_some() {
             Vec::new()
         } else {
             let edges = crate::pathing::edge_reach(&self.map);
@@ -798,7 +805,7 @@ impl World {
         p.think_timer = 0.5;
 
         // Shut in: climb out over the furniture first.
-        if self.trapped.contains(&p.id) && !matches!(p.job, Some(Job::Goto { .. })) {
+        if self.derived.trapped.contains(&p.id) && !matches!(p.job, Some(Job::Goto { .. })) {
             if let Some(out) = self.way_out(p.pos) {
                 self.end_job(p);
                 self.start_job(p, Job::Goto { to: out });
@@ -1003,7 +1010,7 @@ impl World {
         // What can't be stepped onto (a shelf) is reached from beside it.
         let reach = if reach == Reach::On && p.pos != goal && self.map.storage_furniture(self.map.idx(goal)) { Reach::Beside } else { reach };
         // Shut in: over the furniture (or up a pit's wall) if need be, and on up once climbing.
-        let climb = self.trapped.contains(&p.id) || self.map.cling(p.pos);
+        let climb = self.derived.trapped.contains(&p.id) || self.map.cling(p.pos);
         if p.path_goal != Some(goal) {
             p.path.clear();
             p.path_goal = Some(goal);
@@ -1493,7 +1500,7 @@ mod tests {
         w.pawns[i].hunger = 5.0;
         w.map.drop_item((15, 15, Z), Stack { kind: item("raw_food"), count: 10 });
         w.update_trapped();
-        assert_eq!(w.trapped, vec![nell]);
+        assert_eq!(w.derived.trapped, vec![nell]);
         let mut climbed = false;
         for _ in 0..(60.0 / TICK) as usize {
             w.tick(TICK);
@@ -1501,7 +1508,7 @@ mod tests {
             climbed |= w.map.climbable(p.pos);
         }
         assert!(climbed, "over the furniture");
-        assert!(w.trapped.is_empty(), "out");
+        assert!(w.derived.trapped.is_empty(), "out");
         assert!(w.pawn(nell).unwrap().hunger > 30.0, "and fed");
     }
 

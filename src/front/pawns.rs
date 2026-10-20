@@ -394,6 +394,231 @@ fn turn_towards(a: f32, b: f32, max: f32) -> f32 {
     a + diff.clamp(-max, max)
 }
 
+fn sync_apparel(
+    commands: &mut Commands,
+    props: &PropAssets,
+    p: &Pawn,
+    v: &mut PawnVis,
+    rig: Option<&mut Rig>,
+    visibility: &mut Query<&mut Visibility>,
+) {
+    let rig_ready = rig.is_some();
+    // Armour and helmets: pieces on the character's bones (once it's ready), and on the figure.
+    let wearing = (p.apparel.clone(), rig_ready);
+    if v.dressed.as_ref() != Some(&wearing) {
+        for e in v.armor.drain(..) {
+            commands.entity(e).despawn();
+        }
+        let pieces = worn_pieces(&p.apparel);
+        for piece in &pieces {
+            let (parent, at, turn, proportions) = match piece.bone {
+                Bone::Spine03 => (v.figure, Vec3::new(0.0, 0.62, 0.0), Quat::IDENTITY, Vec3::ONE),
+                Bone::Head => (v.figure, Vec3::new(0.0, 0.90, 0.0), Quat::IDENTITY, Vec3::ONE),
+                Bone::UpperArmL => (v.arms[1], Vec3::ZERO, Quat::from_rotation_z(-FRAC_PI_2), Vec3::ONE),
+                Bone::UpperArmR => (v.arms[0], Vec3::ZERO, Quat::from_rotation_z(FRAC_PI_2), Vec3::ONE),
+                Bone::LowerArmL => (v.arms[1], Vec3::new(0.0, -0.16, 0.0), Quat::from_rotation_z(-FRAC_PI_2), Vec3::ONE),
+                Bone::LowerArmR => (v.arms[0], Vec3::new(0.0, -0.16, 0.0), Quat::from_rotation_z(FRAC_PI_2), Vec3::ONE),
+                // The fallback figure has shorter legs than the character rigs.
+                Bone::Pelvis => (v.figure, Vec3::new(0.0, 0.36, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                Bone::ThighL => (v.legs[1], Vec3::ZERO, Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                Bone::ThighR => (v.legs[0], Vec3::ZERO, Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                Bone::CalfL => (v.legs[1], Vec3::new(0.0, -0.17, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                Bone::CalfR => (v.legs[0], Vec3::new(0.0, -0.17, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                Bone::FootL => (v.legs[1], Vec3::new(0.0, -0.31, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                Bone::FootR => (v.legs[0], Vec3::new(0.0, -0.31, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                // Nothing is worn on the hands; the fallback figure has none.
+                Bone::HandL | Bone::HandR => continue,
+            };
+            let tf = Transform::from_translation(at).with_rotation(turn).with_scale(proportions * (characters::RIG_SCALE / SCALE));
+            let e = props::spawn_worn(commands, props, tf, piece);
+            commands.entity(e).insert(ChildOf(parent));
+            v.armor.push(e);
+        }
+        if let Some(r) = rig {
+            r.reset_garment(commands);
+            let fabric = skinned_apparel(&p.apparel).map(|k| k.def().apparel.as_ref().unwrap());
+            let leg_fabric = skinned_leg_apparel(&p.apparel).map(|k| k.def().apparel.as_ref().unwrap());
+            let mut fabric_fallbacks = Vec::new();
+            let mut leg_fallbacks = Vec::new();
+            for piece in &pieces {
+                let Some((bone, rest)) = r.bone(piece.bone) else {
+                    warn!("no bone {:?} for armour", piece.bone);
+                    continue;
+                };
+                // Undo the bone's turn at rest, so the parts sit in the character's own frame.
+                let e = props::spawn_worn(commands, props, Transform::from_rotation(rest.inverse()), piece);
+                commands.entity(e).insert(ChildOf(bone));
+                v.armor.push(e);
+                if piece.bone != Bone::Head && fabric.is_some_and(|a| a.pieces.iter().any(|p| std::ptr::eq(p, *piece))) {
+                    fabric_fallbacks.push(e);
+                }
+                if leg_fabric.is_some_and(|a| a.pieces.iter().any(|p| std::ptr::eq(p, *piece))) {
+                    leg_fallbacks.push(e);
+                }
+            }
+            if let Some(skin) = fabric.and_then(|a| a.skinned.as_ref()) {
+                let path = if r.female() { &skin.female } else { &skin.male };
+                let e = characters::spawn_garment(commands, props.model(path, 0), v.rig, r, fabric_fallbacks, skin.full_body);
+                v.armor.push(e);
+            }
+            if let Some(skin) = leg_fabric.and_then(|a| a.skinned.as_ref()) {
+                let path = if r.female() { &skin.female } else { &skin.male };
+                let e = characters::spawn_leg_garment(commands, props.model(path, 0), v.rig, r, leg_fallbacks);
+                v.armor.push(e);
+            }
+            r.show_hair(!pieces.iter().any(|w| w.hides_hair), visibility);
+        }
+        v.dressed = Some(wearing);
+    }
+}
+
+enum Posture {
+    Collapsed,
+    Lying { in_bed: bool },
+    Upright,
+}
+
+struct PawnMotion {
+    posture: Posture,
+    moving: bool,
+    falling: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn position_pawn(
+    p: &Pawn, v: &mut PawnVis, w: &SimWorld, rig_ready: bool,
+    dt: f32, sim_rate: f32,
+    transforms: &mut Query<&mut Transform>, visibility: &mut Query<&mut Visibility>,
+) -> PawnMotion {
+    let m = &w.map;
+    // The drawn position trails the simulated one a little, which rounds
+    // corners and eases into and out of walking. Big jumps snap.
+    let target = Vec2::new(p.x, p.y) + squad_slot(p, w) + snugged(p, m);
+    let before = v.shown;
+    if v.shown.distance(target) > 2.0 || sim_rate == 0.0 && v.shown.distance(target) > 0.5 {
+        v.shown = target;
+    } else {
+        v.shown += (target - v.shown) * (1.0 - (-dt * FOLLOW * sim_rate.max(1.0)).exp());
+    }
+    let velocity = if dt > 0.0 { (v.shown - before) / dt } else { Vec2::ZERO };
+    v.speed += (velocity.length() - v.speed) * (dt * 10.0).min(1.0);
+
+    let lying = p.is_dead() || p.lying();
+    let in_bed = lying && !p.is_dead() && m.feature[m.idx(p.pos)].is_bed();
+    // The character collapses on the ground when downed or killed; in
+    // bed, asleep or resting it (like the figure) is laid down flat.
+    let collapsed = rig_ready && (p.is_dead() || p.is_downed()) && !in_bed;
+    let tipped = lying && !collapsed;
+    let moving = !lying && v.speed > STILL;
+
+    let turn = TURN_RATE * dt * sim_rate.max(1.0);
+    if moving && velocity.length() > STILL {
+        v.yaw = turn_towards(v.yaw, velocity.x.atan2(velocity.y), turn);
+    } else if let Some(target) = facing(p, w).filter(|_| !lying) {
+        v.yaw = turn_towards(v.yaw, target, turn);
+    }
+
+    // Standing on a built floor slab rather than the cell's bottom.
+    let on_slab = m.floor[m.idx(p.pos)] && (p.z - p.pos.2 as f32).abs() < 0.01;
+    let mut base = tile_point(v.shown.x, v.shown.y, p.z) + Vec3::Y * if on_slab { FLOOR_T } else { 0.0 };
+    match stairs_height(m, v.shown.x, v.shown.y, p.z) {
+        // Up or down the steps of stairs.
+        Some(h) => base.y = h * LEVEL_H,
+        None => {
+            // A little hop when stepping up or down a level.
+            let frac = p.z - p.z.floor();
+            if frac > 0.001 && frac < 0.999 {
+                base.y += 0.35 * 4.0 * frac * (1.0 - frac);
+            }
+        }
+    }
+    // Falls drop with gravity instead of snapping down.
+    if v.render_y.is_nan() || v.render_y < base.y + 0.3 {
+        v.render_y = base.y;
+        v.fall_speed = 0.0;
+    } else {
+        v.fall_speed += 22.0 * dt;
+        v.render_y = (v.render_y - v.fall_speed * dt).max(base.y);
+    }
+    let falling = v.render_y > base.y + 0.05;
+    base.y = v.render_y;
+
+    v.swing += ((moving as u8 as f32) - v.swing) * (dt * 8.0).min(1.0);
+    let root_tf = if tipped {
+        // Upright along +Y; tip over so the head points along -Z (towards a
+        // bed's pillow). A character in bed rests the back of its head on the pillow.
+        let yaw = if in_bed { bed_yaw(m, p.pos) } else { v.yaw };
+        let turn = Quat::from_rotation_y(yaw);
+        let (lift, along) = match (rig_ready, in_bed) {
+            (true, true) => (0.44, 0.58),
+            (true, false) => (0.08, 0.48),
+            (false, true) => (0.52, 0.48),
+            (false, false) => (0.15, 0.48),
+        };
+        Transform::from_translation(base + Vec3::Y * lift + turn * Vec3::new(0.0, 0.0, along))
+            .with_rotation(turn * Quat::from_rotation_x(-FRAC_PI_2))
+    } else {
+        Transform::from_translation(base).with_rotation(Quat::from_rotation_y(v.yaw))
+    };
+    if let Ok(mut tf) = transforms.get_mut(v.root) {
+        *tf = root_tf;
+    }
+    // In bed the character is tucked in: a blanket up to the chin, only the head showing.
+    let tucked = rig_ready && in_bed;
+    if let Ok(mut vis) = visibility.get_mut(v.blanket) {
+        *vis = if tucked { Visibility::Inherited } else { Visibility::Hidden };
+    }
+    if tucked {
+        let bed = Transform::from_translation(base).with_rotation(Quat::from_rotation_y(bed_yaw(m, p.pos)));
+        if let Ok(mut t) = transforms.get_mut(v.blanket) {
+            *t = Transform::from_matrix(root_tf.to_matrix().inverse() * bed.to_matrix());
+        }
+    }
+    PawnMotion {
+        posture: if collapsed { Posture::Collapsed } else if lying { Posture::Lying { in_bed } } else { Posture::Upright },
+        moving,
+        falling,
+    }
+}
+
+fn sync_held_equipment(
+    commands: &mut Commands, props: &PropAssets, p: &Pawn, v: &mut PawnVis,
+    transforms: &mut Query<&mut Transform>, visibility: &mut Query<&mut Visibility>,
+    armed: bool,
+) {
+    let lying = p.is_dead() || p.lying();
+    // Carrying also raises the fallback figure's arms to support the stack.
+    let carrying = p.carrying.is_some() && !lying;
+    let stride = ((p.x + p.y) * PI * 1.6).sin() * 0.6 * v.swing;
+    let swings = [
+        (v.legs[0], stride),
+        (v.legs[1], -stride),
+        (v.arms[0], if carrying { -FRAC_PI_2 } else if armed { -1.2 } else { -stride * 0.8 }),
+        (v.arms[1], if carrying { -FRAC_PI_2 } else if armed { -1.3 } else { stride * 0.8 }),
+    ];
+    for (pivot, angle) in swings {
+        if let Ok(mut t) = transforms.get_mut(pivot) {
+            let inward = if carrying && pivot == v.arms[0] { 0.35 }
+                else if carrying && pivot == v.arms[1] { -0.35 } else { 0.0 };
+            t.rotation = Quat::from_rotation_y(inward) * Quat::from_rotation_x(angle);
+        }
+    }
+    let weapons = [(Some(v.weapon), false), (v.rig_weapon, true)];
+    if v.weapon_kind != Some(p.weapon) {
+        for (e, in_hand) in weapons {
+            if let Some(e) = e {
+                equip_visual(commands, props, e, p.weapon, in_hand);
+            }
+        }
+        v.weapon_kind = Some(p.weapon);
+    }
+    for e in weapons.into_iter().filter_map(|w| w.0) {
+        if let Ok(mut vis) = visibility.get_mut(e) {
+            *vis = if armed && p.weapon.is_some() { Visibility::Inherited } else { Visibility::Hidden };
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn sync_pawns(
     mut commands: Commands,
@@ -450,73 +675,7 @@ fn sync_pawns(
             }
         }
 
-        // Armour and helmets: pieces on the character's bones (once it's ready), and on the figure.
-        let wearing = (p.apparel.clone(), rig_ready);
-        if v.dressed.as_ref() != Some(&wearing) {
-            for e in v.armor.drain(..) {
-                commands.entity(e).despawn();
-            }
-            let pieces = worn_pieces(&p.apparel);
-            for piece in &pieces {
-                let (parent, at, turn, proportions) = match piece.bone {
-                    Bone::Spine03 => (v.figure, Vec3::new(0.0, 0.62, 0.0), Quat::IDENTITY, Vec3::ONE),
-                    Bone::Head => (v.figure, Vec3::new(0.0, 0.90, 0.0), Quat::IDENTITY, Vec3::ONE),
-                    Bone::UpperArmL => (v.arms[1], Vec3::ZERO, Quat::from_rotation_z(-FRAC_PI_2), Vec3::ONE),
-                    Bone::UpperArmR => (v.arms[0], Vec3::ZERO, Quat::from_rotation_z(FRAC_PI_2), Vec3::ONE),
-                    Bone::LowerArmL => (v.arms[1], Vec3::new(0.0, -0.16, 0.0), Quat::from_rotation_z(-FRAC_PI_2), Vec3::ONE),
-                    Bone::LowerArmR => (v.arms[0], Vec3::new(0.0, -0.16, 0.0), Quat::from_rotation_z(FRAC_PI_2), Vec3::ONE),
-                    // The fallback figure has shorter legs than the character rigs.
-                    Bone::Pelvis => (v.figure, Vec3::new(0.0, 0.36, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
-                    Bone::ThighL => (v.legs[1], Vec3::ZERO, Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
-                    Bone::ThighR => (v.legs[0], Vec3::ZERO, Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
-                    Bone::CalfL => (v.legs[1], Vec3::new(0.0, -0.17, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
-                    Bone::CalfR => (v.legs[0], Vec3::new(0.0, -0.17, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
-                    Bone::FootL => (v.legs[1], Vec3::new(0.0, -0.31, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
-                    Bone::FootR => (v.legs[0], Vec3::new(0.0, -0.31, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
-                    // Nothing is worn on the hands; the fallback figure has none.
-                    Bone::HandL | Bone::HandR => continue,
-                };
-                let tf = Transform::from_translation(at).with_rotation(turn).with_scale(proportions * (characters::RIG_SCALE / SCALE));
-                let e = props::spawn_worn(&mut commands, &props, tf, piece);
-                commands.entity(e).insert(ChildOf(parent));
-                v.armor.push(e);
-            }
-            if let Some((r, ..)) = rig.as_mut().filter(|_| rig_ready) {
-                r.reset_garment(&mut commands);
-                let fabric = skinned_apparel(&p.apparel).map(|k| k.def().apparel.as_ref().unwrap());
-                let leg_fabric = skinned_leg_apparel(&p.apparel).map(|k| k.def().apparel.as_ref().unwrap());
-                let mut fabric_fallbacks = Vec::new();
-                let mut leg_fallbacks = Vec::new();
-                for piece in &pieces {
-                    let Some((bone, rest)) = r.bone(piece.bone) else {
-                        warn!("no bone {:?} for armour", piece.bone);
-                        continue;
-                    };
-                    // Undo the bone's turn at rest, so the parts sit in the character's own frame.
-                    let e = props::spawn_worn(&mut commands, &props, Transform::from_rotation(rest.inverse()), piece);
-                    commands.entity(e).insert(ChildOf(bone));
-                    v.armor.push(e);
-                    if piece.bone != Bone::Head && fabric.is_some_and(|a| a.pieces.iter().any(|p| std::ptr::eq(p, *piece))) {
-                        fabric_fallbacks.push(e);
-                    }
-                    if leg_fabric.is_some_and(|a| a.pieces.iter().any(|p| std::ptr::eq(p, *piece))) {
-                        leg_fallbacks.push(e);
-                    }
-                }
-                if let Some(skin) = fabric.and_then(|a| a.skinned.as_ref()) {
-                    let path = if r.female() { &skin.female } else { &skin.male };
-                    let e = characters::spawn_garment(&mut commands, props.model(path, 0), v.rig, r, fabric_fallbacks, skin.full_body);
-                    v.armor.push(e);
-                }
-                if let Some(skin) = leg_fabric.and_then(|a| a.skinned.as_ref()) {
-                    let path = if r.female() { &skin.female } else { &skin.male };
-                    let e = characters::spawn_leg_garment(&mut commands, props.model(path, 0), v.rig, r, leg_fallbacks);
-                    v.armor.push(e);
-                }
-                r.show_hair(!pieces.iter().any(|w| w.hides_hair), &mut visibility);
-            }
-            v.dressed = Some(wearing);
-        }
+        sync_apparel(&mut commands, &props, p, v, rig.as_mut().filter(|_| rig_ready).map(|(r, _)| &mut **r), &mut visibility);
 
         if p.is_dead() && !v.dead {
             // Grey out the body (pawn_look already greys a dead pawn's colours).
@@ -534,89 +693,12 @@ fn sync_pawns(
             v.rig_dead = p.is_dead();
         }
 
-        // The drawn position trails the simulated one a little, which rounds
-        // corners and eases into and out of walking. Big jumps snap.
-        let target = Vec2::new(p.x, p.y) + squad_slot(p, w) + snugged(p, m);
-        let before = v.shown;
-        if v.shown.distance(target) > 2.0 || sim_rate == 0.0 && v.shown.distance(target) > 0.5 {
-            v.shown = target;
-        } else {
-            v.shown += (target - v.shown) * (1.0 - (-dt * FOLLOW * sim_rate.max(1.0)).exp());
-        }
-        let velocity = if dt > 0.0 { (v.shown - before) / dt } else { Vec2::ZERO };
-        v.speed += (velocity.length() - v.speed) * (dt * 10.0).min(1.0);
-
-        let lying = p.is_dead() || p.lying();
-        let in_bed = lying && !p.is_dead() && m.feature[m.idx(p.pos)].is_bed();
-        // The character collapses on the ground when downed or killed; in
-        // bed, asleep or resting it (like the figure) is laid down flat.
-        let collapsed = rig_ready && (p.is_dead() || p.is_downed()) && !in_bed;
-        let tipped = lying && !collapsed;
-        let moving = !lying && v.speed > STILL;
-
-        let turn = TURN_RATE * dt * sim_rate.max(1.0);
-        if moving && velocity.length() > STILL {
-            v.yaw = turn_towards(v.yaw, velocity.x.atan2(velocity.y), turn);
-        } else if let Some(target) = facing(p, w).filter(|_| !lying) {
-            v.yaw = turn_towards(v.yaw, target, turn);
-        }
-
-        // Standing on a built floor slab rather than the cell's bottom.
-        let on_slab = m.floor[m.idx(p.pos)] && (p.z - p.pos.2 as f32).abs() < 0.01;
-        let mut base = tile_point(v.shown.x, v.shown.y, p.z) + Vec3::Y * if on_slab { FLOOR_T } else { 0.0 };
-        match stairs_height(m, v.shown.x, v.shown.y, p.z) {
-            // Up or down the steps of stairs.
-            Some(h) => base.y = h * LEVEL_H,
-            None => {
-                // A little hop when stepping up or down a level.
-                let frac = p.z - p.z.floor();
-                if frac > 0.001 && frac < 0.999 {
-                    base.y += 0.35 * 4.0 * frac * (1.0 - frac);
-                }
-            }
-        }
-        // Falls drop with gravity instead of snapping down.
-        if v.render_y.is_nan() || v.render_y < base.y + 0.3 {
-            v.render_y = base.y;
-            v.fall_speed = 0.0;
-        } else {
-            v.fall_speed += 22.0 * dt;
-            v.render_y = (v.render_y - v.fall_speed * dt).max(base.y);
-        }
-        let falling = v.render_y > base.y + 0.05;
-        base.y = v.render_y;
-
-        v.swing += ((moving as u8 as f32) - v.swing) * (dt * 8.0).min(1.0);
-        let root_tf = if tipped {
-            // Upright along +Y; tip over so the head points along -Z (towards a
-            // bed's pillow). A character in bed rests the back of its head on the pillow.
-            let yaw = if in_bed { bed_yaw(m, p.pos) } else { v.yaw };
-            let turn = Quat::from_rotation_y(yaw);
-            let (lift, along) = match (rig_ready, in_bed) {
-                (true, true) => (0.44, 0.58),
-                (true, false) => (0.08, 0.48),
-                (false, true) => (0.52, 0.48),
-                (false, false) => (0.15, 0.48),
-            };
-            Transform::from_translation(base + Vec3::Y * lift + turn * Vec3::new(0.0, 0.0, along))
-                .with_rotation(turn * Quat::from_rotation_x(-FRAC_PI_2))
-        } else {
-            Transform::from_translation(base).with_rotation(Quat::from_rotation_y(v.yaw))
+        let PawnMotion { posture, moving, falling } = position_pawn(p, v, w, rig_ready, dt, sim_rate, &mut transforms, &mut visibility);
+        let (lying, in_bed, collapsed, tipped) = match posture {
+            Posture::Collapsed => (true, false, true, false),
+            Posture::Lying { in_bed } => (true, in_bed, false, true),
+            Posture::Upright => (false, false, false, false),
         };
-        if let Ok(mut tf) = transforms.get_mut(v.root) {
-            *tf = root_tf;
-        }
-        // In bed the character is tucked in: a blanket up to the chin, only the head showing.
-        let tucked = rig_ready && in_bed;
-        if let Ok(mut vis) = visibility.get_mut(v.blanket) {
-            *vis = if tucked { Visibility::Inherited } else { Visibility::Hidden };
-        }
-        if tucked {
-            let bed = Transform::from_translation(base).with_rotation(Quat::from_rotation_y(bed_yaw(m, p.pos)));
-            if let Ok(mut t) = transforms.get_mut(v.blanket) {
-                *t = Transform::from_matrix(root_tf.to_matrix().inverse() * bed.to_matrix());
-            }
-        }
         if let Ok(mut vis) = visibility.get_mut(v.root) {
             *vis = if ui.shows_at(m, p.x, p.y, p.z) { Visibility::Inherited } else { Visibility::Hidden };
         }
@@ -689,36 +771,7 @@ fn sync_pawns(
             }
         }
 
-        // Carrying also raises the fallback figure's arms to support the stack.
-        let carrying = p.carrying.is_some() && !lying;
-        let stride = ((p.x + p.y) * PI * 1.6).sin() * 0.6 * v.swing;
-        let swings = [
-            (v.legs[0], stride),
-            (v.legs[1], -stride),
-            (v.arms[0], if carrying { -FRAC_PI_2 } else if armed { -1.2 } else { -stride * 0.8 }),
-            (v.arms[1], if carrying { -FRAC_PI_2 } else if armed { -1.3 } else { stride * 0.8 }),
-        ];
-        for (pivot, angle) in swings {
-            if let Ok(mut t) = transforms.get_mut(pivot) {
-                let inward = if carrying && pivot == v.arms[0] { 0.35 }
-                    else if carrying && pivot == v.arms[1] { -0.35 } else { 0.0 };
-                t.rotation = Quat::from_rotation_y(inward) * Quat::from_rotation_x(angle);
-            }
-        }
-        let weapons = [(Some(v.weapon), false), (v.rig_weapon, true)];
-        if v.weapon_kind != Some(p.weapon) {
-            for (e, in_hand) in weapons {
-                if let Some(e) = e {
-                    equip_visual(&mut commands, &props, e, p.weapon, in_hand);
-                }
-            }
-            v.weapon_kind = Some(p.weapon);
-        }
-        for e in weapons.into_iter().filter_map(|w| w.0) {
-            if let Ok(mut vis) = visibility.get_mut(e) {
-                *vis = if armed && p.weapon.is_some() { Visibility::Inherited } else { Visibility::Hidden };
-            }
-        }
+        sync_held_equipment(&mut commands, &props, p, v, &mut transforms, &mut visibility, armed);
 
         // Whatever they're carrying, held in front.
         let carried = p.carrying.map(|s| s.kind).filter(|_| !lying);
