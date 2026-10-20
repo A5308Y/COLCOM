@@ -67,7 +67,8 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
   Done: `RoomId` (also used for room thoughts in memories, which were saved as an index;
   save format 11) and `StockpileId` with `World::add_stockpile`/`stockpile(id)`.
 - [ ] Later, if worthwhile:
-  - Move the fight site into `Stage::Fighting`.
+  - [x] Move the fight site into `Stage::Fighting`. Done: `Stage::Fighting { site: Option<SiteWorld> }`;
+    save format 12.
   - Key skills and priorities by enum rather than by array position, so reordering
     `Skill` or `WorkType` can't shift old saves.
   - Use `Option` for the injury `infection_timer` (`-1.0` sentinel).

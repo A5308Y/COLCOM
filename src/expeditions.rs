@@ -268,10 +268,22 @@ pub enum Stage {
     Decide { event: Event, main: bool },
     /// At the market; `stock` is what they have to sell.
     Trading { stock: Vec<Stack> },
-    /// A fight being played on the site map (`Expedition::site`); `then` if they win.
-    Fighting { then: Vec<Effect>, main: bool },
+    /// A fight on a site map; `then` if they win. `site` is the site's world,
+    /// except while the front end has taken it out to play.
+    Fighting { then: Vec<Effect>, main: bool, site: Option<SiteWorld> },
     /// On the way home.
     Back { until: f32 },
+}
+
+/// The world of a fight site (its own small map, the squad and the enemy).
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SiteWorld(pub Box<World>);
+
+impl std::fmt::Debug for SiteWorld {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SiteWorld({}x{}, {} pawns)", self.0.map.w, self.0.map.h, self.0.pawns.len())
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -289,8 +301,6 @@ pub struct Expedition {
     pub journal: Vec<String>,
     /// Someone to bring home.
     pub recruit: bool,
-    /// The site of a fight under way (taken out by the front end while it's played).
-    pub site: Option<Box<World>>,
 }
 
 /// Add `s` to a list of stacks (one entry per kind).
@@ -523,7 +533,6 @@ impl World {
             stage: Stage::Out { until, waylaid: false },
             journal: vec![msg],
             recruit: false,
-            site: None,
         });
         Ok(())
     }
@@ -804,8 +813,8 @@ impl World {
                     return;
                 }
                 Effect::Fight { enemies, site, then } => {
-                    self.start_site_fight(k, *enemies, *site);
-                    self.expeditions[k].stage = Stage::Fighting { then: then.clone(), main };
+                    let site_world = self.start_site_fight(k, *enemies, *site);
+                    self.expeditions[k].stage = Stage::Fighting { then: then.clone(), main, site: Some(site_world) };
                     return;
                 }
                 Effect::Chance { p, yes, no } => {
@@ -899,7 +908,7 @@ impl World {
 
     /// Build the site of a fight for expedition `k`: a small map, the squad on
     /// the west side, `enemies` raiders coming from the east.
-    fn start_site_fight(&mut self, k: usize, enemies: usize, site: Site) {
+    fn start_site_fight(&mut self, k: usize, enemies: usize, site: Site) -> SiteWorld {
         let seed = self.rng.next_u64();
         let mut rng = Rng::new(seed);
         let (w, h) = (34, 24);
@@ -955,8 +964,8 @@ impl World {
         // They fight as well equipped as the raiders the colony faces.
         let tier = self.raid_tier();
         site_world.start_battle(Parley { squads, entry: (w - 2, h / 2, z), demand: Vec::new(), tier });
-        self.expeditions[k].site = Some(Box::new(site_world));
         self.expeditions[k].journal.push(format!("A fight: {} against {}.", squad, enemies));
+        SiteWorld(Box::new(site_world))
     }
 
     /// The fight at expedition `id`'s site is over (`site` is the site world
@@ -973,7 +982,8 @@ impl World {
             self.expeditions[k].journal.push(format!("{} died in the fight.", name));
             self.push_log(format!("{} died on an expedition.", name));
         }
-        let Stage::Fighting { then, main } = self.expeditions[k].stage.clone() else { return };
+        let Stage::Fighting { then, main, .. } = &self.expeditions[k].stage else { return };
+        let (then, main) = (then.clone(), *main);
         if self.expeditions[k].members.is_empty() {
             self.push_log(format!("The {} expedition was lost.", self.expeditions[k].kind.name().to_lowercase()));
             self.expeditions.remove(k);
@@ -1030,14 +1040,16 @@ impl World {
 
     /// The fight site waiting to be played, if any (taken out by the front end).
     pub fn take_site(&mut self) -> Option<(ExpeditionId, World)> {
-        let e = self.expeditions.iter_mut().find(|e| e.site.is_some())?;
-        Some((e.id, *e.site.take().unwrap()))
+        self.expeditions.iter_mut().find_map(|e| match &mut e.stage {
+            Stage::Fighting { site, .. } => site.take().map(|s| (e.id, *s.0)),
+            Stage::Out { .. } | Stage::Decide { .. } | Stage::Trading { .. } | Stage::Back { .. } => None,
+        })
     }
 
     /// Put a site back (for saving while it's played).
     pub fn put_site(&mut self, id: ExpeditionId, site: World) {
-        if let Some(e) = self.expeditions.iter_mut().find(|e| e.id == id) {
-            e.site = Some(Box::new(site));
+        if let Some(Stage::Fighting { site: slot, .. }) = self.expeditions.iter_mut().find(|e| e.id == id).map(|e| &mut e.stage) {
+            *slot = Some(SiteWorld(Box::new(site)));
         }
     }
 

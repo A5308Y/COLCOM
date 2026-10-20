@@ -204,7 +204,7 @@ mod tests {
         assert!(!sim.lost());
         // A save made now has the site in its expedition, and plays it again when loaded.
         let saved = SimWorld::load_json(&sim.saveable().save_json().unwrap()).unwrap();
-        assert!(saved.expeditions[0].site.is_some());
+        assert!(matches!(saved.expeditions[0].stage, my_world::expeditions::Stage::Fighting { site: Some(_), .. }));
         // The fight ends: back to the colony, with the squad in the expedition again.
         sim.world.battle = None;
         sim.swap_sites();
