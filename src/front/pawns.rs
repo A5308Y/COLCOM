@@ -11,7 +11,7 @@ use super::props::{self, lit, PropAssets};
 use super::sim::Sim;
 use super::tile_point;
 use bevy::prelude::*;
-use my_world::defs::{ItemId, Slot, Special, WornPiece};
+use my_world::defs::{Bone, ItemId, Slot, Special, WornPiece};
 use my_world::map::{turn_dir, Feature, Map, Pos, DIRS};
 use my_world::recreation::GET_UP;
 use my_world::pawn::{Job, Pawn, PawnId, Task};
@@ -232,10 +232,10 @@ pub(super) fn equip_visual(commands: &mut Commands, props: &PropAssets, root: En
 /// Draw the more protective one so their shells cannot overlap and flicker.
 fn worn_pieces(apparel: &[ItemId]) -> Vec<&'static WornPiece> {
     let outer = apparel.iter().any(|k| k.def().apparel.as_ref().is_some_and(|a| a.slot == Slot::Outer && !a.pieces.is_empty()));
-    let head = apparel.iter().filter(|k| k.def().apparel.as_ref().is_some_and(|a| a.pieces.iter().any(|p| p.bone == "Head")))
+    let head = apparel.iter().filter(|k| k.def().apparel.as_ref().is_some_and(|a| a.pieces.iter().any(|p| p.bone == Bone::Head)))
         .max_by(|a, b| a.def().apparel.as_ref().unwrap().armor.total_cmp(&b.def().apparel.as_ref().unwrap().armor));
     apparel.iter().filter(|k| !outer || k.def().apparel.as_ref().is_none_or(|a| a.slot != Slot::Shirt)).flat_map(|kind| {
-        kind.def().apparel.iter().flat_map(|a| &a.pieces).filter(move |piece| piece.bone != "Head" || head == Some(kind))
+        kind.def().apparel.iter().flat_map(|a| &a.pieces).filter(move |piece| piece.bone != Bone::Head || head == Some(kind))
     }).collect()
 }
 
@@ -458,22 +458,23 @@ fn sync_pawns(
             }
             let pieces = worn_pieces(&p.apparel);
             for piece in &pieces {
-                let (parent, at, turn, proportions) = match piece.bone.as_str() {
-                    "spine_03" => (v.figure, Vec3::new(0.0, 0.62, 0.0), Quat::IDENTITY, Vec3::ONE),
-                    "Head" => (v.figure, Vec3::new(0.0, 0.90, 0.0), Quat::IDENTITY, Vec3::ONE),
-                    "upperarm_l" => (v.arms[1], Vec3::ZERO, Quat::from_rotation_z(-FRAC_PI_2), Vec3::ONE),
-                    "upperarm_r" => (v.arms[0], Vec3::ZERO, Quat::from_rotation_z(FRAC_PI_2), Vec3::ONE),
-                    "lowerarm_l" => (v.arms[1], Vec3::new(0.0, -0.16, 0.0), Quat::from_rotation_z(-FRAC_PI_2), Vec3::ONE),
-                    "lowerarm_r" => (v.arms[0], Vec3::new(0.0, -0.16, 0.0), Quat::from_rotation_z(FRAC_PI_2), Vec3::ONE),
+                let (parent, at, turn, proportions) = match piece.bone {
+                    Bone::Spine03 => (v.figure, Vec3::new(0.0, 0.62, 0.0), Quat::IDENTITY, Vec3::ONE),
+                    Bone::Head => (v.figure, Vec3::new(0.0, 0.90, 0.0), Quat::IDENTITY, Vec3::ONE),
+                    Bone::UpperArmL => (v.arms[1], Vec3::ZERO, Quat::from_rotation_z(-FRAC_PI_2), Vec3::ONE),
+                    Bone::UpperArmR => (v.arms[0], Vec3::ZERO, Quat::from_rotation_z(FRAC_PI_2), Vec3::ONE),
+                    Bone::LowerArmL => (v.arms[1], Vec3::new(0.0, -0.16, 0.0), Quat::from_rotation_z(-FRAC_PI_2), Vec3::ONE),
+                    Bone::LowerArmR => (v.arms[0], Vec3::new(0.0, -0.16, 0.0), Quat::from_rotation_z(FRAC_PI_2), Vec3::ONE),
                     // The fallback figure has shorter legs than the character rigs.
-                    "pelvis" => (v.figure, Vec3::new(0.0, 0.36, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
-                    "thigh_l" => (v.legs[1], Vec3::ZERO, Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
-                    "thigh_r" => (v.legs[0], Vec3::ZERO, Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
-                    "calf_l" => (v.legs[1], Vec3::new(0.0, -0.17, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
-                    "calf_r" => (v.legs[0], Vec3::new(0.0, -0.17, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
-                    "foot_l" => (v.legs[1], Vec3::new(0.0, -0.31, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
-                    "foot_r" => (v.legs[0], Vec3::new(0.0, -0.31, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
-                    _ => continue,
+                    Bone::Pelvis => (v.figure, Vec3::new(0.0, 0.36, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                    Bone::ThighL => (v.legs[1], Vec3::ZERO, Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                    Bone::ThighR => (v.legs[0], Vec3::ZERO, Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                    Bone::CalfL => (v.legs[1], Vec3::new(0.0, -0.17, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                    Bone::CalfR => (v.legs[0], Vec3::new(0.0, -0.17, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                    Bone::FootL => (v.legs[1], Vec3::new(0.0, -0.31, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                    Bone::FootR => (v.legs[0], Vec3::new(0.0, -0.31, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                    // Nothing is worn on the hands; the fallback figure has none.
+                    Bone::HandL | Bone::HandR => continue,
                 };
                 let tf = Transform::from_translation(at).with_rotation(turn).with_scale(proportions * (characters::RIG_SCALE / SCALE));
                 let e = props::spawn_worn(&mut commands, &props, tf, piece);
@@ -487,15 +488,15 @@ fn sync_pawns(
                 let mut fabric_fallbacks = Vec::new();
                 let mut leg_fallbacks = Vec::new();
                 for piece in &pieces {
-                    let Some((bone, rest)) = r.bone(&piece.bone) else {
-                        warn!("no bone \"{}\" for armour", piece.bone);
+                    let Some((bone, rest)) = r.bone(piece.bone) else {
+                        warn!("no bone {:?} for armour", piece.bone);
                         continue;
                     };
                     // Undo the bone's turn at rest, so the parts sit in the character's own frame.
                     let e = props::spawn_worn(&mut commands, &props, Transform::from_rotation(rest.inverse()), piece);
                     commands.entity(e).insert(ChildOf(bone));
                     v.armor.push(e);
-                    if piece.bone != "Head" && fabric.is_some_and(|a| a.pieces.iter().any(|p| std::ptr::eq(p, *piece))) {
+                    if piece.bone != Bone::Head && fabric.is_some_and(|a| a.pieces.iter().any(|p| std::ptr::eq(p, *piece))) {
                         fabric_fallbacks.push(e);
                     }
                     if leg_fabric.is_some_and(|a| a.pieces.iter().any(|p| std::ptr::eq(p, *piece))) {
@@ -723,7 +724,7 @@ fn sync_pawns(
         let carried = p.carrying.map(|s| s.kind).filter(|_| !lying);
         if carried.is_some() {
             let anchor = rig.as_ref().filter(|_| rig_ready).and_then(|(r, _)| {
-                Some(CarryAnchor::rig(v.root, r.bone("hand_l")?.0, r.bone("hand_r")?.0))
+                Some(CarryAnchor::rig(v.root, r.bone(Bone::HandL)?.0, r.bone(Bone::HandR)?.0))
             }).unwrap_or_else(|| CarryAnchor::figure(v.root, v.arms));
             commands.entity(v.carry).insert(anchor);
         } else {
@@ -863,13 +864,13 @@ mod tests {
         let hat = ItemId::named("wool_hat");
         for apparel in [vec![powered, helmet], vec![helmet, powered], vec![hat, powered]] {
             let pieces = worn_pieces(&apparel);
-            let heads: Vec<_> = pieces.iter().filter(|p| p.bone == "Head").collect();
+            let heads: Vec<_> = pieces.iter().filter(|p| p.bone == Bone::Head).collect();
             assert_eq!(heads.len(), 1);
             assert!(heads[0].model.as_ref().unwrap().path.ends_with("PoweredArmor.gltf"));
             assert_eq!(pieces.len(), 13, "all articulated body pieces are still present");
         }
         let pieces = worn_pieces(&[ItemId::named("steel_armor"), helmet]);
-        assert_eq!(pieces.iter().filter(|p| p.bone == "Head").count(), 1);
+        assert_eq!(pieces.iter().filter(|p| p.bone == Bone::Head).count(), 1);
         assert!(pieces.iter().any(|p| p.model.as_ref().is_some_and(|m| m.path.ends_with("SteelHelmet.gltf"))));
     }
 
@@ -880,7 +881,7 @@ mod tests {
         for outer in ["parka", "steel_armor", "powered_armor"] {
             let pieces = worn_pieces(&[clothes, ItemId::named(outer)]);
             assert!(pieces.iter().all(|p| !p.model.as_ref().unwrap().path.ends_with("SimpleClothes.gltf")));
-            assert!(pieces.iter().any(|p| p.bone == "spine_03"));
+            assert!(pieces.iter().any(|p| p.bone == Bone::Spine03));
         }
     }
 

@@ -214,7 +214,7 @@ pub fn attack_with(kind: Option<ItemId>) -> Attack {
 }
 
 /// What a pawn is currently doing. Multi-step jobs track their stage in fields.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Job {
     Wander { to: Pos },
     Goto { to: Pos },
@@ -255,8 +255,8 @@ pub enum Job {
     Relax { at: Pos, stand: Pos },
     /// Stroll outdoors for fun, on to `to`.
     Stroll { to: Pos },
-    /// Sit on the chair at `at` for a while, until game second `until` (idle; see `recreation.rs`).
-    Sit { at: Pos, until: u32 },
+    /// Sit on the chair at `at` for a while, until game time `until` (idle; see `recreation.rs`).
+    Sit { at: Pos, until: f32 },
     /// Freezing: get warm at `to` (see `temperature.rs`).
     WarmUp { to: Pos },
 }

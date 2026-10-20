@@ -115,7 +115,7 @@ pub static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(|| {
                 None
             }
         });
-        tools.push(ToolEntry { tool: Tool::Paint(Order::Build(kind)), name: def.name.clone(), key, group: def.category.clone(), hint: "" });
+        tools.push(ToolEntry { tool: Tool::Paint(Order::Build(kind)), name: def.name.clone(), key, group: def.category.to_string(), hint: "" });
     }
     tools
 });

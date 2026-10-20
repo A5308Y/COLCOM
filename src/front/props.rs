@@ -872,6 +872,7 @@ fn spawn_item(commands: &mut Commands, a: &PropAssets, key: ItemKey, pos: Pos, l
 #[cfg(test)]
 mod tests {
     use super::*;
+    use my_world::defs::BuildCategory;
     use my_world::map::FLAT_Z as Z;
 
     fn test_assets() -> PropAssets {
@@ -1111,7 +1112,7 @@ mod tests {
     #[test]
     fn furniture_models_preserve_placement_storage_and_contact_surfaces() {
         let mut checked = 0;
-        for def in defs().builds.iter().filter(|d| matches!(d.category.as_str(), "Furniture" | "Wall decor" | "Light")) {
+        for def in defs().builds.iter().filter(|d| matches!(d.category, BuildCategory::Furniture | BuildCategory::WallDecor | BuildCategory::Light)) {
             let model = def.model.as_ref().expect("all room furnishings have a model");
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(&model.path);
             let gltf: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();

@@ -17,7 +17,7 @@ use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, RichText};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::health::{CyberSlot, HediffKind};
-use my_world::defs::{defs, ItemId, PlantId, RoomDef, Slot, Special};
+use my_world::defs::{defs, ItemCategory, ItemId, PlantId, RoomDef, Slot, Special};
 use my_world::map::{Block, Feature, Pos, Zone};
 use my_world::pawn::{Pawn, PawnId, Role, Skill, WorkType};
 use my_world::production::{BillMode, PRIORITY_NAMES};
@@ -512,7 +512,7 @@ fn spawn_window(ctx: &egui::Context, st: &mut UiState) {
         ui.label(RichText::new("Pick an item, then click on the map to drop it (again and again). Right-click: stop.").small().weak());
         egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
             for cat in item_categories(|_| true) {
-                egui::CollapsingHeader::new(cat).id_salt(("spawn", cat)).default_open(cat == "Materials" || cat == "Components").show(ui, |ui| {
+                egui::CollapsingHeader::new(cat.to_string()).id_salt(("spawn", cat)).default_open(matches!(cat, ItemCategory::Materials | ItemCategory::Components)).show(ui, |ui| {
                     ui.horizontal_wrapped(|ui| {
                         for k in ItemId::all().filter(|k| k.def().category == cat) {
                             let chosen = st.tool == input::Tool::Spawn(k);
@@ -580,11 +580,11 @@ fn difficulty_ui(ui: &mut egui::Ui, sim: &mut Sim) -> bool {
 
 /// Item categories in the order they first appear in the definitions, of
 /// the items that pass `keep`.
-fn item_categories(keep: impl Fn(ItemId) -> bool) -> Vec<&'static str> {
-    let mut categories: Vec<&'static str> = Vec::new();
+fn item_categories(keep: impl Fn(ItemId) -> bool) -> Vec<ItemCategory> {
+    let mut categories: Vec<ItemCategory> = Vec::new();
     for k in ItemId::all().filter(|&k| keep(k)) {
-        if !categories.contains(&k.def().category.as_str()) {
-            categories.push(&k.def().category);
+        if !categories.contains(&k.def().category) {
+            categories.push(k.def().category);
         }
     }
     categories
@@ -619,7 +619,7 @@ fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
             let list_h = (ctx.viewport_rect().height() - 140.0).max(200.0);
             egui::ScrollArea::vertical().max_height(list_h).show(ui, |ui| {
                 for cat in categories {
-                    theme::section(ui, cat);
+                    theme::section(ui, cat.to_string());
                     egui::Grid::new(("resources", cat)).num_columns(2).spacing([24.0, 2.0]).show(ui, |ui| {
                         for k in ItemId::all().filter(|k| k.def().category == cat && totals[k.index()] > 0) {
                             let name = ui.add(egui::Label::new(k.name()).sense(egui::Sense::click()));

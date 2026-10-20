@@ -14,7 +14,7 @@ use bevy::gltf::{Gltf, GltfAssetLabel, GltfMaterialName, GltfNode};
 use bevy::prelude::*;
 use bevy::mesh::skinning::SkinnedMesh;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot, WorldInstanceReady};
-use my_world::defs::ItemId;
+use my_world::defs::{Bone, ItemId};
 use my_world::map::{Desig, Feature};
 use my_world::pawn::{Faction, Job, Pawn, Task};
 use my_world::world::World as SimWorld;
@@ -537,8 +537,8 @@ impl Rig {
     }
 
     /// A bone, and its turn in the character's frame at rest.
-    pub fn bone(&self, name: &str) -> Option<(Entity, Quat)> {
-        self.bones.get(name).copied()
+    pub fn bone(&self, bone: Bone) -> Option<(Entity, Quat)> {
+        self.bones.get(bone.gltf_name()).copied()
     }
 
     /// Show or hide the hair (under a helmet).
@@ -1129,7 +1129,7 @@ mod tests {
             for i in order { instance_ready(&mut world, parts[i]); }
             let mut rig = world.entity_mut(character).take::<Rig>().unwrap();
             assert_eq!(rig.hand, Some(hands[0]), "load order {order:?}");
-            assert_eq!(rig.bone("hand_r").unwrap().0, hands[0]);
+            assert_eq!(rig.bone(Bone::HandR).unwrap().0, hands[0]);
             let weapon = world.spawn((Visibility::Inherited, ChildOf(rig.hand.unwrap()))).id();
             world.entity_mut(parts[2]).insert(Visibility::Hidden);
             let garment = spawn_garment(&mut world.commands(), Handle::default(), character, &mut rig, vec![], true);
@@ -1366,7 +1366,7 @@ mod tests {
         let k = w.pawn_index(id).unwrap();
         w.pawns[k].job = Some(Job::Relax { at: (5, 6, Z), stand: at });
         assert_eq!(activity(&w.pawns[k], &w, false), Pose::full(Anim::SitTalk));
-        w.pawns[k].job = Some(Job::Sit { at, until: u32::MAX });
+        w.pawns[k].job = Some(Job::Sit { at, until: f32::MAX });
         assert_eq!(activity(&w.pawns[k], &w, false), Pose::full(Anim::Sit));
         assert!(activity(&w.pawns[k], &w, false).sitting());
 

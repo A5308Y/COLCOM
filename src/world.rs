@@ -871,7 +871,7 @@ impl World {
             // Now and then they sit down on a chair nearby instead.
             if self.rng.chance(0.4) {
                 if let Some(at) = self.free_chair(p, 12) {
-                    let until = (self.time + self.rng.range_f32(15.0, 30.0)) as u32;
+                    let until = self.time + self.rng.range_f32(15.0, 30.0);
                     self.start_job(p, Job::Sit { at, until });
                     return;
                 }

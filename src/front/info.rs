@@ -113,7 +113,7 @@ pub fn sheet(t: InfoTarget) -> Sheet {
 
 fn item_sheet(k: ItemId) -> Sheet {
     let d = k.def();
-    let mut s = Sheet::new(&d.name, &d.category);
+    let mut s = Sheet::new(&d.name, &d.category.to_string());
     s.about.extend(d.about.clone());
 
     let mut general = vec![row("Value", format!("{} each", d.value))];
@@ -297,7 +297,7 @@ pub fn purpose(d: &BuildDef) -> Option<&'static str> {
 
 fn build_sheet(k: BuildId) -> Sheet {
     let d = k.def();
-    let mut s = Sheet::new(&d.name, &d.category);
+    let mut s = Sheet::new(&d.name, &d.category.to_string());
     s.about.extend(purpose(d).map(String::from));
     if d.on_wall {
         s.about.push("Hangs on a wall: in one of five places on either side, counting for the room it faces.".into());

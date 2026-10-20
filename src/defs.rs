@@ -85,6 +85,143 @@ def_id!(BuildId, BuildDef, builds, "buildable");
 def_id!(PlantId, PlantDef, plants, "plant");
 def_id!(RecipeId, RecipeDef, recipes, "recipe");
 
+/// A bone of the character skeleton that gear attaches to, written by its
+/// glTF node name in the definitions (`"spine_03"`, `"Head"`).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Deserialize)]
+#[serde(try_from = "String")]
+pub enum Bone {
+    Pelvis,
+    Spine03,
+    Head,
+    UpperArmL,
+    UpperArmR,
+    LowerArmL,
+    LowerArmR,
+    HandL,
+    HandR,
+    ThighL,
+    ThighR,
+    CalfL,
+    CalfR,
+    FootL,
+    FootR,
+}
+
+impl Bone {
+    pub const ALL: [Bone; 15] = [Bone::Pelvis, Bone::Spine03, Bone::Head, Bone::UpperArmL, Bone::UpperArmR, Bone::LowerArmL, Bone::LowerArmR, Bone::HandL, Bone::HandR, Bone::ThighL, Bone::ThighR, Bone::CalfL, Bone::CalfR, Bone::FootL, Bone::FootR];
+
+    /// The node name in the character glTF files.
+    pub fn gltf_name(self) -> &'static str {
+        match self {
+            Bone::Pelvis => "pelvis",
+            Bone::Spine03 => "spine_03",
+            Bone::Head => "Head",
+            Bone::UpperArmL => "upperarm_l",
+            Bone::UpperArmR => "upperarm_r",
+            Bone::LowerArmL => "lowerarm_l",
+            Bone::LowerArmR => "lowerarm_r",
+            Bone::HandL => "hand_l",
+            Bone::HandR => "hand_r",
+            Bone::ThighL => "thigh_l",
+            Bone::ThighR => "thigh_r",
+            Bone::CalfL => "calf_l",
+            Bone::CalfR => "calf_r",
+            Bone::FootL => "foot_l",
+            Bone::FootR => "foot_r",
+        }
+    }
+}
+
+impl TryFrom<String> for Bone {
+    type Error = String;
+    fn try_from(name: String) -> Result<Bone, String> {
+        Bone::ALL.into_iter().find(|b| b.gltf_name() == name).ok_or_else(|| {
+            format!("unknown bone \"{name}\" (one of {:?})", Bone::ALL.map(Bone::gltf_name))
+        })
+    }
+}
+
+/// How items are grouped in stockpile settings and menus. Components are
+/// also what salvage recipes take apart (`Defs::add_salvage`).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Deserialize)]
+#[serde(try_from = "String")]
+pub enum ItemCategory {
+    Materials,
+    Components,
+    Scrap,
+    Food,
+    Medicine,
+    Weapons,
+    Apparel,
+    Cyberware,
+}
+
+impl ItemCategory {
+    pub const ALL: [ItemCategory; 8] = [ItemCategory::Materials, ItemCategory::Components, ItemCategory::Scrap, ItemCategory::Food, ItemCategory::Medicine, ItemCategory::Weapons, ItemCategory::Apparel, ItemCategory::Cyberware];
+}
+
+impl TryFrom<String> for ItemCategory {
+    type Error = String;
+    fn try_from(name: String) -> Result<ItemCategory, String> {
+        ItemCategory::ALL.into_iter().find(|c| c.to_string() == name).ok_or_else(|| {
+            format!("unknown category \"{name}\" (one of {:?})", ItemCategory::ALL.map(|c| c.to_string()))
+        })
+    }
+}
+
+impl std::fmt::Display for ItemCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(match self {
+            ItemCategory::Materials => "Materials",
+            ItemCategory::Components => "Components",
+            ItemCategory::Scrap => "Scrap",
+            ItemCategory::Food => "Food",
+            ItemCategory::Medicine => "Medicine",
+            ItemCategory::Weapons => "Weapons",
+            ItemCategory::Apparel => "Apparel",
+            ItemCategory::Cyberware => "Cyberware",
+        })
+    }
+}
+
+/// The build menu a buildable is listed under.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Deserialize)]
+#[serde(try_from = "String")]
+pub enum BuildCategory {
+    Structure,
+    Furniture,
+    Production,
+    Power,
+    Light,
+    WallDecor,
+}
+
+impl BuildCategory {
+    pub const ALL: [BuildCategory; 6] = [BuildCategory::Structure, BuildCategory::Furniture, BuildCategory::Production, BuildCategory::Power, BuildCategory::Light, BuildCategory::WallDecor];
+}
+
+impl TryFrom<String> for BuildCategory {
+    type Error = String;
+    fn try_from(name: String) -> Result<BuildCategory, String> {
+        BuildCategory::ALL.into_iter().find(|c| c.to_string() == name).ok_or_else(|| {
+            format!("unknown category \"{name}\" (one of {:?})", BuildCategory::ALL.map(|c| c.to_string()))
+        })
+    }
+}
+
+impl std::fmt::Display for BuildCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(match self {
+            BuildCategory::Structure => "Structure",
+            BuildCategory::Furniture => "Furniture",
+            BuildCategory::Production => "Production",
+            BuildCategory::Power => "Power",
+            BuildCategory::Light => "Light",
+            BuildCategory::WallDecor => "Wall decor",
+        })
+    }
+}
+
 /// A reference to another definition by its id, resolved once everything is read.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(from = "String", bound = "")]
@@ -290,7 +427,7 @@ pub struct SkinnedApparel {
 /// they face; about 1.8 m tall), drawn in polished metal.
 #[derive(Clone, Debug, Deserialize)]
 pub struct WornPiece {
-    pub bone: String,
+    pub bone: Bone,
     pub parts: Vec<Part>,
     /// A shared scene authored around this bone; parts remain the loading fallback.
     #[serde(default)]
@@ -434,7 +571,7 @@ pub struct ItemDef {
     pub id: String,
     pub name: String,
     /// Group in stockpile settings.
-    pub category: String,
+    pub category: ItemCategory,
     /// Worth of one, for what raiders demand and take.
     #[serde(default = "one_each")]
     pub value: f32,
@@ -569,7 +706,7 @@ pub struct BuildDef {
     #[serde(default)]
     pub cover: Option<CoverKind>,
     /// Toolbar menu it's listed under.
-    pub category: String,
+    pub category: BuildCategory,
     /// Toolbar shortcut.
     #[serde(default)]
     pub key: Option<String>,
@@ -940,7 +1077,7 @@ pub struct Defs {
     pub copper_drops: Amount,
     /// Where things made from components are taken apart (see `add_salvage`).
     #[serde(default)]
-    pub salvage_bench: Option<String>,
+    pub salvage_bench: Option<Ref<BuildId>>,
     pub builds: Vec<BuildDef>,
     pub plants: Vec<PlantDef>,
     #[serde(default)]
@@ -1158,7 +1295,7 @@ impl Defs {
     /// component), in half the time.
     fn add_salvage(&mut self) {
         let Some(bench) = self.salvage_bench.clone() else { return };
-        let component = |name: &str| self.items.iter().any(|i| i.id == name && i.category == "Components");
+        let component = |name: &str| self.items.iter().any(|i| i.id == name && i.category == ItemCategory::Components);
         let item_name = |id: &str| self.items.iter().find(|i| i.id == id).map_or(id.to_string(), |i| i.name.clone());
         let mut salvage = Vec::new();
         for r in &self.recipes {
@@ -1179,7 +1316,7 @@ impl Defs {
             salvage.push(RecipeDef {
                 id: format!("salvage_{}", product.name),
                 name: format!("Salvage {}", item_name(&product.name).to_lowercase()),
-                bench: Ref::from(bench.clone()),
+                bench: bench.clone(),
                 work: WorkType::Crafting,
                 skill: Skill::Crafting,
                 time: (r.time / 2.0).max(1.0),
@@ -1233,6 +1370,12 @@ impl Defs {
         }
         for p in self.plants.iter_mut() {
             resolve(&mut p.harvest.yields, &p.id)?;
+        }
+        if let Some(bench) = self.salvage_bench.as_mut() {
+            let Some(b) = self.builds.iter().position(|b| b.id == bench.name) else {
+                return Err(format!("salvage_bench: no buildable \"{}\"", bench.name));
+            };
+            bench.id = Some(BuildId(b as u16));
         }
         self.add_salvage();
         for (k, r) in self.recipes.iter_mut().enumerate() {
@@ -1326,9 +1469,6 @@ impl Defs {
             if !(0.0..=1.0).contains(&d.poison) || d.nutrition < 0.0 || d.medicine < 0.0 {
                 return Err(format!("{}: poison must be 0..1, nutrition and medicine not negative", d.id));
             }
-            if d.category.is_empty() {
-                return Err(format!("{}: needs a category", d.id));
-            }
             for piece in d.apparel.iter().flat_map(|a| &a.pieces) {
                 parts(&d.id, &piece.parts)?;
                 if let Some(model) = &piece.model {
@@ -1416,9 +1556,6 @@ impl Defs {
             }
             if d.is_block() && d.passable {
                 return Err(format!("{}: a block can't be passable", d.id));
-            }
-            if d.category.is_empty() {
-                return Err(format!("{}: needs a category", d.id));
             }
             if d.storage.as_ref().is_some_and(|s| !(1..=4).contains(&s.slots)) {
                 return Err(format!("{}: storage holds 1 to 4 stacks", d.id));
@@ -1613,12 +1750,21 @@ mod tests {
     }
 
     #[test]
+    fn bones_and_categories_load_by_name_and_reject_typos() {
+        assert_eq!(ron::from_str::<Bone>("\"spine_03\"").unwrap(), Bone::Spine03);
+        assert_eq!(ron::from_str::<BuildCategory>("\"Wall decor\"").unwrap(), BuildCategory::WallDecor);
+        assert_eq!(ron::from_str::<ItemCategory>("\"Components\"").unwrap(), ItemCategory::Components);
+        assert!(ron::from_str::<Bone>("\"Haed\"").unwrap_err().to_string().contains("unknown bone"));
+        assert!(ron::from_str::<ItemCategory>("\"Material\"").is_err());
+    }
+
+    #[test]
     fn armor_targets_bones_present_in_both_character_skeletons() {
         for body in ["Superhero_Male_FullBody", "Superhero_Female_FullBody"] {
             let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("assets/models/characters/base/{body}.gltf"));
             let gltf: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-            for piece in ItemId::all().flat_map(|k| k.def().apparel.iter().flat_map(|a| &a.pieces)) {
-                assert!(gltf["nodes"].as_array().unwrap().iter().any(|n| n["name"].as_str() == Some(&piece.bone)), "{} missing {}", body, piece.bone);
+            for bone in Bone::ALL {
+                assert!(gltf["nodes"].as_array().unwrap().iter().any(|n| n["name"].as_str() == Some(bone.gltf_name())), "{} missing {:?}", body, bone);
             }
         }
     }
@@ -1726,7 +1872,7 @@ mod tests {
         for (b, def) in d.builds.iter().enumerate() {
             assert!(benches[b] || def.special == Special::Roof, "{} can't be built without salvage", def.id);
         }
-        for item in d.items.iter().filter(|i| i.category == "Components") {
+        for item in d.items.iter().filter(|i| i.category == ItemCategory::Components) {
             assert!(have[ItemId::named(&item.id).index()], "{} can't be made", item.id);
         }
         for id in ["assault_rifle", "powered_armor", "laser_rifle", "silicon", "rubber", "copper"] {

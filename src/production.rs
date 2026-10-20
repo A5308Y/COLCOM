@@ -524,6 +524,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::defs::Bone;
     use crate::pawn::PawnId;
     use crate::testing::{colonist, item, quiet_world, run};
     use crate::defs::PlantId;
@@ -922,13 +923,13 @@ mod tests {
         }
         // What shows of them: plates on the chest and shoulders, a helmet over the hair.
         let pieces = |k: &str| item(k).def().apparel.as_ref().unwrap().pieces.clone();
-        let bones: Vec<String> = pieces("steel_armor").iter().map(|p| p.bone.clone()).collect();
-        assert_eq!(bones, ["spine_03", "upperarm_l", "upperarm_r"]);
-        assert!(pieces("steel_helmet").iter().any(|p| p.bone == "Head" && p.hides_hair));
+        let bones: Vec<Bone> = pieces("steel_armor").iter().map(|p| p.bone).collect();
+        assert_eq!(bones, [Bone::Spine03, Bone::UpperArmL, Bone::UpperArmR]);
+        assert!(pieces("steel_helmet").iter().any(|p| p.bone == Bone::Head && p.hides_hair));
         // Powered armour: plates on the chest and arms, and a sealed helmet with a glowing visor.
         let powered = pieces("powered_armor");
-        assert!(powered.iter().any(|p| p.bone == "spine_03"));
-        assert!(powered.iter().any(|p| p.bone == "Head" && p.hides_hair && p.parts.iter().any(|q| q.color == "visor")));
+        assert!(powered.iter().any(|p| p.bone == Bone::Spine03));
+        assert!(powered.iter().any(|p| p.bone == Bone::Head && p.hides_hair && p.parts.iter().any(|q| q.color == "visor")));
         assert!(item("powered_armor").def().apparel.as_ref().unwrap().armor > item("steel_armor").def().apparel.as_ref().unwrap().armor);
     }
 
