@@ -40,12 +40,16 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
   out-of-range value in a save panics in the job scan (`jobs.rs`, `nearest_cell[k][prio]`).
   Give each its own type (for example `WorkPriority`, and
   `StorePriority { Low, Normal, Preferred, Critical }`).
-  Done: `WorkPriority` (with `rank()`, `raised()`, `lowered()`) and `StorePriority`; both still saved as\n  the same numbers, and out-of-range values now fail at load.
-- [ ] **Expedition and offer ids are raw `u32`** and share `World.next_id` with pawns.
+  Done: `WorkPriority` (with `rank()`, `raised()`, `lowered()`) and `StorePriority`; both
+  still saved as the same numbers, and out-of-range values now fail at load.
+- [x] **Expedition and offer ids are raw `u32`** and share `World.next_id` with pawns.
   An offer id passed as an expedition id compiles, and the trade window uses `0` as
   "none" (`front/expeditions_ui.rs`, `Haggle`). Add `ExpeditionId`/`OfferId` newtypes
   (`#[serde(transparent)]`) and `Option`. Also replace the `next_id + 10_000` offset for
   site worlds with something explicit.
+  Done: `OfferId`/`ExpeditionId` (transparent, so saves are unchanged), `World::take_id`, and
+  `Option<Haggle>`. Site worlds continue the colony's numbering, and `finish_site` moves
+  the colony's counter past it.
 - [ ] **Remaining `_ =>` arms on project enums:** `MissionKind::fits` and
   `Expedition::affords` (`expeditions.rs`), and `HediffKind` in `bleed`, `needs_tending`
   and the death cause (`health.rs`; a new disease would be reported as "died of an

@@ -260,6 +260,14 @@ impl World {
         df.nearest(max, |i| self.map.stacks(i).any(|s| test(i, s))).map(|i| self.map.pos(i))
     }
 
+    /// The next number for a new pawn, offer or expedition (each wraps it in
+    /// its own id type).
+    pub(crate) fn take_id(&mut self) -> u32 {
+        let id = self.next_id;
+        self.next_id += 1;
+        id
+    }
+
     /// Game seconds since the start.
     pub fn time(&self) -> f32 {
         self.clock as f32
@@ -437,16 +445,14 @@ impl World {
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("Colonist {}", self.colonist_names_used + 1));
         self.colonist_names_used += 1;
-        let id = PawnId::new(self.next_id);
-        self.next_id += 1;
+        let id = PawnId::new(self.take_id());
         let p = Pawn::new_colonist(id, name, pos, &mut self.rng);
         self.pawns.push(p);
         id
     }
 
     pub fn spawn_raider(&mut self, name: String, pos: Pos) -> PawnId {
-        let id = PawnId::new(self.next_id);
-        self.next_id += 1;
+        let id = PawnId::new(self.take_id());
         let p = Pawn::new_raider(id, name, pos, &mut self.rng);
         self.pawns.push(p);
         id

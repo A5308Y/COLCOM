@@ -182,9 +182,29 @@ impl MissionKind {
     }
 }
 
+macro_rules! world_id {
+    ($name:ident, $what:literal) => {
+        #[doc = concat!("Identifies ", $what, ". Numbered from `World::next_id` like pawns, but a")]
+        /// type of its own so the different ids can't be mixed up.
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+        #[serde(transparent)]
+        pub struct $name(std::num::NonZeroU32);
+
+        impl $name {
+            /// Ids are handed out by the world; build one directly only in tests.
+            pub fn new(raw: u32) -> $name {
+                $name(std::num::NonZeroU32::new(raw).expect("ids start at 1"))
+            }
+        }
+    };
+}
+
+world_id!(OfferId, "an expedition on offer");
+world_id!(ExpeditionId, "an expedition under way");
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Offer {
-    pub id: u32,
+    pub id: OfferId,
     pub kind: MissionKind,
     /// Who it's with or about (index into `World::factions`).
     pub faction: usize,
@@ -256,7 +276,7 @@ pub enum Stage {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Expedition {
-    pub id: u32,
+    pub id: ExpeditionId,
     pub kind: MissionKind,
     pub faction: usize,
     pub days: f32,
@@ -429,14 +449,13 @@ impl World {
             MissionKind::Trade | MissionKind::Envoy | MissionKind::Escort | MissionKind::PeaceTalks => self.factions[f].days,
             _ => self.rng.range_f32(1.0, 2.5),
         };
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = OfferId::new(self.take_id());
         self.offers.push(Offer { id, kind, faction: f, days, until: self.time() + OFFER_DAYS * DAY_LEN });
         self.push_log(format!("New expedition: {} ({}).", kind.name(), self.factions[f].name));
     }
 
     /// Send colonists `ids` on offer `offer`, packing `goods` (taken from the colony).
-    pub fn send_expedition(&mut self, offer: u32, ids: &[PawnId], goods: &[Stack]) -> Result<(), String> {
+    pub fn send_expedition(&mut self, offer: OfferId, ids: &[PawnId], goods: &[Stack]) -> Result<(), String> {
         let k = self.offers.iter().position(|o| o.id == offer).ok_or("that offer is gone")?;
         if ids.is_empty() {
             return Err("pick someone to go".into());
@@ -473,8 +492,7 @@ impl World {
         let names: Vec<&str> = members.iter().map(|p| p.name.as_str()).collect();
         let msg = format!("{} set out: {} ({}), {:.0} days away.", names.join(", "), o.kind.name(), self.factions[o.faction].name, o.days);
         self.push_log(msg.clone());
-        let id = self.next_id;
-        self.next_id += 1;
+        let id = ExpeditionId::new(self.take_id());
         // Halfway there: something on the road (some missions).
         let until = self.time() + o.days * DAY_LEN * 0.5;
         self.expeditions.push(Expedition {
@@ -684,7 +702,7 @@ impl World {
     }
 
     /// The player picks choice `c` for the event expedition `id` is waiting on.
-    pub fn choose(&mut self, id: u32, c: usize) -> Result<(), String> {
+    pub fn choose(&mut self, id: ExpeditionId, c: usize) -> Result<(), String> {
         let k = self.expeditions.iter().position(|e| e.id == id).ok_or("no such expedition")?;
         let Stage::Decide { event, main } = self.expeditions[k].stage.clone() else { return Err("nothing to decide".into()) };
         let choice = event.choices.get(c).ok_or("no such choice")?.clone();
@@ -808,7 +826,7 @@ impl World {
 
     /// Trade at the market expedition `id` is at: `sell` from what they carry,
     /// `buy` from the market's stock. What's sold must be worth at least what's bought.
-    pub fn trade(&mut self, id: u32, sell: &[Stack], buy: &[Stack]) -> Result<(), String> {
+    pub fn trade(&mut self, id: ExpeditionId, sell: &[Stack], buy: &[Stack]) -> Result<(), String> {
         let k = self.expeditions.iter().position(|e| e.id == id).ok_or("no such expedition")?;
         let f = &self.factions[self.expeditions[k].faction];
         let (sf, bf) = (f.sell_factor(), f.buy_factor());
@@ -846,7 +864,7 @@ impl World {
     }
 
     /// Done at the market: home.
-    pub fn leave_market(&mut self, id: u32) {
+    pub fn leave_market(&mut self, id: ExpeditionId) {
         if let Some(k) = self.expeditions.iter().position(|e| e.id == id && matches!(e.stage, Stage::Trading { .. })) {
             let f = self.expeditions[k].faction;
             self.factions[f].goodwill = (self.factions[f].goodwill + 2).min(100);
@@ -895,7 +913,9 @@ impl World {
         site_world.regrow_timer = f32::MAX;
         site_world.share_clock(self);
         site_world.factions = Vec::new();
-        site_world.next_id = self.next_id + 10_000;
+        // The site carries on the colony's numbering; `finish_site` moves the colony's
+        // counter past whatever the site used, so ids stay unique either way.
+        site_world.next_id = self.next_id;
         let members = std::mem::take(&mut self.expeditions[k].members);
         let squad = members.len();
         for (n, mut p) in members.into_iter().enumerate() {
@@ -917,7 +937,8 @@ impl World {
     /// The fight at expedition `id`'s site is over (`site` is the site world
     /// after the battle): the squad comes back into the expedition, with
     /// whatever lies about if they won.
-    pub fn finish_site(&mut self, id: u32, mut site: World) {
+    pub fn finish_site(&mut self, id: ExpeditionId, mut site: World) {
+        self.next_id = self.next_id.max(site.next_id);
         let Some(k) = self.expeditions.iter().position(|e| e.id == id) else { return };
         let won = site.pawns.iter().any(|p| p.is_colonist() && p.active());
         let members: Vec<Pawn> = site.pawns.drain(..).filter(|p| p.is_colonist()).collect();
@@ -983,13 +1004,13 @@ impl World {
     }
 
     /// The fight site waiting to be played, if any (taken out by the front end).
-    pub fn take_site(&mut self) -> Option<(u32, World)> {
+    pub fn take_site(&mut self) -> Option<(ExpeditionId, World)> {
         let e = self.expeditions.iter_mut().find(|e| e.site.is_some())?;
         Some((e.id, *e.site.take().unwrap()))
     }
 
     /// Put a site back (for saving while it's played).
-    pub fn put_site(&mut self, id: u32, site: World) {
+    pub fn put_site(&mut self, id: ExpeditionId, site: World) {
         if let Some(e) = self.expeditions.iter_mut().find(|e| e.id == id) {
             e.site = Some(Box::new(site));
         }
@@ -1008,18 +1029,18 @@ mod tests {
     use crate::testing::{colonist, item, quiet_world, run};
 
     /// A colony of three with goods in store, and an offer of `kind` from faction `f`.
-    fn colony(kind: MissionKind, f: usize) -> (World, Vec<PawnId>, u32) {
+    fn colony(kind: MissionKind, f: usize) -> (World, Vec<PawnId>, OfferId) {
         let mut w = quiet_world(24, 16, 3);
         let ids = vec![colonist(&mut w, (5, 5, Z)), colonist(&mut w, (6, 5, Z)), colonist(&mut w, (7, 5, Z))];
         w.map.drop_item((3, 3, Z), st("steel", 60));
         w.map.drop_item((3, 4, Z), st("meal", 20));
         let days = w.factions[f].days;
-        w.offers.push(Offer { id: 999, kind, faction: f, days, until: w.time() + DAY_LEN });
-        (w, ids, 999)
+        w.offers.push(Offer { id: OfferId::new(999), kind, faction: f, days, until: w.time() + DAY_LEN });
+        (w, ids, OfferId::new(999))
     }
 
     /// Run until expedition `id` waits for something (a choice, the market, a fight) or is home.
-    fn travel(w: &mut World, id: u32) {
+    fn travel(w: &mut World, id: ExpeditionId) {
         for _ in 0..(10.0 * DAY_LEN) as usize {
             run(w, 1.0);
             match w.expeditions.iter().find(|e| e.id == id) {
@@ -1030,7 +1051,7 @@ mod tests {
         panic!("the expedition never got anywhere");
     }
 
-    fn event(w: &World, id: u32) -> Event {
+    fn event(w: &World, id: ExpeditionId) -> Event {
         match &w.expeditions.iter().find(|e| e.id == id).unwrap().stage {
             Stage::Decide { event, .. } => event.clone(),
             s => panic!("not deciding: {:?}", s),
@@ -1123,7 +1144,10 @@ mod tests {
             site.tick(crate::TICK);
         }
         assert!(site.battle.is_none(), "the fight ended");
+        let site_ids = site.next_id;
+        assert!(site_ids > w.next_id, "the site numbered its raiders after the colony's ids");
         w.finish_site(id, site);
+        assert_eq!(w.next_id, site_ids, "and the colony carries on after them");
         if let Some(e) = w.expeditions.first() {
             assert!(matches!(e.stage, Stage::Back { .. }), "{:?}", e.stage);
             assert!(!e.members.is_empty());

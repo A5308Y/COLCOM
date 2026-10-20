@@ -6,7 +6,7 @@ use super::sim::Sim;
 use super::theme;
 use bevy_egui::egui::{self, Align2, Color32, RichText};
 use my_world::defs::ItemId;
-use my_world::expeditions::{Expedition, Faction, Stage};
+use my_world::expeditions::{Expedition, ExpeditionId, Faction, OfferId, Stage};
 use my_world::map::Stack;
 use my_world::pawn::{Pawn, PawnId, Role, Skill};
 use my_world::squads::{fights_at_range, style_name};
@@ -24,17 +24,22 @@ pub enum Tab {
 
 /// An expedition being planned: the offer, who goes, what they pack.
 pub struct Plan {
-    offer: u32,
+    offer: OfferId,
     squad: Vec<PawnId>,
     pack: BTreeMap<ItemId, u32>,
 }
 
 /// What's being haggled over at a market (for one expedition).
-#[derive(Default)]
 pub struct Haggle {
-    expedition: u32,
+    expedition: ExpeditionId,
     sell: BTreeMap<ItemId, u32>,
     buy: BTreeMap<ItemId, u32>,
+}
+
+impl Haggle {
+    fn new(expedition: ExpeditionId) -> Haggle {
+        Haggle { expedition, sell: BTreeMap::new(), buy: BTreeMap::new() }
+    }
 }
 
 #[derive(Default)]
@@ -42,7 +47,7 @@ pub struct ExpeditionsUi {
     pub open: bool,
     pub tab: Tab,
     plan: Option<Plan>,
-    haggle: Haggle,
+    haggle: Option<Haggle>,
     /// Why the last thing asked for couldn't be done.
     error: Option<String>,
 }
@@ -312,7 +317,7 @@ fn away(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
     if sim.world.expeditions.is_empty() {
         ui.label(RichText::new("Nobody is away.").weak());
     }
-    let mut chosen: Option<(u32, usize)> = None;
+    let mut chosen: Option<(ExpeditionId, usize)> = None;
     let mut leave = None;
     for e in &sim.world.expeditions {
         let f = &sim.world.factions[e.faction];
@@ -342,11 +347,13 @@ fn away(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
                     }
                 }
                 Stage::Trading { stock } => {
-                    if st.haggle.expedition != e.id {
-                        st.haggle = Haggle { expedition: e.id, ..Default::default() };
+                    // A fresh deal at each market.
+                    if st.haggle.as_ref().is_some_and(|h| h.expedition != e.id) {
+                        st.haggle = None;
                     }
-                    if market(ui, &sim.world.factions[e.faction], e, stock, &mut st.haggle) {
-                        let (sell, buy) = (stacks(&st.haggle.sell), stacks(&st.haggle.buy));
+                    let haggle = st.haggle.get_or_insert_with(|| Haggle::new(e.id));
+                    if market(ui, &sim.world.factions[e.faction], e, stock, haggle) {
+                        let (sell, buy) = (stacks(&haggle.sell), stacks(&haggle.buy));
                         chosen = None;
                         leave = Some((e.id, Some((sell, buy))));
                     }
@@ -370,7 +377,7 @@ fn away(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
         Some((id, Some((sell, buy)))) => {
             st.error = sim.world.trade(id, &sell, &buy).err();
             if st.error.is_none() {
-                st.haggle = Haggle { expedition: id, ..Default::default() };
+                st.haggle = Some(Haggle::new(id));
             }
         }
         Some((id, None)) => {
