@@ -339,22 +339,60 @@ def jacket(parka=False):
     pal = palette((.51, .37, .23) if parka else (.31, .38, .40),
                   (.34, .30, .23) if parka else (.24, .29, .29), CREAM, OLIVE)
     body = Item(pal)
-    body.box((0, -.04, -.02), (.46 if parka else .435, .49 if parka else .40, .36 if parka else .335), 0, bevel=.025)
-    body.box((0, -.04, .164), (.018, .37, .013), 2, bevel=.002)
-    for side in (-1, 1):
-        body.box((side * .13, -.075, .171), (.097, .10, .026), 1, bevel=.006)
-        body.box((side * .13, -.031, .189), (.09, .023, .013), 4, bevel=.004)
-        body.box((side * .11, .18, -.015), (.065, .064, .22), 1, bevel=.009)
+    # A curved shoulder yoke, fitted waist and natural hem replace the box body.
+    rings = [(-.34, .200, .166, -.016), (-.22, .183, .157, -.018),
+             (-.105, .180, .159, -.019), (.025, .218, .184, -.021),
+             (.12, .210, .181, -.025), (.205, .215, .140, -.055),
+             (.268, .118, .108, -.045)] if parka else [
+             (-.235, .174, .150, -.018), (-.12, .165, .150, -.018),
+             (.020, .210, .178, -.022), (.115, .202, .174, -.025),
+             (.200, .205, .130, -.055), (.260, .114, .100, -.045)]
+    body.section(rings, 0, sides=16, smooth=True, roundness=3.5)
+    # The placket follows the fabric's front surface instead of forming a bar.
+    for (y0, _, rz0, z0), (y1, _, rz1, z1) in zip(rings, rings[1:]):
+        body.face([(-.004, y0, z0 + rz0 + .002), (.004, y0, z0 + rz0 + .002),
+                   (.004, y1, z1 + rz1 + .002), (-.004, y1, z1 + rz1 + .002)], 2)
+    y, rx, rz, z = rings[-1]
+    body.section([(y - .009, rx + .001, rz + .001, z),
+                  (y + .004, rx, rz, z)], 1, sides=16, smooth=True, roundness=3.5)
     if parka:
-        body.box((0, .17, -.125), (.29, .13, .19), 0, bevel=.022)
-        body.box((0, .231, -.125), (.25, .027, .15), 3, bevel=.008)
-        body.box((0, -.278, -.02), (.47, .025, .37), 1, bevel=.008)
+        # A small folded hood with a narrow lining, rather than a shoulder block.
+        body.section([(.118, .124, .065, -.112), (.166, .144, .073, -.112),
+                      (.202, .116, .052, -.112)], 0, sides=16, smooth=True)
+        for i in range(16):
+            a, b = i * math.tau / 16, (i + 1) * math.tau / 16
+            body.face([(.116 * math.cos(a), .204, -.112 - .052 * math.sin(a)),
+                       (.116 * math.cos(b), .204, -.112 - .052 * math.sin(b)),
+                       (.104 * math.cos(b), .204, -.112 - .040 * math.sin(b)),
+                       (.104 * math.cos(a), .204, -.112 - .040 * math.sin(a))], 3)
+    # Small angled welt openings read as cloth pockets, with no protruding pouches.
+    for side in (-1, 1):
+        body.face([(side * .064, -.157, .124 if parka else .110),
+                   (side * .125, -.127, .100 if parka else .086),
+                   (side * .125, -.121, .100 if parka else .086),
+                   (side * .064, -.151, .124 if parka else .110)]
+                  [::1 if side > 0 else -1], 1)
     pieces = [("Body", body, (0, 0, 0))]
     for side, label in [(1, "SleeveLeft"), (-1, "SleeveRight")]:
         sleeve = Item(pal)
-        sleeve.box((side * .13, 0, 0), (.26, .15 if parka else .13, .15 if parka else .13), 0, bevel=.018)
-        sleeve.box((side * .255, 0, 0), (.025, .152 if parka else .132, .152 if parka else .132), 1, bevel=.007)
+        upper = Item(pal)
+        upper.section([(-.255 if parka else -.212, .063 if parka else .058, .077 if parka else .068, 0),
+                       (-.12, .080 if parka else .072, .094 if parka else .084, 0),
+                       (.055, .095 if parka else .090, .115 if parka else .112, 0)], 0, sides=16, smooth=True)
+        sleeve.add(upper, turn=(0, 0, side * 90))
+        if not parka:
+            cuff = Item(pal)
+            cuff.section([(-.221, .059, .069, 0), (-.207, .060, .070, 0)], 1, sides=16, smooth=True)
+            sleeve.add(cuff, turn=(0, 0, side * 90))
         pieces.append((label, sleeve, (side * .212, .145, -.072)))
+    if parka:
+        for side, label in [(1, "ForearmLeft"), (-1, "ForearmRight")]:
+            sleeve, lower, cuff = Item(pal), Item(pal), Item(pal)
+            lower.section([(-.231, .048, .058, 0), (-.13, .063, .076, 0), (.008, .065, .079, 0)], 0, sides=16, smooth=True)
+            cuff.section([(-.240, .048, .058, 0), (-.220, .050, .060, 0)], 1, sides=16, smooth=True)
+            sleeve.add(lower, turn=(0, 0, side * 90))
+            sleeve.add(cuff, turn=(0, 0, side * 90))
+            pieces.append((label, sleeve, (side * .463, .145, -.080)))
     assembled = Item(pal)
     for _, geometry, at in pieces:
         assembled.add(geometry, at)
@@ -363,9 +401,13 @@ def jacket(parka=False):
 
 def wool_hat():
     g = Item(palette((.40, .31, .28), (.29, .25, .22), CREAM, OLIVE))
-    g.shell([(.115, .128, .137), (.20, .131, .14), (.268, .086, .10), (.285, .035, .05)])
-    g.cylinder((0, .128, -.01), .135, .046, 1)
-    g.box((0, .133, .128), (.045, .022, .008), 4, bevel=.002)
+    g.section([(.112, .119, .130, -.010), (.166, .124, .137, -.010),
+               (.213, .114, .129, -.014), (.247, .083, .101, -.020),
+               (.263, .035, .050, -.023)], 0, sides=16, smooth=True)
+    # A softly rolled knit cuff, with a small fabric tag instead of a badge.
+    g.section([(.106, .120, .132, -.010), (.124, .129, .141, -.010),
+               (.146, .124, .136, -.010)], 1, sides=16, smooth=True)
+    g.face([(-.014, .118, .132), (.014, .118, .132), (.014, .131, .132), (-.014, .131, .132)], 4)
     return g
 
 

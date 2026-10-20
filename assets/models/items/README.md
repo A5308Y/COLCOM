@@ -12,7 +12,7 @@ game screenshots; garments are shown assembled upright, while their ground poses
 
 ## Art budget and material choices
 
-Each item uses **102–636 triangles** and at most **five material groups**, with no textures,
+Each item uses **102–908 triangles** and at most **five material groups**, with no textures,
 transparency, emission, custom shaders or extra lights. The intended ceiling for new small supplies
 is 1,000 triangles; use fewer faces for small resources. Broad facets, chamfers and rough finishes
 follow the [Rifle benchmark](../weapons/README.md).
@@ -20,7 +20,9 @@ follow the [Rifle benchmark](../weapons/README.md).
 Resources keep their natural identity instead of receiving olive paint. Bark and end grain distinguish
 logs from planks; irregular stone and mineral faces distinguish ores; stacked ingots distinguish steel
 and copper. Manufactured parts use charcoal, steel, olive, copper traces and muted identification
-colors. Organic materials and fabric stay matte.
+colors. Organic materials and fabric stay matte. Garments use smooth normals on rounded,
+tapered sections, fitted waists, narrow seams and cuffs; resources retain their faceted shading.
+The wool cap has a low rounded crown and rolled knit cuff rather than a helmet-like shell.
 
 | Group | Items | Main forms |
 |---|---:|---|
@@ -46,7 +48,9 @@ are shared with ground and shelf instances.
 
 Clothing follows the same modular system as armor: scene 0 assembles the item; scenes 1/2/3 of
 `SimpleClothes.gltf` and `Parka.gltf` attach Body/SleeveLeft/SleeveRight to `spine_03` and
-`upperarm_l`/`upperarm_r`. Scene 1 of `WoolHat.gltf` attaches the cap to `Head` and hides hair.
+`upperarm_l`/`upperarm_r`. The parka also has scenes 4/5 on `lowerarm_l`/`lowerarm_r`, so its
+tapered sleeves bend at the elbows and end in narrow wrist cuffs. Its folded hood and fur lining
+sit close to the shoulders. Scene 1 of `WoolHat.gltf` attaches the cap to `Head` and hides hair.
 Outer garments cover the utility jacket visually so duplicate collars and sleeves cannot flicker.
 The existing character outfit remains underneath these pieces.
 
@@ -63,7 +67,12 @@ and cleanup. The existing GPU asset test includes all 40 inventory models:
 ```sh
 cargo test --release
 cargo test --release -- --ignored
+python3 tools/preview_armor.py --clothing --out target/clothing-review
 ```
+
+`target/clothing-review/index.html` shows the clothes, parka, wool hat and Flak Jacket fitted on
+both actual base body meshes. It includes front/rear views and close cap views, uses neutral base
+body colors without textures, and interpolates cloth normals. It does not reproduce game lighting.
 
 For in-game review, use Menu → Spawn items, place a few stacks on the ground and in storage, and
 order a colonist to haul or equip them. Review normal/close zoom, daylight/dusk, carrying and walking.

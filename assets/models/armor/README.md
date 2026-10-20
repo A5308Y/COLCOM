@@ -8,8 +8,9 @@ python3 tools/preview_gear.py --out target/gear-review
 ```
 
 The steel helmet retains the Rifle's olive, steel and amber materials. The Flak Jacket uses matte
-ballistic fabric, padded olive panels, dark webbing and small fasteners. Its tapered body and light
-shoulder pads replace the old bulky metal breastplate.
+ballistic fabric, thick olive front/back inserts, dark webbing and small fasteners. Its tapered body
+and reinforced shoulder pads provide more protective bulk than everyday clothes, without the old
+rectangular metal breastplate.
 
 Powered armor deliberately breaks from that palette: blue-gray titanium ceramic, graphite framing,
 dark flexible joints, machined edges and emissive ion cyan. A split visor, diamond chest reactor,
@@ -23,7 +24,7 @@ custom shaders or extra lights. The cyan surfaces are emissive materials, not po
 | Item | Triangles | Appearance |
 |---|---:|---|
 | Steel helmet | 306 | Open-face combat shell, cheek plates, padded ear protection |
-| Flak Jacket | 564 | Fitted padded vest, webbing, shallow pockets, small shoulder pads |
+| Flak Jacket | 624 | Thick front/back padding, webbing, utility pockets, reinforced shoulder pads |
 | Powered armour | 1,986 | Articulated exosuit, sealed split visor, cyan reactor, armored forearms and legs |
 
 These are cosmetic replacements. Item IDs, prices, protection, warmth, speed, recipes and saves

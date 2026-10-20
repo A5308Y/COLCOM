@@ -50,8 +50,14 @@ def render(rifle, path, eye, focus=(0, .08, .175), scale=1040):
         for k in range(0, len(indices), 3):
             ids = indices[k:k + 3]
             normal = normals[ids[0]]
-            if dot(normal, eye) <= 0:
+            # Cull by geometry; cloth can have interpolated vertex normals.
+            points = [positions[i] for i in ids]
+            geometric = cross(tuple(points[1][i] - points[0][i] for i in range(3)),
+                              tuple(points[2][i] - points[0][i] for i in range(3)))
+            if dot(geometric, eye) <= 0:
                 continue
+            vertex_normals = [normals[i] for i in ids]
+            smooth = not all(n == normal for n in vertex_normals)
             a, b, c = [project(positions[i]) for i in ids]
             area = edge(a, b, *c[:2])
             if abs(area) < 1e-9:
@@ -69,6 +75,10 @@ def render(rifle, path, eye, focus=(0, .08, .175), scale=1040):
                     depth = a[2] * w0 + b[2] * w1 + c[2] * w2
                     index = y * width + x
                     if depth > depths[index]:
+                        if smooth:
+                            n = tuple(sum(vertex_normals[j][i] * w for j, w in enumerate((w0, w1, w2))) for i in range(3))
+                            shade = math.sqrt(.22 + .78 * max(0, dot(unit(n), light)))
+                            color = bytes(min(255, round(255 * v * shade)) for v in rifle.palette[material][1])
                         depths[index] = depth
                         pixels[index * 3:index * 3 + 3] = color
 

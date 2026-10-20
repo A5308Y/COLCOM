@@ -717,22 +717,22 @@
             color: "dye",
             model: Some((
                 path: "models/items/SimpleClothes.gltf",
-                ground: (at: (-0.000000, 0.141850, 0.009800), turn: (90.000000, 0.000000, 0.000000), scale: 0.7),
+                ground: (at: (0.0, 0.1106, 0.0028), turn: (90.0, 0.0, 0.0), scale: 0.7),
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
             // `armor`: share of each blow's damage it stops; `mood` while worn.
             apparel: Some((slot: Body, armor: 0.06, mood: 3.0, warmth: 4.0, pieces: [
                 (bone: "spine_03",
                     model: Some((path: "models/items/SimpleClothes.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
-                    (shape: Cube, color: "dye", at: (0.000000, -0.020000, -0.010000), size: (0.435000, 0.400000, 0.335000)),
+                    (shape: Cylinder, color: "dye", at: (0.0, -0.01, -0.02), size: (0.40, 0.43, 0.31)),
                 ]),
                 (bone: "upperarm_l",
                     model: Some((path: "models/items/SimpleClothes.gltf", scene: 2, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
-                    (shape: Cube, color: "dye", at: (0.130000, 0.000000, 0.000000), size: (0.260000, 0.130000, 0.130000)),
+                    (shape: Cylinder, color: "dye", at: (0.095, 0.0, 0.0), size: (0.14, 0.25, 0.16), turn: (0.0, 0.0, 90.0)),
                 ]),
                 (bone: "upperarm_r",
                     model: Some((path: "models/items/SimpleClothes.gltf", scene: 3, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
-                    (shape: Cube, color: "dye", at: (-0.130000, 0.000000, 0.000000), size: (0.260000, 0.130000, 0.130000)),
+                    (shape: Cylinder, color: "dye", at: (-0.095, 0.0, 0.0), size: (0.14, 0.25, 0.16), turn: (0.0, 0.0, 90.0)),
                 ]),
             ])),
             look: [
@@ -774,25 +774,32 @@
             color: "parka",
             model: Some((
                 path: "models/items/Parka.gltf",
-                ground: (at: (-0.000000, 0.141850, 0.016100), turn: (90.000000, 0.000000, 0.000000), scale: 0.7),
+                ground: (at: (0.0, 0.099, 0.0327), turn: (90.0, 0.0, 0.0), scale: 0.6),
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
-            about: Some("A padded coat with a fur-lined hood: worn over clothes instead of armour, it keeps out the winter cold."),
+            about: Some("A tailored padded coat with a folded, fur-lined hood: worn over clothes instead of armour, it keeps out the winter cold."),
             apparel: Some((slot: Outer, armor: 0.04, mood: 1.0, warmth: 14.0, pieces: [
                 // A padded coat round the body, a hood lying on the shoulders, fur trim.
                 (bone: "spine_03",
                     model: Some((path: "models/items/Parka.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
-                    (shape: Cylinder, color: "parka", at: (0.0, -0.04, -0.02), size: (0.46, 0.5, 0.37)),
-                    (shape: Sphere, color: "parka", at: (0.0, 0.17, -0.1), size: (0.32, 0.16, 0.2)),
-                    (shape: Cylinder, color: "fur", at: (0.0, 0.2, -0.02), size: (0.27, 0.05, 0.24)),
+                    (shape: Cylinder, color: "parka", at: (0.0, -0.05, -0.02), size: (0.42, 0.54, 0.33)),
+                    (shape: Sphere, color: "parka", at: (0.0, 0.16, -0.112), size: (0.28, 0.09, 0.15)),
                 ]),
                 (bone: "upperarm_l",
                     model: Some((path: "models/items/Parka.gltf", scene: 2, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
-                    (shape: Cylinder, color: "parka", at: (0.0, 0.1, 0.0), size: (0.13, 0.26, 0.13)),
+                    (shape: Cylinder, color: "parka", at: (0.11, 0.0, 0.0), size: (0.16, 0.28, 0.18), turn: (0.0, 0.0, 90.0)),
                 ]),
                 (bone: "upperarm_r",
                     model: Some((path: "models/items/Parka.gltf", scene: 3, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
-                    (shape: Cylinder, color: "parka", at: (0.0, 0.1, 0.0), size: (0.13, 0.26, 0.13)),
+                    (shape: Cylinder, color: "parka", at: (-0.11, 0.0, 0.0), size: (0.16, 0.28, 0.18), turn: (0.0, 0.0, 90.0)),
+                ]),
+                (bone: "lowerarm_l",
+                    model: Some((path: "models/items/Parka.gltf", scene: 4, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
+                    (shape: Cylinder, color: "parka", at: (0.12, 0.0, 0.0), size: (0.12, 0.24, 0.14), turn: (0.0, 0.0, 90.0)),
+                ]),
+                (bone: "lowerarm_r",
+                    model: Some((path: "models/items/Parka.gltf", scene: 5, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), cloth: true, parts: [
+                    (shape: Cylinder, color: "parka", at: (-0.12, 0.0, 0.0), size: (0.12, 0.24, 0.14), turn: (0.0, 0.0, 90.0)),
                 ]),
             ])),
             look: [
@@ -808,16 +815,15 @@
             color: "wool",
             model: Some((
                 path: "models/items/WoolHat.gltf",
-                ground: (at: (-0.000000, -0.068500, 0.006300), turn: (0.000000, 0.000000, 0.000000), scale: 0.7),
+                ground: (at: (0.0, -0.0742, 0.00665), turn: (0.0, 0.0, 0.0), scale: 0.7),
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
             about: Some("A knitted hat: warm ears in winter, though it stops no blows."),
             apparel: Some((slot: Head, armor: 0.0, mood: 1.0, warmth: 4.0, pieces: [
                 (bone: "Head",
                     model: Some((path: "models/items/WoolHat.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))), hides_hair: true, cloth: true, parts: [
-                    (shape: Sphere, color: "wool", at: (0.0, 0.17, -0.01), size: (0.25, 0.2, 0.26)),
-                    (shape: Cylinder, color: "wool", at: (0.0, 0.13, -0.01), size: (0.26, 0.04, 0.27)),
-                    (shape: Sphere, color: "fur", at: (0.0, 0.28, -0.01), size: (0.07, 0.07, 0.07)),
+                    (shape: Sphere, color: "wool", at: (0.0, 0.183, -0.014), size: (0.248, 0.16, 0.274)),
+                    (shape: Cylinder, color: "wool", at: (0.0, 0.125, -0.01), size: (0.258, 0.034, 0.282)),
                 ]),
             ])),
             look: [
@@ -831,28 +837,28 @@
             name: "Flak Jacket",
             category: "Apparel",
             color: "ballistic_fabric",
-            about: Some("A close-fitting ballistic jacket with flexible padded panels and light shoulder protection."),
+            about: Some("A ballistic jacket with thick front and back inserts, reinforced shoulder pads and adjustable webbing."),
             model: Some((
                 path: "models/armor/FlakJacket.gltf",
-                ground: (at: (0.0, 0.1505, 0.0), turn: (0.0, 0.0, 0.0), scale: 0.7),
+                ground: (at: (0.0, 0.1715, -0.007817), turn: (0.0, 0.0, 0.0), scale: 0.7),
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
             apparel: Some((slot: Outer, armor: 0.35, mood: 0.0, warmth: 2.0, pieces: [
                 (bone: "spine_03", cloth: true,
                     model: Some((path: "models/armor/FlakJacket.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
                     parts: [
-                        (shape: Cylinder, color: "ballistic_fabric", at: (0.0, -0.045, -0.018), size: (0.414, 0.34, 0.29)),
-                        (shape: Cube, color: "iron", at: (0.0, -0.02, 0.135), size: (0.012, 0.23, 0.008)),
+                        (shape: Cylinder, color: "ballistic_fabric", at: (0.0, -0.055, -0.018), size: (0.436, 0.38, 0.324)),
+                        (shape: Cube, color: "ballistic_fabric", at: (0.0, -0.04, 0.165), size: (0.30, 0.30, 0.038)),
                     ]),
                 (bone: "upperarm_l", cloth: true,
                     model: Some((path: "models/armor/FlakJacket.gltf", scene: 2, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
                     parts: [
-                        (shape: Sphere, color: "ballistic_fabric", at: (0.025, 0.03, 0.0), size: (0.16, 0.1, 0.16)),
+                        (shape: Sphere, color: "ballistic_fabric", at: (0.025, 0.03, 0.0), size: (0.202, 0.13, 0.206)),
                     ]),
                 (bone: "upperarm_r", cloth: true,
                     model: Some((path: "models/armor/FlakJacket.gltf", scene: 3, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
                     parts: [
-                        (shape: Sphere, color: "ballistic_fabric", at: (-0.025, 0.03, 0.0), size: (0.16, 0.1, 0.16)),
+                        (shape: Sphere, color: "ballistic_fabric", at: (-0.025, 0.03, 0.0), size: (0.202, 0.13, 0.206)),
                     ]),
             ])),
             look: [

@@ -18,15 +18,29 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class Gear(Rifle):
-    def section(self, rings, material, sides=8):
+    def section(self, rings, material, sides=8, smooth=False, roundness=2):
         """Closed tapered body; rings are (height, half-width, half-depth, Z)."""
-        rings = [[(rx * math.cos(i * math.tau / sides), y, z - rz * math.sin(i * math.tau / sides))
+        def curve(v):
+            return math.copysign(abs(v) ** (2 / roundness), v)
+        rings = [[(rx * curve(math.cos(i * math.tau / sides)), y, z - rz * curve(math.sin(i * math.tau / sides)))
                   for i in range(sides)] for y, rx, rz, z in rings]
         self.face(list(reversed(rings[0])), material)
+        start = len(self.groups[material][0])
         for a, b in zip(rings, rings[1:]):
             for i in range(sides):
                 j = (i + 1) % sides
                 self.face([a[i], a[j], b[j], b[i]], material)
+        if smooth:
+            positions, normals, _ = self.groups[material]
+            sums = {}
+            for p, n in zip(positions[start:], normals[start:]):
+                total = sums.setdefault(tuple(p), [0.0, 0.0, 0.0])
+                for axis in range(3):
+                    total[axis] += n[axis]
+            for i in range(start, len(positions)):
+                n = sums[tuple(positions[i])]
+                length = math.sqrt(sum(v * v for v in n))
+                normals[i] = tuple(v / length for v in n)
         self.face(rings[-1], material)
 
     def panel(self, points, material, lift=.012, thickness=.008):
@@ -236,30 +250,32 @@ def powered_piece():
 
 def flak_chest():
     g = Gear(FLAK_PALETTE)
-    # A fitted, padded vest with a tapered waist rather than a metal cuirass.
-    g.section([(-.215, .17, .125, -.018), (-.035, .207, .145, -.018),
-               (.105, .19, .13, -.018)], 0)
+    # Substantial ballistic padding, clearly thicker than everyday clothing.
+    g.section([(-.245, .185, .14, -.018), (-.04, .218, .162, -.018),
+               (.13, .196, .145, -.018)], 0, sides=12, smooth=True)
+    g.panel([(-.115, -.214, .162), (.115, -.214, .162), (.17, -.12, .158),
+             (.17, .052, .155), (.104, .125, .154), (-.104, .125, .154),
+             (-.17, .052, .155), (-.17, -.12, .158)], 1, lift=.028, thickness=.02)
+    rear = Gear(FLAK_PALETTE)
+    rear.panel([(-.13, -.20, .17), (.13, -.20, .17), (.167, -.10, .17),
+                (.14, .12, .16), (-.14, .12, .16), (-.167, -.10, .17)], 1, lift=.020, thickness=.018)
+    g.add(rear, turn=(0, 180, 0))
     for side in (-1, 1):
-        g.panel([(side * .018, -.15, .152), (side * .155, -.15, .122),
-                 (side * .182, .028, .135), (side * .105, .11, .145),
-                 (side * .018, .092, .163)], 1, lift=.009)
-        g.box((side * .112, .12, -.012), (.048, .043, .224), 2, bevel=.009)
-        g.box((side * .111, .091, .105), (.041, .034, .018), 3, bevel=.004)
-        g.box((side * .174, -.092, -.018), (.018, .05, .19), 2, bevel=.003)
-        # Low-profile pockets and short stitched webbing strips.
-        g.box((side * .102, -.116, .151), (.092, .074, .021), 0, bevel=.010)
-        for y in (-.014, .021):
-            g.box((side * .10, y, .166), (.10, .008, .006), 2, bevel=.001)
-    g.box((0, -.02, .171), (.012, .23, .007), 2, bevel=.001)
-    g.box((-.085, .058, .171), (.045, .014, .004), 4, bevel=.001)
+        g.box((side * .124, .135, -.012), (.059, .049, .25), 2, bevel=.011)
+        g.box((side * .122, .103, .131), (.047, .037, .022), 3, bevel=.005)
+        g.box((side * .197, -.092, -.018), (.022, .067, .21), 2, bevel=.004)
+        g.box((side * .092, -.13, .190), (.104, .09, .038), 0, bevel=.014)
+        for y in (-.014, .024):
+            g.box((side * .082, y, .189), (.13, .010, .007), 2, bevel=.002)
+    g.box((-.081, .066, .19), (.045, .015, .005), 4, bevel=.001)
     return g
 
 
 def flak_shoulder(side):
     g = Gear(FLAK_PALETTE)
     pad = Gear(FLAK_PALETTE)
-    pad.section([(-.025, .074, .074, 0), (.018, .080, .080, 0),
-                 (.055, .046, .057, 0)], 0)
+    pad.section([(-.035, .087, .092, 0), (.012, .101, .103, 0),
+                 (.073, .067, .073, 0)], 1, sides=12, smooth=True)
     g.add(pad, (side * .025, .014, 0))
     return g
 
