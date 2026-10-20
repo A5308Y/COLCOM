@@ -1,5 +1,8 @@
 # Armor: faceted military sci-fi
 
+For worn armor changes, start with the [apparel authoring guide](../../../tools/APPAREL_GUIDE.md),
+especially the continuous-shell recipe and the problems it replaces.
+
 Original project artwork, generated alongside the [weapons](../weapons/README.md):
 
 ```sh
@@ -13,8 +16,9 @@ ballistic fabric, thick olive front/back inserts, dark webbing and small fastene
 and reinforced shoulder pads provide more protective bulk than everyday clothes, without the old
 rectangular metal breastplate.
 
-Powered armor deliberately breaks from that palette: blue-gray titanium ceramic, graphite framing,
-dark flexible joints, machined edges and emissive ion cyan. A split visor, diamond chest reactor,
+Powered armor deliberately breaks from that palette: blue-gray titanium ceramic, graphite metal,
+machined edges and emissive ion cyan. The live suit's joints are fully covered by metal.
+A split visor, diamond chest reactor,
 layered abdominal plates, angular shoulder shells and powered forearms distinguish it at gameplay
 zoom. Separate hips, thighs, knee/shin guards and boots follow the character's leg joints. Shape and
 layering take inspiration from the supplied futuristic exosuit references; the geometry is original.

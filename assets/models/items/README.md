@@ -1,5 +1,8 @@
 # Inventory items: faceted frontier sci-fi
 
+For clothing changes, start with the [apparel authoring guide](../../../tools/APPAREL_GUIDE.md):
+it gives the fit workflow, reusable helpers, failure diagnoses and pose review requirements.
+
 Original artwork for all 31 inventory items outside the weapons and armor sets:
 
 ```sh
