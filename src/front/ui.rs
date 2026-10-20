@@ -80,7 +80,7 @@ fn draw_ui(
     job_menu(&ctx, &mut sim, &mut st, &mut sounds);
     hud(&ctx, &mut sim, &mut st, &mut rig, left);
     colonist_bar(&ctx, &sim, &mut st, &mut rig, left);
-    alerts(&ctx, &sim);
+    notifications(&ctx, &sim);
     match st.selected {
         Some(Selection::Pawn(id)) => pawn_inspector(&ctx, &mut sim, &mut st, id, left),
         Some(Selection::Tile(t)) => {
@@ -406,11 +406,6 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                     st.confirm_new = false;
                 }
             });
-            ui.add_space(2.0);
-            for (k, msg) in sim.world.log.iter().rev().take(3).enumerate() {
-                let fade = 1.0 - k as f32 * 0.25;
-                ui.label(RichText::new(msg).small().color(theme::WARN.gamma_multiply(fade)));
-            }
         });
     });
 }
@@ -708,16 +703,57 @@ fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, rig: &mut Came
     });
 }
 
-fn alerts(ctx: &egui::Context, sim: &Sim) {
+fn notifications(ctx: &egui::Context, sim: &Sim) {
     let alerts = sim.world.alerts();
-    if alerts.is_empty() {
+    if alerts.is_empty() && sim.world.log.is_empty() {
         return;
     }
-    egui::Area::new(egui::Id::new("alerts")).anchor(Align2::RIGHT_TOP, [-8.0, 8.0]).show(ctx, |ui| {
-        theme::plate(ui, |ui| {
-            for (text, urgent) in alerts {
-                let color = if urgent { theme::RED } else { theme::AMBER };
-                ui.label(RichText::new(text).color(color));
+    let width = (ctx.viewport_rect().width() * 0.3).clamp(220.0, 350.0);
+    let max_height = ctx.viewport_rect().height() * 0.55;
+    egui::Area::new(egui::Id::new("notifications")).anchor(Align2::RIGHT_TOP, [-12.0, 12.0]).show(ctx, |ui| {
+        theme::Plate::panel().stroke(egui::Stroke::new(2.0, theme::AMBER)).show(ui, |ui| {
+            ui.set_width(width);
+            if !alerts.is_empty() {
+                let urgent = alerts.iter().any(|(_, urgent)| *urgent);
+                let accent = if urgent { theme::RED } else { theme::AMBER };
+                ui.label(theme::caps(format!("Colony alerts ({})", alerts.len()), 21.0).color(accent));
+                ui.add_space(4.0);
+                egui::ScrollArea::vertical().id_salt("colony_alerts").max_height(max_height * 0.55).show(ui, |ui| {
+                    // Put urgent problems first so routine warnings can't push them out of view.
+                    for (text, urgent) in alerts.iter().filter(|(_, urgent)| *urgent)
+                        .chain(alerts.iter().filter(|(_, urgent)| !*urgent)) {
+                        let accent = if *urgent { theme::RED } else { theme::AMBER };
+                        let fill = if *urgent { Color32::from_rgb(65, 30, 25) } else { theme::RAISED };
+                        theme::Plate::inset().fill(fill).stroke(egui::Stroke::new(2.0, accent)).margin(9).show(ui, |ui| {
+                            ui.set_width((width - 20.0).max(0.0));
+                            ui.label(theme::caps(if *urgent { "! Urgent" } else { "! Attention" }, 14.0).color(accent));
+                            ui.label(RichText::new(text).size(16.0).strong().color(theme::CREAM_BRIGHT));
+                        });
+                        ui.add_space(5.0);
+                    }
+                });
+                ui.add_space(8.0);
+            }
+            if !sim.world.log.is_empty() {
+                ui.label(theme::caps("Recent events", 19.0).color(theme::AMBER));
+                ui.add_space(4.0);
+                let events_height = if alerts.is_empty() { max_height } else { max_height * 0.45 };
+                egui::ScrollArea::vertical().id_salt("recent_events").max_height(events_height).show(ui, |ui| {
+                    for (k, text) in sim.world.log.iter().rev().take(3).enumerate() {
+                        let latest = k == 0;
+                        let accent = if latest { theme::AMBER } else { theme::STEEL };
+                        theme::Plate::inset().fill(if latest { theme::RAISED } else { theme::PANEL_DEEP })
+                            .stroke(egui::Stroke::new(if latest { 2.0 } else { 1.0 }, accent)).margin(9).show(ui, |ui| {
+                                ui.set_width((width - 20.0).max(0.0));
+                                if latest {
+                                    ui.label(theme::caps("Latest", 13.0).color(theme::AMBER));
+                                }
+                                ui.label(RichText::new(text).size(if latest { 17.0 } else { 15.0 })
+                                    .color(theme::CREAM_BRIGHT));
+                            });
+                        ui.add_space(5.0);
+                    }
+                });
             }
         });
     });

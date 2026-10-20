@@ -27,6 +27,9 @@ reviewing layout and colours, not lighting.
 The interface follows a "frontier field manual" look (`src/front/theme.rs`): warm charcoal panels in
 olive frames with chamfered corners, cream text, amber/teal/red/green accents, and condensed uppercase
 headings in Barlow (SIL OFL, `assets/fonts/`). The handbook (`H`) is split into topics with a search.
+Notifications occupy a framed panel at the top right: urgent colony alerts come first in red,
+followed by amber warnings and the three most recent events. The latest event has a larger amber
+card, and messages stay visible until newer events replace them. Long lists can be scrolled.
 
 Scenarios are fixed worlds for trying things out (`src/scenarios.rs`). `--scenario <name>` or
 `MY_WORLD_SCENARIO=<name>` picks one; an unknown name lists the ones there are. `battle` starts in

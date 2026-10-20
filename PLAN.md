@@ -982,6 +982,11 @@ slopes, and old save versions); the newer note in the same topic says so.
   (`Rig::show_hair`). Sizes were checked against the body and head meshes (no skull vertex pokes through the
   helmet; the breastplate covers the torso except where the arms join). The figure shows a metal shell and cap.
   (An earlier outfit tint, `worn`, was dropped.)
+- Notifications (2026-10-20): a prominent framed panel at the top right replaces the small faded
+  event lines in the bottom toolbar. Urgent alerts sort first, with red cards and explicit urgency
+  labels; warnings have amber borders. The latest three events stay visible in separate cards,
+  with the newest in larger type and an amber frame. Alerts and events scroll independently to
+  keep long lists within the viewport. Gameplay, event storage and sounds are unchanged.
 - Hide roofs (Shift+R or the HUD button; like Going Medieval's roof toggle): every column is cut off
   just under its topmost roof (built or blueprint, finished room or not), or above the topmost roofed
   room whose ceiling is a built floor (`input::roof_cut`)
