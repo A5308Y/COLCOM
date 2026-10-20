@@ -1,19 +1,19 @@
 //! Graves for the colony's dead: dug into soil by builders (a buildable
 //! with `special: Grave`), then haulers carry a dead colonist to an empty
 //! one and bury them (`Job::Bury`). A buried colonist stays in the pawn list
-//! (`Pawn::buried`, at the grave's cell) so the grave knows whose it is.
+//! (`Life::Dead { buried: true }`, at the grave's cell) so the grave knows whose it is.
 //! While anyone lies unburied, the living feel it.
 
 use crate::defs::Special;
 use crate::map::Pos;
 use crate::pathing::DistField;
-use crate::pawn::{Job, Pawn, PawnId};
+use crate::pawn::{Job, Life, Pawn, PawnId};
 use crate::world::World;
 
 impl World {
     /// Who is buried in the grave at `grave`, if anyone.
     pub fn grave_occupant(&self, grave: Pos) -> Option<PawnId> {
-        self.pawns.iter().find(|p| p.buried && p.pos == grave).map(|p| p.id)
+        self.pawns.iter().find(|p| p.is_buried() && p.pos == grave).map(|p| p.id)
     }
 
     fn is_grave(&self, p: Pos) -> bool {
@@ -31,7 +31,7 @@ impl World {
 
     /// A dead colonist lying unburied (not already being carried).
     pub(crate) fn unburied(&self, p: &Pawn) -> bool {
-        p.is_colonist() && p.is_dead() && !p.buried && !p.has_left()
+        p.is_colonist() && p.is_dead() && !p.is_buried() && !p.has_left()
     }
 
     /// The nearest dead colonist to bury, with the nearest free empty grave.
@@ -73,7 +73,8 @@ impl World {
         self.carry_along(p, ci);
         if there {
             let o = &mut self.pawns[ci];
-            o.buried = true;
+            // Only the dead are carried here (see `bury_candidate`).
+            o.life = Life::Dead { buried: true };
             o.pos = grave;
             o.x = grave.0 as f32;
             o.y = grave.1 as f32;
@@ -131,7 +132,7 @@ mod tests {
         w.map.drop_item((3, 3, Z), Stack { kind: ItemId::named("wood"), count: 2 });
         run(&mut w, 120.0);
         let p = w.pawn(dead).unwrap();
-        assert!(p.buried, "buried");
+        assert!(p.is_buried(), "buried");
         assert_eq!(p.pos, grave);
         assert_eq!(w.grave_occupant(grave), Some(dead));
         assert!(w.empty_graves().is_empty());

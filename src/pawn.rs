@@ -34,7 +34,8 @@ pub enum Life {
     Up,
     /// Collapsed or knocked down; `time` counts the seconds spent down.
     Downed { time: f32 },
-    Dead,
+    /// `buried`: in the grave at the pawn's `pos` (see `graves.rs`).
+    Dead { buried: bool },
     /// A raider who left the map; removed at the end of the tick.
     Left,
 }
@@ -493,9 +494,6 @@ pub struct Pawn {
     /// A leader without a decent bedroom of their own (updated once a second).
     #[serde(skip)]
     pub poor_quarters: bool,
-    /// Dead and buried in the grave at `pos` (see `graves.rs`).
-    #[serde(default)]
-    pub buried: bool,
     /// A dead colonist lies unburied somewhere (updated once a second).
     #[serde(skip)]
     pub unburied_dead: bool,
@@ -567,7 +565,6 @@ impl Pawn {
             stash: Vec::new(),
             running: false,
             poor_quarters: false,
-            buried: false,
             unburied_dead: false,
             felt: mild(),
             joy: content_joy(),
@@ -613,7 +610,12 @@ impl Pawn {
     }
 
     pub fn is_dead(&self) -> bool {
-        self.life == Life::Dead
+        matches!(self.life, Life::Dead { .. })
+    }
+
+    /// Dead and buried in the grave at `pos`.
+    pub fn is_buried(&self) -> bool {
+        self.life == Life::Dead { buried: true }
     }
 
     pub fn is_downed(&self) -> bool {

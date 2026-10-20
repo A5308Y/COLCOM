@@ -655,7 +655,7 @@ fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, rig: &mut Came
         egui::ScrollArea::vertical().max_height(room).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
             // The buried are at rest in their graves (click one to see whose it is).
-            for p in sim.world.pawns.iter().filter(|p| p.is_colonist() && !p.buried) {
+            for p in sim.world.pawns.iter().filter(|p| p.is_colonist() && !p.is_buried()) {
                 let selected = st.is_selected(p.id);
                 let trouble = p.is_downed() || p.hunger <= 0.0 || p.break_timer > 0.0 || p.health.bleed_rate() > 0.0;
                 let stroke = if selected {

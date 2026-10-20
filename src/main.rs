@@ -416,8 +416,7 @@ mod tests {
             w.map.feature[i] = my_world::map::Feature::built("grave");
             let dead = w.spawn_colonist(grave);
             let k = w.pawn_index(dead).unwrap();
-            w.pawns[k].life = my_world::pawn::Life::Dead;
-            w.pawns[k].buried = true;
+            w.pawns[k].life = my_world::pawn::Life::Dead { buried: true };
             // The roof test's room, made a workshop.
             for (dx, id) in [(-1, "sawbench"), (1, "table")] {
                 let i = w.map.idx(((room.0 as i32 + dx) as usize, room.1, room_z));

@@ -327,7 +327,7 @@ fn sync_props(
             owners.insert(b, (p.id, p.color));
         }
     }
-    let filled: HashSet<Pos> = w.pawns.iter().filter(|p| p.buried).map(|p| p.pos).collect();
+    let filled: HashSet<Pos> = w.pawns.iter().filter(|p| p.is_buried()).map(|p| p.pos).collect();
 
     for i in 0..m.len() {
         let pos = m.pos(i);

@@ -31,8 +31,9 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
 
 ## 2. Type modelling
 
-- [ ] **`Pawn.buried` belongs in `Life::Dead { buried }`.** Today a living pawn can be
+- [x] **`Pawn.buried` belongs in `Life::Dead { buried }`.** Today a living pawn can be
   buried. Changes the save format.
+  Done: `Life::Dead { buried }`, `Pawn::is_buried()`; save format 8.
 - [ ] **Two opposite priority scales share `u8`.** Work priority is 0 = off, 1 = highest
   … 4 = lowest (`Pawn.priorities`). Stockpile priority is 1 = low … 4 = critical. Both are
   used as raw array indices. Only the UI setter clamps the stockpile priority, so an

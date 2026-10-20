@@ -81,7 +81,7 @@ impl World {
                 }
             }
         }
-        p.life = Life::Dead;
+        p.life = Life::Dead { buried: false };
         self.sound("death", Some(p.pos));
         self.push_log(format!("{} {}.", p.name, cause));
         if p.is_colonist() {

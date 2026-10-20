@@ -65,7 +65,7 @@ pub fn draw(
     let in_squad = |id: PawnId| {
         w.battle.as_ref().is_some_and(|b| b.units.iter().any(|u| u.roster.len() > 1 && u.roster.contains(&id)))
     };
-    for p in w.pawns.iter().filter(|p| !p.has_left() && !p.buried && ui.shows_at(m, p.x, p.y, p.z) && !in_squad(p.id)) {
+    for p in w.pawns.iter().filter(|p| !p.has_left() && !p.is_buried() && ui.shows_at(m, p.x, p.y, p.z) && !in_squad(p.id)) {
         let base = tile_point(p.x, p.y, p.z);
         let lying = p.is_dead() || p.lying();
         let Some(top) = to_screen(base + Vec3::Y * if lying { 0.7 } else { 1.15 }) else { continue };

@@ -388,7 +388,7 @@ impl World {
         if gaps > 0 {
             out.push((format!("Roof can't reach {} cell(s): build a wall within 3", gaps), false));
         }
-        let unburied = self.pawns.iter().filter(|p| p.is_colonist() && p.is_dead() && !p.buried).count();
+        let unburied = self.pawns.iter().filter(|p| p.is_colonist() && p.is_dead() && !p.is_buried()).count();
         if unburied > 0 {
             let graves = self.empty_graves().len();
             let text = if graves >= unburied {
@@ -707,7 +707,7 @@ impl World {
                 p.life = Life::Up;
                 self.push_log(format!("{} got back up.", p.name));
             }
-            (Life::Up, None) | (Life::Downed { .. }, Some(_)) | (Life::Dead | Life::Left, _) => {}
+            (Life::Up, None) | (Life::Downed { .. }, Some(_)) | (Life::Dead { .. } | Life::Left, _) => {}
         }
     }
 
@@ -1683,7 +1683,7 @@ mod tests {
     #[test]
     fn collapsing_never_revives_the_dead_or_recalls_those_who_left() {
         use crate::health::{DamageKind, Part};
-        for gone in [Life::Dead, Life::Left] {
+        for gone in [Life::Dead { buried: false }, Life::Left] {
             let mut w = test_world(20, 20);
             let id = colonist(&mut w, (5, 5, Z));
             wound(&mut w, id, Part::LeftLeg, 100.0, DamageKind::Bruise);
