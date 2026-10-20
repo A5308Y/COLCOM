@@ -1071,6 +1071,9 @@ fn tile_inspector(
             }
             // Here or overhead: a room wants a roof, but nothing would hold it up.
             let above = m.above(t).map(|a| m.idx(a));
+            if m.no_roof.contains(&(i as u32)) {
+                ui.label("No roof area (automatic roofing disabled above this tile)");
+            }
             if m.roof_gaps.contains(&i) || above.is_some_and(|a| m.roof_gaps.contains(&a)) {
                 let why = "No roof can reach here: it needs a wall within 3 cells, so the room isn't closed.";
                 ui.label(RichText::new(why).color(theme::RED));

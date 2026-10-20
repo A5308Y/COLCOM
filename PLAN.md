@@ -266,8 +266,15 @@ slopes, and old save versions); the newer note in the same topic says so.
   are attics and get none), and `World::mark_roofs` puts `roof` blueprints (`special: Roof`, 1 wood)
   there after each room recompute and takes away ones no longer wanted. Builders put them up from below
   with the usual blueprint jobs. A floor ordered over a roof replaces it. A deconstructed roof is marked
-  again while the room stays closed (a "no roof" area could come later). Roofs aren't in the build menu,
+  again while the room stays closed unless a No roof area prevents it. Roofs aren't in the build menu,
   can't be ordered or cancelled, and their blueprints show no delivery count.
+  - No roof areas (2026-10-20): Zones → No roof / Allow roofs controls the space immediately above
+    each painted cell, independently of grow, stockpile and safe zones. Painting No roof immediately
+    cancels overhead roof blueprints and refunds delivered materials; existing roofs require explicit
+    deconstruction and won't be replanned afterwards. Floors remain allowed. Sparse `Map::no_roof`
+    cell indices are saved with an empty default so existing version-16 saves still load. These
+    intentional openings produce no roof-support warning. Floor outlines and the inspector identify
+    the area; a visible roof targets the room below, or Shift+R exposes the interior for painting.
   - Where a room wants a roof that nothing would hold up, `recompute_rooms` lists the cell in
     `Map::roof_gaps`: drawn as red crosses at the wall tops, explained in the cell inspector (on the
     room's floor too), and counted in an alert, so the player knows where a wall is missing.

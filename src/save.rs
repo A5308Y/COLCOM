@@ -65,6 +65,9 @@ fn check(w: &World) -> Result<(), String> {
     cells("floor", m.floor.len())?;
     cells("blood", m.blood.len())?;
     cells("roof", m.roof.len())?;
+    if m.no_roof.iter().any(|&i| i as usize >= n) {
+        return Err("a no-roof area refers to a cell outside the map".into());
+    }
     cells("res_target", w.res_target.len())?;
     cells("res_item", w.res_item.len())?;
     cells("res_cell", w.res_cell.len())?;
@@ -140,6 +143,18 @@ mod tests {
         assert_eq!(loaded.map.block, w.map.block);
         assert_eq!(loaded.map.items, w.map.items);
         assert_eq!(loaded.pawns.len(), w.pawns.len());
+    }
+
+    #[test]
+    fn no_roof_defaults_for_existing_saves_and_rejects_invalid_cells() {
+        let w = World::with_map(crate::map::Map::flat(8, 8), crate::rng::Rng::new(42));
+        let mut value: serde_json::Value = serde_json::from_str(&to_json(&w).unwrap()).unwrap();
+        assert!(value["world"]["map"].get("no_roof").is_none(), "empty areas preserve the old save layout");
+        let loaded = World::load_json(&value.to_string()).unwrap();
+        assert!(loaded.map.no_roof.is_empty());
+        value["world"]["map"]["no_roof"] = serde_json::json!([w.map.len()]);
+        let err = World::load_json(&value.to_string()).err().expect("invalid cell refused");
+        assert!(err.contains("no-roof") && err.contains("outside the map"), "{err}");
     }
 
     #[test]

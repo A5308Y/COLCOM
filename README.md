@@ -261,6 +261,12 @@ for), and `<` goes back.
   the high end onto the level above, beside them (keep the space over them open for headroom); they
   can't be walked across. Ladders are climbed straight up into the cell above, and stack. Use the layer view to place floors in mid-air (a faint grid shows the
   cells). Pawns and items with nothing underneath fall, and falls of two levels or more hurt.
+- **No roof areas:** in Zones, paint **No roof** on the room's floor to prevent automatic roofing
+  immediately above it. Unfinished roofs are cancelled and delivered materials returned. Built roofs
+  stay until you use **Deconstruct**. Use **Allow roofs** to restore automatic roofing. These areas
+  coexist with grow, stockpile and safe zones, apply only to the painted level, and survive saving.
+  Hide roofs with **Shift+R** to paint inside; clicking a visible roof also targets the room below.
+  Existing saves retain automatic roofing until you paint an area. Floors remain buildable there.
 - **Wall decor:** walls are drawn thin (about 35 cm) through the middle of their cell, so rooms show
   more floor. Furniture with its back to a wall (beds, workbenches, shelves) is drawn pushed back
   against it, and whoever sleeps or works there with it. Windows and doors are drawn as part of their wall: papered

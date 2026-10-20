@@ -3,7 +3,7 @@
 use crate::battle::{Battle, Parley};
 use crate::health::TickCtx;
 use crate::defs::{defs, BuildId, PlantId, Special};
-use crate::map::{Block, Desig, Dir, Feature, Map, Pos, Stack, Zone};
+use crate::map::{Block, Desig, Dir, Feature, Map, Pos, RoofPolicy, Stack, Zone};
 use crate::moving::Move;
 use crate::pawn::{Faction, Job, Life, Memory, Pawn, PawnId, WorkPriority, WorkType};
 use crate::pathing::{bfs, DistField};
@@ -55,6 +55,8 @@ pub enum Order {
     Desig(Desig),
     /// Grow zones (with their crop) and clearing zones.
     Zone(Zone),
+    /// Control automatic roofs above these cells without changing other zones.
+    Roof(RoofPolicy),
     /// Stockpile cells: join a stockpile beside them or start a new one.
     Stockpile,
     /// Quarry columns: join a quarry beside them or start a new one (see `quarry.rs`).
@@ -1074,6 +1076,13 @@ impl World {
         let i = m.idx(p);
         let f = m.feature[i];
         match order {
+            Order::Roof(policy) => {
+                let forbidden = m.no_roof.contains(&(i as u32));
+                match policy {
+                    RoofPolicy::Forbidden => !forbidden && m.block[i] == Block::Air && m.above(p).is_some(),
+                    RoofPolicy::Automatic => forbidden,
+                }
+            }
             Order::Desig(Desig::Mine) => m.mineable(p),
             Order::Desig(Desig::Fill) => m.fillable(p, true) && m.desig[i] != Some(Desig::Fill),
             // A filled grave stays.
@@ -1148,6 +1157,18 @@ impl World {
         let i = self.map.idx(p);
         self.map.mark_changed();
         match order {
+            Order::Roof(policy) => {
+                match policy {
+                    RoofPolicy::Forbidden => {
+                        self.map.no_roof.insert(i as u32);
+                        if let Some(above) = self.map.above(p).filter(|&a| self.map.roof_blueprint(self.map.idx(a))) {
+                            self.cancel_blueprint(above);
+                        }
+                    }
+                    RoofPolicy::Automatic => { self.map.no_roof.remove(&(i as u32)); }
+                }
+                self.map.rooms_dirty = true;
+            }
             Order::Desig(d) => self.map.set_desig(i, Some(d)),
             Order::Zone(Zone::None) if self.map.quarry_at(p.0, p.1).is_some() => {
                 self.remove_quarry_column(p.0, p.1);
@@ -1262,6 +1283,9 @@ impl World {
         let mut wanted = vec![false; m.len()];
         let mut changed = false;
         for &i in &m.roof_wanted {
+            if m.below(m.pos(i)).is_some_and(|p| m.no_roof.contains(&(m.idx(p) as u32))) {
+                continue;
+            }
             wanted[i] = true;
             if m.feature[i] == Feature::None {
                 m.feature[i] = Feature::blueprint(roof, 0, crate::map::Dir::PlusX);
@@ -1889,6 +1913,79 @@ mod tests {
         w.map.recompute_rooms();
         w.mark_roofs();
         assert_eq!(roof_blueprints(&w, Z + 1), inner, "no roof over the pit");
+    }
+
+    #[test]
+    fn no_roof_cancels_plans_refunds_materials_and_preserves_other_zones() {
+        let mut w = test_world(16, 16);
+        house(&mut w, 5, 5, 9, 9);
+        let p = (7, 7, Z);
+        let i = w.map.idx(p);
+        let above = w.map.idx((7, 7, Z + 1));
+        let roof = defs().roof().unwrap();
+        w.map.feature[above] = Feature::blueprint(roof, 1, Dir::PlusX);
+        w.apply_order(p, Order::Zone(Zone::Safe));
+        assert!(w.apply_order(p, Order::Roof(RoofPolicy::Forbidden)));
+        assert_eq!(w.map.feature[above], Feature::None, "cancel immediately, even while paused");
+        assert_eq!(w.map.count_items(item("wood")), 1);
+        assert_eq!(w.map.zone[i], Zone::Safe);
+        assert!(!w.apply_order(p, Order::Roof(RoofPolicy::Forbidden)), "painting twice does not refund twice");
+        w.map.recompute_rooms();
+        w.mark_roofs();
+        assert!(!w.map.roof_wanted.contains(&above));
+        assert!(!w.map.roof_gaps.contains(&above), "deliberate openings aren't support failures");
+        assert_eq!(roof_blueprints(&w, Z + 1).len(), 8, "neighbouring tiles still get roofs");
+        let mut loaded = World::load_json(&w.save_json().unwrap()).unwrap();
+        assert_eq!(loaded.map.no_roof, w.map.no_roof);
+        assert!(!loaded.map.roof_blueprint(above), "loading must not restore a cancelled roof");
+        assert_eq!(loaded.map.count_items(item("wood")), 1);
+        assert!(loaded.apply_order(p, Order::Roof(RoofPolicy::Automatic)));
+        loaded.map.recompute_rooms();
+        loaded.mark_roofs();
+        assert!(loaded.map.roof_blueprint(above));
+        assert_eq!(loaded.map.zone[i], Zone::Safe);
+    }
+
+    #[test]
+    fn no_roof_can_be_planned_before_walls_and_does_not_prevent_floors() {
+        let mut w = test_world(16, 16);
+        let p = (7, 7, Z);
+        assert!(w.apply_order(p, Order::Zone(Zone::Grow(defs().sown().unwrap()))));
+        assert!(w.apply_order(p, Order::Roof(RoofPolicy::Forbidden)));
+        house(&mut w, 5, 5, 9, 9);
+        let above = (7, 7, Z + 1);
+        assert!(!w.map.roof_blueprint(w.map.idx(above)));
+        assert!(!w.map.roofed(p));
+        assert!(matches!(w.map.zone[w.map.idx(p)], Zone::Grow(_)));
+        assert!(w.apply_order(above, Order::Build(BuildId::named("floor"))));
+        assert!(matches!(w.map.feature[w.map.idx(above)], Feature::Blueprint { kind, .. } if kind.def().special == Special::Floor));
+    }
+
+    #[test]
+    fn no_roof_preserves_built_roofs_but_prevents_rebuilding_after_deconstruction() {
+        let mut w = test_world(16, 16);
+        colonist(&mut w, (7, 7, Z));
+        house(&mut w, 5, 5, 9, 9);
+        let above = (7, 7, Z + 1);
+        let i = w.map.idx(above);
+        w.map.set_feature(i, Feature::None);
+        w.map.set_roof(i, true);
+        assert!(w.apply_order((7, 7, Z), Order::Roof(RoofPolicy::Forbidden)));
+        assert!(w.map.roof[i], "built roofs require explicit deconstruction");
+        assert!(w.apply_order(above, Order::Desig(Desig::Deconstruct)));
+        run(&mut w, 10.0);
+        assert!(!w.map.roof[i]);
+        assert!(!w.map.roof_blueprint(i));
+    }
+
+    #[test]
+    fn no_roof_is_per_level_and_ignores_top_of_map_and_solid_ground() {
+        let mut w = test_world(16, 16);
+        assert!(!w.apply_order((7, 7, Z - 1), Order::Roof(RoofPolicy::Forbidden)));
+        assert!(!w.apply_order((7, 7, w.map.d - 1), Order::Roof(RoofPolicy::Forbidden)));
+        assert!(w.apply_order((7, 7, Z + 1), Order::Roof(RoofPolicy::Forbidden)));
+        house(&mut w, 5, 5, 9, 9);
+        assert!(w.map.roof_blueprint(w.map.idx((7, 7, Z + 1))), "an upstairs designation does not control the room below");
     }
 
     #[test]

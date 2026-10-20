@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::{egui_wants_any_keyboard_input, EguiWantsInput};
 use my_world::defs::{defs, BuildId, Special};
-use my_world::map::{Block, Desig, Dir, Map, Pos, Zone};
+use my_world::map::{Block, Desig, Dir, Map, Pos, RoofPolicy, Zone};
 use my_world::pawn::{Faction, PawnId};
 use my_world::world::{Order, World as SimWorld};
 use std::f32::consts::FRAC_PI_2;
@@ -105,6 +105,10 @@ pub static TOOLS: LazyLock<Vec<ToolEntry>> = LazyLock::new(|| {
     let hint = "Miners dig the area out level by level from the top, with a ladder down at its edge (3 wood a level). Click it to set how deep.";
     tools.push(fixed(Tool::Paint(Order::Quarry), "Quarry zone", None, "Zones", hint));
     tools.push(fixed(Tool::Paint(Order::Zone(Zone::None)), "Clear zone", None, "Zones", "Remove stockpile, grow, safe and quarry zones."));
+    tools.push(fixed(Tool::Paint(Order::Roof(RoofPolicy::Forbidden)), "No roof", None, "Zones",
+        "Prevent automatic roofs above this level. Unfinished roofs are cancelled and materials returned; built roofs need Deconstruct. Hide roofs (Shift+R) to paint inside."));
+    tools.push(fixed(Tool::Paint(Order::Roof(RoofPolicy::Automatic)), "Allow roofs", None, "Zones",
+        "Remove No roof areas and allow automatic roofing again. Other zones stay in place."));
     // Roofs aren't placed by the player: rooms get them by themselves.
     for kind in BuildId::all().filter(|k| k.def().special != Special::Roof) {
         let def = kind.def();
@@ -530,6 +534,15 @@ pub fn move_target(w: &SimWorld, from: Pos, h: Hover) -> Option<Pos> {
 }
 
 pub fn order_target(w: &SimWorld, h: Hover, order: Order) -> Pos {
+    // Clicking a visible roof controls the room below it, not the attic above.
+    if matches!(order, Order::Roof(_)) {
+        let i = w.map.idx(h.stand);
+        if w.map.roof[i] || w.map.roof_blueprint(i) {
+            if let Some(below) = w.map.below(h.stand) {
+                return below;
+            }
+        }
+    }
     let first = match order {
         Order::Desig(Desig::Mine) => [h.solid, h.stand],
         // Doors and windows go into the clicked wall (replacing it) rather than on top.
@@ -1117,6 +1130,9 @@ pub fn box_cells(w: &SimWorld, a: Pos, b: Pos, order: Order, hollow: bool) -> Ve
             let surface = (order == Order::Quarry).then(|| w.map.ground_level(x, y)).flatten();
             let levels: Vec<i32> = match surface {
                 Some(z) => vec![z as i32],
+                // Roof areas control one storey. Repainting an existing area must
+                // not spill into the attic or remove another storey's setting.
+                None if matches!(order, Order::Roof(_)) => vec![z0],
                 None => vec![z0, z0 + 1, z0 - 1],
             };
             let at = levels.into_iter().filter_map(|z| w.map.at(x as i32, y as i32, z)).find(|&p| w.order_applies(p, order));
@@ -1221,6 +1237,13 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
         else { floor_outline(&mut gizmos, p, 0.12, color); }
     }
 
+    for &i in &m.no_roof {
+        let p = m.pos(i as usize);
+        if p.2 <= ui.top_at(m, p.0, p.1) {
+            floor_outline(&mut gizmos, p, 0.09, Color::srgb(0.85, 0.65, 1.0));
+        }
+    }
+
     // Furniture on the move: where it stands (until packed up), an arrow to where it goes.
     let moving = Color::srgb(0.4, 0.85, 1.0);
     for mv in &w.moves {
@@ -1302,6 +1325,9 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
     }
     if let Some(h) = ui.hover {
         match ui.tool {
+            Tool::Paint(order @ Order::Roof(_)) => {
+                floor_outline(&mut gizmos, order_target(w, h, order), 0.02, Color::srgba(1.0, 1.0, 1.0, 0.6));
+            }
             Tool::Paint(order @ Order::Desig(Desig::Mine | Desig::Deconstruct)) if order_target(w, h, order) == h.solid => {
                 cell_outline(&mut gizmos, h.solid, Color::srgba(1.0, 1.0, 1.0, 0.6))
             }
@@ -1439,6 +1465,35 @@ mod tests {
         assert_eq!(order_target(&w, h, build("window")), wall, "replacing the wall");
         assert_eq!(order_target(&w, h, build("door")), wall);
         assert_eq!(order_target(&w, h, build("wall")), (3, 3, z + 1), "stacked on top");
+    }
+
+    #[test]
+    fn roof_area_tools_target_the_room_below_visible_roofs() {
+        use my_world::map::{Feature, FLAT_Z as Z};
+        let mut w = SimWorld::with_map(Map::flat(8, 8), my_world::rng::Rng::new(1));
+        let p = (3, 3, Z);
+        let above = (3, 3, Z + 1);
+        let i = w.map.idx(above);
+        let h = Hover { solid: p, stand: above };
+        let forbid = Order::Roof(RoofPolicy::Forbidden);
+        let allow = Order::Roof(RoofPolicy::Automatic);
+        w.map.set_roof(i, true);
+        assert_eq!(order_target(&w, h, forbid), p);
+        w.apply_order(p, forbid);
+        assert_eq!(order_target(&w, h, allow), p);
+        w.map.set_roof(i, false);
+        w.map.set_feature(i, Feature::blueprint(defs().roof().unwrap(), 0, Dir::PlusX));
+        assert_eq!(order_target(&w, h, allow), p);
+        w.map.set_feature(i, Feature::None);
+        let ground = Hover { solid: (3, 3, Z - 1), stand: p };
+        assert_eq!(order_target(&w, ground, allow), p);
+        assert_eq!(paint_box(&mut w, (4, 4, Z), (5, 5, Z), forbid, false, Dir::PlusX), 4);
+        assert_eq!(paint_box(&mut w, (4, 4, Z), (5, 5, Z), forbid, false, Dir::PlusX), 0,
+            "repainting doesn't designate the storey above");
+        assert!(w.apply_order((4, 4, Z + 1), forbid));
+        assert_eq!(paint_box(&mut w, (4, 4, Z), (5, 5, Z), allow, false, Dir::PlusX), 4);
+        assert_eq!(paint_box(&mut w, (4, 4, Z), (5, 5, Z), allow, false, Dir::PlusX), 0);
+        assert!(w.map.no_roof.contains(&(w.map.idx((4, 4, Z + 1)) as u32)));
     }
 
     #[test]

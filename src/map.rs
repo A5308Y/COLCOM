@@ -10,7 +10,7 @@
 use crate::defs::{BuildDef, BuildId, ItemId, PlantId, Special};
 use crate::rng::Rng;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 /// (x, y, level). Level 0 is the bottom of the world.
 pub type Pos = (usize, usize, usize);
@@ -288,6 +288,13 @@ pub enum Zone {
     Safe,
 }
 
+/// Automatic roofing above a cell, independent of its storage/growing zone.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RoofPolicy {
+    Automatic,
+    Forbidden,
+}
+
 /// Identifies a stockpile. Handed out by `World::add_stockpile`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -361,6 +368,10 @@ pub struct Map {
     /// close the room but can't be stood on.
     #[serde(default, with = "crate::save::rle")]
     pub roof: Vec<bool>,
+    /// Cells whose space immediately above must not get an automatic roof.
+    /// Sparse and optional so existing version-16 saves retain automatic roofing.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub no_roof: BTreeSet<u32>,
     /// Room id per cell; 0 means outdoors. Derived from walls and rock, so not saved.
     #[serde(skip)]
     pub room: Vec<u32>,
@@ -420,6 +431,7 @@ impl Map {
             floor: vec![false; n],
             blood: vec![0.0; n],
             roof: vec![false; n],
+            no_roof: BTreeSet::new(),
             room: Vec::new(),
             room_sizes: Vec::new(),
             rooms_dirty: true,
@@ -1111,7 +1123,7 @@ impl Map {
                     let ai = self.idx(a);
                     let free = matches!(self.feature[ai], Feature::None) || self.roof_blueprint(ai);
                     let open = self.block[ai] == Block::Air && !self.floor[ai] && !self.roof[ai];
-                    if !(free && open) || self.covered(p) || stairwell[i] {
+                    if !(free && open) || self.covered(p) || stairwell[i] || self.no_roof.contains(&(i as u32)) {
                         continue;
                     }
                     if self.floor_supported(a) {
