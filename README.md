@@ -20,6 +20,8 @@ round 1 of a battle on a 48×32 yard: Ada's squad (one member arrives two rounds
 fighters (one gears up from the stockpile), a civilian in the house, and six raiders from the east.
 Every weapon and combat armor type appears on a fighter. The stockpile also holds a spare of every
 weapon, apparel item and medicine for inspecting models and trying loadouts.
+Eve, the lone fighter north of the house at (14, 9), starts wearing powered armor and holding the
+laser rifle, ready to inspect from round 1. Restart the scenario with Shift+N to refresh an existing battle.
 
 (No Rust yet? `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 

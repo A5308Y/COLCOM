@@ -265,6 +265,21 @@ mod tests {
     }
 
     #[test]
+    fn powered_armor_and_laser_rifle_start_equipped_on_a_colonist() {
+        let w = battle_world();
+        let fighter = w.pawns.iter()
+            .find(|p| p.is_colonist() && p.has_on(item("powered_armor")) && p.weapon == Some(item("laser_rifle")))
+            .expect("a colonist wears powered armor and holds the laser rifle together");
+        assert_eq!(fighter.pos, (14, 9, Z), "visible north of the house");
+        let battle = w.battle.as_ref().unwrap();
+        let unit = &battle.units[battle.unit_of(fighter.id).expect("present on the field from round one")];
+        assert_eq!(unit.side, Faction::Colony);
+        assert_eq!(unit.members, vec![fighter.id], "a lone fighter is easy to inspect");
+        assert!(unit.can_act());
+        assert!(!battle.arrivals.iter().any(|a| a.pawn == fighter.id));
+    }
+
+    #[test]
     fn the_battle_plays_to_an_end() {
         let mut w = battle_world();
         w.battle.as_mut().unwrap().auto_colony = true;
