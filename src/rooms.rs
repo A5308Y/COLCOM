@@ -345,7 +345,7 @@ mod tests {
         assert!((themed - plain * 1.25).abs() < 1e-4, "{} vs {}", themed, plain);
         let thought = memories.iter().find(|m| matches!(m, Memory::RoomThought(_))).expect("a room thought");
         assert!(thought.mood() > 0.0);
-        assert_eq!(thought.label(), "Slept in a bedroom of their own");
+        assert_eq!(*thought, Memory::RoomThought(w.room_at((6, 6, Z)).unwrap().kind.unwrap()));
     }
 
     #[test]

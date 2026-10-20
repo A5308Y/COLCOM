@@ -133,8 +133,12 @@ original comparison, before fixing the failures those tests exposed.
   over 600 more ticks. Enabled `serde_json/float_roundtrip` for exact float parsing;
   room temperatures are averaged in f64 so recounting on load doesn't round saved
   values again. A focused test also checks repeated room recounts preserve temperature bits.
-- [ ] **Assertions on log text.** About 31 assertions match log or event text, and
+- [x] **Assertions on log text.** About 31 assertions match log or event text, and
   `push_log` keeps only 50 lines. Assert on state or typed events instead.
+  Done: simulation tests assert on typed jobs, roles, memories, inventory and health,
+  mood effects and room/burial state. Stalemate tests observe approach distance and
+  quiet-round counters. Redundant log/alert checks are removed; UI text and diagnostic
+  error-message tests still check their presentation contracts.
 - [x] **Direct tests** for `combat`, `medical`, `jobs` and `battle_ai`.
   Done: 11 tests cover death/shields, medical priorities and missing supplies, job
   selection/scans/cancellation, and AI activation, fleeing and medkit decisions.

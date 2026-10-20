@@ -1756,7 +1756,7 @@ mod tests {
         assert_eq!(squad.members, vec![lead, mate]);
         let alone = &b.units[b.unit_of(odd).unwrap()];
         assert!(!alone.is_squad() && alone.members == vec![odd], "the clubber fights alone");
-        assert!(b.events.iter().any(|e| e.contains("fight alone")), "{:?}", b.events);
+        assert_eq!(alone.kind, UnitKind::Lone, "the mismatched member is a lone fighter");
         // Raider squads are armed alike too.
         for u in b.units.iter().filter(|u| u.side == Faction::Raider) {
             let kinds: Vec<bool> = u.members.iter().map(|&id| w.pawn(id).unwrap().main_attack().ranged).collect();
@@ -1770,10 +1770,15 @@ mod tests {
 
     /// Tick until the battle is over (or give up).
     fn play_out(w: &mut World, secs: f32) {
+        play_out_observing(w, secs, |_| {});
+    }
+
+    fn play_out_observing(w: &mut World, secs: f32, mut observe: impl FnMut(&World)) {
         for _ in 0..(secs / TICK) as usize {
             if w.battle.is_none() {
                 return;
             }
+            observe(w);
             w.tick(TICK);
         }
     }
@@ -2099,8 +2104,8 @@ mod tests {
         w.refresh_units();
         let b = battle(&w);
         assert_eq!(b.units[u].members, vec![member], "the squad fights on");
-        assert!(b.units[u].morale <= before - 40.0, "losing the leader hurts");
-        assert!(b.events.iter().any(|e| e.contains("lost its leader")));
+        assert_eq!(b.units[u].morale, before - 40.0, "one casualty plus the leader penalty");
+        assert_eq!(b.units[u].kind, UnitKind::Squad { leader: None });
     }
 
     #[test]
@@ -2178,9 +2183,12 @@ mod tests {
         let ri = w.pawn_index(r).unwrap();
         w.pawns[ri].weapon = Some(item("knife"));
         w.battle.as_mut().unwrap().auto_colony = true;
-        play_out(&mut w, 900.0);
+        let mut reached_melee = false;
+        play_out_observing(&mut w, 900.0, |w| {
+            reached_melee |= w.gap_between_sides().is_some_and(|gap| gap <= 1);
+        });
         assert!(w.battle.is_none(), "over in time");
-        assert!(!w.log.iter().any(|l| l.contains("gave up")), "they kept coming: {:?}", w.log);
+        assert!(reached_melee, "they closed the distance instead of abandoning the approach");
     }
 
     #[test]
@@ -2203,9 +2211,16 @@ mod tests {
         let ri = w.pawn_index(r).unwrap();
         w.pawns[ri].weapon = Some(item("knife"));
         w.battle.as_mut().unwrap().auto_colony = true;
-        play_out(&mut w, 900.0);
+        let mut last_quiet_rounds = 0;
+        play_out_observing(&mut w, 900.0, |w| {
+            last_quiet_rounds = battle(w).quiet_rounds;
+        });
         assert!(w.battle.is_none(), "over in time");
-        assert!(w.log.iter().any(|l| l.contains("gave up")));
+        assert_eq!(last_quiet_rounds, STALEMATE - 1, "the next quiet round ends the raid");
+        let p = w.pawn(id).unwrap();
+        assert!(p.active() && p.health.hediffs.is_empty(), "no one reached the colonist");
+        assert!(p.memories.iter().any(|m| m.kind == Memory::WonBattle));
+        assert!(w.pawn(r).is_none(), "the still-healthy raider left");
     }
 
     #[test]
@@ -2644,7 +2659,6 @@ mod tests {
         w.shot_damage(i, 35.0, crate::health::DamageKind::Gunshot, "a test");
         assert_eq!(w.pawns[i].shield_energy(), 0.0);
         assert!(w.pawns[i].health.hediffs.len() > before, "the rest broke through");
-        assert!(w.log.iter().any(|l| l.contains("shield broke")));
         // It recharges each round, and is full after the battle.
         fight(&mut w, 1, (29, 10, Z));
         w.battle.as_mut().unwrap().auto_colony = true;

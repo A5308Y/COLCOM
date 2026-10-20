@@ -292,7 +292,9 @@ mod tests {
         run(&mut w, 90.0);
         let p = w.pawn(id).unwrap();
         assert!(p.joy > 85.0, "{}", p.joy);
-        assert!(p.thoughts().iter().any(|t| t.0 == "Entertained"));
+        let mut content = p.clone();
+        content.joy = 70.0;
+        assert!(p.mood_target() > content.mood_target(), "being entertained improves mood");
         assert!(!matches!(p.job, Some(Job::Relax { .. })), "and then stop");
     }
 
@@ -417,7 +419,9 @@ mod tests {
         run(&mut w, 20.0);
         let p = w.pawn(id).unwrap();
         assert!(p.joy < 26.0 - 2.0, "{}", p.joy);
-        assert!(p.thoughts().iter().any(|t| t.0 == "Bored"));
+        let mut content = p.clone();
+        content.joy = 70.0;
+        assert!(p.mood_target() < content.mood_target(), "boredom reduces mood");
     }
 
     #[test]

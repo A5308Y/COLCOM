@@ -313,9 +313,15 @@ mod tests {
         let (mut w, ids) = world();
         w.set_role(ids[0], Role::Leader).unwrap();
         w.update_squads();
-        let thoughts = |w: &World| w.pawn(ids[0]).unwrap().thoughts().iter().map(|t| t.0).collect::<Vec<_>>();
-        assert!(thoughts(&w).contains(&"No proper quarters for a leader"));
-        assert!(thoughts(&w).contains(&"Responsible for a squad"));
+        let leader = w.pawn(ids[0]).unwrap();
+        assert_eq!(leader.role, Role::Leader);
+        assert!(leader.poor_quarters);
+        let mut housed = leader.clone();
+        housed.poor_quarters = false;
+        assert!(leader.mood_target() < housed.mood_target(), "poor quarters hurt a leader's mood");
+        let mut fighter = housed.clone();
+        fighter.role = Role::Fighter;
+        assert!(housed.mood_target() < fighter.mood_target(), "squad responsibility also affects mood");
 
         // A walled, roofed, furnished bedroom with their bed.
         bedroom(&mut w);
@@ -323,13 +329,13 @@ mod tests {
         let tier = w.room_at((10, 10, Z)).unwrap().tier();
         assert!(tier >= LEADER_ROOM_TIER, "the test room is decent (tier {})", tier);
         w.update_squads();
-        assert!(!thoughts(&w).contains(&"No proper quarters for a leader"));
+        assert!(!w.pawn(ids[0]).unwrap().poor_quarters);
 
         // Sharing it doesn't count.
         let j = w.pawn_index(ids[1]).unwrap();
         w.pawns[j].bed = Some((10, 10, Z));
         w.update_squads();
-        assert!(thoughts(&w).contains(&"No proper quarters for a leader"));
+        assert!(w.pawn(ids[0]).unwrap().poor_quarters);
     }
 
     fn arm(w: &mut World, id: PawnId, weapon: Option<&str>) {

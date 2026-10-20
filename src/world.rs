@@ -1494,7 +1494,6 @@ mod tests {
         w.map.drop_item((15, 15, Z), Stack { kind: item("raw_food"), count: 10 });
         w.update_trapped();
         assert_eq!(w.trapped, vec![nell]);
-        assert!(w.alerts().iter().any(|a| a.0.contains("is trapped")));
         let mut climbed = false;
         for _ in 0..(60.0 / TICK) as usize {
             w.tick(TICK);
@@ -1889,7 +1888,7 @@ mod tests {
     fn sleeping_spots_cost_nothing_and_count_as_beds() {
         let mut w = test_world(16, 16);
         let id = colonist(&mut w, (2, 2, Z));
-        assert!(w.alerts().iter().any(|a| a.0.starts_with("Need beds")));
+        assert_eq!(w.find_bed(w.pawn(id).unwrap()), None, "no bed yet");
         let spot = BuildId::named("sleeping_spot");
         assert!(spot.def().free());
         assert!(w.apply_order((8, 8, Z), Order::Build(spot)));
@@ -1897,7 +1896,6 @@ mod tests {
         let i = w.map.idx((8, 8, Z));
         assert_eq!(w.map.feature[i], Feature::built("sleeping_spot"), "built without materials");
         assert_eq!(w.find_bed(w.pawn(id).unwrap()), Some((8, 8, Z)), "a place to sleep");
-        assert!(!w.alerts().iter().any(|a| a.0.starts_with("Need beds")));
     }
 
     #[test]
@@ -1905,9 +1903,9 @@ mod tests {
         let mut w = test_world(16, 16);
         w.spawn_items((8, 8, Z), item("copper"), 120);
         assert_eq!(w.map.count_items(item("copper")), 120);
-        let cells = w.map.items.iter().flatten().filter(|s| s.kind == item("copper")).count();
-        assert_eq!(cells, 3, "spread over cells of 50");
-        assert!(w.log.iter().any(|l| l.contains("Dropped 120 copper")));
+        let stacks: Vec<_> = w.map.items.iter().flatten().filter(|s| s.kind == item("copper")).collect();
+        assert_eq!(stacks.len(), 3, "spread over cells of 50");
+        assert!(stacks.iter().all(|s| s.count <= crate::map::STACK_MAX));
     }
 
     #[test]
@@ -2121,14 +2119,12 @@ mod tests {
         let mut gaps: Vec<Pos> = w.map.roof_gaps.iter().map(|&i| w.map.pos(i)).collect();
         gaps.sort();
         assert_eq!(gaps, (7..=9).map(|x| (x, 7, Z + 1)).collect::<Vec<_>>());
-        assert!(w.alerts().iter().any(|(a, _)| a.starts_with("Roof can't reach 3 cell")), "{:?}", w.alerts());
         // A wall in the middle holds it all up.
         let pillar = w.map.idx((8, 6, Z));
         w.map.set_feature(pillar, Feature::built("wall"));
         w.map.recompute_rooms();
         w.mark_roofs();
         assert!(w.map.roof_gaps.is_empty());
-        assert!(!w.alerts().iter().any(|(a, _)| a.starts_with("Roof can't reach")));
     }
 
     #[test]

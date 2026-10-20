@@ -144,7 +144,7 @@ def main():
                "The full-suite ranges overlap substantially; this does not establish a speedup or a reliable slowdown.",
                f"Library-only difference: **{lib_new - lib_old:+.3f} s ({100 * (lib_new / lib_old - 1):+.1f}%)**.", "",
                "Reproduce with `python3 tools/benchmark_tests.py --repeats 5`.", "",
-               "All additions use the `regression_tests` filter. Existing log-text assertions are unchanged.",
+               "The 15 proposed additions use the `regression_tests` filter.",
                "No tests are ignored to obtain these results; the two pre-existing ignored tests remain ignored.", "",
                "## Regressions found", "",
                "The save/continue tests originally exposed float round-trip differences in clocks and room temperatures.",

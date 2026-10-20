@@ -170,7 +170,6 @@ mod tests {
         run(&mut w, 2.0);
         assert_eq!(w.device_state(heater), Some(DeviceState::NoPower));
         assert_eq!(w.power.unpowered, 1);
-        assert!(w.alerts().iter().any(|a| a.0.contains("power")));
     }
 
     #[test]

@@ -178,7 +178,6 @@ mod tests {
         assert_eq!(w.season(), Season::Winter);
         assert_eq!(w.map.feature[a], Feature::None, "killed by the frost");
         assert_eq!(grown(&w, b), 1.0, "a ripe one waits to be harvested");
-        assert!(w.log.iter().any(|l| l.starts_with("Winter has come")));
     }
 
     #[test]

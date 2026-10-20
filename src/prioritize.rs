@@ -215,11 +215,11 @@ mod tests {
             w.map.feature[k] = Feature::blueprint(grave, grave.def().total_cost(), crate::map::Dir::PlusX);
         }
         let options = w.job_options(id, far);
-        let (label, job) = options.iter().find(|(_, j)| matches!(j, Job::Work { .. })).expect("dig it").clone();
-        assert_eq!(label, "Prioritize building Grave");
+        let (_, job) = options.iter().find(|(_, j)| matches!(j, Job::Work { .. })).expect("dig it").clone();
+        assert!(matches!(job, Job::Work { target, task: crate::pawn::Task::Construct } if target == far));
         assert!(w.prioritize(id, far, job));
         assert_eq!(w.pawn(id).unwrap().forced, Some(far));
-        assert!(w.pawn(id).unwrap().status().contains("prioritized"));
+        assert!(matches!(w.pawn(id).unwrap().job, Some(Job::Work { target, .. }) if target == far));
         // A long walk (about 20 s) and about 10 s of digging.
         run(&mut w, 60.0);
         assert!(w.map.feature[w.map.idx(far)].is_special(crate::defs::Special::Grave), "the far one is dug");
@@ -238,8 +238,8 @@ mod tests {
         let table = BuildId::named("table");
         w.map.feature[k] = Feature::blueprint(table, 0, crate::map::Dir::PlusX);
         w.map.drop_item((3, 3, Z), Stack { kind: table.def().cost[0].item, count: 20 });
-        let (label, job) = w.job_options(id, at).into_iter().next().expect("deliver");
-        assert!(label.starts_with("Prioritize delivering"), "{}", label);
+        let (_, job) = w.job_options(id, at).into_iter().next().expect("deliver");
+        assert!(matches!(job, Job::Haul { to, deliver: true, .. } if to == at));
         assert!(w.prioritize(id, at, job));
         run(&mut w, 60.0);
         assert_eq!(w.map.feature[k], Feature::built("table"), "delivered, then built");
@@ -258,8 +258,8 @@ mod tests {
             w.pawns[i].job = Some(Job::Patient { bed: None });
         }
         let at = w.pawn(b).unwrap().pos;
-        let (label, job) = w.job_options(doctor, at).into_iter().find(|(_, j)| matches!(j, Job::Tend { .. })).expect("tend");
-        assert_eq!(label, format!("Prioritize tending {}", w.pawn(b).unwrap().name));
+        let (_, job) = w.job_options(doctor, at).into_iter().find(|(_, j)| matches!(j, Job::Tend { .. })).expect("tend");
+        assert!(matches!(job, Job::Tend { patient, .. } if patient == b));
         assert!(w.prioritize(doctor, at, job));
         assert!(matches!(w.pawn(doctor).unwrap().job, Some(Job::Tend { patient, .. }) if patient == b));
         assert!(!w.prioritize(doctor, at, Job::Tend { patient: a, medicine: None, picked: false }), "not on offer there");

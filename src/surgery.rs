@@ -406,7 +406,6 @@ mod tests {
         assert!(p.health.caps.moving > walk + 0.2, "walks better: {} vs {}", p.health.caps.moving, walk);
         assert!(p.health.efficiency(Part::LeftFoot) > 0.5, "the foot comes with it");
         assert_eq!(p.health.implant(CyberSlot::LeftLeg), Some((Some(leg), 0.75)));
-        assert!(w.log.iter().any(|l| l.contains("installed")), "{:?}", w.log);
         assert!(p.surgeries.is_empty(), "the order is done");
     }
 

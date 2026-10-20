@@ -330,8 +330,10 @@ mod tests {
         }
         let p = w.pawn(id).unwrap();
         assert!(p.health.hypothermia > 0.05, "{}", p.health.hypothermia);
-        assert!(p.thoughts().iter().any(|t| t.0 == "Freezing"));
-        assert!(w.alerts().iter().any(|a| a.0.contains("freezing")));
+        assert!(p.felt < FREEZING, "the cold is still affecting them");
+        let mut comfortable = p.clone();
+        comfortable.felt = 20.0;
+        assert!(p.mood_target() < comfortable.mood_target(), "feeling freezing hurts mood");
         let before = p.health.hypothermia;
         // Indoors by a stove and a smelter (the doorway walled up, so they stay in), it wears off.
         room(&mut w);

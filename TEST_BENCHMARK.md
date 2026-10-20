@@ -44,7 +44,8 @@ Library-only difference: **+0.033 s (+1.6%)**.
 
 Reproduce with `python3 tools/benchmark_tests.py --repeats 5`.
 
-All additions use the `regression_tests` filter. Existing log-text assertions are unchanged.
+All additions use the `regression_tests` filter. At the time of this measurement,
+existing log-text assertions were unchanged; they have since been replaced with state checks.
 No tests are ignored to obtain these results; the two pre-existing ignored tests remain ignored.
 
 ## Regressions found

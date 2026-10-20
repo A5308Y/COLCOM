@@ -123,8 +123,13 @@ mod tests {
         let dead = colonist(&mut w, (14, 14, Z));
         die(&mut w, dead);
         run(&mut w, 1.5);
-        assert!(w.pawn(digger).unwrap().thoughts().iter().any(|t| t.0 == "A colonist lies unburied"));
-        assert!(w.alerts().iter().any(|a| a.0.contains("dig a grave")), "{:?}", w.alerts());
+        let p = w.pawn(digger).unwrap();
+        assert!(p.unburied_dead);
+        let mut without_unburied = p.clone();
+        without_unburied.unburied_dead = false;
+        assert!(p.mood_target() < without_unburied.mood_target(), "the unburied body hurts mood");
+        assert!(w.unburied(w.pawn(dead).unwrap()));
+        assert!(w.empty_graves().is_empty(), "a grave needs to be dug");
 
         let grave = (5, 10, Z);
         let kind = BuildId::named("grave");
@@ -136,8 +141,8 @@ mod tests {
         assert_eq!(p.pos, grave);
         assert_eq!(w.grave_occupant(grave), Some(dead));
         assert!(w.empty_graves().is_empty());
-        assert!(!w.pawn(digger).unwrap().thoughts().iter().any(|t| t.0 == "A colonist lies unburied"));
-        assert!(!w.alerts().iter().any(|a| a.0.contains("unburied")));
+        assert!(!w.pawn(digger).unwrap().unburied_dead);
+        assert!(!w.pawns.iter().any(|p| w.unburied(p)));
         assert!(!w.apply_order(grave, Order::Desig(Desig::Deconstruct)), "a filled grave stays");
         // Saved and loaded, they're still there.
         let loaded = World::load_json(&w.save_json().unwrap()).unwrap();

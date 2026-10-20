@@ -1220,11 +1220,11 @@ mod tests {
         w.send_expedition(offer, &ids[..1], &[st("steel", 100)]).unwrap();
         let e = &mut w.expeditions[0];
         assert_eq!((e.load(), e.capacity()), (100, crate::pawn::CARRY_EACH + 90));
-        // More than fits: the rest is left behind, and written down.
+        // More than fits: fill the cargo and return the excess to the caller.
         let left = e.take_in([st("copper_ore", 80)]);
         assert_eq!(left, vec![st("copper_ore", 30)]);
-        e.note_left(&left);
-        assert!(e.journal.last().unwrap().contains("left behind"));
+        assert_eq!(e.load(), e.capacity());
+        assert!(e.cargo.contains(&st("copper_ore", 50)));
     }
 
     #[test]

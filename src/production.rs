@@ -728,7 +728,9 @@ mod tests {
         assert!(p.apparel.contains(&item("clothes")) && p.apparel.contains(&item("steel_armor")), "{:?}", p.apparel);
         assert!(p.armor_at(crate::health::Part::Torso) > 0.5, "the chest is well protected");
         assert!(p.armor_at(crate::health::Part::LeftLeg) < 0.1, "the legs aren't");
-        assert!(p.thoughts().iter().any(|t| t.0 == item("clothes").name()), "clothes feel nice");
+        let mut without_clothes = p.clone();
+        without_clothes.apparel.retain(|&kind| kind != item("clothes"));
+        assert!(p.mood_target() > without_clothes.mood_target(), "clothes improve mood");
 
         // A better weapon replaces the old one, which is left on the ground.
         w.map.drop_item((12, 12, Z), Stack { kind: item("rifle"), count: 1 });
