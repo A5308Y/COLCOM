@@ -93,7 +93,7 @@ impl World {
             }
             let Some((_, d)) = df.approach(&self.map, o.pos, true) else { continue };
             if let Some((score, job)) = self.doctor_job(o, d, medicine, food) {
-                if best.map_or(true, |(b, _)| score < b) {
+                if best.is_none_or(|(b, _)| score < b) {
                     best = Some((score, job));
                 }
             }

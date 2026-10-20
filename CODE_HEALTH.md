@@ -139,5 +139,9 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
   in `tools/` into one module; there are three glTF writers and diverging copies of
   `unit`/`matrix`. Add a test that regenerates the committed `.gltf`/`.bin` files and
   diffs them.
-- [ ] **Clippy:** about 23 warnings, mostly style. In `temp_color`, freezing and cold
+- [x] **Clippy:** about 23 warnings, mostly style. In `temp_color`, freezing and cold
   currently share a colour.
+  Done: simplified optional-value checks, fixed-size chunk iteration and duplicate
+  branches; added `Map::is_empty` and moved carry tests after the implementation.
+  Bevy system parameter counts have scoped, documented lint expectations.
+  `cargo clippy --all-targets -- -D warnings` passes. Cold and freezing keep the same colour.

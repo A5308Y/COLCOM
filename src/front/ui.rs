@@ -44,6 +44,7 @@ fn install_theme(mut contexts: EguiContexts) -> Result {
     Ok(())
 }
 
+#[expect(clippy::too_many_arguments, reason = "Bevy injects the UI contexts, resources and camera separately")]
 fn draw_ui(
     mut contexts: EguiContexts,
     mut labels: Local<overlay::MapLabels>,
@@ -63,7 +64,7 @@ fn draw_ui(
     st.dock_width = left;
     let mut view = ctx.viewport_rect();
     view.min.x += left;
-    overlay::draw(&ctx, &sim.world, cam, gt, rig.distance, &st, view, sim.generation, &mut labels);
+    overlay::draw(&ctx, &sim, (cam, gt), rig.distance, &st, view, &mut labels);
     // The selection box while dragging with the Select tool.
     if let (Some(a), Some(b)) = (st.box_start, ctx.pointer_latest_pos()) {
         let a = egui::pos2(a.x, a.y);
@@ -1218,10 +1219,8 @@ fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<
 
 /// Blue when cold, orange when hot, plain in between (see `temperature.rs`).
 fn temp_color(t: f32) -> Color32 {
-    use my_world::temperature::{COLD, FREEZING, HOT};
-    if t < FREEZING {
-        theme::TEAL
-    } else if t < COLD {
+    use my_world::temperature::{COLD, HOT};
+    if t < COLD {
         theme::TEAL
     } else if t > HOT {
         theme::AMBER

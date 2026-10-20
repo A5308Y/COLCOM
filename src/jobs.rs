@@ -135,7 +135,7 @@ impl World {
             let Some(d) = df.dist(pos) else { continue };
             for s in m.stacks(i) {
                 let k = s.kind.index();
-                if self.item_free(i) && nearest_item[k].map_or(true, |(bd, _)| d < bd) {
+                if self.item_free(i) && nearest_item[k].is_none_or(|(bd, _)| d < bd) {
                     nearest_item[k] = Some((d, pos));
                 }
             }
@@ -866,7 +866,7 @@ impl World {
         };
         let ti = self.map.idx(to);
         let still_wanted = if deliver {
-            self.delivery_need(to).map_or(false, |n| n.kind == carry.kind)
+            self.delivery_need(to).is_some_and(|n| n.kind == carry.kind)
         } else {
             // A stockpile that takes it, or open ground it's being cleared out onto.
             let dump = self.map.zone[ti] == Zone::None && self.map.feature[ti] == Feature::None;

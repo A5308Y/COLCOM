@@ -333,7 +333,7 @@ fn cpu_capture(
 /// The backdrop standing in for the 3D scene: a dull field colour with a
 /// faint grid, so translucent panels can be judged.
 fn backdrop(x: usize, y: usize) -> [f32; 3] {
-    let grid = x % 64 == 0 || y % 64 == 0;
+    let grid = x.is_multiple_of(64) || y.is_multiple_of(64);
     let shade = 0.9 + 0.1 * (y as f32 / CPU_SIZE[1] as f32);
     let base = if grid { [92.0, 102.0, 78.0] } else { [78.0, 88.0, 66.0] };
     [base[0] * shade, base[1] * shade, base[2] * shade]
@@ -352,7 +352,7 @@ fn rasterize(jobs: &[egui::ClippedPrimitive], textures: &HashMap<egui::TextureId
         if clip.width() <= 0.0 || clip.height() <= 0.0 {
             continue;
         }
-        for tri in mesh.indices.chunks_exact(3) {
+        for tri in mesh.indices.as_chunks::<3>().0 {
             let v = [&mesh.vertices[tri[0] as usize], &mesh.vertices[tri[1] as usize], &mesh.vertices[tri[2] as usize]];
             triangle(&mut px, w, clip, v, tex);
         }

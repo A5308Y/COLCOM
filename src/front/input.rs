@@ -600,7 +600,7 @@ pub fn pawn_at(w: &SimWorld, t: Pos) -> Option<PawnId> {
     for p in w.pawns.iter().filter(|p| !p.has_left() && !p.is_buried()) {
         let (dx, dy, dz) = (p.x - t.0 as f32, p.y - t.1 as f32, p.z - t.2 as f32);
         let d = (dx * dx + dy * dy + dz * dz).sqrt() + if p.is_dead() { 0.5 } else { 0.0 };
-        if d < 0.9 && best.map_or(true, |(bd, _)| d < bd) {
+        if d < 0.9 && best.is_none_or(|(bd, _)| d < bd) {
             best = Some((d, p.id));
         }
     }

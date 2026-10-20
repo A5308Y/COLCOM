@@ -1634,7 +1634,7 @@ mod tests {
         assert!(!p.health.needs_tending(), "patient should have been tended");
         assert_eq!(p.health.bleed_rate(), 0.0);
         assert_eq!(w.map.count_items(item("medicine")), 1);
-        assert!(w.pawn(doctor).unwrap().job.map_or(true, |j| !matches!(j, Job::Tend { .. })));
+        assert!(w.pawn(doctor).unwrap().job.is_none_or(|j| !matches!(j, Job::Tend { .. })));
     }
 
     #[test]

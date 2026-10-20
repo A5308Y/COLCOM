@@ -65,6 +65,72 @@ fn carry_pose(left: Vec3, right: Vec3, min: Vec3, max: Vec3) -> Option<Transform
     })
 }
 
+#[allow(clippy::type_complexity)]
+fn align_carried_items(
+    anchors: Query<(Entity, &CarryAnchor, &Visibility)>,
+    children: Query<&Children>,
+    geometry: Query<(Option<&Mesh3d>, Option<&Aabb>, Option<&Visibility>)>,
+    meshes: Res<Assets<Mesh>>,
+    mut transforms: ParamSet<(TransformHelper, Query<&Transform>, Query<&mut Transform>)>,
+) {
+    // Read the current local bone transforms, not last frame's GlobalTransforms.
+    let targets: Vec<_> = {
+        let helper = transforms.p0();
+        anchors.iter().filter(|(_, _, vis)| **vis != Visibility::Hidden).filter_map(|(entity, anchor, _)| {
+            let parent = helper.compute_global_transform(anchor.parent).ok()?.affine().inverse();
+            let [left, right] = anchor.palms.map(|grip| {
+                helper.compute_global_transform(grip.bone).ok()
+                    .map(|bone| parent.transform_point3(bone.transform_point(grip.at)))
+            });
+            Some((entity, left?, right?))
+        }).collect()
+    };
+    let poses: Vec<_> = {
+        let locals = transforms.p1();
+        targets.into_iter().filter_map(|(entity, left, right)| {
+            let mut min = Vec3::splat(f32::INFINITY);
+            let mut max = Vec3::splat(f32::NEG_INFINITY);
+            let mut stack: Vec<_> = children.get(entity).ok()?.iter().map(|child| (child, Mat4::IDENTITY)).collect();
+            while let Some((node, parent)) = stack.pop() {
+                let Ok((mesh, aabb, visibility)) = geometry.get(node) else { continue };
+                // Once a model loads its shape fallback is hidden. Counting both
+                // would make the grip depend on the obsolete placeholder's size.
+                if visibility == Some(&Visibility::Hidden) {
+                    continue;
+                }
+                let Ok(local) = locals.get(node) else { continue };
+                let pose = parent * local.to_matrix();
+                if let Some(bounds) = aabb.copied().or_else(|| mesh.and_then(|m| meshes.get(&m.0)).and_then(MeshAabb::get_aabb)) {
+                    let centre = Vec3::from(bounds.center);
+                    let half = Vec3::from(bounds.half_extents);
+                    for x in [-1.0, 1.0] {
+                        for y in [-1.0, 1.0] {
+                            for z in [-1.0, 1.0] {
+                                let point = pose.transform_point3(centre + half * Vec3::new(x, y, z));
+                                min = min.min(point);
+                                max = max.max(point);
+                            }
+                        }
+                    }
+                }
+                if let Ok(descendants) = children.get(node) {
+                    stack.extend(descendants.iter().map(|child| (child, pose)));
+                }
+            }
+            if !min.is_finite() || !max.is_finite() {
+                return None;
+            }
+            Some((entity, carry_pose(left, right, min, max)?))
+        }).collect()
+    };
+    let mut locals = transforms.p2();
+    for (entity, pose) in poses {
+        if let Ok(mut transform) = locals.get_mut(entity) {
+            *transform = pose;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,72 +203,6 @@ mod tests {
             // The display turns native +Z to +X, so these are the two side contacts.
             assert!((mesh.transform_point(Vec3::new(0.0, 0.11, 0.24)) - left_palm).length() < 1e-4, "left palm, frame {frame}");
             assert!((mesh.transform_point(Vec3::new(0.0, 0.11, -0.24)) - right_palm).length() < 1e-4, "right palm, frame {frame}");
-        }
-    }
-}
-
-#[allow(clippy::type_complexity)]
-fn align_carried_items(
-    anchors: Query<(Entity, &CarryAnchor, &Visibility)>,
-    children: Query<&Children>,
-    geometry: Query<(Option<&Mesh3d>, Option<&Aabb>, Option<&Visibility>)>,
-    meshes: Res<Assets<Mesh>>,
-    mut transforms: ParamSet<(TransformHelper, Query<&Transform>, Query<&mut Transform>)>,
-) {
-    // Read the current local bone transforms, not last frame's GlobalTransforms.
-    let targets: Vec<_> = {
-        let helper = transforms.p0();
-        anchors.iter().filter(|(_, _, vis)| **vis != Visibility::Hidden).filter_map(|(entity, anchor, _)| {
-            let parent = helper.compute_global_transform(anchor.parent).ok()?.affine().inverse();
-            let [left, right] = anchor.palms.map(|grip| {
-                helper.compute_global_transform(grip.bone).ok()
-                    .map(|bone| parent.transform_point3(bone.transform_point(grip.at)))
-            });
-            Some((entity, left?, right?))
-        }).collect()
-    };
-    let poses: Vec<_> = {
-        let locals = transforms.p1();
-        targets.into_iter().filter_map(|(entity, left, right)| {
-            let mut min = Vec3::splat(f32::INFINITY);
-            let mut max = Vec3::splat(f32::NEG_INFINITY);
-            let mut stack: Vec<_> = children.get(entity).ok()?.iter().map(|child| (child, Mat4::IDENTITY)).collect();
-            while let Some((node, parent)) = stack.pop() {
-                let Ok((mesh, aabb, visibility)) = geometry.get(node) else { continue };
-                // Once a model loads its shape fallback is hidden. Counting both
-                // would make the grip depend on the obsolete placeholder's size.
-                if visibility == Some(&Visibility::Hidden) {
-                    continue;
-                }
-                let Ok(local) = locals.get(node) else { continue };
-                let pose = parent * local.to_matrix();
-                if let Some(bounds) = aabb.copied().or_else(|| mesh.and_then(|m| meshes.get(&m.0)).and_then(MeshAabb::get_aabb)) {
-                    let centre = Vec3::from(bounds.center);
-                    let half = Vec3::from(bounds.half_extents);
-                    for x in [-1.0, 1.0] {
-                        for y in [-1.0, 1.0] {
-                            for z in [-1.0, 1.0] {
-                                let point = pose.transform_point3(centre + half * Vec3::new(x, y, z));
-                                min = min.min(point);
-                                max = max.max(point);
-                            }
-                        }
-                    }
-                }
-                if let Ok(descendants) = children.get(node) {
-                    stack.extend(descendants.iter().map(|child| (child, pose)));
-                }
-            }
-            if !min.is_finite() || !max.is_finite() {
-                return None;
-            }
-            Some((entity, carry_pose(left, right, min, max)?))
-        }).collect()
-    };
-    let mut locals = transforms.p2();
-    for (entity, pose) in poses {
-        if let Ok(mut transform) = locals.get_mut(entity) {
-            *transform = pose;
         }
     }
 }

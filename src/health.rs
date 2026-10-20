@@ -508,7 +508,7 @@ impl Health {
     pub fn is_missing(&self, part: Part) -> bool {
         self.hediffs
             .iter()
-            .any(|h| h.kind == HediffKind::Missing && h.part.map_or(false, |m| part.is_within(m)))
+            .any(|h| h.kind == HediffKind::Missing && h.part.is_some_and(|m| part.is_within(m)))
     }
 
     pub fn part_hp(&self, part: Part) -> f32 {
@@ -780,7 +780,7 @@ impl Health {
 
     /// Remove a part, everything attached to it, and their conditions.
     fn destroy(&mut self, part: Part) {
-        self.hediffs.retain(|h| h.part.map_or(true, |p| !p.is_within(part)));
+        self.hediffs.retain(|h| h.part.is_none_or(|p| !p.is_within(part)));
         self.hediffs.push(Hediff::new(HediffKind::Missing, Some(part), part.def().max_hp));
     }
 

@@ -1145,8 +1145,8 @@ mod tests {
                     let positions = &gltf["accessors"][primitive["attributes"]["POSITION"].as_u64().unwrap() as usize];
                     let view = &gltf["bufferViews"][positions["bufferView"].as_u64().unwrap() as usize];
                     let offset = view["byteOffset"].as_u64().unwrap() as usize;
-                    for vertex in buffer[offset..offset + positions["count"].as_u64().unwrap() as usize * 12].chunks_exact(12) {
-                        let xyz: Vec<f32> = vertex.chunks_exact(4).map(|v| f32::from_le_bytes(v.try_into().unwrap())).collect();
+                    for vertex in buffer[offset..offset + positions["count"].as_u64().unwrap() as usize * 12].as_chunks::<12>().0 {
+                        let xyz: Vec<f32> = vertex.as_chunks::<4>().0.iter().map(|v| f32::from_le_bytes(*v)).collect();
                         let p = pose.transform_point(Vec3::new(xyz[0], xyz[1], xyz[2]) + at);
                         assert!(p.is_finite());
                         min = min.min(p);
@@ -1185,7 +1185,7 @@ mod tests {
                 let accessor = &gltf["accessors"][index.as_u64().unwrap() as usize];
                 let view = &gltf["bufferViews"][accessor["bufferView"].as_u64().unwrap() as usize];
                 let offset = (view["byteOffset"].as_u64().unwrap_or(0) + accessor["byteOffset"].as_u64().unwrap_or(0)) as usize;
-                buffer[offset..offset + accessor["count"].as_u64().unwrap() as usize * 12].chunks_exact(12).map(|v| {
+                buffer[offset..offset + accessor["count"].as_u64().unwrap() as usize * 12].as_chunks::<12>().0.iter().map(|v| {
                     Vec3::new(f32::from_le_bytes(v[0..4].try_into().unwrap()), f32::from_le_bytes(v[4..8].try_into().unwrap()), f32::from_le_bytes(v[8..12].try_into().unwrap()))
                 }).collect()
             };

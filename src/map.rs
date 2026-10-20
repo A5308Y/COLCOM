@@ -452,6 +452,10 @@ impl Map {
         self.w * self.h * self.d
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.w == 0 || self.h == 0 || self.d == 0
+    }
+
     pub fn idx(&self, p: Pos) -> usize {
         (p.2 * self.h + p.1) * self.w + p.0
     }
@@ -464,7 +468,7 @@ impl Map {
     /// Cell at signed coordinates, if inside the map.
     pub fn at(&self, x: i32, y: i32, z: i32) -> Option<Pos> {
         (x >= 0 && y >= 0 && z >= 0 && (x as usize) < self.w && (y as usize) < self.h && (z as usize) < self.d)
-            .then(|| (x as usize, y as usize, z as usize))
+            .then_some((x as usize, y as usize, z as usize))
     }
 
     pub fn below(&self, p: Pos) -> Option<Pos> {
@@ -665,7 +669,7 @@ impl Map {
         let (x, y, z) = (p.0 as i32, p.1 as i32, p.2);
         DIRS.into_iter().filter_map(move |(dx, dy)| {
             let (nx, ny) = (x + dx, y + dy);
-            (nx >= 0 && ny >= 0 && nx < w && ny < h).then(|| (nx as usize, ny as usize, z))
+            (nx >= 0 && ny >= 0 && nx < w && ny < h).then_some((nx as usize, ny as usize, z))
         })
     }
 

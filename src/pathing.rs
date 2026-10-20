@@ -301,7 +301,7 @@ impl DistField {
         if adjacent {
             for nb in map.around(target).filter(|&nb| stand(nb)) {
                 if let Some(d) = self.dist(nb) {
-                    if best.map_or(true, |(_, bd)| d < bd) {
+                    if best.is_none_or(|(_, bd)| d < bd) {
                         best = Some((nb, d));
                     }
                 }

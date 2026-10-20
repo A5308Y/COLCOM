@@ -2,6 +2,7 @@
 //! bleeding markers, item counts and blueprint progress.
 
 use super::input::UiState;
+use super::sim::Sim;
 use super::{tile_center, tile_point};
 use super::theme;
 use bevy::prelude::*;
@@ -56,15 +57,15 @@ impl MapLabels {
 /// `view` is the part of the screen showing the world (not covered by docked panels).
 pub fn draw(
     ctx: &egui::Context,
-    w: &SimWorld,
-    cam: &Camera,
-    gt: &GlobalTransform,
+    sim: &Sim,
+    camera: (&Camera, &GlobalTransform),
     distance: f32,
     ui: &UiState,
     view: egui::Rect,
-    generation: u64,
     labels: &mut MapLabels,
 ) {
+    let w = &sim.world;
+    let (cam, gt) = camera;
     let painter = ctx
         .layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("world_overlay")))
         .with_clip_rect(view);
@@ -134,7 +135,7 @@ pub fn draw(
     }
 
     if distance < 24.0 {
-        labels.update(w, generation);
+        labels.update(w, sim.generation);
         for (pos, lift, label, color) in &labels.labels {
             if pos.2 > ui.top_at(m, pos.0, pos.1) { continue; }
             if let Some(sp) = to_screen(tile_center(*pos) + Vec3::Y * *lift) {

@@ -661,6 +661,7 @@ pub fn spawn_leg_garment(commands: &mut Commands, scene: Handle<WorldAsset>, cha
     e
 }
 
+#[expect(clippy::too_many_arguments, reason = "Bevy injects the observer event, queries and resources separately")]
 fn bind_garment(
     ready: On<WorldInstanceReady>,
     mut commands: Commands,
@@ -1283,11 +1284,11 @@ mod tests {
                     let wo = slice(&model, weight);
                     let jo = slice(&model, joint);
                     for i in 0..count {
-                        let weights: Vec<_> = bytes[wo + i * 16..wo + (i + 1) * 16].chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+                        let weights: Vec<_> = bytes[wo + i * 16..wo + (i + 1) * 16].as_chunks::<4>().0.iter().map(|b| f32::from_le_bytes(*b)).collect();
                         assert!(weights.iter().all(|w| w.is_finite() && (0.0..=1.0).contains(w)));
                         assert!((weights.iter().sum::<f32>() - 1.0).abs() < 1e-5);
-                        for b in bytes[jo + i * 8..jo + (i + 1) * 8].chunks_exact(2) {
-                            assert!((u16::from_le_bytes(b.try_into().unwrap()) as usize) < joints.len());
+                        for b in bytes[jo + i * 8..jo + (i + 1) * 8].as_chunks::<2>().0 {
+                            assert!((u16::from_le_bytes(*b) as usize) < joints.len());
                         }
                     }
                 }
