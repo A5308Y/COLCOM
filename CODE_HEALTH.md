@@ -72,7 +72,7 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
   - [x] Key skills and priorities by enum rather than by array position, so reordering
     `Skill` or `WorkType` can't shift old saves. Done: `per_key::PerKey` (`PerSkill`,
     `PerWork`), indexed by the enum and saved by name; save format 13.
-  - Use `Option` for the injury `infection_timer` (`-1.0` sentinel).
+  - [x] Use `Option` for the injury `infection_timer` (`-1.0` sentinel). Done; save format 14.
   - Add a `Dir` enum for facing directions.
 
 ## 3. Saves and robustness

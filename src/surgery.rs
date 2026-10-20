@@ -474,7 +474,7 @@ mod tests {
     #[test]
     fn prosthetics_fitted_before_cyberware_slots_still_count() {
         // An old save's hediff: no item, on the lost arm (not the shoulder).
-        let json = r#"{"kind":{"Prosthetic":{"efficiency":0.75}},"part":"LeftArm","severity":0.0,"peak":0.0,"tend":null,"tend_left":0.0,"infection_timer":-1.0,"age":0.0}"#;
+        let json = r#"{"kind":{"Prosthetic":{"efficiency":0.75}},"part":"LeftArm","severity":0.0,"peak":0.0,"tend":null,"tend_left":0.0,"infection_timer":null,"age":0.0}"#;
         let old: crate::health::Hediff = serde_json::from_str(json).unwrap();
         let mut h = crate::health::Health::new();
         h.hediffs.push(old);

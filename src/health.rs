@@ -321,14 +321,15 @@ pub struct Hediff {
     /// Quality (0..1) of the current treatment.
     pub tend: Option<f32>,
     pub tend_left: f32,
-    /// Seconds until the wound either gets infected or is safe (< 0 = no check).
-    pub infection_timer: f32,
+    /// Seconds until the wound either gets infected or is safe (None: no check
+    /// pending, e.g. bruises, scars and diseases).
+    pub infection_timer: Option<f32>,
     pub age: f32,
 }
 
 impl Hediff {
     fn new(kind: HediffKind, part: Option<Part>, severity: f32) -> Hediff {
-        Hediff { kind, part, severity, peak: severity, tend: None, tend_left: 0.0, infection_timer: -1.0, age: 0.0 }
+        Hediff { kind, part, severity, peak: severity, tend: None, tend_left: 0.0, infection_timer: None, age: 0.0 }
     }
 
     pub fn is_disease(&self) -> bool {
@@ -794,7 +795,7 @@ impl Health {
         }
         let mut h = Hediff::new(HediffKind::Injury { kind, permanent: false }, Some(part), amount);
         if kind.can_infect() {
-            h.infection_timer = rng.range_f32(0.3, 0.6) * DAY_LEN;
+            h.infection_timer = Some(rng.range_f32(0.3, 0.6) * DAY_LEN);
         }
         self.hediffs.push(h);
         false
@@ -914,9 +915,10 @@ impl Health {
                         0.0
                     };
                     h.severity -= rate * heal * days;
-                    if h.infection_timer > 0.0 {
-                        h.infection_timer -= dt;
-                        if h.infection_timer <= 0.0 {
+                    if let Some(timer) = h.infection_timer.as_mut() {
+                        *timer -= dt;
+                        if *timer <= 0.0 {
+                            h.infection_timer = None;
                             let chance = if tended { 0.3 * (1.0 - quality) } else { 0.45 };
                             if let (true, Some(p)) = (rng.chance(chance), h.part) {
                                 infections.push(p);
@@ -954,7 +956,7 @@ impl Health {
                             severity,
                             peak: severity,
                             tend: None,
-                            infection_timer: -1.0,
+                            infection_timer: None,
                             ..h
                         };
                         events.push(format!("will carry a scar on their {}.", where_));
@@ -1073,7 +1075,7 @@ mod tests {
         tended.tend(0.7, 3);
         // Ignore infections for this test.
         for h in tended.hediffs.iter_mut().chain(bleeding.hediffs.iter_mut()) {
-            h.infection_timer = -1.0;
+            h.infection_timer = None;
         }
         run(&mut bleeding, 2.0 * DAY_LEN, AWAKE, &mut rng);
         run(&mut tended, 2.0 * DAY_LEN, AWAKE, &mut rng);
