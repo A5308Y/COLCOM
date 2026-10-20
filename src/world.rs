@@ -849,9 +849,9 @@ impl World {
             self.start_job(p, job);
             return;
         }
-        // An ordered operation, its prosthetic and a doctor: onto the operating table.
-        let lost = p.health.lost_parts();
-        p.operations.retain(|o| lost.contains(&o.part));
+        // An ordered operation, what it needs and a doctor: onto the operating table.
+        let ops = std::mem::take(&mut p.surgeries);
+        p.surgeries = ops.into_iter().filter(|&o| Self::still_to_do(p, o)).collect();
         if let Some(table) = self.operation_table(p) {
             self.start_job(p, Job::Operation { table });
             return;
@@ -922,8 +922,10 @@ impl World {
             // Hospital beds and operating tables stay nobody's.
             Job::Patient { bed: Some(b) } if !self.care_bed(b) => p.bed = Some(b),
             Job::Surgery { patient, prosthetic, .. } => {
-                let i = self.map.idx(prosthetic);
-                self.res_item[i] = id;
+                if let Some(at) = prosthetic {
+                    let i = self.map.idx(at);
+                    self.res_item[i] = id;
+                }
                 self.res_patient.push((patient, id));
             }
             Job::Tend { patient, medicine, .. } => {
@@ -1255,14 +1257,13 @@ impl World {
         }
     }
 
-    /// Have colonist `id` pick up the weapon or apparel lying at `at` and use
+    /// Have colonist `id` pick up the weapon, apparel or belt item lying at `at` and use
     /// it, keeping it even when something better turns up.
     pub fn order_equip(&mut self, id: u32, at: Pos) -> bool {
         let i = self.map.idx(at);
         // The first weapon or piece of apparel here (a shelf may hold several things).
         let Some(s) = self.map.stacks(i).find(|s| s.kind.def().is_gear()) else { return false };
-        let d = s.kind.def();
-        if d.weapon.is_none() && d.apparel.is_none() || self.res_item[i] != 0 && self.res_item[i] != id {
+        if self.res_item[i] != 0 && self.res_item[i] != id {
             return false;
         }
         let kind = s.kind;
@@ -1270,7 +1271,7 @@ impl World {
         self.with_pawn(id, |w, p| {
             if p.is_colonist() && p.active() && p.break_timer <= 0.0 {
                 w.end_job(p);
-                w.start_job(p, Job::Equip { from: at, chosen: true });
+                w.start_job(p, Job::Equip { from: at, chosen: true, sidearm: false });
                 ordered = true;
             }
         });
@@ -1302,8 +1303,7 @@ impl World {
         for i in 0..w.pawns.len() {
             let chosen = std::mem::take(&mut w.pawns[i].chosen);
             for k in chosen {
-                let slot = crate::squads::loadout_slot(k);
-                if !w.pawns[i].loadout.iter().any(|&o| crate::squads::loadout_slot(o) == slot) {
+                if k.def().is_gear() && !w.pawns[i].loadout.iter().any(|&o| crate::squads::conflicts(o, k)) {
                     w.pawns[i].loadout.push(k);
                 }
             }

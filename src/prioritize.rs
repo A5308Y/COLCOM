@@ -27,7 +27,10 @@ impl World {
 
         // Gear lying here.
         if (self.res_item[i] == 0 || self.res_item[i] == p.id) && m.stacks(i).any(|s| s.kind.def().is_gear()) {
-            jobs.push(Job::Equip { from: at, chosen: true });
+            jobs.push(Job::Equip { from: at, chosen: true, sidearm: false });
+            if self.first_gear(at).and_then(|k| k.def().weapon.as_ref()).is_some_and(|w| w.sidearm) {
+                jobs.push(Job::Equip { from: at, chosen: true, sidearm: true });
+            }
         }
         // Work of every type, whether or not it's switched on for them.
         for wt in WorkType::ALL.into_iter().filter(|&wt| wt != WorkType::Doctor) {
@@ -49,8 +52,8 @@ impl World {
                 jobs.push(job);
             }
             if matches!(o.job, Some(Job::Operation { table }) if o.pos == table && o.lying()) {
-                if let Some(prosthetic) = self.nearest_prosthetic(o, &scan.df) {
-                    jobs.push(Job::Surgery { patient: o.id, prosthetic, picked: false });
+                if let Some(job) = self.surgery_job(o, &scan.df) {
+                    jobs.push(job);
                 }
             }
         }
@@ -97,6 +100,7 @@ impl World {
         // What a delivery brings: what's needed there (a shelf may hold other things too).
         let needed = |from: Pos, to: Pos| self.delivery_need(to).map_or_else(|| item(from), |n| n.kind.name().to_lowercase());
         match job {
+            Job::Equip { from, sidearm: true, .. } => format!("Carry {} as sidearm", gear(from)),
             Job::Equip { from, .. } => format!("Equip {}", gear(from)),
             Job::Work { task: Task::Sow(kind), .. } => format!("Prioritize planting {}", kind.def().name.to_lowercase()),
             Job::Work { target, task: Task::Craft } => match self.bench_at(target).and_then(|b| b.current) {

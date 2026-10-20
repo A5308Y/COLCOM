@@ -66,7 +66,8 @@ Details are in the notes below, under each topic.
   prosthetics, graves, owned beds, sleeping spots.
 - **Colonists:** single-job priorities, fuller hauling, fixes for starving and trapped colonists,
   recreation and daily schedules, a Work window with click-to-change priorities, longer days.
-- **Items:** components in three tiers, one loadout for everyday and battle, visible armour.
+- **Items:** components in three tiers, one loadout for everyday and battle, visible armour; body slots
+  (sidearm, belt, head, face, shirt, jacket/vest, legs) and cyberware slots (2026-10-20).
 - **World:** seasons, temperature and hypothermia, clothing warmth, a power grid with heaters and coolers,
   a vegetation cap and no wild plants beside buildings.
 - **Story:** difficulty settings; expeditions with three factions and goodwill, ten missions, barter
@@ -623,6 +624,24 @@ slopes, and old save versions); the newer note in the same topic says so.
   squad). Battles no longer swap gear (`gear_up` removed; `gear_down` stays for battles saved mid-way).
   Loading moves old `chosen` gear into free loadout slots (`chosen` is no longer saved). The Combat tab
   calls it Loadout and has a helmet slot.
+
+- Body slots and cyberware (2026-10-20). Gear: `Pawn::weapon`, `sidearm` (`WeaponDef.sidearm`:
+  pistol, knife, club; `sidearm_drawn` while in hand, `Pawn::held`), `utility: Option<Stack>` (belt items,
+  `ItemDef.utility`: `Grenade`/`Medkit`, up to `carry`) and apparel by `Slot` (`Head`, `Face`, `Shirt`
+  = the old `Body`, aliased in defs, `Outer` = jacket/vest, `Legs`). `ApparelDef.also` lets one item take
+  several slots (powered armour: outer, legs, head, face); `Pawn::wear` returns everything it displaced.
+  Loadouts keep one weapon, one belt item and non-overlapping apparel (`squads::conflicts`) plus a separate
+  `loadout_sidearm`; auto-upgrades are apparel and main weapons only. Cyberware: `health::CyberSlot`
+  (arms, legs, eyes, spine, heart, lungs replace natural parts; brain and dermal add on), stored as
+  `HediffKind::Prosthetic { efficiency, item }` on the slot's parts (dermal: whole body), so losing the
+  part loses the implant. `CyberwareDef` (`fits`, `efficiency`, `armor`, `aim`, `speed`) replaces
+  `ProstheticDef` (`prosthetic:` still parses). Operations are `{ slot, item: Option }` in
+  `Pawn::surgeries` (install, swap, or `None` = take out; heart, lungs and spine can't be taken out);
+  pending orders from older saves are dropped, everything else loads. Battles: `World::choose_weapon`
+  picks main or sidearm per strike by expected harm; `aim_bonus` (goggles, coprocessor) adds to the base
+  hit chance, and sight/manipulation above 1 (bionics) count up to 1.2; `BattleOrder::Throw(t)` (6
+  cells, everyone in the unit, +30 suppression) and `Medkit`; the AI uses both. Leg, face and cyberware
+  items have stored props (`NEW_ITEMS` in `tools/make_items.py`) but nothing drawn on the character yet.
 
 ### Seasons, temperature and power
 

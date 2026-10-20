@@ -5,7 +5,7 @@
 
 use super::input::UiState;
 use bevy_egui::egui::{self, Align2, RichText};
-use my_world::defs::{defs, Amount, BuildDef, BuildId, ItemId, PlantId, RecipeId, Slot, Special};
+use my_world::defs::{defs, Amount, BuildDef, BuildId, ItemId, PlantId, RecipeId, Slot, Special, UtilityEffect};
 use my_world::map::STACK_MAX;
 use my_world::world::{DAWN, DUSK, HUNGER_DRAIN};
 use my_world::DAY_LEN;
@@ -141,6 +141,9 @@ fn item_sheet(k: ItemId) -> Sheet {
 
     if let Some(w) = &d.weapon {
         let mut rows = vec![row("Type", if w.ranged() { "Ranged" } else { "Melee" })];
+        if w.sidearm {
+            rows.push(row("Sidearm", "light enough to carry besides a main weapon (drawn when it suits better)"));
+        }
         if w.ranged() {
             rows.push(row("Range", format!("{:.0} cells", w.range)));
         }
@@ -155,12 +158,11 @@ fn item_sheet(k: ItemId) -> Sheet {
     }
 
     if let Some(a) = &d.apparel {
-        let slot = match a.slot {
-            Slot::Body => "Body (clothes)",
-            Slot::Outer => "Over the clothes (armour)",
-            Slot::Head => "Head",
-        };
-        let mut rows = vec![row("Worn on", slot), row("Armour", format!("stops {:.0}% of each blow", a.armor * 100.0))];
+        let slots: Vec<&str> = a.slots().map(Slot::name).collect();
+        let mut rows = vec![row("Worn on", slots.join(", ")), row("Armour", format!("stops {:.0}% of each blow", a.armor * 100.0))];
+        if a.aim != 0.0 {
+            rows.push(row("Aim", format!("{:+.0}% chance to hit", a.aim * 100.0)));
+        }
         if a.mood != 0.0 {
             rows.push(row("Mood", format!("{:+.0} while worn", a.mood)));
         }
@@ -173,14 +175,41 @@ fn item_sheet(k: ItemId) -> Sheet {
         s.section("Apparel", rows);
     }
 
-    if let Some(pr) = &d.prosthetic {
-        let parts: Vec<&str> = pr.fits.iter().map(|p| p.name()).collect();
+    if let Some(c) = &d.cyberware {
+        let slots: Vec<&str> = c.fits.iter().map(|s| s.name()).collect();
+        let replaces = c.fits.iter().any(|s| s.replaces());
+        let mut rows = vec![row("Slot", slots.join(" or "))];
+        if replaces {
+            rows.push(row("Works", format!("{:.0}% as well as a healthy natural part", c.efficiency * 100.0)));
+        } else {
+            rows.push(row("Adds to", "the body (nothing natural is replaced)"));
+        }
+        if c.armor > 0.0 {
+            rows.push(row("Armour", format!("stops {:.0}% of each blow", c.armor * 100.0)));
+        }
+        if c.aim != 0.0 {
+            rows.push(row("Aim", format!("{:+.0}% chance to hit", c.aim * 100.0)));
+        }
+        if c.speed != 1.0 {
+            rows.push(row("Speed", format!("{:+.0}% walking, and in battle per action point", (c.speed - 1.0) * 100.0)));
+        }
+        rows.push(row("Installed", "by a doctor at an operating table (in place of a lost part, or electively)"));
+        s.section("Cyberware", rows);
+    }
+
+    if let Some(u) = &d.utility {
+        let effect = match u.effect {
+            UtilityEffect::Grenade { damage, range } => {
+                format!("thrown up to {:.0} cells at a unit: {:.0}-{:.0} damage to everyone in it, whatever their cover", range, damage.0, damage.1)
+            }
+            UtilityEffect::Medkit { quality } => format!("tends everyone's wounds in the unit ({:.0}% quality, more with Medicine skill)", quality * 100.0),
+        };
         let rows = vec![
-            row("Replaces", parts.join(" or ")),
-            row("Works", format!("{:.0}% as well as a healthy part", pr.efficiency * 100.0)),
-            row("Fitted", "by a doctor at an operating table"),
+            row("In battle", effect),
+            row("Carried", format!("up to {} on the belt (the Utility slot)", u.carry)),
+            row("Costs", format!("{} AP to use, and one is used up", u.ap)),
         ];
-        s.section("Prosthetic", rows);
+        s.section("Belt item", rows);
     }
 
     let mut made = Vec::new();

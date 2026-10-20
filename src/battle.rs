@@ -10,10 +10,10 @@
 //! hunger. Squad members who were far from their leader arrive a few
 //! rounds in, already in their combat gear.
 
-use crate::defs::ItemId;
+use crate::defs::{ItemId, UtilityEffect};
 use crate::map::{adjacent, Pos, Stack, Zone};
 use crate::pathing::{bfs, bfs_avoiding, DistField};
-use crate::pawn::{Faction, Memory, Pawn, Role, Skill};
+use crate::pawn::{attack_with, Attack, Faction, Memory, Pawn, Role, Skill};
 use crate::world::{Effect, Step, World, HUNGER_DRAIN, REST_DRAIN};
 use serde::{Deserialize, Serialize};
 
@@ -30,6 +30,8 @@ const DEPLOYED_TARGET: f32 = 0.8;
 /// Suppression from being attacked, and from each hit.
 const SUPPRESS_ATTACK: f32 = 15.0;
 const SUPPRESS_HIT: f32 = 10.0;
+/// Suppression from a grenade going off in the unit.
+const SUPPRESS_BLAST: f32 = 30.0;
 /// Game seconds that pass per round (for bleeding, healing and hunger).
 pub const TURN_SECS: f32 = 6.0;
 /// Cells a squad member covers per round on the way to their leader (as
@@ -299,6 +301,10 @@ pub enum BattleOrder {
     Hunker,
     /// A squad goes down on one knee, or stands up again (`AP_DEPLOY` each way).
     Deploy,
+    /// Someone in the unit throws a grenade at a unit: everyone in it is caught.
+    Throw(usize),
+    /// Someone in the unit uses a medkit on everyone's wounds.
+    Medkit,
     End,
 }
 
@@ -325,13 +331,15 @@ fn other(side: Faction) -> Faction {
 /// How likely `a` is to hit, before the situation (cover, hunkering, height,
 /// being pinned): shooting at `d` cells, or a blow in melee. Shots: 55% +
 /// 2.5% per Shooting level - 2.5% per cell; blows: 60% + 2% per Melee level.
-/// Bad eyes or hands make either worse.
+/// Bad eyes or hands make either worse; goggles and implants add to it
+/// (`Pawn::aim_bonus`), and so do bionic eyes and arms working better than
+/// natural ones (up to a fifth more each).
 pub fn base_hit_chance(a: &Pawn, ranged: bool, d: f32) -> f32 {
     let skill = if ranged { Skill::Shooting } else { Skill::Melee };
     let level = a.skill(skill) as f32;
     let c = if ranged { 0.55 + level * 0.025 - d * 0.025 } else { 0.6 + level * 0.02 };
     let caps = &a.health.caps;
-    c * (0.4 + 0.6 * caps.sight.min(1.0)) * (0.5 + 0.5 * caps.manipulation.min(1.0))
+    (c + a.aim_bonus()) * (0.4 + 0.6 * caps.sight.min(1.2)) * (0.5 + 0.5 * caps.manipulation.min(1.2))
 }
 
 impl World {
@@ -339,7 +347,7 @@ impl World {
     /// squads that fight at range (a whole squad fights one way, like its leader).
     pub fn can_deploy(&self, u: usize) -> bool {
         let Some(unit) = self.battle.as_ref().and_then(|b| b.units.get(u)) else { return false };
-        unit.led && (unit.deployed || unit.members.first().and_then(|&id| self.pawn(id)).is_some_and(|p| p.attack().ranged))
+        unit.led && (unit.deployed || unit.members.first().and_then(|&id| self.pawn(id)).is_some_and(|p| p.main_attack().ranged))
     }
 
     // ---------- parley ----------
@@ -455,9 +463,9 @@ impl World {
                 let id = self.spawn_raider(name, at);
                 // A squad fights one way: armed like the first of them.
                 if let Some(&first) = members.first() {
-                    let ranged = self.pawn(first).unwrap().attack().ranged;
+                    let ranged = self.pawn(first).unwrap().main_attack().ranged;
                     let i = self.pawn_index(id).unwrap();
-                    if self.pawns[i].attack().ranged != ranged {
+                    if self.pawns[i].main_attack().ranged != ranged {
                         self.pawns[i].weapon = Pawn::raider_weapon(&mut self.rng, Some(ranged)).or(self.pawns[i].weapon);
                     }
                 }
@@ -475,7 +483,7 @@ impl World {
             self.pawns.iter().filter(|p| ready(p)).map(|p| (p.id, p.role, p.pos)).collect();
         let leaders: Vec<(u32, Pos)> =
             colonists.iter().filter(|c| c.1 == Role::Leader).map(|c| (c.0, c.2)).collect();
-        let ranged = |w: &World, id: u32| w.pawn(id).is_some_and(|p| p.attack().ranged);
+        let ranged = |w: &World, id: u32| w.pawn(id).is_some_and(|p| p.main_attack().ranged);
         // Members armed the other way than their squad (say their gun wasn't
         // in storage) fight alone this time.
         let mut misfits = Vec::new();
@@ -574,7 +582,7 @@ impl World {
                 self.map.drop_item(at, Stack { kind: taken, count: 1 });
             }
             if let Some(prev) = prev {
-                if let Some(extra) = self.pawns[i].wear(prev) {
+                for extra in self.pawns[i].wear(prev) {
                     self.map.drop_item(at, Stack { kind: extra, count: 1 });
                 }
             }
@@ -585,6 +593,7 @@ impl World {
         let Some(b) = self.battle.take() else { return };
         for p in self.pawns.iter_mut() {
             p.running = false;
+            p.sidearm_drawn = false;
         }
         let colonists: Vec<u32> = self.pawns.iter().filter(|p| p.is_living_colonist()).map(|p| p.id).collect();
         for &id in &colonists {
@@ -702,6 +711,111 @@ impl World {
                 }
                 Ok(())
             }
+            BattleOrder::Throw(t) => {
+                let (thrower, kind) = self.throw_option(u, t).ok_or("nobody can throw a grenade that far")?;
+                let cost = kind.def().utility.as_ref().map_or(AP_ATTACK, |d| d.ap);
+                if ap < cost {
+                    return Err("not enough action points".into());
+                }
+                self.throw_grenade(thrower, t);
+                if let Some(b) = self.battle.as_mut() {
+                    b.units[u].ap -= cost;
+                }
+                Ok(())
+            }
+            BattleOrder::Medkit => {
+                let (medic, kind) = self.medkit_option(u).ok_or("no medkit, or nobody needs one")?;
+                let cost = kind.def().utility.as_ref().map_or(AP_ATTACK, |d| d.ap);
+                if ap < cost {
+                    return Err("not enough action points".into());
+                }
+                self.use_medkit(medic, u);
+                let b = self.battle.as_mut().unwrap();
+                b.units[u].ap -= cost;
+                Ok(())
+            }
+        }
+    }
+
+    // ---------- belt items ----------
+
+    /// Who in unit `u` could throw a grenade at unit `t` (someone there in
+    /// range and sight): the thrower and the grenade.
+    pub fn throw_option(&self, u: usize, t: usize) -> Option<(u32, ItemId)> {
+        let b = self.battle.as_ref()?;
+        let (unit, target) = (b.units.get(u)?, b.units.get(t)?);
+        if unit.side == target.side || target.out() {
+            return None;
+        }
+        unit.members.iter().filter_map(|&m| self.pawn(m)).filter(|p| p.active()).find_map(|p| {
+            let s = p.utility?;
+            let Some(UtilityEffect::Grenade { range, .. }) = s.kind.def().utility.as_ref().map(|d| d.effect) else { return None };
+            let reach = target.members.iter().filter_map(|&o| self.pawn(o)).any(|o| {
+                o.active() && cell_dist(p.pos, o.pos) <= range && battle_sight(self, p.pos, o.pos)
+            });
+            reach.then_some((p.id, s.kind))
+        })
+    }
+
+    /// Someone in unit `u` with a medkit, if anyone there has wounds to tend.
+    pub fn medkit_option(&self, u: usize) -> Option<(u32, ItemId)> {
+        let unit = self.battle.as_ref()?.units.get(u)?;
+        let members: Vec<&Pawn> = unit.members.iter().filter_map(|&m| self.pawn(m)).collect();
+        if !members.iter().any(|p| p.health.needs_tending()) {
+            return None;
+        }
+        members.iter().filter(|p| p.active()).find_map(|p| {
+            let s = p.utility?;
+            matches!(s.kind.def().utility.as_ref()?.effect, UtilityEffect::Medkit { .. }).then_some((p.id, s.kind))
+        })
+    }
+
+    /// `thrower` throws a grenade at unit `t`: it goes off among them,
+    /// wounding everyone (armour helps, cover doesn't) and keeping heads down.
+    fn throw_grenade(&mut self, thrower: u32, t: usize) {
+        let Some(ai) = self.pawn_index(thrower) else { return };
+        let Some(kind) = self.pawns[ai].use_utility() else { return };
+        let Some(UtilityEffect::Grenade { damage, .. }) = kind.def().utility.as_ref().map(|d| d.effect) else { return };
+        let members = self.battle.as_ref().map_or(Vec::new(), |b| b.units[t].members.clone());
+        let Some(at) = members.iter().filter_map(|&m| self.pawn(m)).map(|p| (p.x, p.y, p.z)).next() else { return };
+        let from = (self.pawns[ai].x, self.pawns[ai].y, self.pawns[ai].z);
+        self.pawns[ai].cooldown = 1.0;
+        self.effects.push(Effect { from, to: at, ttl: 0.4, hit: true });
+        self.sound("rock_break", Some(self.pawns[ai].pos));
+        let by = format!("{}'s {}", self.pawns[ai].name, kind.name().to_lowercase());
+        for m in members {
+            let Some(ti) = self.pawn_index(m).filter(|&i| self.pawns[i].active()) else { continue };
+            let dmg = self.rng.range_f32(damage.0, damage.1);
+            self.damage(ti, dmg, crate::health::DamageKind::Cut, &by);
+        }
+        if let Some(b) = self.battle.as_mut() {
+            b.units[t].suppression += SUPPRESS_BLAST;
+            b.quiet_rounds = 0;
+            b.busy = AFTER_ATTACK;
+        }
+        self.refresh_units();
+    }
+
+    /// `medic` uses a medkit on everyone in unit `u`.
+    fn use_medkit(&mut self, medic: u32, u: usize) {
+        let Some(mi) = self.pawn_index(medic) else { return };
+        let Some(kind) = self.pawns[mi].use_utility() else { return };
+        let Some(UtilityEffect::Medkit { quality }) = kind.def().utility.as_ref().map(|d| d.effect) else { return };
+        let skill = self.pawns[mi].skill(Skill::Medicine) as f32;
+        let quality = (quality + 0.02 * skill).min(1.0);
+        self.pawns[mi].learn(Skill::Medicine, 2.0);
+        let name = self.pawns[mi].name.clone();
+        self.sound("rustle", Some(self.pawns[mi].pos));
+        let members = self.battle.as_ref().map_or(Vec::new(), |b| b.units[u].members.clone());
+        let mut tended = 0;
+        for m in members {
+            let Some(i) = self.pawn_index(m) else { continue };
+            tended += self.pawns[i].health.tend(quality, 3);
+            self.pawns[i].health.recompute();
+        }
+        self.push_log(format!("{} used a {}: {} wounds tended.", name, kind.name().to_lowercase(), tended));
+        if let Some(b) = self.battle.as_mut() {
+            b.busy = AFTER_ATTACK;
         }
     }
 
@@ -820,14 +934,38 @@ impl World {
         self.can_attack_from(a, a.pos, o)
     }
 
-    /// Whether `a` could reach `o` if standing at `from`.
+    /// Whether `a` could reach `o` if standing at `from` (with either weapon).
     pub fn can_attack_from(&self, a: &Pawn, from: Pos, o: &Pawn) -> bool {
-        let w = a.attack();
+        self.choose_weapon(a, from, o).is_some()
+    }
+
+    /// Whether attack `w` reaches `o` from `from`: in range and in sight for
+    /// guns, next to them for blows.
+    fn reaches(&self, w: &Attack, from: Pos, o: &Pawn) -> bool {
         if w.ranged {
             cell_dist(from, o.pos) <= w.range && battle_sight(self, from, o.pos)
         } else {
             adjacent(from, o.pos) && from.2 == o.pos.2
         }
+    }
+
+    /// The weapon `a` would use on `o` from `from` (`Some(None)`: fists):
+    /// of the main weapon and the sidearm, the one that reaches and does
+    /// the most harm, likely hits counted. `None` if neither reaches.
+    pub fn choose_weapon(&self, a: &Pawn, from: Pos, o: &Pawn) -> Option<Option<ItemId>> {
+        let mut best: Option<(f32, Option<ItemId>)> = None;
+        for kind in a.weapons() {
+            let w = attack_with(kind);
+            if !self.reaches(&w, from, o) {
+                continue;
+            }
+            let shots = kind.and_then(|k| k.def().weapon.as_ref()).map_or(1, |d| d.shots.max(1)) as f32;
+            let harm = (w.damage.0 + w.damage.1) / 2.0 * shots * self.hit_chance_with(a, &w, from, o);
+            if best.is_none_or(|(b, _)| harm > b) {
+                best = Some((harm, kind));
+            }
+        }
+        best.map(|b| b.1)
     }
 
     /// Line up an attack: each member who can reach someone in unit `t`
@@ -840,10 +978,14 @@ impl World {
         let mut attackers: Vec<u32> = options.iter().map(|o| o.0).collect();
         attackers.dedup();
         // Shots go round the unit: everyone's first, then the second shots (rifles fire two).
-        let shots: Vec<(u32, u32)> = attackers
-            .iter()
-            .map(|&a| (a, self.pawn(a).and_then(|p| p.weapon).and_then(|k| k.def().weapon.as_ref()).map_or(1, |w| w.shots.max(1))))
-            .collect();
+        // Each with the weapon they'd use on their first target in reach.
+        let weapon = |w: &World, a: u32| {
+            let o = options.iter().find(|o| o.0 == a)?;
+            w.choose_weapon(w.pawn(a)?, w.pawn(a)?.pos, w.pawn(o.1)?)
+        };
+        let chosen: Vec<(u32, Option<ItemId>)> = attackers.iter().map(|&a| (a, weapon(self, a).flatten())).collect();
+        let shots: Vec<(u32, u32)> =
+            chosen.iter().map(|&(a, k)| (a, k.and_then(|k| k.def().weapon.as_ref()).map_or(1, |w| w.shots.max(1)))).collect();
         let most = shots.iter().map(|s| s.1).max().unwrap_or(1);
         let mut strikes = Vec::new();
         let mut at = AIM_TIME;
@@ -853,7 +995,8 @@ impl World {
             for &(a, _) in shots.iter().filter(|s| s.1 > round) {
                 let Some(ai) = self.pawn_index(a) else { continue };
                 let Some(target) = self.pick_target(ai, t) else { continue };
-                let delay = if self.pawns[ai].attack().ranged {
+                let kind = chosen.iter().find(|c| c.0 == a).and_then(|c| c.1);
+                let delay = if attack_with(kind).ranged {
                     volley = true;
                     at + self.rng.range_f32(0.0, VOLLEY_SPREAD)
                 } else {
@@ -879,6 +1022,10 @@ impl World {
         let Some(ai) = self.pawn_index(s.attacker).filter(|&i| self.pawns[i].active()) else { return };
         let target = self.pick_target(ai, s.unit);
         let Some(ti) = target.and_then(|t| self.pawn_index(t)) else { return };
+        // Draw the sidearm if it suits better (or put it away again).
+        let (a, o) = (&self.pawns[ai], &self.pawns[ti]);
+        let kind = self.choose_weapon(a, a.pos, o).unwrap_or(a.held());
+        self.pawns[ai].sidearm_drawn = kind.is_some() && kind == self.pawns[ai].sidearm && kind != self.pawns[ai].weapon;
         let chance = self.hit_chance(&self.pawns[ai], &self.pawns[ti]);
         let hit = self.rng.chance(chance);
         let w = self.pawns[ai].attack();
@@ -940,9 +1087,15 @@ impl World {
         self.hit_chance_from(a, a.pos, o)
     }
 
-    /// Chance that `a`'s shot or blow hits `o` if `a` stood at `from`.
+    /// Chance that `a`'s shot or blow hits `o` if `a` stood at `from`, with
+    /// the weapon they'd use there (or the one in hand, if none reaches).
     pub fn hit_chance_from(&self, a: &Pawn, from: Pos, o: &Pawn) -> f32 {
-        let w = a.attack();
+        let w = attack_with(self.choose_weapon(a, from, o).unwrap_or(a.held()));
+        self.hit_chance_with(a, &w, from, o)
+    }
+
+    /// Chance that `a`'s shot or blow with attack `w` hits `o` from `from`.
+    fn hit_chance_with(&self, a: &Pawn, w: &Attack, from: Pos, o: &Pawn) -> f32 {
         let mut c = base_hit_chance(a, w.ranged, cell_dist(from, o.pos));
         let b = self.battle.as_ref();
         let unit = |id: u32| b.and_then(|b| b.unit_of(id).map(|u| &b.units[u]));
@@ -1401,7 +1554,7 @@ mod tests {
         assert!(b.events.iter().any(|e| e.contains("fight alone")), "{:?}", b.events);
         // Raider squads are armed alike too.
         for u in b.units.iter().filter(|u| u.side == Faction::Raider) {
-            let kinds: Vec<bool> = u.members.iter().map(|&id| w.pawn(id).unwrap().attack().ranged).collect();
+            let kinds: Vec<bool> = u.members.iter().map(|&id| w.pawn(id).unwrap().main_attack().ranged).collect();
             assert!(kinds.windows(2).all(|k| k[0] == k[1]), "{:?}", kinds);
         }
     }
@@ -2110,6 +2263,107 @@ mod tests {
         let i = w.pawn_index(lone).unwrap();
         w.pawns[i].health.caps.moving = 0.5;
         assert_eq!(w.step_ap(alone), 16);
+    }
+
+    /// Colonist `id` alone against one raider standing at `at`: (their unit, the raider's unit, the raider).
+    fn duel(w: &mut World, id: u32, at: Pos) -> (usize, usize, u32) {
+        fight(w, 1, (w.map.w - 1, 10, Z));
+        let r = raiders(w)[0];
+        let ri = w.pawn_index(r).unwrap();
+        place(&mut w.pawns[ri], at);
+        let b = battle(w);
+        (b.unit_of(id).unwrap(), b.unit_of(r).unwrap(), r)
+    }
+
+    #[test]
+    fn a_sidearm_is_drawn_when_the_main_weapon_cant_reach() {
+        let mut w = world(30, 20, 31);
+        let id = colonist(&mut w, (5, 10, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].weapon = Some(item("club"));
+        let (u, t, r) = duel(&mut w, id, (10, 10, Z));
+        let (a, o) = (w.pawn(id).unwrap(), w.pawn(r).unwrap());
+        assert_eq!(w.choose_weapon(a, a.pos, o), None, "a club doesn't reach five cells");
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].equip_sidearm(item("pistol"));
+        let (a, o) = (w.pawn(id).unwrap(), w.pawn(r).unwrap());
+        assert_eq!(w.choose_weapon(a, a.pos, o), Some(Some(item("pistol"))));
+        assert!(!w.pawn(id).unwrap().main_attack().ranged, "they still fight in melee (squads go by the main weapon)");
+        w.battle_order(BattleOrder::Activate(u)).unwrap();
+        w.battle_order(BattleOrder::Attack(t)).unwrap();
+        let mut drawn = false;
+        for _ in 0..(3.0 / TICK) as usize {
+            if w.battle.is_none() {
+                break;
+            }
+            w.tick(TICK);
+            drawn |= w.pawn(id).unwrap().held() == Some(item("pistol"));
+        }
+        assert!(drawn, "the pistol was in hand for the shot");
+        assert!(w.take_sounds().iter().any(|s| s.name == "pistol"));
+    }
+
+    #[test]
+    fn grenades_catch_everyone_in_a_squad() {
+        let mut w = world(30, 20, 32);
+        let id = colonist(&mut w, (5, 10, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].weapon = Some(item("rifle"));
+        w.pawns[i].take_utility(Stack { kind: item("frag_grenade"), count: 5 });
+        assert_eq!(w.pawn(id).unwrap().utility, Some(Stack { kind: item("frag_grenade"), count: 3 }), "they carry three");
+        fight(&mut w, 2, (29, 10, Z));
+        let rs = raiders(&w);
+        for (n, &r) in rs.iter().enumerate() {
+            let ri = w.pawn_index(r).unwrap();
+            place(&mut w.pawns[ri], (9, 9 + n, Z));
+            w.pawns[ri].apparel.clear();
+        }
+        let b = battle(&w);
+        let (u, t) = (b.unit_of(id).unwrap(), b.unit_of(rs[0]).unwrap());
+        assert!(w.throw_option(u, t).is_some());
+        w.battle_order(BattleOrder::Activate(u)).unwrap();
+        w.battle_order(BattleOrder::Throw(t)).unwrap();
+        assert_eq!(w.pawn(id).unwrap().utility.map(|s| s.count), Some(2), "one used up");
+        let b = battle(&w);
+        assert_eq!(b.units[u].ap, AP_MAX - 40);
+        assert!(b.units[t].suppression >= SUPPRESS_BLAST);
+        for &r in &b.units[t].roster {
+            let p = w.pawn(r).unwrap();
+            assert!(p.dead || !p.health.hediffs.is_empty(), "{} was caught in the blast", p.name);
+        }
+    }
+
+    #[test]
+    fn a_medkit_patches_up_the_unit() {
+        let mut w = world(30, 20, 33);
+        let id = colonist(&mut w, (5, 10, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].take_utility(Stack { kind: item("field_medkit"), count: 1 });
+        let (u, _, _) = duel(&mut w, id, (25, 10, Z));
+        w.battle_order(BattleOrder::Activate(u)).unwrap();
+        assert!(w.battle_order(BattleOrder::Medkit).is_err(), "nobody is hurt");
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].health.injure(crate::health::Part::LeftArm, 8.0, crate::health::DamageKind::Cut, &mut crate::rng::Rng::new(2));
+        w.pawns[i].health.recompute();
+        assert!(w.pawn(id).unwrap().health.bleed_rate() > 0.0);
+        w.battle_order(BattleOrder::Medkit).unwrap();
+        let p = w.pawn(id).unwrap();
+        assert_eq!(p.health.bleed_rate(), 0.0, "tended");
+        assert!(p.utility.is_none(), "used up");
+    }
+
+    #[test]
+    fn goggles_and_bionic_eyes_aim_better() {
+        let mut w = world(30, 20, 34);
+        let id = colonist(&mut w, (5, 5, Z));
+        let plain = w.pawn(id).unwrap().clone();
+        let mut goggles = plain.clone();
+        goggles.wear(item("tactical_goggles"));
+        let mut eyes = plain.clone();
+        eyes.health.install(crate::health::CyberSlot::Eyes, item("bionic_eyes"), 1.25);
+        let chance = |p: &Pawn| base_hit_chance(p, true, 6.0);
+        assert!(chance(&goggles) > chance(&plain) + 0.03, "{} vs {}", chance(&goggles), chance(&plain));
+        assert!(chance(&eyes) > chance(&plain) * 1.1, "{} vs {}", chance(&eyes), chance(&plain));
     }
 
     #[test]

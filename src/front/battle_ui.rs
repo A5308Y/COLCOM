@@ -17,6 +17,7 @@ use bevy_egui::egui::{self, Align2, Color32, ProgressBar, RichText};
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::battle::{Battle, BattleOrder, Cover, Unit, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MAX, BROKEN, PINNED};
+use my_world::defs::UtilityEffect;
 use my_world::map::{Pos, DIRS};
 use my_world::pawn::Faction;
 use my_world::world::World as SimWorld;
@@ -52,6 +53,28 @@ struct BattleView {
     last: Vec<(f32, f32, bool, bool)>,
     /// Text rising over units for what just happened to them.
     popups: Vec<Popup>,
+    /// A grenade is in hand: clicking an enemy throws it instead of attacking.
+    throwing: bool,
+}
+
+/// How many belt items of the kind `is` the living members of `unit` carry,
+/// and the action points one costs.
+fn belt(w: &SimWorld, unit: &Unit, is: fn(&UtilityEffect) -> bool) -> (u32, i32) {
+    let mut found = (0, 0);
+    for p in unit.members.iter().filter_map(|&id| w.pawn(id)).filter(|p| p.active()) {
+        let Some(s) = p.utility else { continue };
+        let Some(d) = s.kind.def().utility.as_ref().filter(|d| is(&d.effect)) else { continue };
+        found = (found.0 + s.count, d.ap);
+    }
+    found
+}
+
+fn is_grenade(e: &UtilityEffect) -> bool {
+    matches!(e, UtilityEffect::Grenade { .. })
+}
+
+fn is_medkit(e: &UtilityEffect) -> bool {
+    matches!(e, UtilityEffect::Medkit { .. })
 }
 
 /// "+25 suppression", "PINNED!" and the like, rising over a unit and fading.
@@ -419,7 +442,7 @@ fn battle_input(
                     if unit.side == Faction::Colony && unit.can_act() {
                         orders.push(BattleOrder::Activate(u));
                     } else if unit.side != Faction::Colony && my_unit(b).is_some() {
-                        orders.push(BattleOrder::Attack(u));
+                        orders.push(if view.throwing { BattleOrder::Throw(u) } else { BattleOrder::Attack(u) });
                     }
                 }
                 None if my_unit(b).is_some() => orders.push(BattleOrder::Move(h.stand)),
@@ -431,6 +454,9 @@ fn battle_input(
         match sim.world.battle_order(order) {
             Ok(()) => {
                 view.message = None;
+                if !matches!(order, BattleOrder::Move(_)) {
+                    view.throwing = false;
+                }
                 if !matches!(order, BattleOrder::Activate(_)) {
                     sounds.play("ui_place", None);
                 }
@@ -665,6 +691,11 @@ fn battle_panels(
     };
     let mut orders = Vec::new();
     let mut end_all = false;
+    let mut toggle_throw = false;
+    // Nothing to throw with once the acting unit changes or runs out.
+    if my_unit(b).is_none_or(|u| belt(w, &b.units[u], is_grenade).0 == 0) {
+        view.throwing = false;
+    }
 
     // "Round N" in the middle of the screen when a round starts, fading away.
     if view.announced != Some(b.round) {
@@ -921,7 +952,7 @@ fn battle_panels(
                 unit_state(panel, unit);
                 panel.label(
                     RichText::new(format!(
-                        "Click a cell to move ({} AP a step), an enemy to attack ({} AP).",
+                        "Click a cell to move ({} AP a step), an enemy to attack ({} AP; members draw a sidearm when it suits better).",
                         sim.world.step_ap(u), AP_ATTACK
                     ))
                     .small()
@@ -950,6 +981,23 @@ fn battle_panels(
                             orders.push(BattleOrder::Deploy);
                         }
                     }
+                    let (grenades, throw_ap) = belt(w, unit, is_grenade);
+                    if grenades > 0 {
+                        let label = format!("Grenade ×{} ({} AP)", grenades, throw_ap);
+                        let hint = "Then click an enemy unit in range: everyone in it is caught, whatever their cover";
+                        if row.add_enabled(unit.ap >= throw_ap, egui::Button::new(label).selected(view.throwing)).on_hover_text(hint).clicked() {
+                            toggle_throw = true;
+                        }
+                    }
+                    let (medkits, medkit_ap) = belt(w, unit, is_medkit);
+                    if medkits > 0 {
+                        let label = format!("Medkit ×{} ({} AP)", medkits, medkit_ap);
+                        let ready = unit.ap >= medkit_ap && w.medkit_option(u).is_some();
+                        let hint = "Tend everyone's wounds in the unit (only when someone needs it)";
+                        if row.add_enabled(ready, egui::Button::new(label)).on_hover_text(hint).clicked() {
+                            orders.push(BattleOrder::Medkit);
+                        }
+                    }
                     if row.add_enabled(unit.ap >= AP_HUNKER, egui::Button::new("Hunker down")).on_hover_text("Better cover until the next round; ends the turn").clicked() {
                         orders.push(BattleOrder::Hunker);
                     }
@@ -966,6 +1014,10 @@ fn battle_panels(
                 let enemy = &b.units[t];
                 panel.separator();
                 panel.label(RichText::new(format!("Enemy: {}", names(w, &enemy.members))).strong().color(Color32::from_rgb(255, 150, 130)));
+                if let Some(u) = my_unit(b).filter(|_| view.throwing) {
+                    let reach = if w.throw_option(u, t).is_some() { "Click to throw the grenade" } else { "Out of throwing range or sight" };
+                    panel.label(RichText::new(reach).color(Color32::from_rgb(255, 200, 120)));
+                }
                 unit_state(panel, enemy);
             }
 
@@ -1027,6 +1079,9 @@ fn battle_panels(
             Ok(()) => sounds.play("ui_click", None),
             Err(_) => sounds.play("ui_click", None),
         }
+    }
+    if toggle_throw {
+        view.throwing = !view.throwing;
     }
     if end_all && sim.world.end_colony_turns().is_ok() {
         sounds.play("ui_click", None);

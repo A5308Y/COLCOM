@@ -234,14 +234,14 @@ fn worn_pieces(apparel: &[ItemId]) -> Vec<&'static WornPiece> {
     let outer = apparel.iter().any(|k| k.def().apparel.as_ref().is_some_and(|a| a.slot == Slot::Outer && !a.pieces.is_empty()));
     let head = apparel.iter().filter(|k| k.def().apparel.as_ref().is_some_and(|a| a.pieces.iter().any(|p| p.bone == "Head")))
         .max_by(|a, b| a.def().apparel.as_ref().unwrap().armor.total_cmp(&b.def().apparel.as_ref().unwrap().armor));
-    apparel.iter().filter(|k| !outer || k.def().apparel.as_ref().is_none_or(|a| a.slot != Slot::Body)).flat_map(|kind| {
+    apparel.iter().filter(|k| !outer || k.def().apparel.as_ref().is_none_or(|a| a.slot != Slot::Shirt)).flat_map(|kind| {
         kind.def().apparel.iter().flat_map(|a| &a.pieces).filter(move |piece| piece.bone != "Head" || head == Some(kind))
     }).collect()
 }
 
 fn skinned_apparel(apparel: &[ItemId]) -> Option<ItemId> {
     let outer = apparel.iter().any(|k| k.def().apparel.as_ref().is_some_and(|a| a.slot == Slot::Outer && !a.pieces.is_empty()));
-    apparel.iter().copied().find(|k| k.def().apparel.as_ref().is_some_and(|a| a.skinned.is_some() && (!outer || a.slot != Slot::Body)))
+    apparel.iter().copied().find(|k| k.def().apparel.as_ref().is_some_and(|a| a.skinned.is_some() && (!outer || a.slot != Slot::Shirt)))
 }
 
 /// Direction the pawn should face when not moving: the nearest enemy in a

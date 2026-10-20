@@ -59,6 +59,14 @@ class Item(Gear):
             for z in (-depth / 2, depth / 2):
                 self.box((x, height / 2, z), (.024, height, .009), 2, bevel=.002)
 
+    def ball(self, at, radius, material, squash=1.0, sides=10):
+        """A smooth closed ovoid; `squash` scales its height."""
+        piece = Item(self.palette)
+        rings = [(radius * squash * math.sin(a), radius * math.cos(a) + 1e-4, radius * math.cos(a) + 1e-4, 0)
+                 for a in [math.radians(d) for d in (-80, -45, 0, 45, 80)]]
+        piece.section(rings, material, sides=sides, smooth=True)
+        self.add(piece, at)
+
     def cross_mark(self, y, size=.12, z=0):
         self.box((0, y, z), (size * .28, .009, size), 4, bevel=.001)
         for side in (-1, 1):
@@ -314,8 +322,18 @@ def medicine(herbal=False):
     return g
 
 
-def prosthetic(leg=False):
-    g = Item(palette(OLIVE, STEEL, (.64, .65, .57), AMBER, metal=.35))
+TITANIUM = (.56, .59, .60)
+GRAPHITE = (.19, .21, .22)
+# Muted identification teal for cyberware: a painted mark, never emissive.
+TEAL = (.25, .50, .52)
+
+
+def cyber_palette(primary=TITANIUM, secondary=GRAPHITE):
+    return palette(primary, secondary, (.72, .74, .72), TEAL, metal=.6)
+
+
+def prosthetic(leg=False, bionic=False):
+    g = Item(cyber_palette() if bionic else palette(OLIVE, STEEL, (.64, .65, .57), AMBER, metal=.35))
     g.box((0, .065, -.025), (.07, .085, .35), 1, worn=True)
     for z in (-.19, .15):
         g.cylinder((0, .065, z), .066, .09, 2, "x", bore=.022)
@@ -332,6 +350,155 @@ def prosthetic(leg=False):
         for x in (-.043, -.014, .014, .043):
             g.box((x, .052, .315), (.023, .035, .066), 1, bevel=.004)
         g.box((-.075, .05, .24), (.045, .035, .026), 1, bevel=.004)
+    if bionic:
+        # A graphite muscle shroud over the strut and a painted teal service stripe.
+        g.box((0, .118, -.025), (.085, .022, .26), 1, bevel=.008)
+        g.box((0, .131, -.025), (.014, .006, .22), 4, bevel=.002)
+        for z in (-.19, .15):
+            g.cylinder((0, .065, z), .046, .1, 4, "x", sides=8)
+    return g
+
+
+def bionic_eyes():
+    g = Item(cyber_palette(GRAPHITE, (.78, .80, .78)))
+    # A padded transport case holding the pair, lenses up.
+    g.box((0, .022, 0), (.25, .044, .15), 0, bevel=.012)
+    g.box((0, .046, 0), (.23, .006, .13), 2, bevel=.002)
+    for x in (-.058, .058):
+        g.ball((x, .085, 0), .042, 1)
+        g.cylinder((x, .125, 0), .018, .006, 4, "y", sides=10)
+        g.cylinder((x, .129, 0), .008, .004, 2, "y", sides=8)
+    g.box((0, .06, -.062), (.05, .02, .012), 3, bevel=.003)
+    return g
+
+
+def neural_coprocessor():
+    g = Item(cyber_palette(GRAPHITE, STEEL))
+    g.box((0, .012, 0), (.17, .024, .12), 0, bevel=.004)
+    g.box((0, .032, 0), (.07, .016, .06), 1, bevel=.004)
+    g.box((0, .042, 0), (.03, .004, .02), 4, bevel=0)
+    # Gold-tone contact fingers and a short braided lead.
+    for i in range(6):
+        g.box((-.07 + i * .028, .025, .056), (.012, .003, .018), 3, bevel=0)
+    g.cylinder((.06, .02, -.075), .009, .05, 2, "z", sides=6)
+    return g
+
+
+def reinforced_spine():
+    g = Item(cyber_palette())
+    for i in range(7):
+        z = -.24 + i * .08
+        g.cylinder((0, .045, z), .04, .05, 0, "z", sides=8)
+        g.box((0, .088, z), (.018, .04, .03), 1, bevel=.004)
+        for side in (-1, 1):
+            g.box((side * .055, .05, z), (.05, .016, .022), 1, bevel=.004)
+        if i < 6:
+            g.cylinder((0, .045, z + .04), .03, .03, 2, "z", sides=8)
+    # A painted teal mark along the top of the spinous processes.
+    g.box((0, .111, 0), (.008, .004, .5), 4, bevel=0)
+    return g
+
+
+def subdermal_plating():
+    g = Item(cyber_palette((.62, .64, .62), GRAPHITE))
+    # Overlapping ceramic scales on a flexible graphite mesh backing.
+    g.box((0, .006, 0), (.32, .012, .24), 1, bevel=.003)
+    for row, z in enumerate((-.08, 0, .08)):
+        for col in range(4):
+            x = -.11 + col * .074 + (.037 if row == 1 else 0)
+            if abs(x) > .14:
+                continue
+            g.box((x, .02 + row * .004, z), (.07, .012, .09), 0, bevel=.006, tilt=-6)
+    g.box((-.135, .03, 0), (.02, .008, .2), 4, bevel=.002)
+    return g
+
+
+def synthetic_heart():
+    g = Item(cyber_palette(STEEL, GRAPHITE))
+    g.box((0, .012, 0), (.2, .024, .2), 1, bevel=.008)
+    g.ball((0, .1, 0), .075, 0, squash=1.05)
+    g.cylinder((0, .1, 0), .078, .03, 4, "y", sides=10)
+    for x, z, height in [(-.03, -.02, .07), (.025, .02, .06), (.045, -.035, .05)]:
+        g.cylinder((x, .19, z), .016, height, 2, "y", bore=.008, sides=8)
+    return g
+
+
+def filter_lungs():
+    g = Item(cyber_palette(STEEL, GRAPHITE))
+    g.box((0, .012, 0), (.26, .024, .2), 1, bevel=.008)
+    for x in (-.065, .065):
+        g.ball((x, .095, 0), .062, 0, squash=1.25)
+        g.cylinder((x, .095, 0), .065, .018, 4, "y", sides=10)
+    g.cylinder((0, .2, 0), .016, .07, 2, "y", sides=8)
+    for side in (-1, 1):
+        g.box((side * .03, .165, 0), (.07, .014, .014), 2, bevel=.003, tilt=0)
+    return g
+
+
+def frag_grenades():
+    g = Item(palette(OLIVE, STEEL, CREAM, AMBER, metal=.2))
+    for x, z in [(-.06, -.02), (.065, .025)]:
+        g.ball((x, .055, z), .05, 0, squash=1.2)
+        # Fragmentation bands, a fuse body and a spoon lever.
+        for dy in (-.02, .015):
+            g.cylinder((x, .055 + dy, z), .051, .008, 2, "y", sides=10)
+        g.cylinder((x, .125, z), .016, .03, 1, "y", sides=8)
+        g.box((x + .018, .1, z), (.008, .06, .018), 1, bevel=.002, tilt=0)
+        g.cylinder((x - .02, .135, z), .009, .004, 3, "x", bore=.005, sides=8)
+    return g
+
+
+def field_medkit():
+    g = Item(palette(OLIVE, STEEL, CREAM, (.62, .16, .13)))
+    g.box((0, .055, 0), (.26, .11, .16), 0, bevel=.025)
+    g.box((0, .062, .081), (.16, .07, .012), 0, bevel=.01)
+    g.cross_mark(.112, .085)
+    g.box((0, .115, -.04), (.2, .01, .022), 2, bevel=.002)
+    g.straps(.26, .11, .16, (-.09, .09))
+    return g
+
+
+def cargo_trousers():
+    g = Item(palette((.47, .43, .33), (.36, .33, .25), CREAM, OLIVE))
+    # Folded in three: soft layers with pocket flaps and a belt band on top.
+    for y, width in [(.025, .36), (.075, .345), (.125, .33)]:
+        g.box((0, y, 0), (width, .05, .26), 0, bevel=.018)
+    for side in (-1, 1):
+        g.box((side * .09, .152, .02), (.09, .008, .07), 1, bevel=.004)
+        g.box((side * .09, .157, -.012), (.09, .006, .012), 2, bevel=.002)
+    g.box((0, .152, -.115), (.31, .01, .03), 2, bevel=.003)
+    return g
+
+
+def flak_leg_guards():
+    g = Item(palette((.34, .37, .27), (.24, .26, .22), CREAM, OLIVE))
+    for x in (-.085, .085):
+        # Quilted thigh pad, a rounded knee cup and a shin plate, lying flat.
+        g.box((x, .028, -.08), (.15, .05, .2), 0, bevel=.02)
+        for z in (-.13, -.08, -.03):
+            g.box((x, .054, z), (.14, .004, .006), 1, bevel=0)
+        g.ball((x, .04, .06), .045, 1, squash=.8)
+        g.box((x, .024, .17), (.12, .042, .16), 0, bevel=.016)
+        for z in (-.12, .17):
+            g.box((x, .05, z), (.155, .008, .022), 2, bevel=.002)
+    return g
+
+
+def tactical_goggles():
+    g = Item(palette(GRAPHITE, (.22, .30, .31), CREAM, OLIVE, metal=.2))
+    for x in (-.055, .055):
+        g.box((x, .035, 0), (.09, .06, .045), 0, bevel=.012)
+        g.box((x, .036, .024), (.072, .044, .006), 1, bevel=.006)
+    g.box((0, .042, 0), (.03, .02, .03), 0, bevel=.005)
+    # The elastic strap lies in a loose loop behind the frame.
+    for i in range(8):
+        a, b = math.pi * i / 8, math.pi * (i + 1) / 8
+        p, q = (.11 * math.cos(a), -.09 * math.sin(a) - .02), (.11 * math.cos(b), -.09 * math.sin(b) - .02)
+        mid = ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)
+        length = math.hypot(q[0] - p[0], q[1] - p[1])
+        strap = Item(g.palette)
+        strap.box((0, 0, 0), (length + .004, .012, .006), 2, bevel=0)
+        g.add(strap, (mid[0], .006, mid[1]), (0, -math.degrees(math.atan2(q[1] - p[1], q[0] - p[0])), 0))
     return g
 
 
@@ -411,6 +578,19 @@ def wool_hat():
     return g
 
 
+# Cyberware, belt items, leg and face gear (stored props only: none are worn models).
+NEW_ITEMS = [
+    ("bionic_arm", "BionicArm", lambda: prosthetic(bionic=True)),
+    ("bionic_leg", "BionicLeg", lambda: prosthetic(True, bionic=True)),
+    ("bionic_eyes", "BionicEyes", bionic_eyes), ("neural_coprocessor", "NeuralCoprocessor", neural_coprocessor),
+    ("reinforced_spine", "ReinforcedSpine", reinforced_spine), ("subdermal_plating", "SubdermalPlating", subdermal_plating),
+    ("synthetic_heart", "SyntheticHeart", synthetic_heart), ("filter_lungs", "FilterLungs", filter_lungs),
+    ("frag_grenade", "FragGrenade", frag_grenades), ("field_medkit", "FieldMedkit", field_medkit),
+    ("cargo_trousers", "CargoTrousers", cargo_trousers), ("flak_leg_guards", "FlakLegGuards", flak_leg_guards),
+    ("tactical_goggles", "TacticalGoggles", tactical_goggles),
+]
+
+
 def models():
     builders = [
         ("wood", "Wood", wood), ("planks", "Planks", planks), ("stone", "Stone", stone),
@@ -425,7 +605,7 @@ def models():
         ("raw_food", "RawFood", food), ("meal", "Meal", meal), ("healroot", "Healroot", healroot),
         ("herbal_medicine", "HerbalMedicine", lambda: medicine(True)), ("medicine", "Medicine", medicine),
         ("prosthetic_arm", "ProstheticArm", prosthetic), ("prosthetic_leg", "ProstheticLeg", lambda: prosthetic(True)),
-    ]
+    ] + NEW_ITEMS
     for ident, name, build in builders:
         yield ident, name, build(), None
     for ident, name, parka in [("clothes", "SimpleClothes", False), ("parka", "Parka", True)]:

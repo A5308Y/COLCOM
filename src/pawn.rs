@@ -159,6 +159,21 @@ pub struct Attack {
 const FISTS: Attack =
     Attack { range: 1.5, damage: (3.0, 6.0), kind: DamageKind::Bruise, cooldown: 1.0, ranged: false, sound: "swing" };
 
+/// The numbers of weapon `kind`, or fists.
+pub fn attack_with(kind: Option<ItemId>) -> Attack {
+    match kind.and_then(|w| w.def().weapon.as_ref()) {
+        Some(w) => Attack {
+            range: w.range,
+            damage: w.damage,
+            kind: w.kind,
+            cooldown: w.cooldown,
+            ranged: w.ranged(),
+            sound: w.sound.as_deref().unwrap_or("swing"),
+        },
+        None => FISTS,
+    }
+}
+
 /// What a pawn is currently doing. Multi-step jobs track their stage in fields.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Job {
@@ -179,20 +194,24 @@ pub enum Job {
     Rescue { patient: u32, bed: Pos, carrying: bool },
     /// Bring food to a downed colonist.
     Feed { patient: u32, food: Pos, picked: bool },
-    /// Pick up a weapon or piece of apparel and use it: their loadout's, or
+    /// Pick up a weapon, piece of apparel or belt item and use it: their loadout's, or
     /// a better one for a slot it leaves free; `chosen` by the player (it goes
     /// into their loadout).
     Equip {
         from: Pos,
         #[serde(default)]
         chosen: bool,
+        /// Chosen to carry as the sidearm (a light weapon).
+        #[serde(default)]
+        sidearm: bool,
     },
     /// Carry a dead colonist to an empty grave and bury them.
     Bury { corpse: u32, grave: Pos, carrying: bool },
-    /// Lie on an operating table and wait to be fitted with a prosthetic.
+    /// Lie on an operating table and wait for an operation (see `surgery.rs`).
     Operation { table: Pos },
-    /// Fetch a prosthetic and fit it to a patient on an operating table.
-    Surgery { patient: u32, prosthetic: Pos, picked: bool },
+    /// Operate on a patient on an operating table: fetch the cyberware at
+    /// `prosthetic` and install it, or (`None`) take some out.
+    Surgery { patient: u32, prosthetic: Option<Pos>, picked: bool },
     /// Have fun at something built for it at `at`, standing at `stand` (see `recreation.rs`).
     Relax { at: Pos, stand: Pos },
     /// Stroll outdoors for fun, on to `to`.
@@ -379,7 +398,16 @@ pub struct Pawn {
     /// Per work type: 0 = disabled, 1 = highest .. 4 = lowest.
     pub priorities: [u8; WorkType::ALL.len()],
     pub weapon: Option<ItemId>,
-    /// Worn items, at most one per slot.
+    /// A light second weapon, drawn in battle when it suits better.
+    #[serde(default)]
+    pub sidearm: Option<ItemId>,
+    /// The sidearm is in hand rather than the main weapon (in battle).
+    #[serde(default)]
+    pub sidearm_drawn: bool,
+    /// What they carry on the belt to use in battle (grenades, medkits).
+    #[serde(default)]
+    pub utility: Option<Stack>,
+    /// Worn items, at most one per slot (`Slot`; one item can take several).
     pub apparel: Vec<ItemId>,
     /// Gear the player told them to keep, from before that was the loadout:
     /// moved into the loadout when loading (`World::load_json`), never saved.
@@ -398,20 +426,24 @@ pub struct Pawn {
     /// A cell the player told them to work on (see `prioritize.rs`).
     #[serde(default)]
     pub forced: Option<Pos>,
-    /// Operations the player ordered for them (see `surgery.rs`).
+    /// Operations the player ordered for them (see `surgery.rs`). Saved
+    /// under a new name: orders from before cyberware slots are dropped.
     #[serde(default)]
-    pub operations: Vec<crate::surgery::Operation>,
+    pub surgeries: Vec<crate::surgery::Operation>,
     pub bed: Option<Pos>,
     pub color: [f32; 3],
     pub think_timer: f32,
     pub break_timer: f32,
     #[serde(default)]
     pub role: Role,
-    /// The gear they use (at most one weapon, one piece per apparel slot):
-    /// they fetch it from storage and keep it on; slots left free they fill
-    /// with the best they find.
+    /// The gear they use (at most one weapon, one utility item, one piece
+    /// per apparel slot): they fetch it from storage and keep it on; apparel
+    /// slots left free they fill with the best they find.
     #[serde(default)]
     pub loadout: Vec<ItemId>,
+    /// The sidearm in their loadout (apart, as a pistol could also be the main weapon).
+    #[serde(default)]
+    pub loadout_sidearm: Option<ItemId>,
     /// Battle gear taken from storage, each with what it replaced (put
     /// back on after the battle).
     #[serde(default)]
@@ -473,6 +505,9 @@ impl Pawn {
             xp: [0.0; Skill::ALL.len()],
             priorities: [3; WorkType::ALL.len()],
             weapon: defs().start_weapons.first().map(|w| w.id()),
+            sidearm: None,
+            sidearm_drawn: false,
+            utility: None,
             apparel: Vec::new(),
             chosen: Vec::new(),
             cooldown: 0.0,
@@ -483,7 +518,7 @@ impl Pawn {
             sleeping: false,
             resting: false,
             memories: Vec::new(),
-            operations: Vec::new(),
+            surgeries: Vec::new(),
             forced: None,
             bed: None,
             color: [rng.range_f32(0.5, 1.0), rng.range_f32(0.45, 0.95), rng.range_f32(0.45, 0.95)],
@@ -491,6 +526,7 @@ impl Pawn {
             break_timer: 0.0,
             role: Role::Fighter,
             loadout: Vec::new(),
+            loadout_sidearm: None,
             stash: Vec::new(),
             running: false,
             poor_quarters: false,
@@ -561,34 +597,63 @@ impl Pawn {
         speed.max(0.05)
     }
 
-    /// The weapon's numbers, or fists.
-    pub fn attack(&self) -> Attack {
-        match self.weapon.and_then(|w| w.def().weapon.as_ref()) {
-            Some(w) => Attack {
-                range: w.range,
-                damage: w.damage,
-                kind: w.kind,
-                cooldown: w.cooldown,
-                ranged: w.ranged(),
-                sound: w.sound.as_deref().unwrap_or("swing"),
-            },
-            None => FISTS,
+    /// The weapon in hand: the sidearm while it's drawn, else the main one.
+    pub fn held(&self) -> Option<ItemId> {
+        if self.sidearm_drawn && self.sidearm.is_some() {
+            self.sidearm
+        } else {
+            self.weapon
         }
+    }
+
+    /// The numbers of the weapon in hand, or fists.
+    pub fn attack(&self) -> Attack {
+        attack_with(self.held())
+    }
+
+    /// The numbers of the main weapon, or fists: how they fight (at range or not).
+    pub fn main_attack(&self) -> Attack {
+        attack_with(self.weapon)
+    }
+
+    /// What they could fight with: the main weapon (or fists), and the sidearm if they have one.
+    pub fn weapons(&self) -> impl Iterator<Item = Option<ItemId>> {
+        std::iter::once(self.weapon).chain(self.sidearm.map(Some))
     }
 
     pub fn weapon_name(&self) -> &'static str {
         self.weapon.map_or("fists", |w| w.name())
     }
 
-    /// Share of damage stopped by what they wear.
+    /// The definitions of the cyberware they have installed.
+    pub fn implant_defs(&self) -> impl Iterator<Item = &'static crate::defs::CyberwareDef> + '_ {
+        self.health.implants().filter_map(|(_, k)| k.def().cyberware.as_ref())
+    }
+
+    fn apparel_defs(&self) -> impl Iterator<Item = &'static crate::defs::ApparelDef> + '_ {
+        self.apparel.iter().filter_map(|k| k.def().apparel.as_ref())
+    }
+
+    /// Share of damage stopped by what they wear and dermal implants.
     pub fn armor(&self) -> f32 {
-        let total: f32 = self.apparel.iter().filter_map(|a| a.def().apparel.as_ref()).map(|a| a.armor).sum();
+        let total: f32 = self.apparel_defs().map(|a| a.armor).sum::<f32>() + self.implant_defs().map(|c| c.armor).sum::<f32>();
         total.min(0.8)
+    }
+
+    /// Added to their chance to hit, from gear and implants.
+    pub fn aim_bonus(&self) -> f32 {
+        self.apparel_defs().map(|a| a.aim).sum::<f32>() + self.implant_defs().map(|c| c.aim).sum::<f32>()
     }
 
     /// What they wear in a slot.
     pub fn worn(&self, slot: Slot) -> Option<ItemId> {
-        self.apparel.iter().copied().find(|a| a.def().apparel.as_ref().is_some_and(|d| d.slot == slot))
+        self.apparel.iter().copied().find(|a| a.def().apparel.as_ref().is_some_and(|d| d.covers(slot)))
+    }
+
+    /// What wearing apparel `kind` would take off.
+    pub fn displaced_by(&self, kind: ItemId) -> Vec<ItemId> {
+        let Some(new) = kind.def().apparel.as_ref() else { return Vec::new() };
+        self.apparel.iter().copied().filter(|k| k.def().apparel.as_ref().is_some_and(|a| a.overlaps(new))).collect()
     }
 
     /// Cells per second: a brisk walk around the colony, running in battle.
@@ -608,9 +673,9 @@ impl Pawn {
         self.apparel.iter().filter_map(|k| k.def().apparel.as_ref()).map(|a| a.warmth).sum()
     }
 
-    /// How much what they wear speeds them up or slows them down (1: not at all).
+    /// How much what they wear and their implants speed them up or slow them down (1: not at all).
     pub fn gear_speed(&self) -> f32 {
-        self.apparel.iter().filter_map(|k| k.def().apparel.as_ref()).map(|a| a.speed).product()
+        self.apparel_defs().map(|a| a.speed).product::<f32>() * self.implant_defs().map(|c| c.speed).product::<f32>()
     }
 
     /// Add experience; returns true if the skill levelled up.
@@ -736,28 +801,87 @@ impl Pawn {
         }
     }
 
-    /// Hold a weapon or put on apparel; returns what it replaced.
-    /// Whether they're using `kind` (carrying it as their weapon, or wearing it).
+    /// Whether they're using `kind` (as their weapon or sidearm, wearing it, or on the belt).
     pub fn has_on(&self, kind: ItemId) -> bool {
-        self.weapon == Some(kind) || self.apparel.contains(&kind)
+        self.weapon == Some(kind) || self.sidearm == Some(kind) || self.apparel.contains(&kind) || self.utility.is_some_and(|s| s.kind == kind)
     }
 
-    pub fn wear(&mut self, kind: ItemId) -> Option<ItemId> {
-        let d = kind.def();
-        if d.weapon.is_some() {
-            return self.weapon.replace(kind);
+    /// Hold a weapon or put on apparel; returns what it replaced (apparel
+    /// taking several slots can replace several pieces).
+    pub fn wear(&mut self, kind: ItemId) -> Vec<ItemId> {
+        if kind.def().weapon.is_some() {
+            return self.weapon.replace(kind).into_iter().collect();
         }
-        let slot = d.apparel.as_ref().map_or(Slot::Body, |a| a.slot);
-        let old = self.worn(slot);
-        self.apparel.retain(|&a| Some(a) != old);
+        if kind.def().apparel.is_none() {
+            return Vec::new();
+        }
+        let old = self.displaced_by(kind);
+        self.apparel.retain(|a| !old.contains(a));
         self.apparel.push(kind);
         old
     }
 
-    /// Put down a weapon or take off apparel; false if they don't have it.
+    /// Carry weapon `kind` as the sidearm; returns the one it replaced.
+    pub fn equip_sidearm(&mut self, kind: ItemId) -> Option<ItemId> {
+        self.sidearm_drawn = false;
+        self.sidearm.replace(kind)
+    }
+
+    /// Put `stack` on the belt (topping up the same kind); returns what had
+    /// to come off for it, and what's left over above what they carry.
+    pub fn take_utility(&mut self, stack: Stack) -> Vec<Stack> {
+        let carry = stack.kind.def().utility.as_ref().map_or(0, |u| u.carry);
+        let mut out = Vec::new();
+        let have = match self.utility.take() {
+            Some(s) if s.kind == stack.kind => s.count,
+            Some(s) => {
+                out.push(s);
+                0
+            }
+            None => 0,
+        };
+        let total = have + stack.count;
+        let keep = total.min(carry);
+        if keep > 0 {
+            self.utility = Some(Stack { kind: stack.kind, count: keep });
+        }
+        if total > keep {
+            out.push(Stack { kind: stack.kind, count: total - keep });
+        }
+        out
+    }
+
+    /// How many more of utility item `kind` they'd take (topping up, or in place of something else).
+    pub fn utility_room(&self, kind: ItemId) -> u32 {
+        let carry = kind.def().utility.as_ref().map_or(0, |u| u.carry);
+        carry.saturating_sub(self.utility.filter(|s| s.kind == kind).map_or(0, |s| s.count))
+    }
+
+    /// Use up one utility item; returns which.
+    pub fn use_utility(&mut self) -> Option<ItemId> {
+        let s = self.utility.as_mut()?;
+        let kind = s.kind;
+        s.count -= 1;
+        if s.count == 0 {
+            self.utility = None;
+        }
+        Some(kind)
+    }
+
+    /// Put down a weapon or sidearm, take off apparel, or take everything of
+    /// `kind` off the belt; false if they don't have it.
     pub fn take_off(&mut self, kind: ItemId) -> bool {
         if self.weapon == Some(kind) {
             self.weapon = None;
+            return true;
+        }
+        if self.sidearm == Some(kind) {
+            self.sidearm = None;
+            self.sidearm_drawn = false;
+            return true;
+        }
+        if self.utility.is_some_and(|s| s.kind == kind) {
+            self.utility = None;
             return true;
         }
         let before = self.apparel.len();

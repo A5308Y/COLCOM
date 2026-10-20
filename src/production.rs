@@ -97,17 +97,39 @@ impl Stockpile {
 /// they have (apparel for the weather, `outdoors` °C), for a slot their
 /// loadout leaves free (they keep their loadout's).
 fn wants_upgrade(p: &Pawn, kind: ItemId, outdoors: f32) -> bool {
-    let planned = |slot| p.loadout.iter().any(|&k| crate::squads::loadout_slot(k) == Some(slot));
+    let planned = p.loadout.iter().any(|&k| crate::squads::conflicts(k, kind));
     let d = kind.def();
     if let Some(w) = &d.weapon {
         let current = p.weapon.and_then(|w| w.def().weapon.as_ref()).map_or(0.0, |w| w.score());
-        return !planned(None) && w.score() > current * 1.1;
+        return !planned && w.score() > current * 1.1;
     }
     if let Some(a) = &d.apparel {
-        let worn = p.worn(a.slot).and_then(|k| k.def().apparel.as_ref()).map_or(f32::MIN, |w| w.score_at(outdoors));
-        return !planned(Some(a.slot)) && a.score_at(outdoors) > worn;
+        // Against everything it would take off (a suit replaces a helmet too).
+        let off = p.displaced_by(kind);
+        let worn = off.iter().filter_map(|k| k.def().apparel.as_ref()).map(|w| w.score_at(outdoors)).sum::<f32>();
+        return !planned && (off.is_empty() || a.score_at(outdoors) > worn);
     }
+    // Belt items and sidearms only when the player says so.
     false
+}
+
+/// Whether `p` still has to fetch loadout item `kind` (as their sidearm, or
+/// else as their weapon, apparel or belt item, which they top up).
+fn lacks(p: &Pawn, kind: ItemId, sidearm: bool) -> bool {
+    if sidearm {
+        p.sidearm != Some(kind)
+    } else if kind.def().weapon.is_some() {
+        p.weapon != Some(kind)
+    } else if kind.def().utility.is_some() {
+        p.utility_room(kind) > 0
+    } else {
+        !p.apparel.contains(&kind)
+    }
+}
+
+/// What's in `p`'s loadout, each with whether it's the sidearm.
+fn loadout_items(p: &Pawn) -> impl Iterator<Item = (ItemId, bool)> + '_ {
+    p.loadout.iter().map(|&k| (k, false)).chain(p.loadout_sidearm.map(|k| (k, true)))
 }
 
 impl World {
@@ -425,18 +447,41 @@ impl World {
     /// have on (nearest first), or else for a slot their loadout leaves free,
     /// something better than what they have.
     pub(crate) fn equip_candidate(&self, p: &Pawn, nearest: &[Option<(i32, Pos)>]) -> Option<Job> {
-        let missing = p.loadout.iter().copied().filter(|&k| !p.has_on(k)).filter_map(|k| nearest[k.index()]).min_by_key(|(d, _)| *d);
+        let missing = loadout_items(p).filter(|&(k, side)| lacks(p, k, side)).filter_map(|(k, _)| nearest[k.index()]).min_by_key(|(d, _)| *d);
         if let Some((_, from)) = missing {
-            return Some(Job::Equip { from, chosen: false });
+            return Some(Job::Equip { from, chosen: false, sidearm: false });
         }
         ItemId::all()
             .filter(|&k| wants_upgrade(p, k, self.outdoor_temperature()))
             .filter_map(|k| nearest[k.index()])
             .min_by_key(|(d, _)| *d)
-            .map(|(_, from)| Job::Equip { from, chosen: false })
+            .map(|(_, from)| Job::Equip { from, chosen: false, sidearm: false })
     }
 
-    pub(crate) fn run_equip(&mut self, p: &mut Pawn, from: Pos, chosen: bool, dt: f32) {
+    /// The first weapon, piece of apparel or belt item at `at` (a shelf may hold several things).
+    pub(crate) fn first_gear(&self, at: Pos) -> Option<ItemId> {
+        self.map.stacks(self.map.idx(at)).map(|s| s.kind).find(|k| k.def().is_gear())
+    }
+
+    /// Pawn `p` takes up gear `kind` from cell `i` (as their sidearm, if
+    /// `sidearm`), dropping what it replaces. Returns false if there was none.
+    fn take_gear(&mut self, p: &mut Pawn, i: usize, kind: ItemId, sidearm: bool) -> bool {
+        let count = if kind.def().utility.is_some() { p.utility_room(kind).max(1) } else { 1 };
+        let Some(s) = self.map.take_item(i, kind, count) else { return false };
+        let off: Vec<Stack> = if sidearm {
+            p.equip_sidearm(kind).map(|k| Stack { kind: k, count: 1 }).into_iter().collect()
+        } else if kind.def().utility.is_some() {
+            p.take_utility(s)
+        } else {
+            p.wear(kind).into_iter().map(|k| Stack { kind: k, count: 1 }).collect()
+        };
+        for s in off {
+            self.map.drop_item(p.pos, s);
+        }
+        true
+    }
+
+    pub(crate) fn run_equip(&mut self, p: &mut Pawn, from: Pos, chosen: bool, sidearm: bool, dt: f32) {
         // (Told to by the player: `order_equip` has put it in their loadout.)
         let there = self.walk_to(p, from, false, dt);
         if p.job.is_none() && chosen {
@@ -449,19 +494,23 @@ impl World {
             // first weapon or piece of apparel here (a shelf may hold several things).
             let gear: Vec<ItemId> = self.map.stacks(i).map(|s| s.kind).filter(|k| k.def().is_gear()).collect();
             let outdoors = self.outdoor_temperature();
-            let kind = gear
-                .iter()
-                .copied()
-                .find(|&k| p.loadout.contains(&k) && !p.has_on(k))
-                .or_else(|| gear.iter().copied().find(|&k| wants_upgrade(p, k, outdoors)))
-                .or(gear.first().copied().filter(|_| chosen));
-            if let Some(s) = kind.and_then(|k| self.map.take_item(i, k, 1)) {
-                self.res_item[i] = 0;
-                let d = s.kind.def();
-                if let Some(old) = p.wear(s.kind) {
-                    self.map.drop_item(p.pos, Stack { kind: old, count: 1 });
+            let kind = if chosen && sidearm {
+                // Told to carry it as their sidearm.
+                gear.iter().copied().find(|k| k.def().weapon.as_ref().is_some_and(|w| w.sidearm)).map(|k| (k, true))
+            } else {
+                gear.iter()
+                    .copied()
+                    .find_map(|k| loadout_items(p).find(|&(l, side)| l == k && lacks(p, k, side)))
+                    .or_else(|| gear.iter().copied().find(|&k| wants_upgrade(p, k, outdoors)).map(|k| (k, false)))
+                    .or(gear.first().copied().filter(|_| chosen).map(|k| (k, false)))
+            };
+            if let Some((kind, side)) = kind {
+                if self.take_gear(p, i, kind, side) {
+                    self.res_item[i] = 0;
+                    let what = kind.name().to_lowercase();
+                    let msg = if side { format!("{} took {} as a sidearm.", p.name, what) } else { format!("{} picked up {}.", p.name, what) };
+                    self.push_log(msg);
                 }
-                self.push_log(format!("{} picked up {}.", p.name, d.name.to_lowercase()));
             }
             self.end_job(p);
         }

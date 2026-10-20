@@ -13,14 +13,19 @@ pub const SQUAD_MAX: usize = 4;
 /// Least bedroom quality tier a leader is content with (2 = Decent).
 pub const LEADER_ROOM_TIER: u8 = 2;
 
-/// The slot a weapon or piece of apparel takes in a loadout (`None`: the weapon).
-pub(crate) fn loadout_slot(kind: ItemId) -> Option<Option<Slot>> {
-    let d = kind.def();
-    match (&d.weapon, &d.apparel) {
-        (Some(_), _) => Some(None),
-        (None, Some(a)) => Some(Some(a.slot)),
-        _ => None,
+/// Whether `a` and `b` can't both be in a loadout: two weapons, two belt
+/// items, or apparel for the same slot. (The sidearm is kept apart.)
+pub(crate) fn conflicts(a: ItemId, b: ItemId) -> bool {
+    let (a, b) = (a.def(), b.def());
+    match (&a.apparel, &b.apparel) {
+        (Some(x), Some(y)) => x.overlaps(y),
+        _ => a.weapon.is_some() && b.weapon.is_some() || a.utility.is_some() && b.utility.is_some(),
     }
+}
+
+/// The loadout item for apparel `slot`, if any.
+pub fn loadout_worn(p: &Pawn, slot: Slot) -> Option<ItemId> {
+    p.loadout.iter().copied().find(|k| k.def().apparel.as_ref().is_some_and(|a| a.covers(slot)))
 }
 
 /// Whether colonist `p` fights at range: with the weapon in their loadout
@@ -103,15 +108,29 @@ impl World {
         }
     }
 
-    /// Set colonist `id`'s loadout, the gear they use: weapons and apparel only, at most
-    /// one weapon and one piece per apparel slot (later ones win). A squad
+    /// Set colonist `id`'s sidearm to fetch and keep (`None`: whatever they have).
+    /// Only light weapons can be sidearms.
+    pub fn set_loadout_sidearm(&mut self, id: u32, kind: Option<ItemId>) -> Result<(), String> {
+        if kind.is_some_and(|k| !k.def().weapon.as_ref().is_some_and(|w| w.sidearm)) {
+            return Err("too heavy for a sidearm".into());
+        }
+        let i = self.pawn_index(id).ok_or("no such colonist")?;
+        self.pawns[i].loadout_sidearm = kind;
+        Ok(())
+    }
+
+    /// Set colonist `id`'s loadout, the gear they use: weapons, apparel and
+    /// belt items only, at most one weapon, one belt item and one piece per
+    /// apparel slot (later ones win, taking out what they overlap). A squad
     /// member can't take a weapon of the other kind than their squad's; a
     /// leader can, and the members who no longer fit leave the squad.
     pub fn set_loadout(&mut self, id: u32, items: &[ItemId]) -> Result<(), String> {
         let mut out: Vec<ItemId> = Vec::new();
         for &k in items {
-            let Some(slot) = loadout_slot(k) else { continue };
-            out.retain(|&o| loadout_slot(o) != Some(slot));
+            if !k.def().is_gear() {
+                continue;
+            }
+            out.retain(|&o| !conflicts(o, k));
             out.push(k);
         }
         let i = self.pawn_index(id).ok_or("no such colonist")?;

@@ -125,7 +125,8 @@ mod tests {
         for _ in 0..5 {
             app.update();
         }
-        // The Health tab's operations: a lost leg, then a prosthetic ordered for it.
+        // The Health tab's cyberware: a lost leg, then a prosthetic ordered for it,
+        // and an elective implant already installed.
         let healthy = {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             let w = &mut sim.world;
@@ -136,6 +137,7 @@ mod tests {
             while !h.is_missing(my_world::health::Part::LeftLeg) {
                 h.injure(my_world::health::Part::LeftLeg, 50.0, my_world::health::DamageKind::Cut, &mut rng);
             }
+            h.install(my_world::health::CyberSlot::Eyes, my_world::defs::ItemId::named("bionic_eyes"), 1.25);
             h.recompute();
             healthy
         };
@@ -149,7 +151,8 @@ mod tests {
             if ordered {
                 let leg = my_world::defs::ItemId::named("prosthetic_leg");
                 let mut sim = app.world_mut().resource_mut::<front::Sim>();
-                assert!(sim.world.order_operation(ids[2], my_world::health::Part::LeftLeg, leg));
+                assert!(sim.world.order_operation(ids[2], my_world::health::CyberSlot::LeftLeg, leg));
+                assert!(sim.world.order_removal(ids[2], my_world::health::CyberSlot::Eyes));
             }
             for _ in 0..3 {
                 app.update();
@@ -160,7 +163,7 @@ mod tests {
             let i = sim.world.pawn_index(ids[2]).unwrap();
             sim.world.pawns[i].health = healthy;
             sim.world.pawns[i].health.recompute();
-            sim.world.pawns[i].operations.clear();
+            sim.world.pawns[i].surgeries.clear();
         }
         // Armour and a helmet show on whoever wears them.
         {

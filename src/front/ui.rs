@@ -14,8 +14,8 @@ use super::sim::Sim;
 use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, ProgressBar, RichText};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
-use my_world::health::HediffKind;
-use my_world::defs::{defs, BuildId, ItemId, PlantId, RoomDef, Special};
+use my_world::health::{CyberSlot, HediffKind};
+use my_world::defs::{defs, BuildId, ItemId, PlantId, RoomDef, Slot, Special};
 use my_world::map::{Block, Feature, Pos, Zone};
 use my_world::pawn::{Pawn, Role, Skill, WorkType};
 use my_world::production::{BillMode, PRIORITY_NAMES};
@@ -810,21 +810,20 @@ fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32,
                 ui.label(RichText::new(text).small());
             }
             ui.label(RichText::new(format!("{} - {}", p.status(), p.weapon_name())).weak());
-            if !p.apparel.is_empty() {
-                let worn: Vec<&str> = p.apparel.iter().map(|a| a.name()).collect();
-                ui.label(RichText::new(format!("Wearing {}", worn.join(", ").to_lowercase())).weak());
-            }
+            gear_list(ui, p);
             if p.is_living_colonist() {
                 let text = format!("Feels {:.0}°C (clothes +{:.0}°C in the cold)", p.felt, p.warmth());
                 ui.label(RichText::new(text).color(temp_color(p.felt)));
             }
-            // Their gear, to look up.
-            let gear: Vec<ItemId> = p.weapon.into_iter().chain(p.apparel.iter().copied()).collect();
+            // Their gear and cyberware, to look up.
+            let implants = p.health.implants().map(|(_, k)| k);
+            let gear: Vec<ItemId> =
+                p.weapon.into_iter().chain(p.sidearm).chain(p.utility.map(|s| s.kind)).chain(p.apparel.iter().copied()).chain(implants).collect();
             if !gear.is_empty() {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new("Info:").small().weak());
                     for k in gear {
-                        if ui.small_button(k.name()).on_hover_text("Stats of this weapon or apparel").clicked() {
+                        if ui.small_button(k.name()).on_hover_text("Stats of this gear or cyberware").clicked() {
                             look_up = Some(InfoTarget::Item(k));
                         }
                     }
@@ -835,7 +834,7 @@ fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32,
                 InspectorTab::Overview => overview_tab(ui, p),
                 InspectorTab::Health => {
                     health_tab(ui, p);
-                    operations(ui, &sim.world, p, &mut world_actions);
+                    cyberware(ui, &sim.world, p, &mut world_actions);
                 }
                 InspectorTab::Combat => actions = squads_ui::combat_tab(ui, &sim.world, p),
             }
@@ -888,52 +887,89 @@ fn overview_tab(ui: &mut egui::Ui, p: &Pawn) {
     }
 }
 
-/// Lost limbs and the operations ordered for them: fit a prosthetic, or call it off.
-fn operations(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn, actions: &mut Vec<Action>) {
-    let lost = p.health.lost_parts();
-    if !p.is_colonist() || p.dead || lost.is_empty() {
+/// What they carry and wear, slot by slot (only the slots in use).
+fn gear_list(ui: &mut egui::Ui, p: &Pawn) {
+    let mut lines: Vec<String> = Vec::new();
+    if let Some(k) = p.sidearm {
+        let drawn = if p.sidearm_drawn { ", drawn" } else { "" };
+        lines.push(format!("Sidearm: {}{}", k.name(), drawn));
+    }
+    if let Some(s) = p.utility {
+        lines.push(format!("Utility: {} ×{}", s.kind.name(), s.count));
+    }
+    for &k in &p.apparel {
+        let Some(a) = k.def().apparel.as_ref() else { continue };
+        let slots: Vec<&str> = a.slots().map(Slot::name).collect();
+        lines.push(format!("{}: {}", slots.join(", "), k.name()));
+    }
+    if !lines.is_empty() {
+        ui.label(RichText::new(lines.join("   ")).weak());
+    }
+}
+
+/// Cyberware slots: what's in each, and the operations ordered for them
+/// (install, swap or take out; call it off).
+fn cyberware(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn, actions: &mut Vec<Action>) {
+    if !p.is_colonist() || p.dead {
         return;
     }
     ui.separator();
-    ui.label(RichText::new("Operations").strong());
+    ui.label(RichText::new("Cyberware").strong());
+    let about = "A doctor installs it at an operating table, in place of a natural or lost part (the brain and skin get add-ons). \
+                 Cyberware it replaces is left at the table. It can go wrong: better doctors and a surgery room help.";
+    ui.label(RichText::new(about).small().weak());
     let id = p.id;
     let tables = (0..w.map.len()).any(|i| w.medical_bed(w.map.pos(i)));
-    for part in lost {
+    let blue = Color32::from_rgb(150, 190, 230);
+    for slot in CyberSlot::ALL {
         ui.horizontal_wrapped(|ui| {
-            ui.label(format!("{}: lost", part.name()));
-            match p.operations.iter().find(|o| o.part == part) {
+            ui.add_sized([90.0, 18.0], egui::Label::new(slot.name()));
+            let installed = p.health.implant(slot);
+            let (state, color) = match installed {
+                Some((item, eff)) => {
+                    let name = item.map_or("Prosthetic", |k| k.name());
+                    (if eff == 1.0 { name.to_string() } else { format!("{} ({:.0}%)", name, eff * 100.0) }, blue)
+                }
+                None if p.health.slot_lost(slot) => ("Lost".to_string(), Color32::from_rgb(255, 120, 100)),
+                None => ("Natural".to_string(), Color32::GRAY),
+            };
+            match p.surgeries.iter().find(|o| o.slot == slot) {
                 Some(op) => {
-                    let have = w.map.count_items(op.item);
-                    ui.label(RichText::new(format!("fitting a {}", op.item.name().to_lowercase())).color(Color32::from_rgb(150, 190, 230)));
+                    let doing = op.item.map_or("taking it out".to_string(), |k| format!("installing a {}", k.name().to_lowercase()));
+                    ui.label(RichText::new(format!("{} - {}", state, doing)).color(blue));
                     if ui.small_button("Cancel").clicked() {
                         actions.push(Box::new(move |w| {
-                            w.cancel_operation(id, part);
+                            w.cancel_operation(id, slot);
                         }));
                     }
-                    let waiting = if have == 0 {
-                        Some(format!("Waiting for a {} (a smithy makes them).", op.item.name().to_lowercase()))
-                    } else if !tables {
-                        Some("Waiting for an operating table.".to_string())
-                    } else {
-                        None
+                    let waiting = match op.item {
+                        Some(k) if w.map.count_items(k) == 0 => Some(format!("Waiting for a {} (see its Info for where it's made).", k.name().to_lowercase())),
+                        _ if !tables => Some("Waiting for an operating table.".to_string()),
+                        _ => None,
                     };
                     if let Some(text) = waiting {
                         ui.label(RichText::new(text).small().color(Color32::from_rgb(240, 210, 90)));
                     }
                 }
                 None => {
-                    for item in SimWorld::prosthetics_for(part) {
-                        let have = w.map.count_items(item);
-                        let hint = format!(
-                            "A doctor fits it at an operating table ({} in the colony). It can go wrong: better doctors and a surgery room help.",
-                            have
-                        );
-                        if ui.small_button(format!("Fit {}", item.name().to_lowercase())).on_hover_text(hint).clicked() {
+                    egui::ComboBox::from_id_salt(("cyberware", id, slot.name())).selected_text(RichText::new(state).color(color)).show_ui(ui, |ui| {
+                        for item in SimWorld::cyberware_for(slot) {
+                            if installed.is_some_and(|(k, _)| k == Some(item)) {
+                                continue;
+                            }
+                            let text = format!("Install {} ({} in the colony)", item.name().to_lowercase(), w.map.count_items(item));
+                            if ui.selectable_label(false, text).clicked() {
+                                actions.push(Box::new(move |w| {
+                                    w.order_operation(id, slot, item);
+                                }));
+                            }
+                        }
+                        if installed.is_some() && slot.removable() && ui.selectable_label(false, "Take it out").clicked() {
                             actions.push(Box::new(move |w| {
-                                w.order_operation(id, part, item);
+                                w.order_removal(id, slot);
                             }));
                         }
-                    }
+                    });
                 }
             }
         });

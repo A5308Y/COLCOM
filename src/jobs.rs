@@ -335,7 +335,7 @@ impl World {
             Job::Tend { patient, medicine, picked } => self.run_tend(p, patient, medicine, picked, dt),
             Job::Rescue { patient, bed, carrying } => self.run_rescue(p, patient, bed, carrying, dt),
             Job::Feed { patient, food, picked } => self.run_feed(p, patient, food, picked, dt),
-            Job::Equip { from, chosen } => self.run_equip(p, from, chosen, dt),
+            Job::Equip { from, chosen, sidearm } => self.run_equip(p, from, chosen, sidearm, dt),
             Job::Bury { corpse, grave, carrying } => self.run_bury(p, corpse, grave, carrying, dt),
             Job::Operation { table } => self.run_operation(p, table, dt),
             Job::Relax { at, stand } => self.run_relax(p, at, stand, dt),

@@ -3,7 +3,7 @@
 For clothing changes, start with the [apparel authoring guide](../../../tools/APPAREL_GUIDE.md):
 it gives the fit workflow, reusable helpers, failure diagnoses and pose review requirements.
 
-Original artwork for all 31 inventory items outside the weapons and armor sets:
+Original artwork for all 44 inventory items outside the weapons and armor sets:
 
 ```sh
 python3 tools/make_items.py
@@ -16,7 +16,7 @@ game screenshots; garments are shown assembled upright, while their ground poses
 
 ## Art budget and material choices
 
-Each item uses **102–908 triangles** and at most **five material groups**, with no textures,
+Each item uses **102–964 triangles** and at most **five material groups**, with no textures,
 transparency, emission, custom shaders or extra lights. The intended ceiling for new small supplies
 is 1,000 triangles; use fewer faces for small resources. Broad facets, chamfers and rough finishes
 follow the [Rifle benchmark](../weapons/README.md).
@@ -39,8 +39,13 @@ The wool cap has a low rounded crown and rolled knit cuff rather than a helmet-l
 | Scrap | 2 | Bent plates and hollow pipe; discarded boards and broken electronics |
 | Components | 6 | Gear and motor, circuit board, camera assembly, plate/frame bundle, chemical cells, padded fabric |
 | Food | 2 | Produce crate and an open field mess tin |
-| Medicine | 5 | Tied roots, herbal pouch, medical case, articulated prosthetic arm and leg |
-| Clothing | 3 | Utility jacket, insulated coat with folded hood, cuffed wool cap |
+| Medicine | 4 | Tied roots, herbal pouch, medical case, field medkit pouch |
+| Cyberware | 10 | Prosthetic and bionic arm and leg, cased bionic eyes, coprocessor chip, vertebra chain, overlapping ceramic plates, pump heart, paired filter lungs |
+| Belt | 1 | A pair of banded frag grenades |
+| Clothing | 6 | Utility jacket, insulated coat with folded hood, cuffed wool cap, folded cargo trousers, padded leg guards, strapped goggles |
+
+The cyberware, belt, leg and face items (`NEW_ITEMS` in the generator) are stored props only: they
+have no worn models yet. Cyberware uses titanium and graphite with a painted, non-emissive teal mark.
 
 Geometry and palettes are grouped by item in `tools/make_items.py`. The shared writer in
 `tools/make_rifle.py` accepts an item palette; only the gear's original default palette emits light.
@@ -88,13 +93,13 @@ with fitted, deforming panels over a continuous titanium shell; see the [armor n
 
 Original shape definitions remain visible during loading or if loading fails. Gameplay properties,
 item IDs, crafting, nutrition, medical effects, clothing stats, and save formats are unchanged.
-Prosthetics are improved as inventory items; this does not add replacement-limb animations.
+Prosthetics and other cyberware are inventory items only; nothing is drawn on the character for them.
 
 ## Validation
 
 The tests cover every inventory model's floor clearance, tile bounds, material/triangle budget,
 stored/worn mesh reuse, both skeletons' bone names, carried stack replacement, clothing layers,
-and cleanup. The existing GPU asset test includes all 40 inventory models:
+and cleanup. The existing GPU asset test includes all 53 inventory models:
 
 ```sh
 cargo test --release

@@ -2,6 +2,7 @@
 //! conditions ("hediffs") attached to parts or the whole body, and the
 //! capacities (consciousness, moving, ...) that follow from them.
 
+use crate::defs::ItemId;
 use crate::rng::Rng;
 use crate::DAY_LEN;
 use serde::{Deserialize, Serialize};
@@ -150,6 +151,86 @@ impl Part {
     }
 }
 
+/// Where cyberware goes: limbs, eyes and organs it replaces, or the brain and
+/// skin it adds to. One piece per slot.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+pub enum CyberSlot {
+    LeftArm,
+    RightArm,
+    LeftLeg,
+    RightLeg,
+    Eyes,
+    Brain,
+    Spine,
+    Dermal,
+    Heart,
+    Lungs,
+}
+
+impl CyberSlot {
+    pub const ALL: [CyberSlot; 10] = [
+        CyberSlot::LeftArm,
+        CyberSlot::RightArm,
+        CyberSlot::LeftLeg,
+        CyberSlot::RightLeg,
+        CyberSlot::Eyes,
+        CyberSlot::Brain,
+        CyberSlot::Spine,
+        CyberSlot::Dermal,
+        CyberSlot::Heart,
+        CyberSlot::Lungs,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            CyberSlot::LeftArm => "Left arm",
+            CyberSlot::RightArm => "Right arm",
+            CyberSlot::LeftLeg => "Left leg",
+            CyberSlot::RightLeg => "Right leg",
+            CyberSlot::Eyes => "Eyes",
+            CyberSlot::Brain => "Brain (neural)",
+            CyberSlot::Spine => "Spine",
+            CyberSlot::Dermal => "Dermal (skin)",
+            CyberSlot::Heart => "Heart",
+            CyberSlot::Lungs => "Lungs",
+        }
+    }
+
+    /// The body parts it sits on (each with everything on it); none for the
+    /// skin, which is the whole body.
+    pub fn parts(self) -> &'static [Part] {
+        match self {
+            CyberSlot::LeftArm => &[Part::LeftShoulder],
+            CyberSlot::RightArm => &[Part::RightShoulder],
+            CyberSlot::LeftLeg => &[Part::LeftLeg],
+            CyberSlot::RightLeg => &[Part::RightLeg],
+            CyberSlot::Eyes => &[Part::LeftEye, Part::RightEye],
+            CyberSlot::Brain => &[Part::Brain],
+            CyberSlot::Spine => &[Part::Spine],
+            CyberSlot::Dermal => &[],
+            CyberSlot::Heart => &[Part::Heart],
+            CyberSlot::Lungs => &[Part::LeftLung, Part::RightLung],
+        }
+    }
+
+    /// Takes the place of the natural parts (rather than adding to them).
+    pub fn replaces(self) -> bool {
+        !matches!(self, CyberSlot::Brain | CyberSlot::Dermal)
+    }
+
+    /// Can be taken out again without killing or crippling them (organs and
+    /// the spine can only be swapped).
+    pub fn removable(self) -> bool {
+        !matches!(self, CyberSlot::Spine | CyberSlot::Heart | CyberSlot::Lungs)
+    }
+
+    /// The slot of cyberware sitting on `part` (None: on the whole body).
+    fn of(part: Option<Part>) -> Option<CyberSlot> {
+        let Some(part) = part else { return Some(CyberSlot::Dermal) };
+        CyberSlot::ALL.into_iter().find(|s| s.parts().iter().any(|&p| part.is_within(p)))
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum DamageKind {
     Cut,
@@ -219,8 +300,14 @@ pub enum HediffKind {
     Flu { immunity: f32 },
     /// From bad food: miserable for a while, then gone. Severity 1 → 0.
     FoodPoisoning,
-    /// A fitted replacement for a lost part (and everything on it).
-    Prosthetic { efficiency: f32 },
+    /// Cyberware: a replacement for a part (and everything on it), or an
+    /// implant added to it (`CyberSlot`). `item` is what was installed (none
+    /// for prosthetics fitted before cyberware slots existed).
+    Prosthetic {
+        efficiency: f32,
+        #[serde(default)]
+        item: Option<ItemId>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -301,7 +388,14 @@ impl Hediff {
             HediffKind::Infection { .. } => "Infection".into(),
             HediffKind::Flu { .. } => "Flu".into(),
             HediffKind::FoodPoisoning => "Food poisoning".into(),
-            HediffKind::Prosthetic { efficiency } => format!("Prosthetic ({:.0}%)", efficiency * 100.0),
+            HediffKind::Prosthetic { efficiency, item } => {
+                let name = item.map_or("Prosthetic", |k| k.name());
+                if efficiency == 1.0 {
+                    name.to_string()
+                } else {
+                    format!("{} ({:.0}%)", name, efficiency * 100.0)
+                }
+            }
         }
     }
 }
@@ -432,7 +526,7 @@ impl Health {
         self.hediffs
             .iter()
             .find_map(|h| match h.kind {
-                HediffKind::Prosthetic { efficiency } if h.part.is_some_and(|p| part.is_within(p)) => Some(efficiency),
+                HediffKind::Prosthetic { efficiency, .. } if h.part.is_some_and(|p| part.is_within(p)) => Some(efficiency),
                 _ => None,
             })
             .unwrap_or(1.0)
@@ -449,16 +543,62 @@ impl Health {
             .collect()
     }
 
-    /// Replace the lost `part` (and everything on it) with a prosthetic.
-    /// Returns false if it isn't lost.
-    pub fn fit_prosthetic(&mut self, part: Part, efficiency: f32) -> bool {
-        if !self.lost_parts().contains(&part) {
-            return false;
+    /// The cyberware in `slot`: what was installed (None for an old
+    /// prosthetic) and how well it works.
+    pub fn implant(&self, slot: CyberSlot) -> Option<(Option<ItemId>, f32)> {
+        self.hediffs.iter().find_map(|h| match h.kind {
+            HediffKind::Prosthetic { efficiency, item } if CyberSlot::of(h.part) == Some(slot) => Some((item, efficiency)),
+            _ => None,
+        })
+    }
+
+    /// Every piece of cyberware installed, once per slot.
+    pub fn implants(&self) -> impl Iterator<Item = (CyberSlot, ItemId)> + '_ {
+        CyberSlot::ALL.into_iter().filter_map(|s| self.implant(s).and_then(|(item, _)| item.map(|k| (s, k))))
+    }
+
+    /// Whether the natural parts of `slot` are all lost (so cyberware there
+    /// would make them whole rather than replace them).
+    pub fn slot_lost(&self, slot: CyberSlot) -> bool {
+        !slot.parts().is_empty() && slot.parts().iter().all(|&p| self.is_missing(p)) && self.implant(slot).is_none()
+    }
+
+    /// Install `item` into `slot`, working at `efficiency`. A replacing slot's
+    /// parts go, with all their conditions (and whatever was installed there);
+    /// an add-on keeps the natural part. Returns what it replaced, if that was
+    /// an item.
+    pub fn install(&mut self, slot: CyberSlot, item: ItemId, efficiency: f32) -> Option<ItemId> {
+        let old = self.implant(slot).and_then(|(k, _)| k);
+        self.hediffs.retain(|h| !(matches!(h.kind, HediffKind::Prosthetic { .. }) && CyberSlot::of(h.part) == Some(slot)));
+        let kind = HediffKind::Prosthetic { efficiency, item: Some(item) };
+        if slot.parts().is_empty() {
+            self.hediffs.push(Hediff::new(kind, None, 0.0));
         }
-        self.hediffs.retain(|h| !h.part.is_some_and(|p| p.is_within(part)));
-        self.hediffs.push(Hediff::new(HediffKind::Prosthetic { efficiency }, Some(part), 0.0));
+        for &part in slot.parts() {
+            if slot.replaces() {
+                self.hediffs.retain(|h| !h.part.is_some_and(|p| p.is_within(part)));
+            }
+            self.hediffs.push(Hediff::new(kind, Some(part), 0.0));
+        }
         self.recompute();
-        true
+        old
+    }
+
+    /// Take out the cyberware in `slot`. A replacing slot's parts are then
+    /// gone (closed up by the doctor). Returns the item, if it is one.
+    pub fn uninstall(&mut self, slot: CyberSlot) -> Option<ItemId> {
+        let (old, _) = self.implant(slot)?;
+        self.hediffs.retain(|h| !(matches!(h.kind, HediffKind::Prosthetic { .. }) && CyberSlot::of(h.part) == Some(slot)));
+        if slot.replaces() {
+            for &part in slot.parts() {
+                self.hediffs.retain(|h| !h.part.is_some_and(|p| p.is_within(part)));
+                let mut h = Hediff::new(HediffKind::Missing, Some(part), part.def().max_hp);
+                h.tend = Some(1.0);
+                self.hediffs.push(h);
+            }
+        }
+        self.recompute();
+        old
     }
 
     /// Overall condition 0..1, for health bars.

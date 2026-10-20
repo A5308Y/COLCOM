@@ -4,6 +4,7 @@
 
 use crate::battle::Parley;
 use crate::defs::ItemId;
+use crate::health::CyberSlot;
 use crate::map::{Block, Feature, Map, Pos, Stack, Zone, FLAT_Z as Z};
 use crate::pawn::{Role, Skill};
 use crate::production::Stockpile;
@@ -89,7 +90,7 @@ fn battle_arena() -> World {
 
     // The stockpile south of the house, with gear to fight in.
     w.stockpiles.push(Stockpile::new(1));
-    for y in 19..=21 {
+    for y in 19..=24 {
         for x in 3..=9 {
             let i = w.map.idx((x, y, Z));
             w.map.zone[i] = Zone::Stockpile(0);
@@ -136,15 +137,26 @@ fn battle_arena() -> World {
     for (at, weapon) in [((12, 14), "assault_rifle"), ((12, 16), "pistol"), ((12, 30), "rifle")] {
         let id = colonist(&mut w, at, 7, 5, weapon);
         w.set_role(id, Role::Member(ada)).unwrap();
+        let i = w.pawn_index(id).unwrap();
         if weapon == "pistol" {
-            let i = w.pawn_index(id).unwrap();
             w.pawns[i].wear(item("parka"));
             w.pawns[i].wear(item("wool_hat"));
+            w.pawns[i].wear(item("flak_leg_guards"));
+        }
+        if weapon == "assault_rifle" {
+            // A knife for close quarters and grenades on the belt.
+            w.pawns[i].equip_sidearm(item("knife"));
+            w.pawns[i].take_utility(Stack { kind: item("frag_grenade"), count: 3 });
         }
     }
     let powered = colonist(&mut w, (14, 9), 8, 4, "laser_rifle");
     let pi = w.pawn_index(powered).unwrap();
     w.pawns[pi].wear(item("powered_armor"));
+    // Bionic eyes and subdermal plating under the suit.
+    for (slot, kind) in [(CyberSlot::Eyes, "bionic_eyes"), (CyberSlot::Dermal, "subdermal_plating")] {
+        let efficiency = item(kind).def().cyberware.as_ref().unwrap().efficiency;
+        w.pawns[pi].health.install(slot, item(kind), efficiency);
+    }
     let geared = colonist(&mut w, (14, 21), 6, 6, "knife");
     w.set_loadout(geared, &[item("rifle"), item("steel_armor")]).unwrap();
     // Already fetched from the stockpile (the knife put down there).
@@ -152,18 +164,25 @@ fn battle_arena() -> World {
     for kind in [item("rifle"), item("steel_armor")] {
         let Some(cell) = (0..w.map.len()).find(|&c| w.map.count_in(c, kind) > 0) else { continue };
         w.map.take_item(cell, kind, 1);
-        if let Some(old) = w.pawns[gi].wear(kind) {
+        for old in w.pawns[gi].wear(kind) {
             w.map.drop_item(w.map.pos(cell), Stack { kind: old, count: 1 });
         }
     }
     w.pawns[gi].wear(item("steel_helmet"));
+    for kind in [item("cargo_trousers"), item("tactical_goggles")] {
+        w.pawns[gi].wear(kind);
+    }
+    w.pawns[gi].take_utility(Stack { kind: item("field_medkit"), count: 2 });
+    let mut loadout = w.pawns[gi].loadout.clone();
+    loadout.extend([item("cargo_trousers"), item("tactical_goggles"), item("field_medkit")]);
+    w.set_loadout(geared, &loadout).unwrap();
     let civilian = colonist(&mut w, (11, 19), 2, 2, "knife");
     w.set_role(civilian, Role::Civilian).unwrap();
 
-    // Keep a spare of every weapon, apparel item and medicine on separate
+    // Keep a spare of every weapon, apparel, belt item, medicine and cyberware on separate
     // stockpile cells for inspecting models and trying different loadouts.
     // Read definitions so newly added combat gear is included automatically.
-    for kind in ItemId::all().filter(|k| k.def().is_gear() || k.def().medicine > 0.0) {
+    for kind in ItemId::all().filter(|k| k.def().is_gear() || k.def().medicine > 0.0 || k.def().cyberware.is_some()) {
         if w.map.count_items(kind) > 0 {
             continue;
         }
@@ -251,7 +270,7 @@ mod tests {
         let w = battle_world();
         for kind in ItemId::all() {
             let def = kind.def();
-            if def.is_gear() || def.medicine > 0.0 {
+            if def.is_gear() || def.medicine > 0.0 || def.cyberware.is_some() {
                 let stocked: u32 = (0..w.map.len())
                     .filter(|&i| w.map.zone[i] == Zone::Stockpile(0))
                     .map(|i| w.map.count_in(i, kind))

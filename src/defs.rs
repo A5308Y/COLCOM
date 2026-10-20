@@ -8,7 +8,7 @@
 //! by matching on particular ones. Saves store the definitions' text ids, so
 //! adding or reordering definitions keeps old saves loadable.
 
-use crate::health::DamageKind;
+use crate::health::{CyberSlot, DamageKind};
 use crate::map::Desig;
 use crate::pawn::{Skill, WorkType};
 use serde::de::Error as _;
@@ -167,6 +167,9 @@ pub struct WeaponDef {
     /// Shots (or blows) per attack in a battle.
     #[serde(default = "one_shot")]
     pub shots: u32,
+    /// Light enough to carry as a sidearm besides the main weapon.
+    #[serde(default)]
+    pub sidearm: bool,
 }
 
 fn one_shot() -> u32 {
@@ -184,19 +187,42 @@ impl WeaponDef {
     }
 }
 
+/// Where on the body a piece of apparel is worn; one piece per slot.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Slot {
-    /// Clothes.
-    Body,
-    /// Armour worn over clothes.
-    Outer,
     /// Helmets and hats.
     Head,
+    /// Goggles and visors.
+    Face,
+    /// The inner torso: shirts and clothes.
+    #[serde(alias = "Body")]
+    Shirt,
+    /// The outer torso, over the shirt: jackets, vests, parkas, armour.
+    Outer,
+    /// Trousers and leg guards.
+    Legs,
+}
+
+impl Slot {
+    pub const ALL: [Slot; 5] = [Slot::Head, Slot::Face, Slot::Shirt, Slot::Outer, Slot::Legs];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Slot::Head => "Head",
+            Slot::Face => "Face",
+            Slot::Shirt => "Shirt",
+            Slot::Outer => "Jacket / vest",
+            Slot::Legs => "Legs",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ApparelDef {
     pub slot: Slot,
+    /// Further slots it takes up (a sealed suit covers legs, head and face too).
+    #[serde(default)]
+    pub also: Vec<Slot>,
     /// Share of each blow's damage it stops.
     pub armor: f32,
     /// Mood while worn.
@@ -207,6 +233,9 @@ pub struct ApparelDef {
     /// How fast the wearer walks (and moves in battle) with it on: 1 unchanged.
     #[serde(default = "full")]
     pub speed: f32,
+    /// Added to the chance to hit (0.05 = 5 percentage points).
+    #[serde(default)]
+    pub aim: f32,
     /// What shows on the wearer: shapes fixed to the character's bones.
     #[serde(default)]
     pub pieces: Vec<WornPiece>,
@@ -251,23 +280,67 @@ pub struct WornModel {
     pub pose: ModelPose,
 }
 
-/// A replacement for a lost limb, fitted by a doctor at an operating table.
+/// Cyberware: a prosthetic or bionic part, or an implant, installed by a
+/// doctor at an operating table into one of the body's cyberware slots.
 #[derive(Clone, Debug, Deserialize)]
-pub struct ProstheticDef {
-    /// The body parts it can replace (with everything on them).
-    pub fits: Vec<crate::health::Part>,
-    /// How well it works, 0..1 (a healthy part is 1).
+pub struct CyberwareDef {
+    /// The slots it can go into (an arm fits either arm).
+    pub fits: Vec<CyberSlot>,
+    /// How well a replaced part works (a healthy natural part is 1; bionics do better).
+    #[serde(default = "full")]
     pub efficiency: f32,
+    /// Share of each blow's damage it stops, like worn armour.
+    #[serde(default)]
+    pub armor: f32,
+    /// Added to the chance to hit.
+    #[serde(default)]
+    pub aim: f32,
+    /// How fast they walk with it: 1 unchanged.
+    #[serde(default = "full")]
+    pub speed: f32,
+}
+
+/// Something carried on the belt and used up in battle.
+#[derive(Clone, Debug, Deserialize)]
+pub struct UtilityDef {
+    pub effect: UtilityEffect,
+    /// How many one colonist carries.
+    pub carry: u32,
+    /// Action points to use one.
+    pub ap: i32,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub enum UtilityEffect {
+    /// Thrown at a unit up to `range` cells away: everyone in it takes `damage`.
+    Grenade { damage: (f32, f32), range: f32 },
+    /// Tends the wounds of everyone in the user's unit with this quality.
+    Medkit { quality: f32 },
 }
 
 impl ItemDef {
-    /// Something to use or wear: a weapon or apparel.
+    /// Something to use or wear: a weapon, apparel or a utility item.
     pub fn is_gear(&self) -> bool {
-        self.weapon.is_some() || self.apparel.is_some()
+        self.weapon.is_some() || self.apparel.is_some() || self.utility.is_some()
     }
 }
 
 impl ApparelDef {
+    /// Every slot it takes up: its own, then the `also` ones.
+    pub fn slots(&self) -> impl Iterator<Item = Slot> + '_ {
+        std::iter::once(self.slot).chain(self.also.iter().copied())
+    }
+
+    /// Whether it takes up `slot`.
+    pub fn covers(&self, slot: Slot) -> bool {
+        self.slots().any(|s| s == slot)
+    }
+
+    /// Whether it and `other` can't be worn together.
+    pub fn overlaps(&self, other: &ApparelDef) -> bool {
+        self.slots().any(|s| other.covers(s))
+    }
+
     /// To compare apparel for the same slot, with it `outdoors` °C outside:
     /// armour and mood, and warmth the more the colder it is.
     pub fn score_at(&self, outdoors: f32) -> f32 {
@@ -324,8 +397,10 @@ pub struct ItemDef {
     pub weapon: Option<WeaponDef>,
     #[serde(default)]
     pub apparel: Option<ApparelDef>,
+    #[serde(default, alias = "prosthetic")]
+    pub cyberware: Option<CyberwareDef>,
     #[serde(default)]
-    pub prosthetic: Option<ProstheticDef>,
+    pub utility: Option<UtilityDef>,
     /// One line on what it is (components: what they stand for).
     #[serde(default)]
     pub about: Option<String>,
@@ -1187,8 +1262,28 @@ impl Defs {
                 check_model(&d.id, &skin.male, &[])?;
                 check_model(&d.id, &skin.female, &[])?;
             }
-            if d.prosthetic.as_ref().is_some_and(|p| p.fits.is_empty() || !(p.efficiency > 0.0 && p.efficiency <= 1.0)) {
-                return Err(format!("{}: a prosthetic fits some parts, with efficiency above 0 and up to 1", d.id));
+            if let Some(c) = &d.cyberware {
+                if c.fits.is_empty() || !(c.efficiency > 0.0 && c.efficiency <= 2.0) || c.speed <= 0.0 || !(0.0..0.9).contains(&c.armor) {
+                    return Err(format!("{}: cyberware fits some slots, with efficiency 0..2, speed above 0 and armour 0 to 0.9", d.id));
+                }
+                if c.fits.iter().any(|s| !s.replaces()) && c.efficiency != 1.0 {
+                    return Err(format!("{}: an add-on implant replaces nothing, so its efficiency stays 1", d.id));
+                }
+            }
+            if let Some(u) = &d.utility {
+                let ok = match u.effect {
+                    UtilityEffect::Grenade { damage, range } => damage.0 > 0.0 && damage.0 <= damage.1 && range > 0.0,
+                    UtilityEffect::Medkit { quality } => quality > 0.0 && quality <= 1.0,
+                };
+                if !ok || u.carry == 0 || u.ap <= 0 || d.weapon.is_some() || d.apparel.is_some() {
+                    return Err(format!("{}: a utility item needs a sensible effect, carry and AP (and is nothing else)", d.id));
+                }
+            }
+            if d.apparel.as_ref().is_some_and(|a| a.also.contains(&a.slot)) {
+                return Err(format!("{}: `also` repeats the apparel's own slot", d.id));
+            }
+            if d.weapon.as_ref().is_some_and(|w| w.sidearm && w.shots > 2) {
+                return Err(format!("{}: a sidearm is light (at most two shots)", d.id));
             }
             if let Some(w) = &d.weapon {
                 if w.range <= 0.0 || w.cooldown <= 0.0 || w.damage.0 <= 0.0 || w.damage.0 > w.damage.1 {
@@ -1347,8 +1442,8 @@ impl Defs {
         self.items[item.0 as usize].medicine > 0.0
     }
 
-    pub fn is_prosthetic(&self, item: ItemId) -> bool {
-        self.items[item.0 as usize].prosthetic.is_some()
+    pub fn is_cyberware(&self, item: ItemId) -> bool {
+        self.items[item.0 as usize].cyberware.is_some()
     }
 }
 

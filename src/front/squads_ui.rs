@@ -8,7 +8,7 @@ use my_world::defs::{ItemId, Slot};
 use my_world::map::Zone;
 use my_world::pawn::{Pawn, Role};
 use my_world::battle::CELLS_PER_ROUND;
-use my_world::squads::{fights_at_range, style_name, SQUAD_MAX};
+use my_world::squads::{fights_at_range, loadout_worn, style_name, SQUAD_MAX};
 use my_world::world::World as SimWorld;
 
 
@@ -16,6 +16,7 @@ use my_world::world::World as SimWorld;
 pub enum CombatAction {
     Role(Role),
     Loadout(Vec<ItemId>),
+    Sidearm(Option<ItemId>),
 }
 
 fn label_or_none(kind: Option<ItemId>) -> String {
@@ -56,7 +57,7 @@ fn fighting(ui: &mut egui::Ui, p: &Pawn) {
     use my_world::pawn::Skill;
     ui.label(RichText::new("Fighting").strong());
     ui.label(format!("Shooting {}   Melee {}", p.skill(Skill::Shooting), p.skill(Skill::Melee)));
-    let w = p.attack();
+    let w = p.main_attack();
     let pct = |c: f32| format!("{:.0}%", c.clamp(0.05, 0.95) * 100.0);
     let text = if w.ranged {
         let far = w.range.floor().max(1.0);
@@ -71,6 +72,15 @@ fn fighting(ui: &mut egui::Ui, p: &Pawn) {
         format!("Hits with {}: {} of blows", p.weapon_name().to_lowercase(), pct(base_hit_chance(p, false, 1.0)))
     };
     ui.label(text);
+    if let Some(side) = p.sidearm {
+        let ranged = side.def().weapon.as_ref().is_some_and(|w| w.ranged());
+        let chance = if ranged { base_hit_chance(p, true, 3.0) } else { base_hit_chance(p, false, 1.0) };
+        let at = if ranged { "at 3 cells" } else { "of blows" };
+        ui.label(format!("Sidearm {}: {} {} (drawn when it suits better)", side.name().to_lowercase(), pct(chance), at));
+    }
+    if p.aim_bonus() != 0.0 {
+        ui.label(format!("Gear and implants: {:+.0}% to hit", p.aim_bonus() * 100.0));
+    }
     let how = "Shots: 55% + 2.5% per Shooting level - 2.5% per cell away; blows: 60% + 2% per Melee level. \
                Hurt eyes or hands lower both; in battle, cover, hunkering down, height and being pinned change it.";
     ui.label(RichText::new(how).small().weak());
@@ -144,32 +154,41 @@ pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction
     };
     ui.label(RichText::new(rule).small().weak());
     let weapon = p.loadout.iter().copied().find(|k| k.def().weapon.is_some());
-    let worn = |slot: Slot| p.loadout.iter().copied().find(|k| k.def().apparel.as_ref().is_some_and(|a| a.slot == slot));
-    let mut change: Option<(Option<Slot>, Option<ItemId>)> = None;
+    let utility = p.loadout.iter().copied().find(|k| k.def().utility.is_some());
+    // What a choice replaces: the old item for that slot (a suit may fill several).
+    let mut change: Option<(Option<ItemId>, Option<ItemId>)> = None;
     if let Some(c) = slot_choice(ui, w, p.id, "Weapon", weapon, |k| k.def().weapon.is_some()) {
-        change = Some((None, c));
+        change = Some((weapon, c));
     }
-    for (slot, label) in [(Slot::Body, "Clothes"), (Slot::Outer, "Armour"), (Slot::Head, "Helmet")] {
-        let fits = |k: ItemId| k.def().apparel.as_ref().is_some_and(|a| a.slot == slot);
-        if let Some(c) = slot_choice(ui, w, p.id, label, worn(slot), fits) {
-            change = Some((Some(slot), c));
+    let sidearm = |k: ItemId| k.def().weapon.as_ref().is_some_and(|w| w.sidearm);
+    if let Some(c) = slot_choice(ui, w, p.id, "Sidearm", p.loadout_sidearm, sidearm) {
+        actions.push(CombatAction::Sidearm(c));
+    }
+    if let Some(c) = slot_choice(ui, w, p.id, "Utility", utility, |k| k.def().utility.is_some()) {
+        change = Some((utility, c));
+    }
+    for slot in Slot::ALL {
+        let fits = |k: ItemId| k.def().apparel.as_ref().is_some_and(|a| a.covers(slot));
+        let current = loadout_worn(p, slot);
+        if let Some(c) = slot_choice(ui, w, p.id, slot.name(), current, fits) {
+            change = Some((current, c));
         }
     }
-    if let Some((slot, item)) = change {
-        let same_slot = |k: &ItemId| match slot {
-            None => k.def().weapon.is_some(),
-            Some(s) => k.def().apparel.as_ref().is_some_and(|a| a.slot == s),
-        };
-        let mut loadout: Vec<ItemId> = p.loadout.iter().copied().filter(|k| !same_slot(k)).collect();
+    if let Some((old, item)) = change {
+        // The new item takes out whatever it overlaps (`set_loadout`).
+        let mut loadout: Vec<ItemId> = p.loadout.iter().copied().filter(|&k| Some(k) != old).collect();
         loadout.extend(item);
         actions.push(CombatAction::Loadout(loadout));
     }
     ui.horizontal(|ui| {
         if ui.button("Use current gear").clicked() {
-            actions.push(CombatAction::Loadout(p.weapon.into_iter().chain(p.apparel.iter().copied()).collect()));
+            let gear = p.weapon.into_iter().chain(p.apparel.iter().copied()).chain(p.utility.map(|s| s.kind));
+            actions.push(CombatAction::Loadout(gear.collect()));
+            actions.push(CombatAction::Sidearm(p.sidearm));
         }
-        if !p.loadout.is_empty() && ui.button("Clear").clicked() {
+        if (!p.loadout.is_empty() || p.loadout_sidearm.is_some()) && ui.button("Clear").clicked() {
             actions.push(CombatAction::Loadout(Vec::new()));
+            actions.push(CombatAction::Sidearm(None));
         }
     });
     actions
@@ -185,6 +204,11 @@ pub fn apply(w: &mut SimWorld, id: u32, actions: Vec<CombatAction>) {
             }
             CombatAction::Loadout(items) => {
                 if let Err(e) = w.set_loadout(id, &items) {
+                    w.push_log(format!("Can't do that: {}.", e));
+                }
+            }
+            CombatAction::Sidearm(kind) => {
+                if let Err(e) = w.set_loadout_sidearm(id, kind) {
                     w.push_log(format!("Can't do that: {}.", e));
                 }
             }

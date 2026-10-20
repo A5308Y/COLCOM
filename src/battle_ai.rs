@@ -2,6 +2,7 @@
 //! at a time, so its moves and attacks play out like the player's.
 
 use crate::battle::{battle_sight, BattleOrder, Cover, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MOVE};
+use crate::defs::ItemId;
 use crate::map::Pos;
 use crate::pathing::bfs;
 use crate::pawn::Faction;
@@ -102,6 +103,18 @@ impl World {
                 _ => BattleOrder::End,
             };
         }
+        // Belt items: patch up the wounded, or a grenade into a bunched-up squad.
+        let affords = |kind: ItemId| kind.def().utility.as_ref().is_some_and(|d| unit.ap >= d.ap);
+        let bleeding = unit.members.iter().filter_map(|&m| self.pawn(m)).any(|p| p.health.bleed_rate() > 0.0);
+        if bleeding && self.medkit_option(u).is_some_and(|o| affords(o.1)) {
+            return BattleOrder::Medkit;
+        }
+        let grenade = (0..b.units.len())
+            .filter(|&t| b.units[t].members.len() >= 2 && !b.units[t].passive)
+            .find(|&t| self.throw_option(u, t).is_some_and(|o| affords(o.1)));
+        if let Some(t) = grenade {
+            return BattleOrder::Throw(t);
+        }
         let attack = self.best_attack(u).filter(|_| unit.ap >= AP_ATTACK);
         if let Some((t, score)) = attack {
             // A squad staying put to fire goes down on one knee first (a fresh activation only).
@@ -153,7 +166,7 @@ impl World {
         let unit = &b.units[u];
         let lead = self.pawn(*unit.members.first()?)?;
         let enemies: Vec<_> = self.enemies_of(unit.side).into_iter().filter_map(|e| self.pawn(e)).collect();
-        let weapon = lead.attack();
+        let weapon = lead.main_attack();
         let step = self.step_ap(u);
         let reach = unit.ap / step;
         let reach_and_attack = (unit.ap - AP_ATTACK).max(0) / step;

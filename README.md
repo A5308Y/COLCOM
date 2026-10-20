@@ -18,10 +18,11 @@ Scenarios are fixed worlds for trying things out (`src/scenarios.rs`). `--scenar
 `MY_WORLD_SCENARIO=<name>` picks one; an unknown name lists the ones there are. `battle` starts in
 round 1 of a battle on a 48×32 yard: Ada's squad (one member arrives two rounds late), two lone
 fighters (one gears up from the stockpile), a civilian in the house, and six raiders from the east.
-Every weapon and combat armor type appears on a fighter. The stockpile also holds a spare of every
-weapon, apparel item and medicine for inspecting models and trying loadouts.
-Eve, the lone fighter north of the house at (14, 9), starts wearing powered armor and holding the
-laser rifle, ready to inspect from round 1. Restart the scenario with Shift+N to refresh an existing battle.
+Every weapon, apparel and belt item appears on a fighter (the assault rifleman carries a knife sidearm
+and frag grenades; the geared fighter cargo trousers, tactical goggles and a field medkit). The stockpile
+also holds a spare of every weapon, apparel and belt item, medicine and cyberware for inspecting models
+and trying loadouts. Eve, the lone fighter north of the house at (14, 9), starts wearing powered armor
+(with bionic eyes and subdermal plating under it) and holding the laser rifle, ready to inspect from round 1. Restart the scenario with Shift+N to refresh an existing battle.
 
 (No Rust yet? `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 
@@ -80,8 +81,13 @@ for), and `<` goes back.
   cotton → cloth → clothes; iron ore (veins in the rock, more of it deeper down) → steel (smelter); copper
   ore (green veins) → copper (smelter); stone → silicon and rubber-plant latex → rubber (refinery).
   Each colonist has a loadout (Combat tab; right-clicking a weapon or clothes with them selected sets it
-  too): the weapon, clothes, armour and helmet they use. They fetch it from storage and keep it on, in
-  and out of battle; for slots left empty they pick up the best they find. Armour stops part of every
+  too) with a slot for each piece of gear: **Weapon**, **Sidearm** (a light weapon: pistol, knife, club),
+  **Utility** (belt items: frag grenades, field medkits), and apparel for **Head**, **Face** (goggles),
+  **Shirt** (inner torso), **Jacket / vest** (outer torso: Flak Jacket, parka) and **Legs** (cargo
+  trousers, flak leg guards). One item can take several slots: powered armour also covers legs, head
+  and face. They fetch it from storage and keep it on, in and out of battle; for apparel slots left
+  empty they pick up the best they find (sidearms and belt items only when told to: loadout, or
+  right-click *Carry … as sidearm*). Leg and face gear has no worn model yet (the trousers under it show). Armour stops part of every
   blow (and shows: a fitted Flak Jacket, a steel helmet, powered armour's articulated suit), and
   clothes cheer them up. Powered armour's motors make its wearer a quarter faster, on foot and in
   battle; a limp (low Moving) slows them in both (a squad moves at its slowest member's pace). Pinned down in battle, a unit has 60% of its
@@ -91,7 +97,9 @@ for), and `<` goes back.
   descriptions say what they stand for: gears, wiring, lenses ...) made at fitting benches: structural at
   the smithy, textile at the crafting bench, mechanical at the machinist's bench, chemical at the chemistry
   lab, electrical and optical at the electronics bench. Gear needs them: knives, pistols, rifles, assault
-  rifles, Flak Jackets and steel helmets (smithy), prosthetics (machinist), and at the **fabricator** powered
+  rifles, Flak Jackets, leg guards and steel helmets (smithy), prosthetics, bionic limbs, spines, plating
+  and grenades (machinist), goggles, bionic eyes and organs, neural coprocessors (electronics bench), field
+  medkits (chemistry lab), and at the **fabricator** powered
   armour and the laser rifle (its burns don't bleed but hurt more). The benches themselves cost components
   and climb a ladder (machinist → refinery → chemistry lab → electronics bench → fabricator), each built
   from what the ones before make. Buildings can cost several materials, brought in order. The **salvage
@@ -203,11 +211,16 @@ for), and `<` goes back.
   patients. Wounded or sick colonists go to bed on their own. A lone doctor tends their own wounds. Click a
   colonist and open the **Health** tab for the full picture. Patients take hospital beds first; nobody
   claims a hospital bed or sleeps on an operating table.
-- **Prosthetics:** a smithy makes prosthetic arms and legs. Order one in a colonist's **Health** tab
-  (*Fit prosthetic leg* next to the lost limb; *Cancel* calls it off). Once it's made, an operating table is
-  free and another colonist can doctor, the patient lies down and a doctor fits it (75% as good as the real thing).
-  It can go wrong (more likely with a poor doctor, less in a surgery room): the prosthetic is ruined and
-  the patient wounded.
+- **Cyberware:** every colonist has cyberware slots: **left/right arm**, **left/right leg**, **eyes**,
+  **spine**, **heart** and **lungs** (these replace the natural parts, lost or healthy) and the **brain** and
+  **dermal** (skin) slots, which add to the body. Pick what goes in a slot in the colonist's **Health**
+  tab (*Cancel* calls it off; *Take it out* removes arms, legs, eyes, brain and skin implants; organs and
+  the spine can only be swapped). Once the item is made, an operating table is free and another colonist
+  can doctor, the patient lies down and a doctor installs it; what it replaces is left at the table.
+  Prosthetic limbs work 75% as well as flesh; bionic arms, legs, eyes, spine, heart and lungs better
+  (sharper aim, quicker steps, more resilience), a neural coprocessor helps aim and subdermal plating
+  is armour that's always on. It can go wrong (more likely with a poor doctor, less in a surgery room):
+  the item is ruined and the patient wounded. Cyberware has no visible model on the character yet.
 - **Terrain:** the world is a 3D grid of soil, rock and water, 16 levels deep, with rolling hills, lakes and
   rocky mountains. Pawns walk up and down one-level slopes of natural ground but can't climb cliffs,
   walls or floors. Mining digs tunnels into rock and shafts down through soil; **Fill** (Orders) fills
@@ -245,7 +258,10 @@ for), and `<` goes back.
   size (×0.25 to ×3), or call one in now for testing; saved with the game.
 - **Combat:** drafted colonists shoot raiders in range with line of sight. Wounds land on body parts (see
   Health). Hurt raiders flee, and downed ones die if left lying. In battles nobody walks through an
-  enemy: units go round them, or can't get past.
+  enemy: units go round them, or can't get past. Members with a sidearm draw it when it does more harm
+  (a club fighter's pistol out of reach, say). A unit carrying grenades can throw one (*Grenade* button,
+  then click an enemy unit within 6 cells and in sight: everyone in it is caught, whatever their cover);
+  a unit with a medkit can tend everyone's wounds mid-battle (*Medkit*).
 
 ## Code layout
 
@@ -284,7 +300,7 @@ editing). A new definition there gets a toolbar button, a shortcut (if it has a 
 simple shapes, and works in hauling, building, mining, harvesting and saves without code changes.
 Behaviour the code has to know about is a field: `nutrition` (food), `medicine`, `special` (`Floor`,
 `Stairs`, `Bed`, `Door`), `blocks_room`, `holds_floors`, `light`, `sow`, `wild`, `harvest`, `raw`,
-`poison`, `weapon`, `apparel`, `beauty`, `daylight`, `storage`, `along_walls`, and `link` on parts. A buildable that a recipe names becomes a workbench.
+`poison`, `weapon` (`sidearm`), `apparel` (`slot`, `also`, `aim`), `cyberware`, `utility`, `beauty`, `daylight`, `storage`, `along_walls`, and `link` on parts. A buildable that a recipe names becomes a workbench.
 `cargo test` checks that the file loads and that every buildable can be built and removed, every plant
 harvested and every recipe made.
 
@@ -298,7 +314,7 @@ harvested and every recipe made.
   and on shelves; shape definitions remain the loading fallback.
 - `assets/models/armor/`: steel helmet, fitted Flak Jacket and cyan-lit powered armor; [asset notes](assets/models/armor/README.md).
   Stored displays and pieces attached to character bones share the same meshes and materials.
-- `assets/models/items/`: all remaining resources, components, food, medical supplies, prosthetics
+- `assets/models/items/`: all remaining resources, components, food, medical supplies, cyberware, belt items
   and clothing in the same faceted style; [asset notes](assets/models/items/README.md). Ground,
   shelf and carried stacks share models; clothing also has pieces attached to character bones.
   Simple clothes and parkas use body-specific deforming skins for aiming and movement;
