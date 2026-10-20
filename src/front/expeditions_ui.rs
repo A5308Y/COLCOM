@@ -361,7 +361,8 @@ fn away(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
                         leave = Some((e.id, None));
                     }
                 }
-                _ => {}
+                // Nothing for the player to decide while they travel or fight.
+                Stage::Out { .. } | Stage::Fighting { .. } | Stage::Back { .. } => {}
             }
             egui::CollapsingHeader::new("Journal").id_salt(("journal", e.id)).show(ui, |ui| {
                 for line in &e.journal {

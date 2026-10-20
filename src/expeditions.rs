@@ -177,7 +177,7 @@ impl MissionKind {
         match self {
             MissionKind::Trade | MissionKind::Envoy | MissionKind::Escort => kind != FactionKind::Bandits,
             MissionKind::BanditCamp | MissionKind::Rescue | MissionKind::PeaceTalks => kind == FactionKind::Bandits,
-            _ => true,
+            MissionKind::Ruins | MissionKind::Hunt | MissionKind::Prospect | MissionKind::Signal => true,
         }
     }
 }
@@ -340,12 +340,25 @@ impl Expedition {
         worth(&self.cargo)
     }
 
-    /// Whether the squad can afford a choice (it gives goods they carry).
+    /// Whether the squad can afford a choice (it gives goods they carry),
+    /// whichever way its chances and fights turn out.
     pub fn affords(&self, c: &Choice) -> bool {
-        c.effects.iter().all(|e| match e {
+        self.affords_all(&c.effects)
+    }
+
+    fn affords_all(&self, effects: &[Effect]) -> bool {
+        effects.iter().all(|e| match e {
             Effect::Give(goods) => goods.iter().all(|g| self.cargo.iter().any(|o| o.kind == g.kind && o.count >= g.count)),
             Effect::GiveAll => !self.cargo.is_empty(),
-            _ => true,
+            Effect::Chance { yes, no, .. } => self.affords_all(yes) && self.affords_all(no),
+            Effect::Fight { then, .. } => self.affords_all(then),
+            Effect::Goodwill(_)
+            | Effect::Gain(_)
+            | Effect::Delay(_)
+            | Effect::Injure(_)
+            | Effect::Recruit
+            | Effect::Trade
+            | Effect::Truce(_) => true,
         })
     }
 
@@ -447,7 +460,12 @@ impl World {
         let kind = kinds[self.rng.below(kinds.len())];
         let days = match kind {
             MissionKind::Trade | MissionKind::Envoy | MissionKind::Escort | MissionKind::PeaceTalks => self.factions[f].days,
-            _ => self.rng.range_f32(1.0, 2.5),
+            MissionKind::BanditCamp
+            | MissionKind::Ruins
+            | MissionKind::Rescue
+            | MissionKind::Hunt
+            | MissionKind::Prospect
+            | MissionKind::Signal => self.rng.range_f32(1.0, 2.5),
         };
         let id = OfferId::new(self.take_id());
         self.offers.push(Offer { id, kind, faction: f, days, until: self.time() + OFFER_DAYS * DAY_LEN });
@@ -540,7 +558,14 @@ impl World {
                     Choice { label: "Abandon the cargo and run".into(), effects: vec![Effect::Goodwill(-15)] },
                 ],
             }),
-            _ => None,
+            MissionKind::Envoy
+            | MissionKind::BanditCamp
+            | MissionKind::Ruins
+            | MissionKind::Rescue
+            | MissionKind::Hunt
+            | MissionKind::Prospect
+            | MissionKind::PeaceTalks
+            | MissionKind::Signal => None,
         }
     }
 
@@ -1155,6 +1180,21 @@ mod tests {
         }
         assert!(w.expeditions.is_empty());
         assert!(w.pawns.iter().filter(|p| p.is_colonist()).count() >= 1 || w.colony_lost());
+    }
+
+    #[test]
+    fn a_choice_is_only_affordable_if_every_outcome_is() {
+        let (mut w, ids, offer) = colony(MissionKind::Trade, 0);
+        w.send_expedition(offer, &ids, &[st("steel", 5)]).unwrap();
+        let e = &w.expeditions[0];
+        let give = |n| vec![Effect::Give(vec![st("steel", n)])];
+        let choice = |effects| Choice { label: String::new(), effects };
+        assert!(e.affords(&choice(give(5))));
+        assert!(!e.affords(&choice(give(9))));
+        // Nested in a chance or a fight's aftermath, it still has to be paid.
+        assert!(!e.affords(&choice(vec![Effect::Chance { p: 0.5, yes: Vec::new(), no: give(9) }])));
+        assert!(!e.affords(&choice(vec![Effect::Fight { enemies: 2, site: Site::Camp, then: give(9) }])));
+        assert!(e.affords(&choice(vec![Effect::Chance { p: 0.5, yes: give(5), no: Vec::new() }])));
     }
 
     #[test]

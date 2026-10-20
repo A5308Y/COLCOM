@@ -333,7 +333,9 @@ impl World {
             match e.stage {
                 crate::expeditions::Stage::Decide { .. } => out.push((format!("{}: a decision is waiting (Expeditions)", e.kind.name()), true)),
                 crate::expeditions::Stage::Trading { .. } => out.push((format!("{}: at the market (Expeditions)", e.kind.name()), false)),
-                _ => {}
+                crate::expeditions::Stage::Out { .. }
+                | crate::expeditions::Stage::Fighting { .. }
+                | crate::expeditions::Stage::Back { .. } => {}
             }
         }
         for p in self.trapped.iter().filter_map(|&id| self.pawn(id)) {

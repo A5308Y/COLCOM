@@ -50,10 +50,13 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
   Done: `OfferId`/`ExpeditionId` (transparent, so saves are unchanged), `World::take_id`, and
   `Option<Haggle>`. Site worlds continue the colony's numbering, and `finish_site` moves
   the colony's counter past it.
-- [ ] **Remaining `_ =>` arms on project enums:** `MissionKind::fits` and
+- [x] **Remaining `_ =>` arms on project enums:** `MissionKind::fits` and
   `Expedition::affords` (`expeditions.rs`), and `HediffKind` in `bleed`, `needs_tending`
   and the death cause (`health.rs`; a new disease would be reported as "died of an
   infection"). Also make `affords` look inside nested `Chance`/`Fight` effects.
+  Done: explicit arms in those, plus `cover_at`, the shaken-unit order, faction colours
+  and the expedition alerts. `affords` checks nested effects. Catch-alls that only pick out
+  one variant (accessors such as `Zone::stockpile`) or match numbers and strings stay.
 - [ ] **Decoration and furniture-move states:** `Decor { delivered, built, remove }` and
   `Move { lifted, bills, owner }`. Model them as state enums whose fields only exist in
   the right state. Both change the save format.

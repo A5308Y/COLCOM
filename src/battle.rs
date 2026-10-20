@@ -1338,7 +1338,8 @@ impl World {
         match m.feature[i] {
             crate::map::Feature::Built { kind, .. } => kind.def().cover_kind(),
             crate::map::Feature::Plant { kind, .. } => kind.def().cover_kind(),
-            _ => Cover::None,
+            // Blueprints are only planned; nothing stands there yet.
+            crate::map::Feature::None | crate::map::Feature::Blueprint { .. } => Cover::None,
         }
     }
 

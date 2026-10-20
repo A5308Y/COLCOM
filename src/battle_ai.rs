@@ -100,8 +100,9 @@ impl World {
                 // To run, a deployed squad has to stand up first.
                 Faction::Raider if unit.is_deployed() && unit.ap >= AP_DEPLOY + AP_MOVE => BattleOrder::Deploy,
                 Faction::Raider if !moved && !unit.is_deployed() => self.flee_order(u),
-                _ if unit.ap >= AP_HUNKER => BattleOrder::Hunker,
-                _ => BattleOrder::End,
+                // Raiders who can't run yet, and shaken colonists, take cover.
+                Faction::Raider | Faction::Colony if unit.ap >= AP_HUNKER => BattleOrder::Hunker,
+                Faction::Raider | Faction::Colony => BattleOrder::End,
             };
         }
         // Belt items: patch up the wounded, or a grenade into a bunched-up squad.

@@ -527,10 +527,10 @@ fn draw_battle(sim: Res<Sim>, ui: Res<UiState>, area: Res<ReachArea>, mut gizmos
     for (u, unit) in b.units.iter().enumerate() {
         let color = match unit.side {
             Faction::Raider => Color::srgb(0.95, 0.2, 0.15),
-            _ if b.active_unit() == Some(u) => Color::srgb(1.0, 0.82, 0.1),
-            _ if unit.is_civilians() => Color::srgb(0.4, 0.85, 0.5),
-            _ if unit.acted => Color::srgb(0.55, 0.55, 0.6),
-            _ => Color::srgb(0.35, 0.65, 1.0),
+            Faction::Colony if b.active_unit() == Some(u) => Color::srgb(1.0, 0.82, 0.1),
+            Faction::Colony if unit.is_civilians() => Color::srgb(0.4, 0.85, 0.5),
+            Faction::Colony if unit.acted => Color::srgb(0.55, 0.55, 0.6),
+            Faction::Colony => Color::srgb(0.35, 0.65, 1.0),
         };
         let Some(lead) = unit.members.first().and_then(|&id| w.pawn(id)) else { continue };
         if !ui.shows_at(m, lead.x, lead.y, lead.z) {
@@ -781,8 +781,8 @@ fn battle_panels(
             }
             let color = match unit.side {
                 Faction::Raider => theme::RED,
-                _ if unit.is_civilians() => theme::GREEN,
-                _ => theme::TEAL,
+                Faction::Colony if unit.is_civilians() => theme::GREEN,
+                Faction::Colony => theme::TEAL,
             };
             let name = if unit.roster.len() > 1 {
                 format!("{} ({}/{})", lead.name, unit.members.len(), unit.roster.len())

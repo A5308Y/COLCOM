@@ -351,7 +351,11 @@ impl Hediff {
         match self.kind {
             HediffKind::Injury { kind, permanent: false } => self.severity * kind.bleed() * part_bleed,
             HediffKind::Missing => self.part.map_or(0.0, |p| p.def().max_hp) * 0.05 * part_bleed,
-            _ => 0.0,
+            HediffKind::Injury { permanent: true, .. }
+            | HediffKind::Infection { .. }
+            | HediffKind::Flu { .. }
+            | HediffKind::FoodPoisoning
+            | HediffKind::Prosthetic { .. } => 0.0,
         }
     }
 
@@ -376,7 +380,9 @@ impl Hediff {
     pub fn needs_tending(&self) -> bool {
         match self.kind {
             HediffKind::Injury { permanent: true, .. } | HediffKind::FoodPoisoning | HediffKind::Prosthetic { .. } => false,
-            _ => self.tend.is_none(),
+            HediffKind::Injury { permanent: false, .. } | HediffKind::Missing | HediffKind::Infection { .. } | HediffKind::Flu { .. } => {
+                self.tend.is_none()
+            }
         }
     }
 
@@ -656,7 +662,11 @@ impl Health {
             if h.is_disease() && h.severity >= 1.0 {
                 return Some(match h.kind {
                     HediffKind::Flu { .. } => "died of the flu".into(),
-                    _ => "died of an infection".into(),
+                    HediffKind::Infection { .. } => "died of an infection".into(),
+                    // Not diseases (see `is_disease`), but named rather than misreported.
+                    HediffKind::Injury { .. } | HediffKind::Missing | HediffKind::FoodPoisoning | HediffKind::Prosthetic { .. } => {
+                        format!("died of {}", h.label().to_lowercase())
+                    }
                 });
             }
         }
