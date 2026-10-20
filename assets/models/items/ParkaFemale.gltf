@@ -1363,7 +1363,7 @@
             "WEIGHTS_0": 11
           },
           "indices": 12,
-          "material": 3
+          "material": 5
         }
       ]
     }
@@ -1410,7 +1410,7 @@
     },
     {
       "doubleSided": true,
-      "name": "MI_Peasant",
+      "name": "MI_Hair_2",
       "normalTexture": {
         "index": 0
       },
@@ -1418,8 +1418,37 @@
         "baseColorTexture": {
           "index": 1
         },
+        "metallicFactor": 0,
+        "roughnessFactor": 0.8227272629737854
+      }
+    },
+    {
+      "doubleSided": true,
+      "name": "MI_Eyes",
+      "normalTexture": {
+        "index": 2
+      },
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 3
+        },
+        "metallicFactor": 0,
+        "roughnessFactor": 0.34545454382896423
+      }
+    },
+    {
+      "doubleSided": true,
+      "name": "MI_Superhero_Female",
+      "normalTexture": {
+        "index": 4
+      },
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 5
+        },
+        "metallicFactor": 0,
         "metallicRoughnessTexture": {
-          "index": 2
+          "index": 6
         }
       }
     }
@@ -1470,42 +1499,42 @@
     {
       "buffer": 0,
       "byteOffset": 43200,
-      "byteLength": 65232,
+      "byteLength": 32208,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 108432,
-      "byteLength": 65232,
+      "byteOffset": 75408,
+      "byteLength": 32208,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 173664,
-      "byteLength": 43488,
+      "byteOffset": 107616,
+      "byteLength": 21472,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 217152,
-      "byteLength": 43488,
+      "byteOffset": 129088,
+      "byteLength": 21472,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 260640,
-      "byteLength": 86976,
+      "byteOffset": 150560,
+      "byteLength": 42944,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 347616,
-      "byteLength": 82176,
+      "byteOffset": 193504,
+      "byteLength": 51912,
       "target": 34963
     },
     {
       "buffer": 0,
-      "byteOffset": 429792,
+      "byteOffset": 245416,
       "byteLength": 4160
     }
   ],
@@ -1523,7 +1552,7 @@
       "max": [
         0.6231000332720456,
         1.5298999773413924,
-        0.14150000000000001
+        0.13699999999999998
       ]
     },
     {
@@ -1575,57 +1604,57 @@
     {
       "bufferView": 7,
       "componentType": 5126,
-      "count": 5436,
+      "count": 2684,
       "type": "VEC3",
       "min": [
-        -0.8319411277770996,
-        1.3521957397460938,
-        -0.10732582956552505
+        -0.8344331101674881,
+        1.3512425491429623,
+        -0.1033609774629149
       ],
       "max": [
-        0.8319411277770996,
-        1.471003770828247,
-        0.02358255162835121
+        0.8344329878487168,
+        1.4666049836830946,
+        0.0233850390152128
       ]
     },
     {
       "bufferView": 8,
       "componentType": 5126,
-      "count": 5436,
+      "count": 2684,
       "type": "VEC3",
       "min": [
-        -0.9997183680534363,
-        -0.9999923706054688,
-        -0.9999322891235352
+        -0.9908121691653401,
+        -0.9999425351055261,
+        -0.9996438587332308
       ],
       "max": [
-        0.9997183680534363,
-        0.9992069602012634,
-        0.9994185566902161
+        0.9908121660384033,
+        0.9986133946665567,
+        0.9993387625610712
       ]
     },
     {
       "bufferView": 9,
       "componentType": 5126,
-      "count": 5436,
+      "count": 2684,
       "type": "VEC2"
     },
     {
       "bufferView": 10,
       "componentType": 5123,
-      "count": 5436,
+      "count": 2684,
       "type": "VEC4"
     },
     {
       "bufferView": 11,
       "componentType": 5126,
-      "count": 5436,
+      "count": 2684,
       "type": "VEC4"
     },
     {
       "bufferView": 12,
       "componentType": 5125,
-      "count": 20544,
+      "count": 12978,
       "type": "SCALAR"
     },
     {
@@ -1638,18 +1667,38 @@
   "images": [
     {
       "mimeType": "image/png",
-      "name": "T_Peasant_Normal",
-      "uri": "../characters/outfits/T_Peasant_Normal.png"
+      "name": "T_Hair_2_Normal",
+      "uri": "../characters/base/T_Hair_2_Normal.png"
     },
     {
       "mimeType": "image/png",
-      "name": "T_Peasant_BaseColor",
-      "uri": "../characters/outfits/T_Peasant_BaseColor.png"
+      "name": "T_Hair_2_BaseColor",
+      "uri": "../characters/base/T_Hair_2_BaseColor.png"
     },
     {
       "mimeType": "image/png",
-      "name": "T_Peasant_ORM",
-      "uri": "../characters/outfits/T_Peasant_ORM.png"
+      "name": "T_Eye_Normal.png",
+      "uri": "../characters/base/T_Eye_Normal.png"
+    },
+    {
+      "mimeType": "image/png",
+      "name": "T_Eye_Brown",
+      "uri": "../characters/base/T_Eye_Brown.png"
+    },
+    {
+      "mimeType": "image/png",
+      "name": "T_Superhero_Female_Normal",
+      "uri": "../characters/base/T_Superhero_Female_Normal.png"
+    },
+    {
+      "mimeType": "image/png",
+      "name": "T_Superhero_Female_Dark_BaseColor",
+      "uri": "../characters/base/T_Superhero_Female_Dark_BaseColor.png"
+    },
+    {
+      "mimeType": "image/png",
+      "name": "T_Superhero_Female_Roughness",
+      "uri": "../characters/base/T_Superhero_Female_Roughness.png"
     }
   ],
   "textures": [
@@ -1664,6 +1713,22 @@
     {
       "sampler": 0,
       "source": 2
+    },
+    {
+      "sampler": 0,
+      "source": 3
+    },
+    {
+      "sampler": 0,
+      "source": 4
+    },
+    {
+      "sampler": 0,
+      "source": 5
+    },
+    {
+      "sampler": 0,
+      "source": 6
     }
   ],
   "samplers": [
@@ -1748,7 +1813,7 @@
   "buffers": [
     {
       "uri": "ParkaFemale.bin",
-      "byteLength": 433952
+      "byteLength": 249576
     }
   ]
 }

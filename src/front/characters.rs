@@ -224,6 +224,7 @@ pub struct Rig {
     /// The outfit part (the body below the head), hidden under a blanket in bed.
     outfit: Entity,
     covered: bool,
+    dead: bool,
     female: bool,
     /// Native torso/arms are replaced only after deforming clothing is ready.
     upper_body: Vec<Entity>,
@@ -244,6 +245,8 @@ pub struct Rig {
     own: Vec<(Handle<StandardMaterial>, Color)>,
     /// Bones by name, with their turn in the character's frame at rest (for armour).
     bones: HashMap<String, (Entity, Quat)>,
+    /// Garment bind matrices match the outfit, not the head/hair skeletons.
+    outfit_bones: HashMap<String, Entity>,
     /// Hair parts (not the beard), hidden under a helmet.
     hair_parts: Vec<Entity>,
     /// The animation graph is attached.
@@ -380,6 +383,7 @@ pub fn spawn_rig(commands: &mut Commands, assets: &AssetServer, p: &Pawn, parent
         hand: None,
         outfit: parts[0],
         covered: false,
+        dead: false,
         female,
         upper_body: Vec::new(),
         garment: None,
@@ -396,6 +400,7 @@ pub fn spawn_rig(commands: &mut Commands, assets: &AssetServer, p: &Pawn, parent
         variant: !raider && h(4) < 0.5,
         own: Vec::new(),
         bones: HashMap::new(),
+        outfit_bones: HashMap::new(),
         hair_parts,
         animated: false,
         layers: Vec::new(),
@@ -444,9 +449,13 @@ fn rig_part(
             if rig.hand.is_none() && path.last().is_some_and(|n| n.as_str() == "hand_r") {
                 rig.hand = Some(e);
             }
-            // The first part's skeleton carries the armour (every part has the same one).
+            // Preserve the attachment lookup, but bind fabric only to the
+            // outfit: some heads have different arm rest transforms.
             if let Some(name) = path.last() {
                 rig.bones.entry(name.as_str().to_string()).or_insert((e, rest));
+                if part == rig.outfit {
+                    rig.outfit_bones.insert(name.as_str().to_string(), e);
+                }
             }
             for child in children.get(e).into_iter().flatten() {
                 if let Ok(name) = names.get(*child) {
@@ -527,11 +536,16 @@ impl Rig {
     }
 }
 
-pub fn set_dead(rig: &Rig, dead: bool, materials: &mut Assets<StandardMaterial>) {
+fn living_or_dead(color: Color, dead: bool) -> Color {
+    let c = color.to_linear();
+    if dead { Color::linear_rgb(c.red * 0.45, c.green * 0.45, c.blue * 0.5) } else { color }
+}
+
+pub fn set_dead(rig: &mut Rig, dead: bool, materials: &mut Assets<StandardMaterial>) {
+    rig.dead = dead;
     for (handle, color) in &rig.own {
         if let Some(mut m) = materials.get_mut(handle) {
-            let c = color.to_linear();
-            m.base_color = if dead { Color::linear_rgb(c.red * 0.45, c.green * 0.45, c.blue * 0.5) } else { *color };
+            m.base_color = living_or_dead(*color, dead);
         }
     }
 }
@@ -598,14 +612,14 @@ fn bind_garment(
     let root = ready.event().entity;
     let Ok(binding) = bindings.get(root) else { return };
     let Ok(mut rig) = rigs.get_mut(binding.character) else { return };
-    if rig.garment != Some(root) { return; }
+    if rig.garment != Some(root) || rig.garment_ready { return; }
     let descendants: Vec<_> = children.iter_descendants(root).collect();
     let mut replacements = Vec::new();
     for &e in &descendants {
         let Ok(skin) = skins.get(e) else { continue };
         let joints: Option<Vec<_>> = skin.joints.iter().map(|&joint| {
             let name = names.get(joint).ok()?;
-            rig.bone(name.as_str()).map(|(entity, _)| entity)
+            rig.outfit_bones.get(name.as_str()).copied()
         }).collect();
         let Some(joints) = joints else {
             warn!("garment has a joint missing from the character skeleton");
@@ -619,10 +633,15 @@ fn bind_garment(
     for &e in &descendants {
         if names.get(e).is_ok_and(|n| n.as_str() == "Armature") { commands.entity(e).despawn(); }
         if let Ok((name, surface)) = surfaces.get(e) {
-            if !name.0.starts_with("MI_") { continue; }
-            let tint = if name.0.starts_with("MI_Regular") { rig.skin } else { rig.clothes };
             if let Some(mut own) = materials.get(&surface.0).cloned() {
-                own.base_color = tint;
+                let tint = if name.0.starts_with("MI_Regular") || name.0.starts_with("MI_Superhero") {
+                    rig.skin
+                } else if name.0.starts_with("MI_") {
+                    rig.clothes
+                } else {
+                    own.base_color
+                };
+                own.base_color = living_or_dead(tint, rig.dead);
                 let handle = materials.add(own);
                 rig.garment_materials.push(handle.id());
                 rig.own.push((handle.clone(), tint));
@@ -806,6 +825,24 @@ pub fn model_hand_pose(pose: Transform) -> Transform {
 mod tests {
     use super::*;
 
+    fn test_rig(outfit: Entity) -> Rig {
+        Rig {
+            pending: 0, hand: None, outfit, covered: false, dead: false, female: false,
+            upper_body: Vec::new(), garment: None, garment_ready: false, garment_materials: Vec::new(),
+            eyes: Vec::new(), lids: None, lid_color: Color::WHITE, closed: false,
+            clothes: Color::WHITE, skin: Color::WHITE, hair: Color::WHITE, variant: false,
+            own: Vec::new(), bones: HashMap::new(), outfit_bones: HashMap::new(),
+            hair_parts: Vec::new(), animated: true, layers: Vec::new(),
+        }
+    }
+
+    fn instance_ready(world: &mut World, entity: Entity) {
+        let mut spawner = bevy::world_serialization::WorldInstanceSpawner::default();
+        world.flush();
+        world.trigger(WorldInstanceReady { entity, instance_id: spawner.spawn(Handle::<WorldAsset>::default()) });
+        world.flush();
+    }
+
     #[test]
     fn deforming_clothes_use_live_joints_and_restore_the_native_outfit() {
         let mut world = World::new();
@@ -814,14 +851,9 @@ mod tests {
         let torso = world.spawn((Visibility::Inherited, ChildOf(outfit))).id();
         let arms = world.spawn((Visibility::Inherited, ChildOf(outfit))).id();
         let live = world.spawn((Name::new("upperarm_l"), Transform::default())).id();
-        let mut rig = Rig {
-            pending: 0, hand: None, outfit, covered: false, female: false,
-            upper_body: vec![torso, arms], garment: None, garment_ready: false, garment_materials: Vec::new(),
-            eyes: Vec::new(), lids: None, lid_color: Color::WHITE, closed: false,
-            clothes: Color::WHITE, skin: Color::WHITE, hair: Color::WHITE, variant: false,
-            own: Vec::new(), bones: HashMap::from([("upperarm_l".into(), (live, Quat::IDENTITY))]),
-            hair_parts: Vec::new(), animated: true, layers: Vec::new(),
-        };
+        let mut rig = test_rig(outfit);
+        rig.upper_body = vec![torso, arms];
+        rig.outfit_bones.insert("upperarm_l".into(), live);
         let character = world.spawn_empty().id();
         let fallback = world.spawn(Visibility::Inherited).id();
         let scene = Handle::<WorldAsset>::default();
@@ -857,6 +889,112 @@ mod tests {
     }
 
     #[test]
+    fn clothing_binding_uses_the_outfit_in_both_part_load_orders() {
+        for head_first in [true, false] {
+            let mut world = World::new();
+            world.init_resource::<Assets<StandardMaterial>>();
+            world.insert_resource(CharacterLibrary {
+                gltf: Handle::default(), peasant_2: Handle::default(), graph: None,
+                nodes: HashMap::new(), clip_of: HashMap::new(),
+            });
+            let character = world.spawn_empty().id();
+            let outfit = world.spawn((ChildOf(character), Visibility::Inherited)).observe(rig_part).id();
+            let head = world.spawn(ChildOf(character)).observe(rig_part).id();
+            let mut bones = Vec::new();
+            for part in [outfit, head] {
+                let armature = world.spawn((Name::new("Armature"), Transform::default(), ChildOf(part))).id();
+                bones.push(world.spawn((Name::new("upperarm_l"), Transform::from_xyz(if part == head { 0.02 } else { 0.0 }, 0.0, 0.0), ChildOf(armature))).id());
+            }
+            let mut rig = test_rig(outfit);
+            rig.pending = 2;
+            world.entity_mut(character).insert(rig);
+            for part in if head_first { [head, outfit] } else { [outfit, head] } {
+                instance_ready(&mut world, part);
+            }
+            let mut rig = world.entity_mut(character).take::<Rig>().unwrap();
+            assert_eq!(rig.outfit_bones["upperarm_l"], bones[0]);
+            assert_eq!(rig.bones["upperarm_l"].0, bones[if head_first { 1 } else { 0 }], "attachment lookup retains its existing behavior");
+            let garment = spawn_garment(&mut world.commands(), Handle::default(), character, &mut rig, Vec::new());
+            world.entity_mut(character).insert(rig);
+            world.flush();
+            let imported = world.spawn((Name::new("upperarm_l"), ChildOf(garment))).id();
+            let cloth = world.spawn((SkinnedMesh { joints: vec![imported], ..default() }, ChildOf(garment))).id();
+            instance_ready(&mut world, garment);
+            assert_eq!(world.get::<SkinnedMesh>(cloth).unwrap().joints, vec![bones[0]]);
+        }
+    }
+
+    #[test]
+    fn failed_and_replaced_garments_do_not_hide_the_loading_fallbacks() {
+        let mut world = World::new();
+        world.init_resource::<Assets<StandardMaterial>>();
+        let outfit = world.spawn(Visibility::Inherited).id();
+        let fallback = world.spawn(Visibility::Inherited).id();
+        let live = world.spawn_empty().id();
+        let mut rig = test_rig(outfit);
+        rig.upper_body.push(outfit);
+        rig.outfit_bones.insert("upperarm_l".into(), live);
+        let character = world.spawn_empty().id();
+        let garment = spawn_garment(&mut world.commands(), Handle::default(), character, &mut rig, vec![fallback]);
+        world.entity_mut(character).insert(rig);
+        world.flush();
+        let valid = world.spawn((Name::new("upperarm_l"), ChildOf(garment))).id();
+        let missing = world.spawn((Name::new("missing"), ChildOf(garment))).id();
+        let cloth = world.spawn((SkinnedMesh { joints: vec![valid], ..default() }, ChildOf(garment))).id();
+        let invalid = world.spawn((SkinnedMesh { joints: vec![missing], ..default() }, ChildOf(garment))).id();
+        instance_ready(&mut world, garment);
+        assert_eq!(world.get::<SkinnedMesh>(cloth).unwrap().joints, vec![valid], "a bad skin prevents partial binding");
+        assert!(!world.get::<Rig>(character).unwrap().garment_ready);
+        assert_eq!(world.get::<Visibility>(garment), Some(&Visibility::Hidden));
+        for e in [outfit, fallback] { assert_eq!(world.get::<Visibility>(e), Some(&Visibility::Inherited)); }
+
+        world.despawn(invalid);
+        let mut rig = world.entity_mut(character).take::<Rig>().unwrap();
+        rig.reset_garment(&mut world.commands());
+        let replacement = spawn_garment(&mut world.commands(), Handle::default(), character, &mut rig, vec![fallback]);
+        world.entity_mut(character).insert(rig);
+        world.flush();
+        instance_ready(&mut world, garment);
+        assert_eq!(world.get::<SkinnedMesh>(cloth).unwrap().joints, vec![valid], "a stale completion cannot take over the replacement");
+        assert_eq!(world.get::<Rig>(character).unwrap().garment, Some(replacement));
+        for e in [outfit, fallback] { assert_eq!(world.get::<Visibility>(e), Some(&Visibility::Inherited)); }
+    }
+
+    #[test]
+    fn garments_loaded_while_covered_or_dead_keep_visibility_and_material_state() {
+        let mut world = World::new();
+        world.init_resource::<Assets<StandardMaterial>>();
+        let outfit = world.spawn(Visibility::Hidden).id();
+        let live = world.spawn_empty().id();
+        let original = world.resource_mut::<Assets<StandardMaterial>>().add(StandardMaterial {
+            base_color: Color::srgb(0.3, 0.4, 0.5), ..default()
+        });
+        let mut rig = test_rig(outfit);
+        rig.covered = true;
+        set_dead(&mut rig, true, &mut world.resource_mut::<Assets<StandardMaterial>>());
+        rig.outfit_bones.insert("upperarm_l".into(), live);
+        let character = world.spawn_empty().id();
+        let garment = spawn_garment(&mut world.commands(), Handle::default(), character, &mut rig, Vec::new());
+        world.entity_mut(character).insert(rig);
+        world.flush();
+        let imported = world.spawn((Name::new("upperarm_l"), ChildOf(garment))).id();
+        let cloth = world.spawn((SkinnedMesh { joints: vec![imported], ..default() },
+            GltfMaterialName("Fabric".into()), MeshMaterial3d(original.clone()), ChildOf(garment))).id();
+        instance_ready(&mut world, garment);
+        assert_eq!(world.get::<Visibility>(garment), Some(&Visibility::Hidden));
+        let owned = world.get::<MeshMaterial3d<StandardMaterial>>(cloth).unwrap().0.clone();
+        let materials = world.resource::<Assets<StandardMaterial>>();
+        assert_ne!(owned, original);
+        assert_eq!(materials.get(&owned).unwrap().base_color, living_or_dead(materials.get(&original).unwrap().base_color, true));
+        let mut rig = world.entity_mut(character).take::<Rig>().unwrap();
+        set_dead(&mut rig, false, &mut world.resource_mut::<Assets<StandardMaterial>>());
+        assert_eq!(world.resource::<Assets<StandardMaterial>>().get(&owned).unwrap().base_color,
+            world.resource::<Assets<StandardMaterial>>().get(&original).unwrap().base_color);
+        rig.reset_garment(&mut world.commands());
+        assert!(rig.own.is_empty() && rig.garment_materials.is_empty(), "removed garment materials leave the rig's ownership list");
+    }
+
+    #[test]
     fn deforming_clothing_assets_match_the_outfits_and_have_valid_skin_weights() {
         let assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
         for item in ["clothes", "parka"] {
@@ -885,7 +1023,8 @@ mod tests {
                 let fabric = model["meshes"][0]["primitives"].as_array().unwrap();
                 let triangles: u64 = fabric.iter().map(|p| model["accessors"][p["indices"].as_u64().unwrap() as usize]["count"].as_u64().unwrap() / 3).sum();
                 assert!((1..=1800).contains(&triangles));
-                let attrs = &fabric[0]["attributes"];
+                for primitive in model["meshes"].as_array().unwrap().iter().flat_map(|mesh| mesh["primitives"].as_array().unwrap()) {
+                let attrs = &primitive["attributes"];
                 let weight = attrs["WEIGHTS_0"].as_u64().unwrap() as usize;
                 let joint = attrs["JOINTS_0"].as_u64().unwrap() as usize;
                 let count = model["accessors"][weight]["count"].as_u64().unwrap() as usize;
@@ -900,10 +1039,14 @@ mod tests {
                         assert!((u16::from_le_bytes(b.try_into().unwrap()) as usize) < joints.len());
                     }
                 }
-                let arm_triangles = |g: &serde_json::Value, index: usize| -> u64 {
-                    g["meshes"][index]["primitives"].as_array().unwrap().iter().map(|p| g["accessors"][p["indices"].as_u64().unwrap() as usize]["count"].as_u64().unwrap()).sum()
-                };
-                assert_eq!(arm_triangles(&model, 1), arm_triangles(&native, 0), "the native hands/arms are retained");
+                }
+                let arms = model["meshes"][1]["primitives"].as_array().unwrap();
+                assert!(!arms.is_empty());
+                for primitive in arms {
+                    let material = primitive["material"].as_u64().unwrap() as usize;
+                    let name = model["materials"][material]["name"].as_str().unwrap();
+                    assert!(name.starts_with("MI_Regular") || name.starts_with("MI_Superhero"), "the arm mesh contains skin, without the Peasant outfit's exposed wraps");
+                }
                 for image in model["images"].as_array().unwrap() {
                     assert!(path.parent().unwrap().join(image["uri"].as_str().unwrap()).is_file());
                 }

@@ -510,7 +510,7 @@ fn sync_pawns(
             }
             v.dead = true;
         }
-        if let Some((r, ..)) = rig.as_ref().filter(|_| rig_ready && v.rig_dead != p.dead) {
+        if let Some((r, ..)) = rig.as_mut().filter(|_| rig_ready && v.rig_dead != p.dead) {
             characters::set_dead(r, p.dead, &mut materials);
             v.rig_dead = p.dead;
         }
