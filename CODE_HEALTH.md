@@ -122,16 +122,22 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
 
 ## 5. Tests
 
-Uncommitted proposal for review: 15 enabled tests under the `regression_tests`
-filter, plus `tools/benchmark_tests.py` and its `TEST_BENCHMARK.md` report.
-Determinism and direct tests pass. The two save-and-continue tests currently expose
-exact floating-point round-trip differences; production code is unchanged.
+The 15 enabled tests under the `regression_tests` filter can be compared with the
+existing suite using `tools/benchmark_tests.py`. `TEST_BENCHMARK.md` records the
+original comparison, before fixing the failures those tests exposed.
 
-- [ ] **Determinism test:** same seed, N ticks, same world hash.
-- [ ] **Save-and-continue test:** save, load and continue must match an uninterrupted run.
+- [x] **Determinism test:** same seed, N ticks, same world hash.
+  Done: generated colonies at two seeds and an automated battle, checked through 600 ticks.
+- [x] **Save-and-continue test:** save, load and continue must match an uninterrupted run.
+  Done: save during colony work or a battle action, load, and compare state and sounds
+  over 600 more ticks. Enabled `serde_json/float_roundtrip` for exact float parsing;
+  room temperatures are averaged in f64 so recounting on load doesn't round saved
+  values again. A focused test also checks repeated room recounts preserve temperature bits.
 - [ ] **Assertions on log text.** About 31 assertions match log or event text, and
   `push_log` keeps only 50 lines. Assert on state or typed events instead.
-- [ ] **Direct tests** for `combat`, `medical`, `jobs` and `battle_ai`.
+- [x] **Direct tests** for `combat`, `medical`, `jobs` and `battle_ai`.
+  Done: 11 tests cover death/shields, medical priorities and missing supplies, job
+  selection/scans/cancellation, and AI activation, fleeing and medkit decisions.
 
 ## 6. Structure and tools (lower priority)
 

@@ -16,10 +16,6 @@ import subprocess
 import time
 
 ROOT = Path(__file__).resolve().parent.parent
-KNOWN_FAILURES = {
-    "regression_tests::colony_save_and_continue_matches_uninterrupted_work",
-    "regression_tests::battle_save_and_continue_matches_uninterrupted_actions",
-}
 
 
 def failures(output):
@@ -35,8 +31,7 @@ def run(command):
     env["CARGO_MANIFEST_DIR"] = str(ROOT)  # Match Cargo's asset-root environment for direct binary runs.
     result = subprocess.run(command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     elapsed = time.perf_counter() - start
-    failed = failures(result.stdout)
-    if result.returncode and not (result.returncode == 101 and failed and failed <= KNOWN_FAILURES):
+    if result.returncode:
         log = ROOT / "TEST_BENCHMARK_FAILURE.log"
         log.write_text(result.stdout)
         raise SystemExit(f"Command failed: {' '.join(map(str, command))}\nFull output: {log}")
@@ -130,7 +125,7 @@ def main():
         f"Machine: {platform.system()} {platform.release()}, {platform.machine()}, {os.cpu_count()} logical CPUs.",
         "Full-suite times sum direct runs of every test binary built by `cargo test --all-targets`, with the normal parallel test runner.",
         "The baseline adds `--skip regression_tests`; both cases use the same compiled binaries.",
-        "All binaries run even when a new regression fails; Cargo itself would stop after the failing library tests.",
+        "Any failing test aborts the benchmark and writes its output to `TEST_BENCHMARK_FAILURE.log`.",
         "Compilation is excluded. Library comparisons use the normal parallel runner.",
         "Individual narrow groups run serially and include test-process startup and definition loading.",
         "Their times should not be added to predict the parallel suite time.", "",
@@ -152,10 +147,11 @@ def main():
                "All additions use the `regression_tests` filter. Existing log-text assertions are unchanged.",
                "No tests are ignored to obtain these results; the two pre-existing ignored tests remain ignored.", "",
                "## Regressions found", "",
-               "The two save/continue tests fail on existing serialization precision differences. They remain enabled.",
-               "Examples: clock `121.13333339244127` becomes `121.13333339244129`; room temperature `6.9162245` becomes `6.916224`.",
+               "The save/continue tests originally exposed float round-trip differences in clocks and room temperatures.",
+               "Exact JSON float parsing preserves clocks; f64 accumulation prevents temperature drift when room stats are rebuilt.",
+               "These fixes preserve the save format and exact equality assertions.",
                "Both finish all continuation ticks before asserting, so these timings include the intended workload.",
-               "Production code is unchanged. The script accepts only these two known failure names and aborts on any other failure.", ""]
+               "All measured tests pass; the benchmark aborts on any failure.", ""]
     path = ROOT / "TEST_BENCHMARK.md"
     path.write_text("\n".join(report))
     print(f"Report: {path}", flush=True)

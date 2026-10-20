@@ -116,12 +116,15 @@ impl World {
             self.cell_temp = vec![f32::NAN; n];
         }
         let rooms = self.room_stats.len();
-        let mut sum = vec![0.0f32; rooms];
+        // Recounting an unchanged room must preserve its temperature exactly.
+        // Summing its repeated f32 value in f32 can round the mean on each
+        // recount (including load); keep the accumulation and division in f64.
+        let mut sum = vec![0.0f64; rooms];
         let mut known = vec![0usize; rooms];
         for i in 0..n {
             let r = self.map.room.get(i).copied().unwrap_or(0) as usize;
             if r != 0 && r < rooms && !self.cell_temp[i].is_nan() {
-                sum[r] += self.cell_temp[i];
+                sum[r] += self.cell_temp[i] as f64;
                 known[r] += 1;
             }
         }
@@ -131,7 +134,7 @@ impl World {
                 continue;
             }
             let size = st.size as f32;
-            let now = if known[r] > 0 { sum[r] / known[r] as f32 } else { outdoor };
+            let now = if known[r] > 0 { (sum[r] / known[r] as f64) as f32 } else { outdoor };
             let target = outdoor + st.heat * 3.0 / size.sqrt();
             // Bigger rooms change slower; doors let the outside in.
             let lag = ROOM_LAG * (size.sqrt() / 3.0).max(1.0) / (1.0 + 0.5 * st.doors as f32);
@@ -150,6 +153,28 @@ mod tests {
     use crate::map::{Feature, FLAT_Z as Z};
     use crate::seasons::Season;
     use crate::testing::{build, colonist, quiet_world, run};
+
+    #[test]
+    fn recounting_rooms_preserves_saved_temperature_bits() {
+        let mut w = quiet_world(12, 12, 1);
+        room(&mut w);
+        w.map.recompute_rooms();
+        w.update_room_stats();
+        let i = w.map.idx((4, 4, Z));
+        let r = w.map.room[i];
+        assert_ne!(r, 0);
+        for temperature in [6.916_224_5f32, -6.916_224_5, 21.5] {
+            for (i, &room) in w.map.room.iter().enumerate() {
+                if room == r { w.cell_temp[i] = temperature; }
+            }
+            for _ in 0..10 {
+                w.update_room_stats();
+                assert_eq!(w.temperature_at((4, 4, Z)).to_bits(), temperature.to_bits());
+                assert!(w.map.room.iter().enumerate().filter(|&(_, &room)| room == r)
+                    .all(|(i, _)| w.cell_temp[i].to_bits() == temperature.to_bits()));
+            }
+        }
+    }
 
     #[test]
     fn summer_is_warm_winter_freezing_and_nights_cold() {

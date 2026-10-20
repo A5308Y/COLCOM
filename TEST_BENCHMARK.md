@@ -1,5 +1,11 @@
 # Proposed test runtime comparison
 
+Historical measurement before the save/continue fixes. The failure outcomes below
+record what the tests originally caught. Both specs now pass: exact JSON float
+parsing preserves clock values, and f64 accumulation preserves room temperatures
+when loading rebuilds room stats. The numerical timings have not been remeasured.
+The benchmark tool now aborts on any test failure.
+
 5 timed repetitions per case, after warm-up. Default Cargo test profile.
 Machine: Darwin 25.6.0, arm64, 16 logical CPUs.
 Full-suite times sum direct runs of every test binary built by `cargo test --all-targets`, with the normal parallel test runner.
@@ -43,7 +49,9 @@ No tests are ignored to obtain these results; the two pre-existing ignored tests
 
 ## Regressions found
 
-The two save/continue tests fail on existing serialization precision differences. They remain enabled.
+The two save/continue tests originally failed on clock parsing and room-temperature
+recounting differences. Both remain enabled and now pass.
 Examples: clock `121.13333339244127` becomes `121.13333339244129`; room temperature `6.9162245` becomes `6.916224`.
 Both finish all continuation ticks before asserting, so these timings include the intended workload.
-Production code is unchanged. The script accepts only these two known failure names and aborts on any other failure.
+The fixes preserve the save format and exact equality assertions. The benchmark
+script no longer accepts any test failures.
