@@ -78,8 +78,10 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
 
 ## 3. Saves and robustness
 
-- [ ] **Validate per-cell vector lengths on load** (`save::from_json`), so a damaged save
+- [x] **Validate per-cell vector lengths on load** (`save::from_json`), so a damaged save
   fails with a message instead of panicking during a later tick.
+  Done: `save::check` also covers map-keyed shelves and decor, stockpile ids in
+  zones, and pawn, bench and move positions.
 - [ ] **Recompute derived state on load.** `running`, `trapped` and `cell_temp` are
   `#[serde(skip)]`; recompute them in `load_json`, so a loaded game continues exactly like
   an uninterrupted one.

@@ -1,7 +1,7 @@
 //! Save files: a format version around the world, and compact storage of the
 //! big per-cell arrays (mostly long runs of identical values).
 
-use crate::map::Desig;
+use crate::map::{Desig, Pos};
 use crate::world::World;
 use crate::DAY_LEN;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -61,7 +61,44 @@ pub fn from_json(s: &str) -> Result<World, String> {
         w.story.next_event *= k;
         w.day_len = DAY_LEN;
     }
+    check(&save.world).map_err(|e| format!("the save file is damaged ({})", e))?;
     Ok(save.world)
+}
+
+/// Everything indexed by cell has one entry per cell, and what refers to
+/// cells, stockpiles or the map stays inside them, so a damaged save is
+/// refused here rather than panicking some ticks later.
+fn check(w: &World) -> Result<(), String> {
+    let m = &w.map;
+    let n = m.w.checked_mul(m.h).and_then(|a| a.checked_mul(m.d)).filter(|&n| n > 0).ok_or("the map has no size")?;
+    let cells = |name: &str, len: usize| {
+        if len == n { Ok(()) } else { Err(format!("{} has {} cells, the map {}", name, len, n)) }
+    };
+    cells("block", m.block.len())?;
+    cells("feature", m.feature.len())?;
+    cells("items", m.items.len())?;
+    cells("desig", m.desig.len())?;
+    cells("zone", m.zone.len())?;
+    cells("floor", m.floor.len())?;
+    cells("blood", m.blood.len())?;
+    cells("roof", m.roof.len())?;
+    cells("res_target", w.res_target.len())?;
+    cells("res_item", w.res_item.len())?;
+    cells("res_cell", w.res_cell.len())?;
+    if let Some(&i) = m.shelved.keys().chain(m.decor.keys()).find(|&&i| i as usize >= n) {
+        return Err(format!("something is stored in cell {} outside the map", i));
+    }
+    if let Some(id) = m.zone.iter().filter_map(|z| z.stockpile()).find(|id| w.stockpile(*id).is_none()) {
+        return Err(format!("a zone belongs to stockpile {:?}, which doesn't exist", id));
+    }
+    let inside = |p: Pos| p.0 < m.w && p.1 < m.h && p.2 < m.d;
+    let positions = w.pawns.iter().map(|p| p.pos)
+        .chain(w.benches.iter().map(|b| b.pos))
+        .chain(w.moves.iter().flat_map(|mv| [mv.from, mv.to]));
+    if let Some(p) = positions.into_iter().find(|&p| !inside(p)) {
+        return Err(format!("{:?} is outside the map", p));
+    }
+    Ok(())
 }
 
 /// Run-length encoding for per-cell vectors: `[[count, value], ...]`.
@@ -103,6 +140,25 @@ mod tests {
         assert_eq!(loaded.map.block, w.map.block);
         assert_eq!(loaded.map.items, w.map.items);
         assert_eq!(loaded.pawns.len(), w.pawns.len());
+    }
+
+    #[test]
+    fn damaged_saves_are_refused_when_loading() {
+        let w = World::new(42);
+        let json = to_json(&w).unwrap();
+        let mut v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        // A per-cell layer cut short (the RLE runs of `floor`): one cell missing.
+        let runs = v["world"]["map"]["floor"].as_array_mut().unwrap();
+        let last = runs.last_mut().unwrap();
+        last[0] = (last[0].as_u64().unwrap() - 1).into();
+        let err = from_json(&v.to_string()).err().expect("refused");
+        assert!(err.contains("damaged") && err.contains("floor"), "{err}");
+        // A pawn off the map.
+        let mut v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        v["world"]["pawns"][0]["pos"] = serde_json::json!([9999, 0, 0]);
+        assert!(from_json(&v.to_string()).err().expect("refused").contains("outside the map"));
+        // The real thing loads.
+        assert!(from_json(&json).is_ok());
     }
 
     #[test]
