@@ -12,7 +12,20 @@ cargo run --release -- --scenario battle   # start in a prepared battle (Shift+N
 cargo test                     # simulation tests + a headless run of the whole app
 cargo run --release --example profile   # time the simulation and saving on a busy colony
 cargo run --release --example look      # the downloaded models in the game's lighting (art direction test)
+cargo run --release -- --new --screenshot           # save every interface screen to target/screenshots/ and quit
+cargo run --release -- --screenshot help,menu       # only these shots (an unknown name lists them all)
+MY_WORLD_NO_GPU=1 cargo run --release -- --new --screenshot   # no GPU: the interface alone, drawn on the CPU (*-cpu.png)
 ```
+
+Screenshot mode pauses the game, opens one screen after another (HUD, handbook pages, menu, work,
+resources, info, rooms, squads, expeditions, inspectors, build search), saves each as a PNG and
+quits without autosaving. With `--scenario <name>` the files are prefixed with the scenario's name.
+The CPU shots have no 3D scene behind the panels (a plain field-green backdrop); they're for
+reviewing layout and colours, not lighting.
+
+The interface follows a "frontier field manual" look (`src/front/theme.rs`): warm charcoal panels in
+olive frames with chamfered corners, cream text, amber/teal/red/green accents, and condensed uppercase
+headings in Barlow (SIL OFL, `assets/fonts/`). The handbook (`H`) is split into topics with a search.
 
 Scenarios are fixed worlds for trying things out (`src/scenarios.rs`). `--scenario <name>` or
 `MY_WORLD_SCENARIO=<name>` picks one; an unknown name lists the ones there are. `battle` starts in
@@ -68,7 +81,7 @@ for), and `<` goes back.
 | `WASD` / arrows, middle-drag | Pan the camera |
 | `Q` / `E`, right-drag | Rotate and tilt the camera |
 | Mouse wheel | Zoom |
-| `P` / `I` / `H` / `C` | Work priorities / resources (what the colony has) / help / center camera |
+| `P` / `I` / `H` / `C` | Work priorities / resources (what the colony has) / handbook (help by topic, searchable) / center camera |
 | Double click a colonist card | Select that colonist and center the camera on them |
 | `K` / `L` | Save / load (`savegame.json`; saves from other versions are refused with a message) |
 | Menu (`Esc`) → Save as | Save under a name (in `saves/`); the list below loads any of them |

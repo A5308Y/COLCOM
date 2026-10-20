@@ -4,6 +4,7 @@
 //! anything in the game.
 
 use super::input::UiState;
+use super::theme;
 use bevy_egui::egui::{self, Align2, RichText};
 use my_world::defs::{defs, Amount, BuildDef, BuildId, ItemId, PlantId, RecipeId, Slot, Special, UtilityEffect};
 use my_world::map::STACK_MAX;
@@ -439,12 +440,10 @@ pub fn window(ctx: &egui::Context, st: &mut UiState) {
     }
     let mut open = true;
     let mut go: Option<InfoTarget> = None;
-    egui::Window::new("Info")
+    theme::FieldWindow::new("Info")
         .id(egui::Id::new("info_window"))
         .open(&mut open)
         .anchor(Align2::RIGHT_TOP, [-8.0, 48.0])
-        .collapsible(false)
-        .resizable(false)
         .default_width(380.0)
         .show(ctx, |ui| {
             ui.set_width(380.0);
@@ -479,7 +478,7 @@ pub fn window(ctx: &egui::Context, st: &mut UiState) {
             };
             let sh = sheet(t);
             ui.horizontal(|ui| {
-                ui.heading(&sh.title);
+                ui.label(theme::caps(&sh.title, 22.0).color(theme::CREAM_BRIGHT));
                 ui.label(RichText::new(&sh.kind).weak());
             });
             for line in &sh.about {
@@ -488,8 +487,8 @@ pub fn window(ctx: &egui::Context, st: &mut UiState) {
             egui::ScrollArea::vertical().id_salt("info_sheet").max_height(460.0).show(ui, |ui| {
                 for sec in &sh.sections {
                     ui.add_space(4.0);
-                    ui.label(RichText::new(sec.title).strong());
-                    egui::Grid::new(("info", sec.title)).num_columns(2).spacing([12.0, 2.0]).show(ui, |ui| {
+                    theme::section(ui, sec.title);
+                    egui::Grid::new(("info", sec.title)).num_columns(2).striped(true).spacing([12.0, 2.0]).show(ui, |ui| {
                         for (label, value) in &sec.rows {
                             ui.label(RichText::new(label).weak());
                             ui.add(egui::Label::new(value).wrap());
@@ -499,7 +498,7 @@ pub fn window(ctx: &egui::Context, st: &mut UiState) {
                 }
                 if !sh.links.is_empty() {
                     ui.add_space(4.0);
-                    ui.label(RichText::new("See also").strong());
+                    theme::section(ui, "See also");
                     ui.horizontal_wrapped(|ui| {
                         for &l in &sh.links {
                             if ui.small_button(l.name()).clicked() {

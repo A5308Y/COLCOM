@@ -4,6 +4,7 @@
 use super::info::{purpose, InfoTarget};
 use super::input::{ToolEntry, Tool, UiState, TOOLS};
 use super::sim::Sim;
+use super::theme;
 use bevy_egui::egui::{self, Color32, RichText};
 use my_world::defs::{BuildDef, Special};
 use my_world::world::Order;
@@ -35,7 +36,7 @@ pub fn draw(ctx: &egui::Context, sim: &Sim, st: &mut UiState) -> f32 {
     panel
         .show(&mut root, |ui| {
             ui.horizontal(|ui| {
-                ui.heading("Build");
+                ui.label(theme::caps("Build", 22.0).color(theme::CREAM_BRIGHT));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("«").on_hover_text("Hide the build menu (`)").clicked() {
                         st.show_build = false;
@@ -92,7 +93,7 @@ fn grouped(ui: &mut egui::Ui, st: &mut UiState, totals: &[u32]) {
     }
     egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
         for group in groups {
-            let header = egui::CollapsingHeader::new(RichText::new(group).strong())
+            let header = egui::CollapsingHeader::new(theme::caps(group, 15.0).color(theme::CREAM))
                 .id_salt(("build_group", group))
                 .default_open(false);
             header.show(ui, |ui| {
@@ -225,14 +226,14 @@ fn entry(ui: &mut egui::Ui, e: &ToolEntry, st: &mut UiState, totals: &[u32], hit
     });
     let visuals = ui.visuals().clone();
     let fill = if selected { visuals.selection.bg_fill } else { Color32::TRANSPARENT };
-    let frame = egui::Frame::new().fill(fill).corner_radius(4.0).inner_margin(egui::Margin::symmetric(6, 3));
+    let frame = egui::Frame::new().fill(fill).inner_margin(egui::Margin::symmetric(6, 3));
     let response = frame
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 match hits {
                     Some(hits) => {
-                        let job = highlighted(ui, &e.name, hits, Color32::from_rgb(250, 200, 90));
+                        let job = highlighted(ui, &e.name, hits, theme::AMBER);
                         ui.label(job);
                     }
                     None => {
@@ -246,16 +247,18 @@ fn entry(ui: &mut egui::Ui, e: &ToolEntry, st: &mut UiState, totals: &[u32], hit
                     });
                 }
             });
-            ui.horizontal(|ui| {
-                if let Some((text, affordable)) = &cost {
-                    let color = if *affordable { visuals.weak_text_color() } else { Color32::from_rgb(230, 110, 90) };
-                    ui.label(RichText::new(text).small().color(color));
-                }
+            // The group (in search results) on the right; a long cost is cut short beside it.
+            let row = egui::vec2(ui.available_width(), ui.text_style_height(&egui::TextStyle::Small) + 2.0);
+            ui.allocate_ui_with_layout(row, egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if hits.is_some() {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(RichText::new(&e.group).small().weak());
-                    });
+                    ui.label(RichText::new(&e.group).small().weak());
                 }
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    if let Some((text, affordable)) = &cost {
+                        let color = if *affordable { visuals.weak_text_color() } else { theme::RED };
+                        ui.add(egui::Label::new(RichText::new(text).small().color(color)).truncate()).on_hover_text(text);
+                    }
+                });
             });
         })
         .response
@@ -301,7 +304,7 @@ fn details(ui: &mut egui::Ui, e: &ToolEntry, def: Option<&BuildDef>, totals: &[u
         for c in &d.cost {
             let have = totals[c.item.index()];
             let text = format!("{} {} ({} in the colony)", c.count, c.item.name().to_lowercase(), have);
-            let color = if have >= c.count { Color32::GRAY } else { Color32::from_rgb(255, 140, 100) };
+            let color = if have >= c.count { theme::CREAM_DIM } else { theme::RED };
             ui.label(RichText::new(text).color(color));
         }
         let order = if d.cost.len() > 1 { ", brought in this order" } else { "" };

@@ -1,21 +1,23 @@
 //! egui interface: HUD and toolbar, colonist bar, alerts, inspector (with the
-//! Health tab), work priorities, help and game over.
+//! Health tab), work priorities and game over (the handbook is in `help`).
 
 use super::camera::{CameraRig, MainCamera};
 use super::audio::{self, AudioSettings, SoundQueue};
 use super::build_menu;
+use super::help;
 use super::info::{self, InfoTarget};
 use super::input::{self, InspectorTab, Selection, UiState};
 use super::expeditions_ui;
 use super::squads_ui;
+use super::theme;
 use super::look::{pawn_look, Look, Rgb};
 use super::overlay;
 use super::sim::Sim;
 use bevy::prelude::*;
-use bevy_egui::egui::{self, Align2, Color32, ProgressBar, RichText};
+use bevy_egui::egui::{self, Align2, Color32, RichText};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::health::{CyberSlot, HediffKind};
-use my_world::defs::{defs, BuildId, ItemId, PlantId, RoomDef, Slot, Special};
+use my_world::defs::{defs, ItemId, PlantId, RoomDef, Slot, Special};
 use my_world::map::{Block, Feature, Pos, Zone};
 use my_world::pawn::{Pawn, Role, Skill, WorkType};
 use my_world::production::{BillMode, PRIORITY_NAMES};
@@ -23,89 +25,22 @@ use my_world::rooms::{Progress, RoomStats, TIERS};
 use my_world::world::{Order, World as SimWorld};
 use my_world::DAY_LEN;
 
-const HELP_ORDERS: [&str; 8] = [
-    "You don't control colonists directly - you give orders and they pick up the work.",
-    "",
-    "Orders (build menu, left): mark trees to chop, rock and soil to mine, berry bushes to forage;",
-    "      Backspace: deconstruct. Cancel takes designations and blueprints away.",
-    "Zones: paint stockpile zones (items get hauled there), grow zones (crops) and quarries (dug out level by level,",
-    "      with a ladder down at the edge; click one to set its depth). Clear zone removes them.",
-    "      Left-drag to paint a rectangle. Right-click (anywhere) goes back to Select.",
-    "",
-];
-
-const HELP_REST: [&str; 51] = [
-    "Colonists haul the materials to blueprints, then build them.",
-    "Workbenches (stove, sawing bench, stonecutter, smelter, smithy, crafting bench): click one to add bills -",
-    "      make N, make until you have N, or forever (Shift+click on + or - steps by 5). Haulers bring the ingredients; cooks and crafters make it.",
-    "The build menu on the left lists everything (` hides it); hover an entry for details.",
-    "Click a stockpile to set its priority and which items it takes; click a grow zone to pick its crop.",
-    "Shelves are storage by themselves and hold four stacks; click one to set what goes on it (shelves",
-    "      side by side share settings). Colonists eat at a table if there's a chair beside it, and hate eating without.",
-    "Themed rooms (Rooms button): furnish a room with what a theme needs - bedroom, barracks, kitchen,",
-    "      smithy, workshop - and its floor and name show it. Click a cell in a room for a checklist.",
-    "Room quality (size, beauty of furniture, windows and doors, cleanliness, light) affects mood when",
-    "      colonists sleep or eat there. Click a cell inside a room to see why it's good or bad.",
-    "Raw food can cause food poisoning - cook meals at a stove. Mine iron ore deep in the rock,",
-    "      smelt it into steel and make weapons and armour at a smithy. Colonists pick up better gear;",
-    "      select one and right-click a weapon or clothes to put it in their loadout (Combat tab): they fetch and keep it.",
-    "",
-    "Floors are for upper storeys; they need a wall, door, stairs or ground below within 3 cells.",
-    "      Walls stack onto walls and doors below, even planned ones, to build several storeys high.",
-    "      Click a wall with a door or window to build it in; the wall stands until it's done.",
-    "      Use the layer view to place floors in mid-air: PageDown/PageUp (or [ and ]).",
-    "      Shift+R hides roofs, to look into the top room of every building at once.",
-    "Stairs rise away from where you walk onto them, onto the level above beside them; ladders go straight up.",
-    "While placing or moving furniture , and . turn it; the arrow points to its front, where it's used from.",
-    "Lamps light up rooms and caves - nights are dark.",
-    "Colonists need fun: chess tables, bookshelves, dartboards, strolls. Their day is set in Work > Schedule.",
-    "",
-    "Wall decor (build menu): point at a wall and click to hang it; five places on each side of a wall.",
-    "A room needs walls and a roof. Enclose an area with walls and doors and it gets a roof by itself:",
-    "      builders put it up with wood. A roof needs a wall within 3 cells, like floors: red crosses mark",
-    "      where it can't reach. Sleeping in a roofed bedroom makes colonists happier.",
-    "Mining also digs soil. Dig straight down to sink a shaft; put stairs in it.",
-    "Anything left with nothing underneath falls - more than one level hurts.",
-    "Dig graves (Structure menu, on soil) for the dead: haulers bury them. Unburied dead upset everyone.",
-    "Wounds bleed and can get infected. Doctors (see P) rescue downed colonists to a bed",
-    "and tend them - better with medicine and skill. Click a colonist, then Health for details.",
-    "Raids come every few days. Pay what the raiders demand, or fight a turn-based battle (the colony stops).",
-    "Expeditions: pick a mission on offer, choose who goes and what they pack. They leave the map for days;",
-    "      decide what they do when something comes up. Fights are played on a map of their own.",
-    "      Squads: in a colonist's Combat tab make them a leader, put others in their squad, set loadouts;",
-    "      mark civilians and paint a safe zone. Far-away squad members join their leader a few rounds in.",
-    "      Leaders want a decent bedroom of their own: click a bed to choose who sleeps in it.",
-    "      A squad is all ranged or all melee (by the loadout weapon, or the one they carry).",
-    "      In battle: click your unit (or Tab), click a cell to move, an enemy to attack; Space ends its turn.",
-    "      Over each unit: health per member, then morale and suppression (the tick is where it breaks or",
-    "      gets pinned). Hover the bars in the battle panel to see what they do.",
-    "",
-    "Camera: WASD/arrows pan, Q/E rotate, wheel zooms, right-drag orbits, middle-drag pans. Double click a colonist card to center them.",
-    "Space: pause   1-4: speed (1x, 2x, 5x, 10x)   P: work priorities   I: resources   C: center camera",
-    "Esc: menu (save, load, new game, sound)   K: save   L: load   Shift+N: new colony",
-    "",
-    "Info (top bar) looks up any item, building or plant; Info buttons in the inspector open it too.",
-    "H or Esc closes this help.",
-];
-
-/// One line per buildable the player can place: shortcut, name and cost.
-fn help_builds() -> Vec<String> {
-    BuildId::all()
-        .filter(|kind| kind.def().special != Special::Roof)
-        .map(|kind| {
-            let def = kind.def();
-            let key = def.key.as_deref().unwrap_or("").to_uppercase();
-            format!("{:<5} {} ({})", key, def.name, def.cost_text())
-        })
-        .collect()
-}
-
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(EguiPrimaryContextPass, draw_ui);
+        app.add_systems(
+            PreUpdate,
+            install_theme.after(bevy_egui::EguiPreUpdateSet::InitContexts).before(bevy_egui::EguiPreUpdateSet::BeginPass),
+        )
+        .add_systems(EguiPrimaryContextPass, draw_ui);
     }
+}
+
+/// Fonts and style before egui's first pass (fonts set in a pass apply only from the next one).
+fn install_theme(mut contexts: EguiContexts) -> Result {
+    theme::install(contexts.ctx_mut()?);
+    Ok(())
 }
 
 fn draw_ui(
@@ -133,8 +68,8 @@ fn draw_ui(
         if a.distance(b) > 6.0 {
             let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("select_box")));
             let rect = egui::Rect::from_two_pos(a, b);
-            painter.rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(255, 255, 255, 18));
-            painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, Color32::WHITE), egui::StrokeKind::Inside);
+            painter.rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(228, 164, 62, 18));
+            painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, theme::AMBER), egui::StrokeKind::Inside);
         }
     }
 
@@ -187,25 +122,13 @@ fn draw_ui(
     if st.show_menu {
         game_menu(&ctx, &mut sim, &mut st, &mut rig, &mut audio);
     }
-    if st.show_help {
-        egui::Window::new("Help").open(&mut st.show_help).collapsible(false).resizable(false).anchor(
-            Align2::CENTER_CENTER,
-            [0.0, 0.0],
-        ).show(&ctx, |ui| {
-            for line in HELP_ORDERS {
-                ui.label(line);
-            }
-            for line in help_builds() {
-                ui.label(line);
-            }
-            for line in HELP_REST {
-                ui.label(line);
-            }
-        });
-    }
+    help::window(&ctx, &mut st);
     if sim.lost() {
         egui::Area::new(egui::Id::new("game_over")).anchor(Align2::CENTER_CENTER, [0.0, -60.0]).show(&ctx, |ui| {
-            ui.label(RichText::new("Your colony has perished. Press N to start over.").size(30.0).color(Color32::RED));
+            theme::plate(ui, |ui| {
+                ui.label(theme::caps("Your colony has perished", 34.0).color(theme::RED));
+                ui.label(RichText::new("Press N to start over.").color(theme::CREAM));
+            });
         });
     }
     Ok(())
@@ -219,8 +142,8 @@ fn job_menu(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, sounds: &mut S
     let name = sim.world.pawn(menu.pawn).map_or("", |p| p.name.as_str()).to_string();
     let mut chosen = None;
     let area = egui::Area::new(egui::Id::new("job_menu")).order(egui::Order::Foreground).fixed_pos(at).show(ctx, |ui| {
-        egui::Frame::popup(&ctx.global_style()).show(ui, |ui| {
-            ui.label(RichText::new(name).small().weak());
+        theme::Plate::panel().margin(6).show(ui, |ui| {
+            ui.label(theme::caps(name, 13.0).color(theme::CREAM_DIM));
             for (k, (label, _, _)) in menu.options.iter().enumerate() {
                 if ui.button(label).clicked() {
                     chosen = Some(k);
@@ -257,10 +180,11 @@ fn tool_at_cursor(ctx: &egui::Context, st: &UiState, w: &SimWorld) {
     let font = egui::FontId::proportional(13.0);
     let turn = st.turning(w).is_some();
     let text = if turn { format!("{}  (, . turn   right-click: stop)", name) } else { format!("{}  (right-click: stop)", name) };
-    let galley = painter.layout_no_wrap(text, font, Color32::from_rgb(255, 225, 140));
+    let galley = painter.layout_no_wrap(text, font, theme::AMBER);
     let rect = egui::Rect::from_min_size(pos, galley.size() + egui::vec2(10.0, 4.0));
-    painter.rect_filled(rect, 3.0, Color32::from_black_alpha(190));
-    painter.galley(pos + egui::vec2(5.0, 2.0), galley, Color32::WHITE);
+    painter.rect_filled(rect, 0.0, theme::PANEL_DEEP.gamma_multiply(0.92));
+    painter.rect_stroke(rect, 0.0, egui::Stroke::new(1.0, theme::OLIVE), egui::StrokeKind::Inside);
+    painter.galley(pos + egui::vec2(5.0, 2.0), galley, theme::CREAM_BRIGHT);
 }
 
 fn room_color(room: &RoomDef) -> Color32 {
@@ -268,9 +192,9 @@ fn room_color(room: &RoomDef) -> Color32 {
     Rgb(r, g, b).egui().lerp_to_gamma(Color32::WHITE, 0.45)
 }
 
-const MET: Color32 = Color32::from_rgb(120, 220, 120);
-const UNMET: Color32 = Color32::from_rgb(255, 140, 100);
-const PERK: Color32 = Color32::from_rgb(150, 200, 150);
+const MET: Color32 = theme::GREEN;
+const UNMET: Color32 = theme::RED;
+const PERK: Color32 = theme::GREEN;
 
 /// What a themed room does, one muted line each.
 fn room_perks(ui: &mut egui::Ui, room: &RoomDef, indent: &str) {
@@ -284,7 +208,7 @@ fn room_perks(ui: &mut egui::Ui, room: &RoomDef, indent: &str) {
 fn room_themes(ui: &mut egui::Ui, r: &RoomStats) {
     let rooms = &defs().rooms;
     if let Some(k) = r.kind {
-        ui.label(RichText::new(&rooms[k].name).strong().size(16.0).color(room_color(&rooms[k])));
+        ui.label(theme::caps(&rooms[k].name, 19.0).color(room_color(&rooms[k])));
         ui.label(RichText::new(&rooms[k].about).weak());
         room_perks(ui, &rooms[k], "");
     }
@@ -298,7 +222,7 @@ fn room_themes(ui: &mut egui::Ui, r: &RoomStats) {
         share(&b.1).total_cmp(&share(&a.1))
     });
     let open = order.iter().find(|(k, p)| Some(*k) != r.kind && !p.done()).map(|(k, _)| *k);
-    ui.label(RichText::new("Room themes").strong());
+    theme::section(ui, "Room themes");
     for (k, p) in order {
         let room = &rooms[k];
         let (met, of) = p.score();
@@ -322,33 +246,36 @@ fn rooms_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState, rig: &mut Came
     let w = &sim.world;
     let mut open = st.show_rooms;
     let mut go = None;
-    egui::Window::new("Rooms").open(&mut open).anchor(Align2::RIGHT_TOP, [-8.0, 92.0]).collapsible(false).resizable(false).show(ctx, |ui| {
+    theme::FieldWindow::new("Rooms").open(&mut open).anchor(Align2::RIGHT_TOP, [-8.0, 92.0]).show(ctx, |ui| {
         ui.set_max_width(360.0);
         ui.label("Enclose an area with walls, doors and a roof to make a room. Furnish it with everything a theme \
                   needs and it becomes that kind of room: its floor changes and its name shows over it.");
         ui.label(RichText::new("Doors and windows in the walls count. Beds and workbenches the theme doesn't ask for spoil it.").small().weak());
-        for (k, room) in defs().rooms.iter().enumerate() {
-            ui.separator();
-            let mine: Vec<&RoomStats> = w.room_stats.iter().filter(|r| r.kind == Some(k)).collect();
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(&room.name).strong().color(room_color(room)));
-                ui.label(RichText::new(&room.about).weak());
-            });
-            for need in &room.needs {
-                ui.label(format!("  - {}: {}", need.things_text(), need.count_text()));
-            }
-            room_perks(ui, room, "  ");
-            ui.horizontal_wrapped(|ui| {
-                if mine.is_empty() {
-                    ui.label(RichText::new("You have none yet.").small().weak());
+        let room_h = (ctx.viewport_rect().height() - 260.0).max(200.0);
+        egui::ScrollArea::vertical().max_height(room_h).show(ui, |ui| {
+            for (k, room) in defs().rooms.iter().enumerate() {
+                ui.separator();
+                let mine: Vec<&RoomStats> = w.room_stats.iter().filter(|r| r.kind == Some(k)).collect();
+                ui.horizontal(|ui| {
+                    ui.label(theme::caps(&room.name, 15.0).color(room_color(room)));
+                    ui.label(RichText::new(&room.about).weak());
+                });
+                for need in &room.needs {
+                    ui.label(format!("  - {}: {}", need.things_text(), need.count_text()));
                 }
-                for (n, r) in mine.iter().enumerate() {
-                    if ui.small_button(format!("{} {}", room.name, n + 1)).on_hover_text("Show it").clicked() {
-                        go = Some((r.centre.0.round() as usize, r.centre.1.round() as usize, r.level));
+                room_perks(ui, room, "  ");
+                ui.horizontal_wrapped(|ui| {
+                    if mine.is_empty() {
+                        ui.label(RichText::new("You have none yet.").small().weak());
                     }
-                }
-            });
-        }
+                    for (n, r) in mine.iter().enumerate() {
+                        if ui.small_button(format!("{} {}", room.name, n + 1)).on_hover_text("Show it").clicked() {
+                            go = Some((r.centre.0.round() as usize, r.centre.1.round() as usize, r.level));
+                        }
+                    }
+                });
+            }
+        });
     });
     st.show_rooms = open;
     if let Some(t) = go {
@@ -359,21 +286,21 @@ fn rooms_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState, rig: &mut Came
 
 fn mood_color(mood: f32) -> Color32 {
     if mood < 25.0 {
-        Color32::from_rgb(220, 60, 50)
+        theme::RED
     } else if mood < 45.0 {
-        Color32::from_rgb(230, 150, 40)
+        theme::AMBER
     } else {
-        Color32::from_rgb(80, 180, 80)
+        theme::GREEN
     }
 }
 
 fn capacity_color(v: f32) -> Color32 {
     if v < 0.5 {
-        Color32::from_rgb(220, 60, 50)
+        theme::RED
     } else if v < 0.85 {
-        Color32::from_rgb(230, 150, 40)
+        theme::AMBER
     } else {
-        Color32::from_rgb(80, 180, 80)
+        theme::GREEN
     }
 }
 
@@ -387,7 +314,7 @@ fn portrait(ui: &mut egui::Ui, look: &Look, size: f32) {
 
 fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig, left: f32) {
     egui::Area::new(egui::Id::new("hud")).anchor(Align2::LEFT_BOTTOM, [left + 8.0, -8.0]).show(ctx, |ui| {
-        egui::Frame::window(&ctx.global_style()).show(ui, |ui| {
+        theme::plate(ui, |ui| {
             let w = &sim.world;
             let hour = w.hour();
             let clock = format!(
@@ -401,7 +328,7 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
             );
             let colonists = format!("Colonists {}   Outside {:.0}°C", w.colonists_alive(), w.outdoor_temperature());
             ui.horizontal(|ui| {
-                ui.label(RichText::new(clock).strong());
+                ui.label(theme::caps(clock, 16.0).color(theme::CREAM_BRIGHT));
                 ui.separator();
                 ui.label(colonists);
                 ui.separator();
@@ -419,7 +346,7 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 }
                 if let Some(name) = &sim.scenario {
                     ui.separator();
-                    ui.label(RichText::new(format!("Scenario: {} (Shift+N restarts)", name)).color(Color32::LIGHT_BLUE));
+                    ui.label(RichText::new(format!("Scenario: {} (Shift+N restarts)", name)).color(theme::TEAL));
                 }
             });
             ui.horizontal(|ui| {
@@ -427,7 +354,7 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                     Some(l) => format!("Viewing level {} of {}", l, sim.world.map.d - 1),
                     None => "Viewing all levels".to_string(),
                 };
-                ui.label(RichText::new(view).strong());
+                ui.label(theme::caps(view, 14.5).color(theme::CREAM_DIM));
                 if ui.button("Down (PgDn / [)").clicked() {
                     input::level_down(sim, st, rig);
                 }
@@ -478,8 +405,8 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
             });
             ui.add_space(2.0);
             for (k, msg) in sim.world.log.iter().rev().take(3).enumerate() {
-                let alpha = 255 - k as u8 * 60;
-                ui.label(RichText::new(msg).small().color(Color32::from_rgba_unmultiplied(225, 225, 170, alpha)));
+                let fade = 1.0 - k as f32 * 0.25;
+                ui.label(RichText::new(msg).small().color(theme::WARN.gamma_multiply(fade)));
             }
         });
     });
@@ -489,11 +416,9 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
 /// The game menu: save, load, a new game (asked twice) and the sound settings.
 fn game_menu(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig, audio: &mut AudioSettings) {
     let mut open = true;
-    egui::Window::new(RichText::new("Menu").strong())
+    theme::FieldWindow::new("Menu")
         .open(&mut open)
         .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
-        .collapsible(false)
-        .resizable(false)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("Save (K)").clicked() {
@@ -511,7 +436,7 @@ fn game_menu(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut Cam
             ui.label(RichText::new("Load picks the newer of your save and the autosave from quitting.").small().weak());
             if st.confirm_new {
                 ui.separator();
-                ui.label(RichText::new("Start over? The current game is lost unless you saved it.").color(Color32::from_rgb(255, 180, 110)));
+                ui.label(RichText::new("Start over? The current game is lost unless you saved it.").color(theme::AMBER));
                 ui.horizontal(|ui| {
                     if ui.button("Yes, start over").clicked() {
                         input::new_colony(sim, st, rig);
@@ -525,7 +450,7 @@ fn game_menu(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut Cam
             }
             ui.separator();
             ui.separator();
-            ui.label(RichText::new("Save as").strong());
+            theme::section(ui, "Save as");
             ui.horizontal(|ui| {
                 ui.add(egui::TextEdit::singleline(&mut st.save_name).hint_text("name").desired_width(160.0));
                 let exists = input::save_file(&st.save_name).is_some_and(|p| p.exists());
@@ -562,7 +487,7 @@ fn game_menu(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut Cam
                 st.show_menu = false;
             }
             ui.separator();
-            ui.label(RichText::new("Sound").strong());
+            theme::section(ui, "Sound");
             audio::settings_ui(ui, audio);
         });
     if !open {
@@ -574,7 +499,7 @@ fn game_menu(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut Cam
 /// Testing: pick an item and an amount, then click on the map to drop it.
 fn spawn_window(ctx: &egui::Context, st: &mut UiState) {
     let mut open = true;
-    egui::Window::new("Spawn items (testing)").open(&mut open).anchor(Align2::RIGHT_TOP, [-8.0, 92.0]).collapsible(false).resizable(false).show(ctx, |ui| {
+    theme::FieldWindow::new("Spawn items (testing)").open(&mut open).anchor(Align2::RIGHT_TOP, [-8.0, 92.0]).show(ctx, |ui| {
         ui.horizontal(|ui| {
             ui.label("Amount");
             ui.add(egui::DragValue::new(&mut st.spawn_count).range(1..=500));
@@ -618,7 +543,7 @@ fn spawn_window(ctx: &egui::Context, st: &mut UiState) {
 /// whether a raid was called in.
 fn difficulty_ui(ui: &mut egui::Ui, sim: &mut Sim) -> bool {
     let w = &mut sim.world;
-    ui.label(RichText::new("Difficulty").strong());
+    theme::section(ui, "Difficulty");
     ui.checkbox(&mut w.difficulty.raids, "Raids").on_hover_text("Off: no raiders come (the rest of the game goes on).");
     ui.add_enabled_ui(w.difficulty.raids, |ui| {
         ui.horizontal(|ui| {
@@ -669,45 +594,47 @@ fn resources(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
     let totals = sim.world.item_totals();
     let categories = item_categories(|k| totals[k.index()] > 0);
     let mut look_up = None;
-    egui::Window::new("Resources")
+    theme::FieldWindow::new("Resources")
         .open(&mut st.show_resources)
         .anchor(Align2::RIGHT_BOTTOM, [-8.0, -8.0])
-        .collapsible(false)
-        .resizable(false)
         .show(ctx, |ui| {
             // The colony's grid: what the panels make now, what's used, what's stored.
             let g = sim.world.power;
             if g.peak > 0.0 || g.capacity > 0.0 || g.used > 0.0 || g.unpowered > 0 {
-                ui.label(RichText::new("Power").strong());
+                theme::section(ui, "Power");
                 ui.label(format!("Solar {:.0} W now (up to {:.1} kW), using {:.0} W", g.made, g.peak / 1000.0, g.used));
                 if g.capacity > 0.0 {
                     ui.label(format!("Batteries {:.1} of {:.0} kWh", g.stored / 1000.0, g.capacity / 1000.0));
                 }
                 if g.unpowered > 0 {
                     let text = format!("{} heater(s)/cooler(s) without power", g.unpowered);
-                    ui.label(RichText::new(text).color(Color32::from_rgb(255, 140, 100)));
+                    ui.label(RichText::new(text).color(theme::RED));
                 }
                 ui.add_space(4.0);
             }
             if categories.is_empty() {
                 ui.label(RichText::new("Nothing yet").weak());
             }
-            for cat in categories {
-                ui.label(RichText::new(cat).strong());
-                egui::Grid::new(("resources", cat)).num_columns(2).spacing([24.0, 2.0]).show(ui, |ui| {
-                    for k in ItemId::all().filter(|k| k.def().category == cat && totals[k.index()] > 0) {
-                        let name = ui.add(egui::Label::new(k.name()).sense(egui::Sense::click()));
-                        if name.on_hover_text("Click for details").clicked() {
-                            look_up = Some(InfoTarget::Item(k));
+            // A long list scrolls rather than running off the top of the screen.
+            let list_h = (ctx.viewport_rect().height() - 140.0).max(200.0);
+            egui::ScrollArea::vertical().max_height(list_h).show(ui, |ui| {
+                for cat in categories {
+                    theme::section(ui, cat);
+                    egui::Grid::new(("resources", cat)).num_columns(2).spacing([24.0, 2.0]).show(ui, |ui| {
+                        for k in ItemId::all().filter(|k| k.def().category == cat && totals[k.index()] > 0) {
+                            let name = ui.add(egui::Label::new(k.name()).sense(egui::Sense::click()));
+                            if name.on_hover_text("Click for details").clicked() {
+                                look_up = Some(InfoTarget::Item(k));
+                            }
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.label(totals[k.index()].to_string());
+                            });
+                            ui.end_row();
                         }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(totals[k.index()].to_string());
-                        });
-                        ui.end_row();
-                    }
-                });
-                ui.add_space(4.0);
-            }
+                    });
+                    ui.add_space(4.0);
+                }
+            });
         });
     if let Some(it) = look_up {
         st.open_info(it);
@@ -732,31 +659,32 @@ fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, rig: &mut Came
                 let selected = st.is_selected(p.id);
                 let trouble = p.downed || p.hunger <= 0.0 || p.break_timer > 0.0 || p.health.bleed_rate() > 0.0;
                 let stroke = if selected {
-                    egui::Stroke::new(2.0, Color32::WHITE)
+                    egui::Stroke::new(2.0, theme::CREAM_BRIGHT)
                 } else if sim.world.battle.as_ref().is_some_and(|b| b.unit_of(p.id).is_some_and(|u| b.units[u].can_act())) {
-                    egui::Stroke::new(2.0, Color32::GOLD)
+                    egui::Stroke::new(2.0, theme::AMBER)
                 } else if trouble && !p.dead {
-                    egui::Stroke::new(2.0, Color32::RED)
+                    egui::Stroke::new(2.0, theme::RED)
                 } else {
-                    egui::Stroke::new(1.0, Color32::from_gray(90))
+                    egui::Stroke::new(1.0, theme::OLIVE)
                 };
-                let resp = egui::Frame::window(&ctx.global_style())
+                let resp = theme::Plate::inset()
+                    .fill(theme::PANEL)
                     .stroke(stroke)
-                    .inner_margin(CARD_MARGIN)
+                    .margin(CARD_MARGIN as i8)
                     .show(ui, |ui| {
                         ui.set_min_size(CARD);
                         ui.set_max_size(CARD);
                         ui.spacing_mut().item_spacing.y = 3.0;
                         ui.horizontal(|ui| {
                             portrait(ui, &pawn_look(p), 18.0);
-                            ui.add(egui::Label::new(RichText::new(&p.name).strong()).truncate());
+                            ui.add(egui::Label::new(theme::caps(&p.name, 15.0).color(theme::CREAM_BRIGHT)).truncate());
                         });
-                        ui.add(ProgressBar::new(p.mood / 100.0).desired_width(CARD.x).desired_height(6.0).fill(mood_color(p.mood)));
+                        theme::meter(ui, p.mood / 100.0, CARD.x, 5.0, mood_color(p.mood));
                         // One line, cut short with an ellipsis; the whole text on hover.
                         let status = p.status();
                         ui.add(egui::Label::new(RichText::new(&status).small()).truncate()).on_hover_text(&status);
                         let weapon = p.weapon.map_or("Unarmed", |w| w.name());
-                        let color = if p.weapon.is_some() { Color32::from_rgb(230, 205, 140) } else { Color32::GRAY };
+                        let color = if p.weapon.is_some() { theme::WARN } else { theme::CREAM_DIM };
                         ui.add(egui::Label::new(RichText::new(weapon).small().color(color)).truncate());
                     })
                     .response
@@ -783,9 +711,9 @@ fn alerts(ctx: &egui::Context, sim: &Sim) {
         return;
     }
     egui::Area::new(egui::Id::new("alerts")).anchor(Align2::RIGHT_TOP, [-8.0, 8.0]).show(ctx, |ui| {
-        egui::Frame::window(&ctx.global_style()).show(ui, |ui| {
+        theme::plate(ui, |ui| {
             for (text, urgent) in alerts {
-                let color = if urgent { Color32::from_rgb(255, 90, 80) } else { Color32::from_rgb(240, 210, 90) };
+                let color = if urgent { theme::RED } else { theme::AMBER };
                 ui.label(RichText::new(text).color(color));
             }
         });
@@ -803,19 +731,17 @@ fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32,
     let title = if p.is_colonist() { p.name.clone() } else { format!("{} (raider)", p.name) };
     let mut look_up = None;
     let mut open = true;
-    egui::Window::new(RichText::new(title).strong())
+    theme::FieldWindow::new(title)
         .id(egui::Id::new("inspector"))
         .open(&mut open)
         .anchor(Align2::LEFT_TOP, [left + COLONIST_LIST_W + 8.0, 8.0])
-        .collapsible(false)
-        .resizable(false)
         .default_width(340.0)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut st.inspector_tab, InspectorTab::Overview, "Overview");
-                ui.selectable_value(&mut st.inspector_tab, InspectorTab::Health, "Health");
+                theme::tab_value(ui, &mut st.inspector_tab, InspectorTab::Overview, "Overview");
+                theme::tab_value(ui, &mut st.inspector_tab, InspectorTab::Health, "Health");
                 if combat {
-                    ui.selectable_value(&mut st.inspector_tab, InspectorTab::Combat, "Combat");
+                    theme::tab_value(ui, &mut st.inspector_tab, InspectorTab::Combat, "Combat");
                 }
             });
             if st.group.len() > 1 {
@@ -871,14 +797,14 @@ fn overview_tab(ui: &mut egui::Ui, p: &Pawn) {
     let need = |ui: &mut egui::Ui, label: &str, v: f32, fill: Color32| {
         ui.horizontal(|ui| {
             ui.add_sized([60.0, 16.0], egui::Label::new(label));
-            ui.add(ProgressBar::new(v / 100.0).desired_width(220.0).fill(fill));
+            ui.add(theme::bar(v / 100.0).desired_width(220.0).fill(fill));
         });
     };
-    need(ui, "Health", p.health.summary() * 100.0, Color32::from_rgb(210, 60, 60));
+    need(ui, "Health", p.health.summary() * 100.0, theme::RED);
     if p.is_colonist() {
         need(ui, "Mood", p.mood, mood_color(p.mood));
-        need(ui, "Food", p.hunger, Color32::from_rgb(230, 150, 40));
-        need(ui, "Rest", p.rest, Color32::from_rgb(110, 170, 230));
+        need(ui, "Food", p.hunger, theme::AMBER);
+        need(ui, "Rest", p.rest, theme::TEAL);
         need(ui, "Fun", p.joy, Color32::from_rgb(170, 120, 220));
         ui.separator();
         egui::Grid::new("skills").num_columns(4).spacing([12.0, 2.0]).show(ui, |ui| {
@@ -893,7 +819,7 @@ fn overview_tab(ui: &mut egui::Ui, p: &Pawn) {
         ui.separator();
     }
     for (label, value) in p.thoughts() {
-        let color = if value >= 0.0 { Color32::from_rgb(110, 200, 110) } else { Color32::from_rgb(255, 120, 100) };
+        let color = if value >= 0.0 { theme::GREEN } else { theme::RED };
         ui.label(RichText::new(format!("{:+}  {}", value as i32, label)).color(color));
     }
     if p.is_living_colonist() {
@@ -931,13 +857,13 @@ fn cyberware(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn, actions: &mut Vec<Action
         return;
     }
     ui.separator();
-    ui.label(RichText::new("Cyberware").strong());
+    theme::section(ui, "Cyberware");
     let about = "A doctor installs it at an operating table, in place of a natural or lost part (the brain and skin get add-ons). \
                  Cyberware it replaces is left at the table. It can go wrong: better doctors and a surgery room help.";
     ui.label(RichText::new(about).small().weak());
     let id = p.id;
     let tables = (0..w.map.len()).any(|i| w.medical_bed(w.map.pos(i)));
-    let blue = Color32::from_rgb(150, 190, 230);
+    let blue = theme::TEAL;
     for slot in CyberSlot::ALL {
         ui.horizontal_wrapped(|ui| {
             ui.add_sized([90.0, 18.0], egui::Label::new(slot.name()));
@@ -947,8 +873,8 @@ fn cyberware(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn, actions: &mut Vec<Action
                     let name = item.map_or("Prosthetic", |k| k.name());
                     (if eff == 1.0 { name.to_string() } else { format!("{} ({:.0}%)", name, eff * 100.0) }, blue)
                 }
-                None if p.health.slot_lost(slot) => ("Lost".to_string(), Color32::from_rgb(255, 120, 100)),
-                None => ("Natural".to_string(), Color32::GRAY),
+                None if p.health.slot_lost(slot) => ("Lost".to_string(), theme::RED),
+                None => ("Natural".to_string(), theme::CREAM_DIM),
             };
             match p.surgeries.iter().find(|o| o.slot == slot) {
                 Some(op) => {
@@ -965,7 +891,7 @@ fn cyberware(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn, actions: &mut Vec<Action
                         _ => None,
                     };
                     if let Some(text) = waiting {
-                        ui.label(RichText::new(text).small().color(Color32::from_rgb(240, 210, 90)));
+                        ui.label(RichText::new(text).small().color(theme::AMBER));
                     }
                 }
                 None => {
@@ -1008,11 +934,11 @@ fn health_tab(ui: &mut egui::Ui, p: &Pawn) {
     match h.time_to_bleed_out() {
         Some(secs) => {
             let text = format!("Bleeding {:.0}%/day - bleeds out in ~{:.0}h", bleed * 100.0, secs / DAY_LEN * 24.0);
-            ui.label(RichText::new(text).color(Color32::from_rgb(255, 80, 70)));
+            ui.label(RichText::new(text).color(theme::RED));
         }
         None if bleed > 0.0 => {
             let text = format!("Bleeding {:.0}%/day (body keeps up)", bleed * 100.0);
-            ui.label(RichText::new(text).color(Color32::from_rgb(240, 160, 60)));
+            ui.label(RichText::new(text).color(theme::AMBER));
         }
         None => {
             ui.label(RichText::new("Not bleeding").weak());
@@ -1020,20 +946,20 @@ fn health_tab(ui: &mut egui::Ui, p: &Pawn) {
     }
     if h.hypothermia > 0.01 {
         let text = format!("Hypothermia {:.0}% (collapses at 70%, fatal at 100%): get them somewhere warm", h.hypothermia * 100.0);
-        ui.label(RichText::new(text).color(Color32::from_rgb(140, 190, 255)));
+        ui.label(RichText::new(text).color(theme::TEAL));
     }
     if h.blood_loss > 0.01 || h.malnutrition > 0.01 {
         let text = format!("Blood loss {:.0}%     Malnutrition {:.0}%", h.blood_loss * 100.0, h.malnutrition * 100.0);
-        ui.label(RichText::new(text).color(Color32::from_rgb(240, 160, 60)));
+        ui.label(RichText::new(text).color(theme::AMBER));
     }
     ui.separator();
     egui::Grid::new("capacities").num_columns(2).spacing([10.0, 2.0]).show(ui, |ui| {
         for (name, v) in h.caps.list() {
             ui.label(name);
             ui.add(
-                ProgressBar::new(v.clamp(0.0, 1.0))
+                theme::bar(v.clamp(0.0, 1.0))
                     .desired_width(180.0)
-                    .fill(capacity_color(v))
+                    .fill(capacity_color(v).linear_multiply(0.7))
                     .text(format!("{:.0}%", v * 100.0)),
             );
             ui.end_row();
@@ -1041,25 +967,25 @@ fn health_tab(ui: &mut egui::Ui, p: &Pawn) {
     });
     ui.separator();
     if h.hediffs.is_empty() {
-        ui.label(RichText::new("No injuries or illnesses").color(Color32::from_rgb(110, 200, 110)));
+        ui.label(RichText::new("No injuries or illnesses").color(theme::GREEN));
         return;
     }
     for d in &h.hediffs {
         let part = d.part.map_or("Whole body", |p| p.name());
         let (detail, color) = match d.kind {
-            HediffKind::Injury { permanent: true, .. } => (String::new(), Color32::GRAY),
+            HediffKind::Injury { permanent: true, .. } => (String::new(), theme::CREAM_DIM),
             HediffKind::Injury { .. } => (
                 format!(" {:.0}", d.severity),
-                if d.bleed() > 0.0 { Color32::from_rgb(255, 80, 70) } else { Color32::from_rgb(240, 160, 60) },
+                if d.bleed() > 0.0 { theme::RED } else { theme::AMBER },
             ),
             HediffKind::Missing => {
-                (String::new(), if d.bleed() > 0.0 { Color32::from_rgb(255, 80, 70) } else { Color32::GRAY })
+                (String::new(), if d.bleed() > 0.0 { theme::RED } else { theme::CREAM_DIM })
             }
-            HediffKind::FoodPoisoning => (format!(" {:.0}%", d.severity * 100.0), Color32::from_rgb(240, 220, 90)),
-            HediffKind::Prosthetic { .. } => (String::new(), Color32::from_rgb(150, 190, 230)),
+            HediffKind::FoodPoisoning => (format!(" {:.0}%", d.severity * 100.0), theme::AMBER),
+            HediffKind::Prosthetic { .. } => (String::new(), theme::TEAL),
             HediffKind::Infection { immunity } | HediffKind::Flu { immunity } => (
                 format!(" {:.0}% (immunity {:.0}%)", d.severity * 100.0, immunity * 100.0),
-                Color32::from_rgb(240, 220, 90),
+                theme::AMBER,
             ),
         };
         let mut text = format!("{}: {}{}", part, d.label(), detail);
@@ -1094,12 +1020,10 @@ fn tile_inspector(
     let m = &w.map;
     let i = m.idx(t);
     let mut open = true;
-    egui::Window::new(RichText::new(format!("Cell {}, {}  level {}", t.0, t.1, t.2)).strong())
+    theme::FieldWindow::new(format!("Cell {}, {}  level {}", t.0, t.1, t.2))
         .id(egui::Id::new("inspector"))
         .open(&mut open)
         .anchor(Align2::LEFT_TOP, [left + COLONIST_LIST_W + 8.0, 8.0])
-        .collapsible(false)
-        .resizable(false)
         .show(ctx, |ui| {
             let what = match m.feature[i] {
                 f @ Feature::Plant { growth, .. } if f.is_crop() => format!("{}, {:.0}% grown", f.name(), growth * 100.0),
@@ -1146,7 +1070,7 @@ fn tile_inspector(
             let above = m.above(t).map(|a| m.idx(a));
             if m.roof_gaps.contains(&i) || above.is_some_and(|a| m.roof_gaps.contains(&a)) {
                 let why = "No roof can reach here: it needs a wall within 3 cells, so the room isn't closed.";
-                ui.label(RichText::new(why).color(Color32::from_rgb(255, 140, 100)));
+                ui.label(RichText::new(why).color(theme::RED));
             }
             if m.covered(t) && !m.roofed(t) {
                 ui.label("Covered overhead");
@@ -1171,9 +1095,9 @@ fn tile_inspector(
             if let Some(state) = w.device_state(i) {
                 use my_world::power::DeviceState;
                 let (text, color) = match state {
-                    DeviceState::Running => ("Running", Color32::from_rgb(140, 220, 140)),
+                    DeviceState::Running => ("Running", theme::GREEN),
                     DeviceState::Idle => ("Idle: its room needs nothing", Color32::LIGHT_GRAY),
-                    DeviceState::NoPower => ("No power: build more PV systems or a battery", Color32::from_rgb(255, 140, 100)),
+                    DeviceState::NoPower => ("No power: build more PV systems or a battery", theme::RED),
                 };
                 ui.label(RichText::new(text).color(color));
             }
@@ -1250,7 +1174,7 @@ fn tile_inspector(
 fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<Action>) {
     let q = &w.quarries[k];
     ui.separator();
-    ui.label(RichText::new(format!("Quarry ({} columns)", q.cols.len())).strong());
+    theme::section(ui, format!("Quarry ({} columns)", q.cols.len()));
     ui.horizontal(|ui| {
         ui.label("Dig down");
         let depth = q.depth;
@@ -1276,7 +1200,7 @@ fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<
             "{} cell(s) nobody can get to (a ledge, or a pillar too tall to climb) are left standing; it digs on around and under them. Build a way up to have them dug.",
             stuck
         );
-        ui.label(RichText::new(why).color(Color32::from_rgb(255, 190, 110)));
+        ui.label(RichText::new(why).color(theme::AMBER));
     }
     match q.shaft {
         Some((x, y)) => {
@@ -1285,7 +1209,7 @@ fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<
         }
         None => {
             let why = "No way in: no ground to walk on beside it, so only what's above the ground is dug.";
-            ui.label(RichText::new(why).color(Color32::from_rgb(255, 190, 110)));
+            ui.label(RichText::new(why).color(theme::AMBER));
         }
     }
 }
@@ -1294,11 +1218,11 @@ fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<
 fn temp_color(t: f32) -> Color32 {
     use my_world::temperature::{COLD, FREEZING, HOT};
     if t < FREEZING {
-        Color32::from_rgb(120, 170, 255)
+        theme::TEAL
     } else if t < COLD {
-        Color32::from_rgb(170, 205, 255)
+        theme::TEAL
     } else if t > HOT {
-        Color32::from_rgb(255, 170, 100)
+        theme::AMBER
     } else {
         Color32::LIGHT_GRAY
     }
@@ -1375,7 +1299,7 @@ fn furniture_move(ui: &mut egui::Ui, w: &SimWorld, t: Pos, move_from: &mut Optio
         return;
     };
     ui.separator();
-    ui.label(RichText::new(text).color(Color32::from_rgb(120, 210, 255)));
+    ui.label(RichText::new(text).color(theme::TEAL));
     if ui.button(call_off).clicked() {
         actions.push(Box::new(move |w| {
             w.apply_order(t, Order::Cancel);
@@ -1413,7 +1337,7 @@ fn bed_owner(ui: &mut egui::Ui, w: &SimWorld, t: Pos, actions: &mut Vec<Action>)
             ui.label(RichText::new("Proper quarters for a leader.").weak());
         } else {
             let why = "Not proper quarters: a leader wants a room of at least decent quality that nobody else sleeps in.";
-            ui.label(RichText::new(why).color(Color32::from_rgb(255, 140, 100)));
+            ui.label(RichText::new(why).color(theme::RED));
         }
     }
 }
@@ -1421,7 +1345,7 @@ fn bed_owner(ui: &mut egui::Ui, w: &SimWorld, t: Pos, actions: &mut Vec<Action>)
 fn stockpile_settings(ui: &mut egui::Ui, w: &SimWorld, id: u16, actions: &mut Vec<Action>) {
     let Some(store) = w.stockpiles.get(id as usize) else { return };
     ui.separator();
-    ui.label(RichText::new(&store.name).strong());
+    theme::section(ui, &store.name);
     ui.horizontal(|ui| {
         ui.label("Priority");
         for prio in 1..=4u8 {
@@ -1480,7 +1404,7 @@ fn mode_label(mode: BillMode) -> String {
 
 fn bills(ui: &mut egui::Ui, w: &SimWorld, t: Pos, kind: my_world::defs::BuildId, actions: &mut Vec<Action>) {
     ui.separator();
-    ui.label(RichText::new("Bills").strong());
+    theme::section(ui, "Bills");
     let bench = w.bench_at(t);
     let status = match bench.and_then(|b| b.current.map(|r| (b, r))) {
         Some((b, r)) => match b.need() {
@@ -1556,9 +1480,10 @@ fn bills(ui: &mut egui::Ui, w: &SimWorld, t: Pos, kind: my_world::defs::BuildId,
 fn block_color(b: my_world::recreation::Block) -> Color32 {
     use my_world::recreation::Block;
     match b {
-        Block::Anything => Color32::from_rgb(70, 70, 70),
-        Block::Work => Color32::from_rgb(150, 116, 56),
-        Block::Fun => Color32::from_rgb(78, 120, 172),
+        // Deeper than the accents, so names on them stay readable.
+        Block::Anything => Color32::from_rgb(72, 68, 60),
+        Block::Work => Color32::from_rgb(160, 112, 40),
+        Block::Fun => Color32::from_rgb(46, 122, 112),
         Block::Sleep => Color32::from_rgb(58, 56, 108),
     }
 }
@@ -1570,9 +1495,9 @@ fn schedules(ui: &mut egui::Ui, sim: &mut Sim, st: &mut UiState) {
         ui.label("Paint:");
         for b in Block::ALL {
             let chosen = st.schedule_brush == b;
-            let text = RichText::new(b.name()).color(if chosen { Color32::WHITE } else { Color32::LIGHT_GRAY });
+            let text = RichText::new(b.name()).color(if chosen { theme::CREAM_BRIGHT } else { theme::CREAM });
             let button = egui::Button::new(text).fill(block_color(b)).stroke(if chosen {
-                egui::Stroke::new(2.0, Color32::WHITE)
+                egui::Stroke::new(2.0, theme::CREAM_BRIGHT)
             } else {
                 egui::Stroke::NONE
             });
@@ -1592,14 +1517,14 @@ fn schedules(ui: &mut egui::Ui, sim: &mut Sim, st: &mut UiState) {
         ui.label("");
         for h in 0..24 {
             let text = RichText::new(format!("{:>2}", h)).small().monospace();
-            ui.label(if h == now { text.strong().color(Color32::YELLOW) } else { text.weak() });
+            ui.label(if h == now { text.strong().color(theme::AMBER) } else { text.weak() });
         }
         ui.end_row();
         for (id, name, day) in &rows {
             ui.label(name);
             for (h, &b) in day.iter().enumerate() {
                 let cell = egui::Button::new("").fill(block_color(b)).min_size(egui::vec2(18.0, 18.0)).stroke(if h == now {
-                    egui::Stroke::new(1.0, Color32::YELLOW)
+                    egui::Stroke::new(1.0, theme::AMBER)
                 } else {
                     egui::Stroke::NONE
                 });
@@ -1650,15 +1575,13 @@ fn work_panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState) {
         .map(|p| (p.id, p.name.clone(), p.priorities, p.skills))
         .collect();
     let mut open = st.show_work;
-    egui::Window::new("Work")
+    theme::FieldWindow::new("Work")
         .open(&mut open)
-        .collapsible(false)
-        .resizable(false)
         .anchor(Align2::CENTER_TOP, [0.0, 80.0])
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut st.work_schedule, false, "Priorities");
-                ui.selectable_value(&mut st.work_schedule, true, "Schedule");
+                theme::tab_value(ui, &mut st.work_schedule, false, "Priorities");
+                theme::tab_value(ui, &mut st.work_schedule, true, "Schedule");
             });
             ui.separator();
             if st.work_schedule {

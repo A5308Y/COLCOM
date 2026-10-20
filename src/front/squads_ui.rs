@@ -3,7 +3,8 @@
 
 use super::input::{Selection, UiState};
 use super::sim::Sim;
-use bevy_egui::egui::{self, Align2, Color32, RichText};
+use super::theme;
+use bevy_egui::egui::{self, Align2, RichText};
 use my_world::defs::{ItemId, Slot};
 use my_world::map::Zone;
 use my_world::pawn::{Pawn, Role};
@@ -55,7 +56,7 @@ fn slot_choice(
 fn fighting(ui: &mut egui::Ui, p: &Pawn) {
     use my_world::battle::base_hit_chance;
     use my_world::pawn::Skill;
-    ui.label(RichText::new("Fighting").strong());
+    theme::section(ui, "Fighting");
     ui.label(format!("Shooting {}   Melee {}", p.skill(Skill::Shooting), p.skill(Skill::Melee)));
     let w = p.main_attack();
     let pct = |c: f32| format!("{:.0}%", c.clamp(0.05, 0.95) * 100.0);
@@ -97,7 +98,7 @@ pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction
     let mut actions = Vec::new();
     fighting(ui, p);
     ui.separator();
-    ui.label(RichText::new("When a battle starts").strong());
+    theme::section(ui, "When a battle starts");
     let mut role = p.role;
     ui.horizontal(|ui| {
         ui.radio_value(&mut role, Role::Fighter, "Fighter").on_hover_text("Fights as a unit of their own");
@@ -144,12 +145,12 @@ pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction
         ui.label(RichText::new(format!("{} squad: {}", capitalised(style_name(fights_at_range(p))), text)).weak());
         if p.poor_quarters {
             let text = "Wants a decent bedroom of their own. Click a bed to give it to them.";
-            ui.label(RichText::new(text).color(Color32::from_rgb(255, 140, 100)));
+            ui.label(RichText::new(text).color(theme::RED));
         }
     }
 
     ui.separator();
-    ui.label(RichText::new("Loadout").strong());
+    theme::section(ui, "Loadout");
     let about = "The gear they use: fetched from storage and kept on (right-click gear to set it too). Empty slots: they take the best they find.";
     ui.label(RichText::new(about).small().weak());
     let style = style_name(fights_at_range(p));
@@ -245,11 +246,9 @@ pub fn squads_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
             *select = Some(p.id);
         }
     };
-    egui::Window::new("Squads")
+    theme::FieldWindow::new("Squads")
         .open(&mut open)
         .anchor(Align2::RIGHT_TOP, [-8.0, 92.0])
-        .collapsible(false)
-        .resizable(false)
         .show(ctx, |ui| {
             let leaders: Vec<&&Pawn> = colonists.iter().filter(|p| p.role == Role::Leader).collect();
             if leaders.is_empty() {
@@ -261,7 +260,7 @@ pub fn squads_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
                     let style = style_name(fights_at_range(l));
                     name(ui, l, format!(" ({}, {}/{})", style, 1 + members.len(), SQUAD_MAX), &mut select);
                     if l.poor_quarters {
-                        ui.label(RichText::new("wants a decent bedroom").small().color(Color32::from_rgb(255, 140, 100)));
+                        ui.label(RichText::new("wants a decent bedroom").small().color(theme::RED));
                     }
                 });
                 for m in members {
@@ -275,7 +274,7 @@ pub fn squads_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
                         // Picked up a weapon of the other kind (and has none in the loadout).
                         if fights_at_range(m) != fights_at_range(l) {
                             let text = format!("armed {}: fights alone", style_name(fights_at_range(m)));
-                            ui.label(RichText::new(text).small().color(Color32::from_rgb(255, 140, 100)));
+                            ui.label(RichText::new(text).small().color(theme::RED));
                         }
                     });
                 }
@@ -286,7 +285,7 @@ pub fn squads_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
                     continue;
                 }
                 ui.separator();
-                ui.label(RichText::new(title).strong());
+                theme::section(ui, title);
                 ui.horizontal_wrapped(|ui| {
                     for p in group {
                         name(ui, p, String::new(), &mut select);
@@ -295,7 +294,7 @@ pub fn squads_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
             }
             let civilians = colonists.iter().any(|p| p.role == Role::Civilian);
             if civilians && !w.map.zone.contains(&Zone::Safe) {
-                ui.label(RichText::new("No safe zone: civilians stay where they are.").color(Color32::from_rgb(255, 140, 100)));
+                ui.label(RichText::new("No safe zone: civilians stay where they are.").color(theme::RED));
             }
             ui.separator();
             ui.label(RichText::new("Set roles and loadouts in a colonist's Combat tab.").small().weak());

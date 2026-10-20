@@ -6,31 +6,45 @@ mod front;
 use bevy::prelude::*;
 use bevy::render::settings::{RenderCreation, WgpuSettings};
 use bevy::render::RenderPlugin;
+use bevy::window::ExitCondition;
 use bevy_egui::EguiPlugin;
 
 fn main() {
     // MY_WORLD_NO_GPU=1 runs everything except drawing: a smoke test for
     // machines (or sandboxes) without GPU access.
     let mut wgpu = WgpuSettings::default();
-    if std::env::var_os("MY_WORLD_NO_GPU").is_some() {
+    let no_gpu = std::env::var_os("MY_WORLD_NO_GPU").is_some();
+    if no_gpu {
         wgpu.backends = None;
     }
-    App::new()
-        .add_plugins(
-            DefaultPlugins
-                .set(WindowPlugin {
-                    primary_window: Some(Window {
-                        title: "My World".into(),
-                        resolution: (1280u32, 800u32).into(),
-                        ..default()
-                    }),
-                    ..default()
-                })
-                .set(RenderPlugin { render_creation: RenderCreation::Automatic(Box::new(wgpu)), ..default() }),
-        )
-        .add_plugins(EguiPlugin::default())
-        .add_plugins(front::FrontPlugin)
-        .run();
+    // `--screenshot`: save interface shots to target/screenshots and quit.
+    // Without a GPU there's no window either: the shots are drawn on the CPU.
+    let shots = front::screenshot::requested();
+    let windowless = no_gpu && shots.is_some();
+    let mut plugins = DefaultPlugins
+        .set(WindowPlugin {
+            primary_window: (!windowless).then(|| Window {
+                title: "My World".into(),
+                resolution: (1280u32, 800u32).into(),
+                ..default()
+            }),
+            // Windowless shots end by themselves, not by closing the window.
+            exit_condition: if windowless { ExitCondition::DontExit } else { ExitCondition::OnAllClosed },
+            ..default()
+        })
+        .set(RenderPlugin { render_creation: RenderCreation::Automatic(Box::new(wgpu)), ..default() });
+    if windowless {
+        plugins = plugins.disable::<bevy::winit::WinitPlugin>();
+    }
+    let mut app = App::new();
+    app.add_plugins(plugins).add_plugins(EguiPlugin::default()).add_plugins(front::FrontPlugin);
+    if let Some(shots) = shots {
+        app.add_plugins(front::screenshot::ScreenshotPlugin(shots));
+    }
+    if windowless {
+        app.add_plugins(bevy::app::ScheduleRunnerPlugin::run_loop(std::time::Duration::from_millis(16)));
+    }
+    app.run();
 }
 
 #[cfg(test)]

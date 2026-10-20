@@ -3,6 +3,7 @@
 
 use super::input::UiState;
 use super::{tile_center, tile_point};
+use super::theme;
 use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, FontId, Pos2};
 use my_world::map::Feature;
@@ -72,17 +73,17 @@ pub fn draw(
             let mut y = top.y;
             let health = p.health.summary();
             if health < 0.99 {
-                bar(&painter, Pos2::new(top.x, y), 30.0, health, Color32::from_rgb(220, 50, 50));
+                bar(&painter, Pos2::new(top.x, y), 30.0, health, theme::RED);
                 y -= 6.0;
             }
             if let Some(Job::Work { .. } | Job::Tend { .. }) = p.job {
                 if p.job_progress > 0.0 {
-                    bar(&painter, Pos2::new(top.x, y), 30.0, p.job_progress, Color32::from_rgb(90, 200, 90));
+                    bar(&painter, Pos2::new(top.x, y), 30.0, p.job_progress, theme::GREEN);
                 }
             }
             if p.health.bleed_rate() > 0.0 {
                 let pulse = 0.7 + 0.3 * (ctx.input(|i| i.time) as f32 * 5.0).sin();
-                painter.circle_filled(Pos2::new(top.x - 20.0, top.y), 4.0 * pulse, Color32::from_rgb(200, 25, 40));
+                painter.circle_filled(Pos2::new(top.x - 20.0, top.y), 4.0 * pulse, theme::RED);
             }
             if p.sleeping {
                 shadow_text(&painter, Pos2::new(top.x + 14.0, top.y - 4.0), Align2::LEFT_BOTTOM, "z", 16.0, Color32::WHITE);
@@ -93,7 +94,7 @@ pub fn draw(
                 let color = if p.dead {
                     Color32::GRAY
                 } else if p.faction == Faction::Raider {
-                    Color32::from_rgb(255, 140, 128)
+                    theme::RED
                 } else {
                     Color32::WHITE
                 };
@@ -123,7 +124,7 @@ pub fn draw(
                 }
                 if let Some(sp) = to_screen(c + Vec3::Y * 0.9) {
                     let label = format!("{}/{}", delivered, kind.def().total_cost());
-                    shadow_text(&painter, sp, Align2::CENTER_BOTTOM, &label, 12.0, Color32::from_rgb(170, 210, 255));
+                    shadow_text(&painter, sp, Align2::CENTER_BOTTOM, &label, 12.0, theme::TEAL);
                 }
             }
         }

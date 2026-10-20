@@ -3,6 +3,7 @@
 //! and the neighbouring factions.
 
 use super::sim::Sim;
+use super::theme;
 use bevy_egui::egui::{self, Align2, Color32, RichText};
 use my_world::defs::ItemId;
 use my_world::expeditions::{Expedition, Faction, Stage};
@@ -46,8 +47,8 @@ pub struct ExpeditionsUi {
     error: Option<String>,
 }
 
-const WARN: Color32 = Color32::from_rgb(255, 150, 100);
-const GOOD: Color32 = Color32::from_rgb(150, 220, 140);
+const WARN: Color32 = theme::AMBER;
+const GOOD: Color32 = theme::GREEN;
 
 fn hours(secs: f32) -> String {
     let h = secs.max(0.0) / DAY_LEN * 24.0;
@@ -76,7 +77,7 @@ fn worth(list: &[Stack]) -> f32 {
 fn goodwill_color(g: i32) -> Color32 {
     match g {
         g if g >= 15 => GOOD,
-        g if g > -15 => Color32::from_rgb(220, 220, 150),
+        g if g > -15 => theme::WARN,
         _ => WARN,
     }
 }
@@ -88,11 +89,9 @@ pub fn waiting(w: &SimWorld) -> usize {
 
 pub fn window(ctx: &egui::Context, sim: &mut Sim, ui_state: &mut ExpeditionsUi) {
     let mut open = ui_state.open;
-    egui::Window::new("Expeditions")
+    theme::FieldWindow::new("Expeditions")
         .open(&mut open)
         .anchor(Align2::RIGHT_TOP, [-8.0, 92.0])
-        .collapsible(false)
-        .resizable(false)
         .default_width(460.0)
         .show(ctx, |ui| {
             if sim.home.is_some() {
@@ -103,10 +102,10 @@ pub fn window(ctx: &egui::Context, sim: &mut Sim, ui_state: &mut ExpeditionsUi) 
             ui.horizontal(|ui| {
                 let away = sim.world.expeditions.len();
                 let wait = waiting(&sim.world);
-                ui.selectable_value(&mut st.tab, Tab::Offers, format!("Offers ({})", sim.world.offers.len()));
+                theme::tab_value(ui, &mut st.tab, Tab::Offers, format!("Offers ({})", sim.world.offers.len()));
                 let label = if wait > 0 { format!("Under way ({}, {} waiting)", away, wait) } else { format!("Under way ({})", away) };
-                ui.selectable_value(&mut st.tab, Tab::Away, label);
-                ui.selectable_value(&mut st.tab, Tab::Factions, "Factions");
+                theme::tab_value(ui, &mut st.tab, Tab::Away, label);
+                theme::tab_value(ui, &mut st.tab, Tab::Factions, "Factions");
             });
             ui.separator();
             if let Some(e) = &st.error {
@@ -137,7 +136,7 @@ fn offers(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
         let f = &w.factions[o.faction];
         ui.group(|ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(o.kind.name()).strong());
+                ui.label(theme::caps(o.kind.name(), 15.0).color(theme::CREAM_BRIGHT));
                 ui.label(RichText::new(format!("{} ({})", f.name, f.standing())).color(goodwill_color(f.goodwill)));
             });
             ui.label(o.kind.about());
@@ -159,18 +158,18 @@ fn planning(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
     let plan = st.plan.as_mut().unwrap();
     let Some(o) = w.offers.iter().find(|o| o.id == plan.offer) else { return };
     let kind = o.kind;
-    ui.label(RichText::new(format!("{}: {}", kind.name(), w.factions[o.faction].name)).strong());
+    theme::section(ui, format!("{}: {}", kind.name(), w.factions[o.faction].name));
     ui.label(kind.about());
     ui.add_space(4.0);
 
-    ui.label(RichText::new("Squad").strong());
+    theme::section(ui, "Squad");
     ui.label(RichText::new(kind.squad_hint()).small().weak());
     squad_picker(ui, w, &mut plan.squad);
     ui.add_space(4.0);
     let packed = stacks(&plan.pack);
     let can = my_world::expeditions::carry_capacity(plan.squad.iter().filter_map(|&id| w.pawn(id)));
     let load: u32 = packed.iter().map(|s| s.count).sum();
-    ui.label(RichText::new(format!("Pack (worth {:.0}): {} of {} they can carry", worth(&packed), load, can)).strong());
+    theme::section(ui, format!("Pack (worth {:.0}): {} of {} they can carry", worth(&packed), load, can));
     let each = format!("Each carries {} things; backpacks carry more. Loot that doesn't fit is left behind.", my_world::pawn::CARRY_EACH);
     ui.label(RichText::new(each).small().weak());
     if kind.packs() {
@@ -258,7 +257,7 @@ fn squad_picker(ui: &mut egui::Ui, w: &SimWorld, picked: &mut Vec<u32>) {
     };
     egui::Grid::new("squad_pick").num_columns(8).striped(true).spacing([10.0, 2.0]).show(ui, |ui| {
         for h in ["", "Squad", "Weapon", "Shoot", "Melee", "Armour", "Moving", "Health"] {
-            ui.label(RichText::new(h).small().strong());
+            ui.label(theme::caps(h, 12.5).color(theme::CREAM_DIM));
         }
         ui.end_row();
         for p in w.pawns.iter().filter(|p| p.is_living_colonist()) {
@@ -283,7 +282,7 @@ fn squad_picker(ui: &mut egui::Ui, w: &SimWorld, picked: &mut Vec<u32>) {
             let (text, color) = if !able {
                 ("can't travel".to_string(), WARN)
             } else if hurt > 0 || p.health.hediffs.iter().any(|d| d.is_disease()) {
-                (format!("hurt or ill ({})", hurt.max(1)), Color32::from_rgb(230, 200, 120))
+                (format!("hurt or ill ({})", hurt.max(1)), theme::WARN)
             } else {
                 ("fine".to_string(), GOOD)
             };
@@ -319,7 +318,7 @@ fn away(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
         let f = &sim.world.factions[e.faction];
         ui.group(|ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(e.kind.name()).strong());
+                ui.label(theme::caps(e.kind.name(), 15.0).color(theme::CREAM_BRIGHT));
                 ui.label(RichText::new(&f.name).weak());
             });
             let people: Vec<String> = e
@@ -389,7 +388,7 @@ fn market(ui: &mut egui::Ui, f: &Faction, e: &Expedition, stock: &[Stack], h: &m
     ui.add_space(2.0);
     ui.label(RichText::new(format!("They pay {:.0}% of an item's worth and ask {:.0}%.", sf * 100.0, bf * 100.0)).small().weak());
     ui.columns(2, |cols| {
-        cols[0].label(RichText::new("You sell").strong());
+        theme::section(&mut cols[0], "You sell");
         egui::Grid::new(("sell", e.id)).num_columns(3).show(&mut cols[0], |ui| {
             for s in &e.cargo {
                 let n = h.sell.entry(s.kind).or_insert(0);
@@ -399,7 +398,7 @@ fn market(ui: &mut egui::Ui, f: &Faction, e: &Expedition, stock: &[Stack], h: &m
                 ui.end_row();
             }
         });
-        cols[1].label(RichText::new("You buy").strong());
+        theme::section(&mut cols[1], "You buy");
         egui::Grid::new(("buy", e.id)).num_columns(3).show(&mut cols[1], |ui| {
             for s in stock {
                 let n = h.buy.entry(s.kind).or_insert(0);
@@ -428,12 +427,12 @@ fn factions(ui: &mut egui::Ui, factions: &[Faction]) {
     for f in factions {
         ui.group(|ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(&f.name).strong());
+                ui.label(theme::caps(&f.name, 15.0).color(theme::CREAM_BRIGHT));
                 ui.label(RichText::new(format!("{:?}", f.kind)).weak());
             });
             ui.horizontal(|ui| {
                 ui.label(RichText::new(format!("Goodwill {:+} ({})", f.goodwill, f.standing())).color(goodwill_color(f.goodwill)));
-                ui.add(egui::ProgressBar::new((f.goodwill + 100) as f32 / 200.0).desired_width(140.0));
+                ui.add(theme::bar((f.goodwill + 100) as f32 / 200.0).desired_width(140.0));
             });
             ui.label(
                 RichText::new(format!("{:.0} days away · they pay {:.0}% and ask {:.0}% of worth", f.days, f.sell_factor() * 100.0, f.buy_factor() * 100.0))

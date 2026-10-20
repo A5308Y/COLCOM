@@ -252,6 +252,9 @@ pub struct UiState {
     pub work_schedule: bool,
     pub schedule_brush: my_world::recreation::Block,
     pub show_help: bool,
+    /// The handbook's open topic (index into `help::TOPICS`) and search text.
+    pub help_topic: usize,
+    pub help_filter: String,
     pub inspector_tab: InspectorTab,
     /// The Squads overview window.
     pub show_squads: bool,
@@ -324,6 +327,8 @@ impl UiState {
             work_schedule: false,
             schedule_brush: my_world::recreation::Block::Work,
             show_help: false,
+            help_topic: 0,
+            help_filter: String::new(),
             inspector_tab: InspectorTab::Overview,
             show_squads: false,
             show_rooms: false,
@@ -725,15 +730,17 @@ fn newer_file(a: &std::path::Path, b: &std::path::Path) -> Option<std::path::Pat
     }
 }
 
-/// Save to `AUTOSAVE_PATH` when the window is closed or the app quits (once).
+/// Save to `AUTOSAVE_PATH` when the window is closed or the app quits (once);
+/// never after taking screenshots, which mustn't replace the player's game.
 fn autosave_on_exit(
     sim: Res<Sim>,
+    screenshots: Option<Res<super::screenshot::ScreenshotMode>>,
     mut closing: MessageReader<bevy::window::WindowCloseRequested>,
     mut exiting: MessageReader<AppExit>,
     mut done: Local<bool>,
 ) {
     let leaving = closing.read().count() + exiting.read().count() > 0;
-    if !leaving || *done {
+    if !leaving || *done || screenshots.is_some() {
         return;
     }
     *done = true;

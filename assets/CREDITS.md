@@ -70,3 +70,10 @@ and cave ambience), still waiting for real ones.
 
 The original downloads (with their licence files) are kept outside the game's assets, in
 `asset-sources/kenney/` and `asset-sources/matthew-pablo/`.
+
+## Fonts (SIL Open Font License 1.1)
+
+`fonts/BarlowSemiCondensed-Regular.ttf` (interface text) and `fonts/BarlowCondensed-SemiBold.ttf`
+(headings) are from Barlow by Jeremy Tribby, Copyright 2017 The Barlow Project Authors
+(https://github.com/jpt/barlow), downloaded from https://github.com/google/fonts. The licence is in
+`fonts/OFL.txt`.

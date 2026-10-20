@@ -11,9 +11,10 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use std::collections::{HashMap, HashSet};
 use super::{tile_center, tile_point};
+use super::theme;
 use bevy::prelude::*;
 use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
-use bevy_egui::egui::{self, Align2, Color32, ProgressBar, RichText};
+use bevy_egui::egui::{self, Align2, Color32, RichText};
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::battle::{Battle, BattleOrder, Cover, Unit, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MAX, BROKEN, PINNED};
@@ -96,22 +97,22 @@ enum PopupKind {
 }
 
 const POPUP_SECS: f32 = 2.2;
-const SUPPRESSION_COLOR: Color32 = Color32::from_rgb(255, 150, 50);
-const MORALE_LOSS_COLOR: Color32 = Color32::from_rgb(255, 90, 90);
+const SUPPRESSION_COLOR: Color32 = theme::AMBER;
+const MORALE_LOSS_COLOR: Color32 = theme::RED;
 
 /// What state a unit is in, for chips on its plate and in the panel: label,
 /// colour, and what it means.
 fn unit_tags(unit: &Unit) -> Vec<(&'static str, Color32, &'static str)> {
     let mut tags = Vec::new();
     if unit.passive {
-        tags.push(("SHELTERING", Color32::from_rgb(120, 220, 140), "A civilian: never acts, but can be attacked"));
+        tags.push(("SHELTERING", theme::GREEN, "A civilian: never acts, but can be attacked"));
     }
     if unit.broken() {
         tags.push(match unit.side {
-            Faction::Raider => ("FLEEING", Color32::from_rgb(255, 80, 80), "Morale below 25: running for the edge of the map"),
+            Faction::Raider => ("FLEEING", theme::RED, "Morale below 25: running for the edge of the map"),
             Faction::Colony => (
                 "SHAKEN",
-                Color32::from_rgb(255, 80, 80),
+                theme::RED,
                 "Morale below 25: sits its turns out hunkered down until morale recovers (+5 a round while not pinned)",
             ),
         });
@@ -124,21 +125,21 @@ fn unit_tags(unit: &Unit) -> Vec<(&'static str, Color32, &'static str)> {
         ));
     }
     if unit.hunkered && !unit.passive {
-        tags.push(("HUNKERED", Color32::from_rgb(120, 180, 255), "Keeping heads down: harder to hit (x0.75) until its next turn"));
+        tags.push(("HUNKERED", theme::TEAL, "Keeping heads down: harder to hit (x0.75) until its next turn"));
     }
     if unit.deployed {
-        tags.push(("DEPLOYED", Color32::from_rgb(110, 220, 230), "Down on one knee: aim x1.25, harder to hit (x0.8), can't move"));
+        tags.push(("DEPLOYED", theme::TEAL, "Down on one knee: aim x1.25, harder to hit (x0.8), can't move"));
     }
     tags
 }
 
 fn morale_color(morale: f32) -> Color32 {
     if morale < BROKEN {
-        Color32::from_rgb(230, 70, 60)
+        theme::RED
     } else if morale < 50.0 {
-        Color32::from_rgb(230, 190, 60)
+        theme::AMBER
     } else {
-        Color32::from_rgb(90, 200, 110)
+        theme::GREEN
     }
 }
 
@@ -151,7 +152,7 @@ From 50 they're pinned: 60% AP next round, moving costs twice as much, worse aim
 fn unit_state(panel: &mut egui::Ui, unit: &Unit) {
     let bar = |panel: &mut egui::Ui, value: f32, fill: Color32, text: String, hint: &str| {
         panel
-            .add(ProgressBar::new((value / 100.0).clamp(0.0, 1.0)).text(text).fill(fill).desired_height(14.0))
+            .add(theme::bar((value / 100.0).clamp(0.0, 1.0)).text(text).fill(fill).desired_height(14.0))
             .on_hover_text(hint);
     };
     let morale_text = if unit.broken() {
@@ -179,10 +180,10 @@ fn unit_state(panel: &mut egui::Ui, unit: &Unit) {
 /// A small coloured label with a frame.
 fn chip(ui: &mut egui::Ui, label: &str, color: Color32) -> egui::Response {
     egui::Frame::new()
+        .fill(theme::PANEL_DEEP)
         .stroke(egui::Stroke::new(1.0, color))
-        .corner_radius(3.0)
         .inner_margin(egui::Margin::symmetric(4, 1))
-        .show(ui, |ui| ui.label(RichText::new(label).small().strong().color(color)))
+        .show(ui, |ui| ui.label(RichText::new(label).font(theme::heading_font(12.5)).color(color)))
         .response
         .interact(egui::Sense::hover())
 }
@@ -243,9 +244,9 @@ fn update_popups(view: &mut BattleView, b: &Battle, dt: f32) {
         }
         if unit.broken() && !broken {
             let text = if unit.side == Faction::Raider { "FLEEING!" } else { "SHAKEN!" };
-            add(PopupKind::State, 0.0, Color32::from_rgb(255, 70, 70), text.into());
+            add(PopupKind::State, 0.0, theme::RED, text.into());
         } else if !unit.broken() && broken {
-            add(PopupKind::State, 0.0, Color32::from_rgb(120, 230, 130), "RALLIES".into());
+            add(PopupKind::State, 0.0, theme::GREEN, "RALLIES".into());
         }
     }
 }
@@ -712,7 +713,7 @@ fn battle_panels(
         let big = egui::FontId::proportional(44.0);
         let text = format!("Round {}", b.round);
         painter.text(at + egui::vec2(2.0, 2.0), Align2::CENTER_CENTER, &text, big.clone(), fade(Color32::from_black_alpha(200)));
-        painter.text(at, Align2::CENTER_CENTER, text, big, fade(Color32::from_rgb(255, 235, 190)));
+        painter.text(at, Align2::CENTER_CENTER, text, big, fade(theme::WARN));
     }
 
     // Each unit's plate over its square, from the top: state chips, its
@@ -746,18 +747,18 @@ fn battle_panels(
                 } else {
                     let h = m.health.summary().clamp(0.0, 1.0);
                     let fill = if h > 0.7 {
-                        Color32::from_rgb(90, 200, 90)
+                        theme::GREEN
                     } else if h > 0.4 {
-                        Color32::from_rgb(230, 190, 60)
+                        theme::AMBER
                     } else {
-                        Color32::from_rgb(230, 70, 50)
+                        theme::RED
                     };
                     let mut inner = rect;
                     inner.set_width(bw * h.max(0.1));
                     painter.rect_filled(inner, 1.0, fill);
                 }
                 if !m.dead && m.health.bleed_rate() > 0.0 {
-                    painter.circle_filled(egui::pos2(rect.center().x, rect.top() - 3.0), 2.0, Color32::from_rgb(230, 30, 30));
+                    painter.circle_filled(egui::pos2(rect.center().x, rect.top() - 3.0), 2.0, theme::RED);
                 }
                 if unit.led && unit.members.first() == Some(&id) {
                     painter.rect_stroke(rect.expand(1.0), 1.0, egui::Stroke::new(1.0, Color32::WHITE), egui::StrokeKind::Outside);
@@ -779,9 +780,9 @@ fn battle_panels(
                 painter.line_segment([egui::pos2(tx, y - 1.0), egui::pos2(tx, y + 4.0)], egui::Stroke::new(1.0, Color32::WHITE));
             }
             let color = match unit.side {
-                Faction::Raider => Color32::from_rgb(255, 150, 130),
-                _ if unit.passive => Color32::from_rgb(150, 230, 170),
-                _ => Color32::from_rgb(170, 210, 255),
+                Faction::Raider => theme::RED,
+                _ if unit.passive => theme::GREEN,
+                _ => theme::TEAL,
             };
             let name = if unit.roster.len() > 1 {
                 format!("{} ({}/{})", lead.name, unit.members.len(), unit.roster.len())
@@ -842,7 +843,7 @@ fn battle_panels(
             let best = options.iter().filter_map(|o| Some(w.hit_chance(w.pawn(o.0)?, w.pawn(o.1)?))).reduce(f32::max);
             let ap = b.units[u].ap;
             let (text, color) = match best {
-                _ if ap < AP_ATTACK => (format!("Attack {}: not enough AP ({} needed)", name, AP_ATTACK), Color32::from_gray(180)),
+                _ if ap < AP_ATTACK => (format!("Attack {}: not enough AP ({} needed)", name, AP_ATTACK), theme::CREAM_DIM),
                 Some(c) => (
                     format!(
                         "Click to attack {}: {:.0}%, {} of {} can reach - {} AP",
@@ -852,9 +853,9 @@ fn battle_panels(
                         b.units[u].members.len(),
                         AP_ATTACK
                     ),
-                    Color32::from_rgb(255, 120, 100),
+                    theme::RED,
                 ),
-                None => (format!("{} is out of reach: move closer or find a line of sight", name), Color32::from_gray(180)),
+                None => (format!("{} is out of reach: move closer or find a line of sight", name), theme::CREAM_DIM),
             };
             if let Ok(p) = cam.world_to_viewport(gt, tile_center(h.stand) + Vec3::Y * 1.7) {
                 let pos = egui::pos2(p.x, p.y - 16.0);
@@ -869,9 +870,9 @@ fn battle_panels(
             if let Ok(p) = cam.world_to_viewport(gt, at) {
                 let left = b.units[u].ap - cost;
                 let (text, color) = if left >= AP_ATTACK {
-                    (format!("{} AP - can still attack", cost), Color32::from_rgb(150, 205, 255))
+                    (format!("{} AP - can still attack", cost), theme::TEAL)
                 } else {
-                    (format!("{} AP - no attack after", cost), Color32::from_rgb(255, 210, 110))
+                    (format!("{} AP - no attack after", cost), theme::AMBER)
                 };
                 let pos = egui::pos2(p.x, p.y - 18.0);
                 let font = egui::FontId::proportional(15.0);
@@ -898,16 +899,16 @@ fn battle_panels(
                     let best = unit.members.iter().filter_map(|&id| best_chance_from(w, u, dest, id)).reduce(f32::max);
                     let can_fire = b.units[u].ap - cost >= AP_ATTACK;
                     match best {
-                        Some(c) if can_fire => (format!("from there: {:.0}%", c * 100.0), Color32::from_rgb(150, 210, 255)),
-                        Some(c) => (format!("from there: {:.0}% (no AP left)", c * 100.0), Color32::from_rgb(140, 160, 185)),
-                        None => ("out of reach from there".to_string(), Color32::from_gray(160)),
+                        Some(c) if can_fire => (format!("from there: {:.0}%", c * 100.0), theme::TEAL),
+                        Some(c) => (format!("from there: {:.0}% (no AP left)", c * 100.0), theme::STEEL),
+                        None => ("out of reach from there".to_string(), theme::CREAM_DIM),
                     }
                 }
                 None => {
                     let best = unit.members.iter().filter_map(|&id| best_chance(w, u, id)).reduce(f32::max);
                     match best {
-                        Some(c) => (format!("{:.0}%", c * 100.0), Color32::from_rgb(255, 225, 120)),
-                        None => ("out of reach".to_string(), Color32::from_gray(170)),
+                        Some(c) => (format!("{:.0}%", c * 100.0), theme::AMBER),
+                        None => ("out of reach".to_string(), theme::CREAM_DIM),
                     }
                 }
             };
@@ -918,19 +919,17 @@ fn battle_panels(
         }
     }
 
-    egui::Window::new(RichText::new(format!("Battle - round {}", b.round)).strong())
+    theme::FieldWindow::new(format!("Battle - round {}", b.round))
         .id(egui::Id::new("battle_panel"))
         .anchor(Align2::RIGHT_TOP, [-8.0, 92.0])
-        .collapsible(false)
-        .resizable(false)
         .default_width(300.0)
         .show(&ctx, |panel| {
             let turn = if b.side_to_act == Faction::Raider {
-                RichText::new("The raiders are moving...").color(Color32::from_rgb(255, 140, 120))
+                RichText::new("The raiders are moving...").color(theme::RED)
             } else if b.active.is_none() {
-                RichText::new("Your turn: pick a unit (click it, or Tab)").color(Color32::from_rgb(140, 200, 255))
+                RichText::new("Your turn: pick a unit (click it, or Tab)").color(theme::TEAL)
             } else {
-                RichText::new("Your turn").color(Color32::from_rgb(140, 200, 255))
+                RichText::new("Your turn").color(theme::TEAL)
             };
             panel.label(turn);
             if !b.moving.is_empty() && !b.hurry {
@@ -941,9 +940,9 @@ fn battle_panels(
                 panel.separator();
                 panel.label(RichText::new(names(w, &unit.members)).strong());
                 panel.add(
-                    ProgressBar::new(unit.ap as f32 / unit.ap_start.max(AP_MAX) as f32)
+                    theme::bar(unit.ap as f32 / unit.ap_start.max(AP_MAX) as f32)
                         .text(format!("{} action points", unit.ap))
-                        .fill(Color32::from_rgb(90, 160, 230)),
+                        .fill(theme::TEAL),
                 );
                 if unit.held_down() {
                     let text = format!("Pinned down: only {} AP this round, {} AP a step", unit.ap_start, sim.world.step_ap(u));
@@ -1007,13 +1006,13 @@ fn battle_panels(
                 });
             }
             if let Some((msg, _)) = &view.message {
-                panel.label(RichText::new(msg).color(Color32::from_rgb(255, 170, 90)));
+                panel.label(RichText::new(msg).color(theme::AMBER));
             }
             // The enemy under the cursor.
             if let Some(t) = ui.hover.and_then(|h| hovered_enemy(w, b, h.stand)) {
                 let enemy = &b.units[t];
                 panel.separator();
-                panel.label(RichText::new(format!("Enemy: {}", names(w, &enemy.members))).strong().color(Color32::from_rgb(255, 150, 130)));
+                panel.label(RichText::new(format!("Enemy: {}", names(w, &enemy.members))).strong().color(theme::RED));
                 if let Some(u) = my_unit(b).filter(|&u| !view.throwing && !w.attack_options(u, t).is_empty()) {
                     let cost = w.attack_cost(u, t);
                     let how = if cost < AP_ATTACK { " (sidearms: quick)" } else { "" };
@@ -1021,14 +1020,14 @@ fn battle_panels(
                 }
                 if let Some(u) = my_unit(b).filter(|_| view.throwing) {
                     let reach = if w.throw_option(u, t).is_some() { "Click to throw the grenade" } else { "Out of throwing range or sight" };
-                    panel.label(RichText::new(reach).color(Color32::from_rgb(255, 200, 120)));
+                    panel.label(RichText::new(reach).color(theme::AMBER));
                 }
                 unit_state(panel, enemy);
             }
 
             panel.separator();
             panel.horizontal(|row| {
-                row.label(RichText::new("Your units").strong());
+                row.label(theme::caps("Your units", 15.0).color(theme::AMBER));
                 let waiting = b.units.iter().any(|u| u.side == Faction::Colony && u.can_act() && !u.acted);
                 let button = egui::Button::new("End all turns").small();
                 if row
@@ -1071,7 +1070,7 @@ fn battle_panels(
                 panel.label(RichText::new(format!("{} civilian(s) sheltering", civilians)).small().weak());
             }
             let raiders: usize = b.units.iter().filter(|u| u.side == Faction::Raider).map(|u| u.members.len()).sum();
-            panel.label(RichText::new(format!("{} raider(s) still fighting", raiders)).color(Color32::from_rgb(255, 140, 120)));
+            panel.label(RichText::new(format!("{} raider(s) still fighting", raiders)).color(theme::RED));
 
             panel.separator();
             for e in b.events.iter().rev().take(6).rev() {
@@ -1120,11 +1119,9 @@ fn tier_look(tier: usize) -> &'static str {
 fn parley_dialog(ctx: &egui::Context, sim: &mut Sim, sounds: &mut SoundQueue) {
     let Some(p) = &sim.world.parley else { return };
     let mut choice = None;
-    egui::Window::new(RichText::new("Raiders!").strong().color(Color32::from_rgb(255, 120, 100)))
+    theme::FieldWindow::new("Raiders!").accent(theme::RED)
         .id(egui::Id::new("parley"))
         .anchor(Align2::CENTER_CENTER, [0.0, -40.0])
-        .collapsible(false)
-        .resizable(false)
         .show(ctx, |ui| {
             let groups = p.squads.len();
             ui.label(format!(
@@ -1135,7 +1132,7 @@ fn parley_dialog(ctx: &egui::Context, sim: &mut Sim, sounds: &mut SoundQueue) {
                 if groups == 1 { "" } else { "s" }
             ));
             if let Some(t) = my_world::defs::defs().raider_tiers.get(p.tier) {
-                ui.label(RichText::new(format!("{}: {}", t.name, tier_look(p.tier))).color(Color32::from_rgb(255, 190, 150)));
+                ui.label(RichText::new(format!("{}: {}", t.name, tier_look(p.tier))).color(theme::WARN));
             }
             if p.demand.is_empty() {
                 ui.label("You have nothing they want badly enough. They want a fight.");
