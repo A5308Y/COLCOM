@@ -20,8 +20,9 @@ round 1 of a battle on a 48×32 yard: Ada's squad (one member arrives two rounds
 radio), two lone fighters (one gears up from the stockpile), a civilian in the house, and six raiders from
 the east: a squad of four mercenaries (assault rifles, flak armour, grenades, a medic) and an elite pair
 with laser rifles, powered armour and cyberware.
-Every weapon, apparel and belt item appears on a fighter (the assault rifleman carries a knife sidearm
-and frag grenades; the geared fighter cargo trousers, tactical goggles and a field medkit). The stockpile
+Every weapon, apparel and belt item appears on a fighter (the assault rifleman carries a pistol sidearm
+and frag grenades; the geared fighter cargo trousers, tactical goggles, a field medkit and a club sidearm).
+A squad fights one way, its sidearms too; only lone fighters (Eve's knife) mix. The stockpile
 also holds a spare of every weapon, apparel and belt item, medicine and cyberware for inspecting models
 and trying loadouts. Eve, the lone fighter north of the house at (14, 9), starts wearing powered armor
 (with bionic eyes and subdermal plating under it) and holding the laser rifle, ready to inspect from round 1. Restart the scenario with Shift+N to refresh an existing battle.

@@ -147,14 +147,16 @@ fn battle_arena() -> World {
             w.pawns[i].wear(item("field_pack"));
         }
         if weapon == "assault_rifle" {
-            // A knife for close quarters and grenades on the belt.
-            w.pawns[i].equip_sidearm(item("knife"));
+            // A pistol sidearm (a ranged squad fights at range only) and grenades on the belt.
+            w.pawns[i].equip_sidearm(item("pistol"));
             w.pawns[i].take_utility(Stack { kind: item("frag_grenade"), count: 3 });
         }
     }
     let powered = colonist(&mut w, (14, 9), 8, 4, "laser_rifle");
     let pi = w.pawn_index(powered).unwrap();
     w.pawns[pi].wear(item("powered_armor"));
+    // Lone fighters may carry a sidearm of the other kind: a knife for close quarters.
+    w.pawns[pi].equip_sidearm(item("knife"));
     // Bionic eyes and subdermal plating under the suit.
     for (slot, kind) in [(CyberSlot::Eyes, "bionic_eyes"), (CyberSlot::Dermal, "subdermal_plating")] {
         let efficiency = item(kind).def().cyberware.as_ref().unwrap().efficiency;
@@ -177,6 +179,8 @@ fn battle_arena() -> World {
     }
     w.pawns[gi].take_utility(Stack { kind: item("field_medkit"), count: 2 });
     w.pawns[gi].wear(item("medic_pack"));
+    w.pawns[gi].equip_sidearm(item("club"));
+    w.set_loadout_sidearm(geared, Some(item("club"))).unwrap();
     let mut loadout = w.pawns[gi].loadout.clone();
     loadout.extend([item("cargo_trousers"), item("tactical_goggles"), item("field_medkit"), item("medic_pack")]);
     w.set_loadout(geared, &loadout).unwrap();
@@ -204,8 +208,8 @@ fn battle_arena() -> World {
     let raiders: Vec<usize> = (0..w.pawns.len()).filter(|&i| !w.pawns[i].is_colonist()).collect();
     type Kit = (&'static str, Option<&'static str>, &'static [&'static str], Option<(&'static str, u32)>, &'static [(CyberSlot, &'static str)]);
     let kits: [Kit; 6] = [
-        ("assault_rifle", Some("knife"), &["clothes", "steel_armor", "steel_helmet", "flak_leg_guards"], Some(("frag_grenade", 2)), &[]),
-        ("rifle", Some("club"), &["clothes", "steel_armor", "steel_helmet", "tactical_goggles"], None, &[(CyberSlot::Eyes, "bionic_eyes")]),
+        ("assault_rifle", Some("pistol"), &["clothes", "steel_armor", "steel_helmet", "flak_leg_guards"], Some(("frag_grenade", 2)), &[]),
+        ("rifle", None, &["clothes", "steel_armor", "steel_helmet", "tactical_goggles"], None, &[(CyberSlot::Eyes, "bionic_eyes")]),
         ("assault_rifle", Some("pistol"), &["clothes", "steel_armor", "cargo_trousers", "medic_pack"], Some(("field_medkit", 1)), &[]),
         ("rifle", None, &["clothes", "parka", "steel_helmet", "field_pack"], None, &[(CyberSlot::LeftArm, "prosthetic_arm")]),
         ("laser_rifle", Some("pistol"), &["clothes", "powered_armor", "radio_pack"], Some(("frag_grenade", 3)),
@@ -309,6 +313,20 @@ mod tests {
             if def.is_gear() {
                 assert!(w.pawns.iter().any(|p| p.role != Role::Civilian && p.has_on(kind)), "{} appears on a fighter", def.id);
             }
+        }
+    }
+
+    #[test]
+    fn every_squad_fights_one_way_sidearms_too() {
+        let w = battle_world();
+        for u in w.battle.as_ref().unwrap().units.iter().filter(|u| u.led) {
+            let kinds: Vec<bool> = u
+                .members
+                .iter()
+                .filter_map(|&id| w.pawn(id))
+                .flat_map(|p| p.weapons().filter(|k| k.is_some()).map(|k| crate::pawn::attack_with(k).ranged).collect::<Vec<_>>())
+                .collect();
+            assert!(kinds.windows(2).all(|k| k[0] == k[1]), "{:?} squad with mixed weapons: {:?}", u.side, kinds);
         }
     }
 

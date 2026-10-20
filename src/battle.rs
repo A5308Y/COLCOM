@@ -424,7 +424,10 @@ impl World {
                 p.wear(kind.id());
             }
         }
-        p.sidearm = t.sidearms.iter().find(|(k, chance)| Some(k.id()) != p.weapon && rng.chance(*chance)).map(|(k, _)| k.id());
+        // A sidearm of the same kind: a squad fights one way, close in too.
+        let ranged = p.main_attack().ranged;
+        let same_kind = |k: ItemId| Some(k) != p.weapon && attack_with(Some(k)).ranged == ranged;
+        p.sidearm = t.sidearms.iter().find(|(k, chance)| same_kind(k.id()) && rng.chance(*chance)).map(|(k, _)| k.id());
         p.utility = t.belt.iter().find(|(_, _, chance)| rng.chance(*chance)).map(|(k, count, _)| Stack { kind: k.id(), count: *count });
         for (kind, chance) in &t.cyberware {
             let Some(c) = kind.id().def().cyberware.as_ref() else { continue };
@@ -2442,6 +2445,11 @@ mod tests {
         assert!(elite.iter().filter(|p| p.weapon == Some(item("laser_rifle"))).count() * 2 > elite.len(), "mostly laser rifles");
         assert!(elite.iter().filter(|p| p.health.implants().count() > 0).count() * 2 > elite.len(), "mostly with cyberware");
         assert!(elite.iter().any(|p| p.apparel.contains(&item("powered_armor"))));
+        let mercs: Vec<Pawn> = (0..4).flat_map(|s| raiders(3, 60 + s)).collect();
+        for p in weak.iter().chain(&elite).chain(&mercs) {
+            let kinds: Vec<bool> = p.weapons().filter(|k| k.is_some()).map(|k| attack_with(k).ranged).collect();
+            assert!(kinds.windows(2).all(|k| k[0] == k[1]), "{}: a sidearm of the other kind", p.name);
+        }
         assert!(elite.iter().map(|p| p.armor()).sum::<f32>() > weak.iter().map(|p| p.armor()).sum::<f32>() * 3.0);
     }
 
