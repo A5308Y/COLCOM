@@ -69,8 +69,9 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
 - [ ] Later, if worthwhile:
   - [x] Move the fight site into `Stage::Fighting`. Done: `Stage::Fighting { site: Option<SiteWorld> }`;
     save format 12.
-  - Key skills and priorities by enum rather than by array position, so reordering
-    `Skill` or `WorkType` can't shift old saves.
+  - [x] Key skills and priorities by enum rather than by array position, so reordering
+    `Skill` or `WorkType` can't shift old saves. Done: `per_key::PerKey` (`PerSkill`,
+    `PerWork`), indexed by the enum and saved by name; save format 13.
   - Use `Option` for the injury `infection_timer` (`-1.0` sentinel).
   - Add a `Dir` enum for facing directions.
 

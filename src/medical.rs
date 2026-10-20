@@ -35,7 +35,7 @@ impl World {
                 && o.is_colonist()
                 && o.active()
                 && o.break_timer <= 0.0
-                && o.priorities[WorkType::Doctor as usize].is_enabled()
+                && o.priorities[WorkType::Doctor].is_enabled()
         })
     }
 

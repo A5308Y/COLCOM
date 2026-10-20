@@ -175,7 +175,7 @@ impl World {
         // highest priority wins, nearest first among equal priorities.
         let mut per_type: Vec<(u8, i32, Job)> = Vec::new();
         for wt in WorkType::ALL {
-            let Some(prio) = p.priorities[wt as usize].rank() else { continue };
+            let Some(prio) = p.priorities[wt].rank() else { continue };
             let found = if wt == WorkType::Doctor {
                 let (medicine, food) = scan.medicine_and_food();
                 self.doctor_candidate(p, df, medicine, food)

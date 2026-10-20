@@ -511,7 +511,7 @@ impl World {
             }
         }
         for skill in [Skill::Shooting, Skill::Melee] {
-            p.skills[skill as usize] = (p.skills[skill as usize] + 2 * tier as u8).min(20);
+            p.skills[skill] = (p.skills[skill] + 2 * tier as u8).min(20);
         }
     }
 
@@ -2126,7 +2126,7 @@ mod tests {
         for k in 0..3 {
             let id = colonist(&mut w, (6, 9 + 3 * k, Z));
             let i = w.pawn_index(id).unwrap();
-            w.pawns[i].skills[Skill::Shooting as usize] = 15;
+            w.pawns[i].skills[Skill::Shooting] = 15;
             w.pawns[i].weapon = Some(item("rifle"));
         }
         // Out of range at first, so it takes a few rounds.
@@ -2148,7 +2148,7 @@ mod tests {
         let id = colonist(&mut w, (6, 12, Z));
         let i = w.pawn_index(id).unwrap();
         w.pawns[i].weapon = None;
-        w.pawns[i].skills[Skill::Melee as usize] = 0;
+        w.pawns[i].skills[Skill::Melee] = 0;
         w.map.drop_item((3, 3, Z), Stack { kind: item("steel"), count: 60 });
         w.open_parley(4, (30, 12, Z), 0);
         let demand = w.parley.as_ref().unwrap().demand.clone();
@@ -2157,7 +2157,7 @@ mod tests {
         for r in raiders(&w) {
             let ri = w.pawn_index(r).unwrap();
             w.pawns[ri].weapon = Some(item("rifle"));
-            w.pawns[ri].skills[Skill::Shooting as usize] = 15;
+            w.pawns[ri].skills[Skill::Shooting] = 15;
         }
         w.battle.as_mut().unwrap().auto_colony = true;
         play_out(&mut w, 600.0);
@@ -2481,7 +2481,7 @@ mod tests {
         let id = colonist(&mut w, (5, 10, Z));
         let i = w.pawn_index(id).unwrap();
         w.pawns[i].weapon = Some(item("rifle"));
-        w.pawns[i].skills[Skill::Shooting as usize] = 20;
+        w.pawns[i].skills[Skill::Shooting] = 20;
         fight(&mut w, 1, (12, 10, Z));
         let u = battle(&w).unit_of(id).unwrap();
         let t = battle(&w).units.iter().position(|u| u.side == Faction::Raider).unwrap();
@@ -2780,7 +2780,7 @@ mod tests {
         // Melee: skill only, 60% + 2% a level.
         let mut fist = pa.clone();
         fist.weapon = None;
-        fist.skills[Skill::Melee as usize] = 10;
+        fist.skills[Skill::Melee] = 10;
         assert!((base_hit_chance(&fist, false, 1.0) - 0.8).abs() < 1e-5);
     }
 

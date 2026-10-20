@@ -5,7 +5,12 @@ use crate::health::{DamageKind, Health, Part};
 use crate::map::{Pos, Stack};
 use crate::rng::Rng;
 use crate::DAY_LEN;
+use crate::per_key::{Key, PerKey};
 use serde::{Deserialize, Serialize};
+
+/// A value per skill, and per kind of work (saved by name, see `per_key`).
+pub type PerSkill<V> = PerKey<Skill, V, { Skill::ALL.len() }>;
+pub type PerWork<V> = PerKey<WorkType, V, { WorkType::ALL.len() }>;
 
 /// Identifies a pawn for as long as it exists. Distinct from expedition and
 /// offer ids, which come from the same counter but name different things.
@@ -28,12 +33,14 @@ impl PawnId {
 
 /// When a colonist takes on a kind of work: first to fourth, or never. Not
 /// ordered: job choice sorts by `rank`. Saved as 0 (never) or 1 to 4.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
 pub enum WorkPriority {
     Never,
     First,
     Second,
+    /// What new colonists start with (and work added since a save was made).
+    #[default]
     Third,
     Fourth,
 }
@@ -125,7 +132,22 @@ pub enum Skill {
     Crafting,
 }
 
+impl Key for Skill {
+    const ALL: &'static [Skill] = &Skill::ALL;
+    fn index(self) -> usize {
+        self as usize
+    }
+}
+
+impl Key for WorkType {
+    const ALL: &'static [WorkType] = &WorkType::ALL;
+    fn index(self) -> usize {
+        self as usize
+    }
+}
+
 impl Skill {
+    /// In the order of the enum (`Key::index`).
     pub const ALL: [Skill; 9] = [
         Skill::Construction,
         Skill::Growing,
@@ -500,10 +522,9 @@ pub struct Pawn {
     pub rest: f32,
     pub mood: f32,
     pub health: Health,
-    pub skills: [u8; Skill::ALL.len()],
-    pub xp: [f32; Skill::ALL.len()],
-    /// Per work type.
-    pub priorities: [WorkPriority; WorkType::ALL.len()],
+    pub skills: PerSkill<u8>,
+    pub xp: PerSkill<f32>,
+    pub priorities: PerWork<WorkPriority>,
     pub weapon: Option<ItemId>,
     /// A light second weapon, drawn in battle when it suits better.
     #[serde(default)]
@@ -604,9 +625,9 @@ impl Pawn {
             rest: rng.range_f32(75.0, 100.0),
             mood: 55.0,
             health: Health::new(),
-            skills: [0; Skill::ALL.len()],
-            xp: [0.0; Skill::ALL.len()],
-            priorities: [WorkPriority::Third; WorkType::ALL.len()],
+            skills: PerSkill::filled(0),
+            xp: PerSkill::filled(0.0),
+            priorities: PerWork::filled(WorkPriority::Third),
             weapon: defs().start_weapons.first().map(|w| w.id()),
             sidearm: None,
             sidearm_drawn: false,
@@ -641,11 +662,11 @@ impl Pawn {
 
     pub fn new_colonist(id: PawnId, name: String, pos: Pos, rng: &mut Rng) -> Pawn {
         let mut p = Pawn::base(id, name, Faction::Colony, pos, rng);
-        for s in p.skills.iter_mut() {
+        for s in p.skills.values_mut() {
             *s = rng.below(7) as u8;
         }
         // One thing they're genuinely good at.
-        let passion = rng.below(Skill::ALL.len());
+        let passion = Skill::ALL[rng.below(Skill::ALL.len())];
         p.skills[passion] = (p.skills[passion] + 5 + rng.below(6) as u8).min(20);
         p
     }
@@ -659,10 +680,10 @@ impl Pawn {
     pub fn new_raider(id: PawnId, name: String, pos: Pos, rng: &mut Rng) -> Pawn {
         let mut p = Pawn::base(id, name, Faction::Raider, pos, rng);
         p.weapon = raider_weapon(rng, 0, None);
-        p.skills[Skill::Shooting as usize] = 3 + rng.below(6) as u8;
-        p.skills[Skill::Melee as usize] = 3 + rng.below(6) as u8;
+        p.skills[Skill::Shooting] = 3 + rng.below(6) as u8;
+        p.skills[Skill::Melee] = 3 + rng.below(6) as u8;
         p.color = [0.85, 0.2, 0.2];
-        p.priorities = [WorkPriority::Never; WorkType::ALL.len()];
+        p.priorities = PerWork::filled(WorkPriority::Never);
         p
     }
 
@@ -703,7 +724,7 @@ impl Pawn {
     }
 
     pub fn skill(&self, s: Skill) -> u8 {
-        self.skills[s as usize]
+        self.skills[s]
     }
 
     pub fn work_speed(&self, s: Skill) -> f32 {
@@ -839,7 +860,7 @@ impl Pawn {
 
     /// Add experience; returns true if the skill levelled up.
     pub fn learn(&mut self, s: Skill, amount: f32) -> bool {
-        let i = s as usize;
+        let i = s;
         if self.skills[i] >= 20 {
             return false;
         }

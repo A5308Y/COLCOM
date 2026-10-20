@@ -369,7 +369,7 @@ impl World {
         } else if medicine < 3 {
             out.push((format!("Low medicine ({} left)", medicine), false));
         }
-        if !colonists.iter().any(|p| p.active() && p.priorities[WorkType::Doctor as usize].is_enabled()) {
+        if !colonists.iter().any(|p| p.active() && p.priorities[WorkType::Doctor].is_enabled()) {
             out.push(("No doctor available".into(), needs_tending));
         }
         for p in colonists.iter().filter(|p| p.health.hypothermia > 0.05) {
@@ -845,7 +845,7 @@ impl World {
         if !on_need && !tending_self && p.health.wants_bed_rest() {
             // With no one else to treat them, doctors patch themselves up first.
             if p.health.needs_tending()
-                && p.priorities[WorkType::Doctor as usize].is_enabled()
+                && p.priorities[WorkType::Doctor].is_enabled()
                 && !self.other_doctor_available(p.id)
             {
                 let job = self.self_tend_job(p);
@@ -1314,7 +1314,7 @@ impl World {
 
     pub fn set_priority(&mut self, id: PawnId, wt: WorkType, prio: WorkPriority) {
         if let Some(i) = self.pawn_index(id) {
-            self.pawns[i].priorities[wt as usize] = prio;
+            self.pawns[i].priorities[wt] = prio;
         }
     }
 
@@ -1549,8 +1549,8 @@ mod tests {
         w.map.set_feature(wall, Feature::built("wall"));
         assert!(!w.apply_order((3, 3, Z), Order::Desig(Desig::Fill)));
         let i = w.pawn_index(id).unwrap();
-        w.pawns[i].priorities = [crate::pawn::WorkPriority::Never; WorkType::ALL.len()];
-        w.pawns[i].priorities[WorkType::Mining as usize] = crate::pawn::WorkPriority::First;
+        w.pawns[i].priorities = crate::pawn::PerWork::filled(crate::pawn::WorkPriority::Never);
+        w.pawns[i].priorities[WorkType::Mining] = crate::pawn::WorkPriority::First;
         run(&mut w, 40.0);
         for p in [low, high] {
             assert_eq!(w.map.block[w.map.idx(p)], Block::Soil, "{:?} filled", p);
@@ -2209,8 +2209,8 @@ mod tests {
         w.map.set_roof(i, true);
         assert!(w.apply_order((7, 7, Z + 1), Order::Desig(Desig::Deconstruct)));
         let pi = w.pawn_index(id).unwrap();
-        w.pawns[pi].priorities = [crate::pawn::WorkPriority::Never; WorkType::ALL.len()];
-        w.pawns[pi].priorities[WorkType::Construction as usize] = crate::pawn::WorkPriority::First;
+        w.pawns[pi].priorities = crate::pawn::PerWork::filled(crate::pawn::WorkPriority::Never);
+        w.pawns[pi].priorities[WorkType::Construction] = crate::pawn::WorkPriority::First;
         run(&mut w, 10.0);
         assert!(!w.map.roof[i], "taken down");
         assert!(w.map.roof_blueprint(i), "and marked again, as the room is still closed");
@@ -2239,11 +2239,11 @@ mod tests {
         assert!(w.apply_order((8, 8, Z), Order::Desig(Desig::Deconstruct)));
         // Not a miner's job.
         let p = w.pawn_index(id).unwrap();
-        w.pawns[p].priorities = [crate::pawn::WorkPriority::Never; WorkType::ALL.len()];
-        w.pawns[p].priorities[WorkType::Mining as usize] = crate::pawn::WorkPriority::First;
+        w.pawns[p].priorities = crate::pawn::PerWork::filled(crate::pawn::WorkPriority::Never);
+        w.pawns[p].priorities[WorkType::Mining] = crate::pawn::WorkPriority::First;
         run(&mut w, 20.0);
         assert_eq!(w.map.feature[i], Feature::built("wall"), "miners leave it");
-        w.pawns[p].priorities[WorkType::Construction as usize] = crate::pawn::WorkPriority::First;
+        w.pawns[p].priorities[WorkType::Construction] = crate::pawn::WorkPriority::First;
         run(&mut w, 20.0);
         assert_eq!(w.map.feature[i], Feature::None, "builders take it down");
         assert_eq!(w.map.desig[i], None);

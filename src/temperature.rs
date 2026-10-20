@@ -209,7 +209,7 @@ mod tests {
         let warm = colonist(&mut w, (8, 8, Z));
         let bare = colonist(&mut w, (9, 9, Z));
         for p in w.pawns.iter_mut() {
-            p.priorities = [crate::pawn::WorkPriority::Never; crate::pawn::WorkType::ALL.len()];
+            p.priorities = crate::pawn::PerWork::filled(crate::pawn::WorkPriority::Never);
             p.apparel = vec![crate::testing::item("clothes")];
             if p.id == warm {
                 p.apparel.extend([crate::testing::item("parka"), crate::testing::item("wool_hat")]);
@@ -241,7 +241,7 @@ mod tests {
         assert!(w.temperature_at((5, 5, Z)) > WARM_SPOT && w.outdoor_temperature() < FREEZING, "{} in, {} out", w.temperature_at((5, 5, Z)), w.outdoor_temperature());
         let id = colonist(&mut w, (11, 9, Z));
         let i = w.pawn_index(id).unwrap();
-        w.pawns[i].priorities = [crate::pawn::WorkPriority::Never; crate::pawn::WorkType::ALL.len()];
+        w.pawns[i].priorities = crate::pawn::PerWork::filled(crate::pawn::WorkPriority::Never);
         w.pawns[i].health.hypothermia = 0.3;
         run(&mut w, 2.0);
         assert!(matches!(w.pawn(id).unwrap().job, Some(crate::pawn::Job::WarmUp { .. })), "{:?}", w.pawn(id).unwrap().job);
@@ -291,7 +291,7 @@ mod tests {
         let id = colonist(&mut w, (9, 9, Z));
         w.set_time(3.0 * SEASON_LEN + 0.5 * DAY_LEN);
         for p in w.pawns.iter_mut() {
-            p.priorities = [crate::pawn::WorkPriority::Never; crate::pawn::WorkType::ALL.len()];
+            p.priorities = crate::pawn::PerWork::filled(crate::pawn::WorkPriority::Never);
         }
         let feed = |w: &mut World| {
             for p in w.pawns.iter_mut() {

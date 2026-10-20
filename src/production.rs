@@ -952,7 +952,7 @@ mod tests {
         }
         w.map.drop_item((2, 2, Z), Stack { kind: item("stone"), count: 30 });
         let i = w.pawn_index(id).unwrap();
-        w.pawns[i].priorities[crate::pawn::WorkType::Construction as usize] = crate::pawn::WorkPriority::First;
+        w.pawns[i].priorities[crate::pawn::WorkType::Construction] = crate::pawn::WorkPriority::First;
         let most = most_carried(&mut w, 120.0);
         assert!(most >= 20, "stone for several walls at once: at most {}", most);
         let built = (20..26).filter(|&x| w.map.feature[w.map.idx((x, 8, Z))] == Feature::built("wall")).count();
@@ -992,8 +992,8 @@ mod tests {
         let cook = colonist(&mut w, (2, 2, Z));
         // Nobody hauls: only cooking is switched on.
         let i = w.pawn_index(cook).unwrap();
-        w.pawns[i].priorities = [crate::pawn::WorkPriority::Never; crate::pawn::WorkType::ALL.len()];
-        w.pawns[i].priorities[crate::pawn::WorkType::Cooking as usize] = crate::pawn::WorkPriority::First;
+        w.pawns[i].priorities = crate::pawn::PerWork::filled(crate::pawn::WorkPriority::Never);
+        w.pawns[i].priorities[crate::pawn::WorkType::Cooking] = crate::pawn::WorkPriority::First;
         let stove = (10, 10, Z);
         place_bench(&mut w, "stove", stove);
         place_bench(&mut w, "shelf", (16, 16, Z));
@@ -1011,8 +1011,8 @@ mod tests {
     /// Where the only (cooking) colonist stands once they're cooking at the stove at `stove`.
     fn cooking_spot(w: &mut World, cook: PawnId, stove: Pos) -> Pos {
         let i = w.pawn_index(cook).unwrap();
-        w.pawns[i].priorities = [crate::pawn::WorkPriority::Never; crate::pawn::WorkType::ALL.len()];
-        w.pawns[i].priorities[crate::pawn::WorkType::Cooking as usize] = crate::pawn::WorkPriority::First;
+        w.pawns[i].priorities = crate::pawn::PerWork::filled(crate::pawn::WorkPriority::Never);
+        w.pawns[i].priorities[crate::pawn::WorkType::Cooking] = crate::pawn::WorkPriority::First;
         w.map.drop_item((stove.0 - 2, stove.1, Z), Stack { kind: item("raw_food"), count: 10 });
         w.add_bill(stove, RecipeId::named("cook_meal"), BillMode::Count(5));
         for _ in 0..(60.0 / TICK) as usize {
@@ -1052,7 +1052,7 @@ mod tests {
         for &id in &ids {
             let i = w.pawn_index(id).unwrap();
             w.pawns[i].hunger = 10.0;
-            w.pawns[i].priorities = [crate::pawn::WorkPriority::Never; crate::pawn::WorkType::ALL.len()];
+            w.pawns[i].priorities = crate::pawn::PerWork::filled(crate::pawn::WorkPriority::Never);
         }
         place_bench(&mut w, "shelf", (12, 12, Z));
         w.sync_containers();

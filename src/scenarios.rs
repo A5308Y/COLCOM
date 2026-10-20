@@ -43,9 +43,9 @@ fn colonist(w: &mut World, at: (usize, usize), shooting: u8, melee: u8, weapon: 
     let id = w.spawn_colonist((at.0, at.1, Z));
     let i = w.pawn_index(id).unwrap();
     let p = &mut w.pawns[i];
-    p.skills = [4; Skill::ALL.len()];
-    p.skills[Skill::Shooting as usize] = shooting;
-    p.skills[Skill::Melee as usize] = melee;
+    p.skills = crate::pawn::PerSkill::filled(4);
+    p.skills[Skill::Shooting] = shooting;
+    p.skills[Skill::Melee] = melee;
     p.weapon = Some(item(weapon));
     p.wear(item("clothes"));
     p.hunger = 100.0;

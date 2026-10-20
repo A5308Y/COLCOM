@@ -207,7 +207,7 @@ mod tests {
         let id = colonist(&mut w, (2, 2, Z));
         // Construction off: left alone, they'd never dig it.
         let i = w.pawn_index(id).unwrap();
-        w.pawns[i].priorities[WorkType::Construction as usize] = crate::pawn::WorkPriority::Never;
+        w.pawns[i].priorities[WorkType::Construction] = crate::pawn::WorkPriority::Never;
         let grave = BuildId::named("grave");
         let (near, far) = ((4, 4, Z), (16, 16, Z));
         for at in [near, far] {
@@ -232,7 +232,7 @@ mod tests {
         let mut w = test_world();
         let id = colonist(&mut w, (2, 2, Z));
         let i = w.pawn_index(id).unwrap();
-        w.pawns[i].priorities = [crate::pawn::WorkPriority::Never; WorkType::ALL.len()];
+        w.pawns[i].priorities = crate::pawn::PerWork::filled(crate::pawn::WorkPriority::Never);
         let at = (12, 12, Z);
         let k = w.map.idx(at);
         let table = BuildId::named("table");

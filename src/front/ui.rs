@@ -20,7 +20,7 @@ use my_world::health::{CyberSlot, HediffKind};
 use my_world::decor::DecorState;
 use my_world::defs::{defs, ItemCategory, ItemId, PlantId, RoomDef, RoomId, Slot, Special};
 use my_world::map::{Block, Feature, Pos, StockpileId, Zone};
-use my_world::pawn::{Pawn, PawnId, Role, Skill, WorkPriority, WorkType};
+use my_world::pawn::{Pawn, PawnId, PerSkill, PerWork, Role, Skill, WorkPriority, WorkType};
 use my_world::production::{BillMode, StorePriority};
 use my_world::rooms::{Progress, RoomStats, TIERS};
 use my_world::world::{Order, World as SimWorld};
@@ -1548,7 +1548,7 @@ fn priority_color(prio: WorkPriority) -> Color32 {
 }
 
 fn work_panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState) {
-    let rows: Vec<(PawnId, String, [WorkPriority; WorkType::ALL.len()], [u8; Skill::ALL.len()])> = sim
+    let rows: Vec<(PawnId, String, PerWork<WorkPriority>, PerSkill<u8>)> = sim
         .world
         .pawns
         .iter()
@@ -1579,10 +1579,10 @@ fn work_panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState) {
                 for (id, name, prios, skills) in &rows {
                     ui.label(name);
                     for wt in WorkType::ALL {
-                        let prio = prios[wt as usize];
+                        let prio = prios[wt];
                         let label = match (prio.rank(), wt.skill()) {
                             (None, _) => "-".to_string(),
-                            (Some(p), Some(s)) => format!("{}  (lv {})", p, skills[s as usize]),
+                            (Some(p), Some(s)) => format!("{}  (lv {})", p, skills[s]),
                             (Some(p), None) => p.to_string(),
                         };
                         let button = egui::Button::new(label).fill(priority_color(prio)).min_size(egui::vec2(84.0, 22.0));

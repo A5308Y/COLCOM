@@ -328,7 +328,7 @@ mod tests {
         build(&mut w, (6, 6, Z), "chair");
         let id = person(&mut w, (4, 4, Z), 100.0, Block::Anything);
         let i = w.pawn_index(id).unwrap();
-        w.pawns[i].priorities = [crate::pawn::WorkPriority::Never; crate::pawn::WorkType::ALL.len()];
+        w.pawns[i].priorities = crate::pawn::PerWork::filled(crate::pawn::WorkPriority::Never);
         let mut sat = false;
         for _ in 0..400 {
             run(&mut w, 1.0);
