@@ -606,7 +606,7 @@ impl World {
         self.sound("thud", Some(land));
         if levels >= 2 {
             for _ in 0..levels - 1 {
-                p.health.apply_damage(7.0, crate::health::DamageKind::Bruise, 0.0, &mut self.rng);
+                p.health.apply_damage(7.0, crate::health::DamageKind::Bruise, |_| 0.0, &mut self.rng);
             }
             p.health.recompute();
             self.push_log(format!("{} fell {} levels.", p.name, levels));
@@ -2460,7 +2460,7 @@ mod tests {
         // Shots, and hits or glancing blows, in a battle the AI plays for both sides.
         let mut w = test_world(30, 30);
         colonist(&mut w, (5, 15, Z));
-        w.start_battle(crate::battle::Parley { squads: vec![1], entry: (12, 15, Z), demand: Vec::new() });
+        w.start_battle(crate::battle::Parley { squads: vec![1], entry: (12, 15, Z), demand: Vec::new(), tier: 0 });
         w.battle.as_mut().unwrap().auto_colony = true;
         let mut heard = Vec::new();
         for _ in 0..(10.0 / TICK) as usize {

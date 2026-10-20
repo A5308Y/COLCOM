@@ -791,14 +791,15 @@ impl Health {
     }
 
     /// A blow from outside: picks where it lands and how deep it goes.
-    /// `armor` (0..1) is the share of the damage stopped by what the pawn
-    /// wears; blows it takes down to almost nothing glance off.
-    pub fn apply_damage(&mut self, amount: f32, kind: DamageKind, armor: f32, rng: &mut Rng) -> Option<Hit> {
-        let amount = amount * (1.0 - armor.clamp(0.0, 0.9));
+    /// `armor(part)` (0..1) is the share of the damage stopped by what
+    /// protects that outer part (a blow going deeper is stopped where it
+    /// came in); blows it takes down to almost nothing glance off.
+    pub fn apply_damage(&mut self, amount: f32, kind: DamageKind, armor: impl Fn(Part) -> f32, rng: &mut Rng) -> Option<Hit> {
+        let outer = self.pick_outer(rng)?;
+        let amount = amount * (1.0 - armor(outer).clamp(0.0, 0.9));
         if amount < 1.0 {
             return None;
         }
-        let outer = self.pick_outer(rng)?;
         let mut target = outer;
         for _ in 0..2 {
             if !rng.chance(kind.penetration()) {
@@ -1114,7 +1115,7 @@ mod tests {
         let mut organ_hits = 0;
         for _ in 0..200 {
             let mut h = Health::new();
-            if let Some(hit) = h.apply_damage(5.0, DamageKind::Gunshot, 0.0, &mut rng) {
+            if let Some(hit) = h.apply_damage(5.0, DamageKind::Gunshot, |_| 0.0, &mut rng) {
                 if hit.part.def().inside {
                     organ_hits += 1;
                 }
@@ -1136,13 +1137,32 @@ mod tests {
     }
 
     #[test]
+    fn armour_only_protects_where_the_blow_lands() {
+        let mut rng = Rng::new(9);
+        let (mut torso, mut elsewhere) = (0, 0);
+        for _ in 0..300 {
+            let mut h = Health::new();
+            // A vest that stops nearly all of a blow on the torso, nothing elsewhere.
+            if let Some(hit) = h.apply_damage(5.0, DamageKind::Bruise, |p| if p == Part::Torso { 0.9 } else { 0.0 }, &mut rng) {
+                if hit.part == Part::Torso {
+                    torso += 1;
+                } else {
+                    elsewhere += 1;
+                }
+            }
+        }
+        assert_eq!(torso, 0, "blows on the vest glance off");
+        assert!(elsewhere > 100, "the rest gets hurt: {}", elsewhere);
+    }
+
+    #[test]
     fn armour_stops_damage() {
         let total = |armor: f32| {
             let mut rng = Rng::new(8);
             let mut sum = 0.0;
             for _ in 0..200 {
                 let mut h = Health::new();
-                h.apply_damage(8.0, DamageKind::Cut, armor, &mut rng);
+                h.apply_damage(8.0, DamageKind::Cut, |_| armor, &mut rng);
                 sum += h.hediffs.iter().map(|d| d.severity).sum::<f32>();
             }
             sum

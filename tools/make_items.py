@@ -458,6 +458,33 @@ def field_medkit():
     return g
 
 
+def backpack(kind="field"):
+    """A framed pack lying on its back: body, lid, side pouches and straps."""
+    colors = {"field": ((.45, .41, .30), (.34, .31, .23), CREAM, OLIVE),
+              "medic": ((.74, .74, .66), (.55, .56, .50), CREAM, (.62, .16, .13)),
+              "radio": ((.30, .33, .27), GRAPHITE, CREAM, (.79, .46, .18))}[kind]
+    g = Item(palette(*colors, metal=.2 if kind == "radio" else 0))
+    w, h, d = (.28, .15, .36) if kind != "radio" else (.26, .14, .3)
+    g.box((0, h / 2, 0), (w, h, d), 0, bevel=.03 if kind != "radio" else .012)
+    if kind == "radio":
+        # The set's face: dials, a handset and a whip antenna folded alongside.
+        g.box((0, h + .006, .03), (w - .05, .012, d - .12), 1, bevel=.004)
+        for x in (-.07, 0, .07):
+            g.cylinder((x, h + .02, .09), .018, .02, 4, "y", sides=8)
+        g.box((.05, h + .025, -.05), (.06, .03, .1), 2, bevel=.008)
+        g.cylinder((-w / 2 - .012, .06, -.02), .006, .4, 3, "z", sides=6)
+    else:
+        g.box((0, h + .012, -d * .22), (w + .01, .03, d * .5), 1, bevel=.012)
+        for side in (-1, 1):
+            g.box((side * (w / 2 + .03), h * .45, .02), (.06, h * .7, .16), 1, bevel=.012)
+        if kind == "medic":
+            g.cross_mark(h + .03, .1, z=.08)
+    # Shoulder straps lie on top, loose.
+    for x in (-.07, .07):
+        g.box((x, h + .004, .09), (.04, .008, .2), 2, bevel=.002)
+    return g
+
+
 def cargo_trousers():
     g = Item(palette((.47, .43, .33), (.36, .33, .25), CREAM, OLIVE))
     # Folded in three: soft layers with pocket flaps and a belt band on top.
@@ -588,6 +615,8 @@ NEW_ITEMS = [
     ("frag_grenade", "FragGrenade", frag_grenades), ("field_medkit", "FieldMedkit", field_medkit),
     ("cargo_trousers", "CargoTrousers", cargo_trousers), ("flak_leg_guards", "FlakLegGuards", flak_leg_guards),
     ("tactical_goggles", "TacticalGoggles", tactical_goggles),
+    ("field_pack", "FieldPack", backpack), ("medic_pack", "MedicPack", lambda: backpack("medic")),
+    ("radio_pack", "RadioPack", lambda: backpack("radio")),
 ]
 
 

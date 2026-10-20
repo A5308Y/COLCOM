@@ -10,7 +10,8 @@
 //! hunger. Squad members who were far from their leader arrive a few
 //! rounds in, already in their combat gear.
 
-use crate::defs::{ItemId, UtilityEffect};
+use crate::defs::{defs, ItemId, UtilityEffect};
+use crate::health::CyberSlot;
 use crate::map::{adjacent, Pos, Stack, Zone};
 use crate::pathing::{bfs, bfs_avoiding, DistField};
 use crate::pawn::{attack_with, Attack, Faction, Memory, Pawn, Role, Skill};
@@ -152,7 +153,8 @@ impl Unit {
     }
 
     /// Started this round pinned down (fewer AP, slower going), whatever
-    /// its suppression has dropped to since.
+    /// its suppression has dropped to since. (A radio's bonus never makes up
+    /// the pinned unit's loss: it's less than `AP_MAX` * 4/10.)
     pub fn held_down(&self) -> bool {
         self.ap_start < AP_MAX
     }
@@ -203,6 +205,9 @@ pub struct Parley {
     pub entry: Pos,
     /// What they want; empty if the colony doesn't have enough.
     pub demand: Vec<Stack>,
+    /// How well they're equipped: an index into `raider_tiers`.
+    #[serde(default)]
+    pub tier: usize,
 }
 
 /// Split `raiders` into squads, largest first. Small raids come mostly as
@@ -395,10 +400,43 @@ impl World {
     }
 
     /// Raiders arrive and make their demand; the colony stops until answered.
-    pub(crate) fn open_parley(&mut self, raiders: usize, entry: Pos) {
+    pub(crate) fn open_parley(&mut self, raiders: usize, entry: Pos, tier: usize) {
         let squads = raider_squads(raiders, &mut self.rng);
-        let demand = self.goods_worth(raiders as f32 * DEMAND_PER_RAIDER);
-        self.parley = Some(Parley { squads, entry, demand });
+        // Better equipped raiders want more.
+        let demand = self.goods_worth(raiders as f32 * DEMAND_PER_RAIDER * (1.0 + 0.25 * tier as f32));
+        self.parley = Some(Parley { squads, entry, demand, tier });
+    }
+
+    /// Equip raider `id` as raider tier `tier` says (see `RaiderTier`): a
+    /// weapon (of one kind, if `ranged` says), apparel, a sidearm, belt
+    /// items and cyberware, each by its chance; better tiers fight better too.
+    pub fn equip_raider(&mut self, id: u32, tier: usize, ranged: Option<bool>) {
+        let tiers = &defs().raider_tiers;
+        let tier = tier.min(tiers.len() - 1);
+        let t = &tiers[tier];
+        let Some(i) = self.pawn_index(id) else { return };
+        let rng = &mut self.rng;
+        let p = &mut self.pawns[i];
+        p.weapon = Pawn::raider_weapon(rng, tier, ranged).or(p.weapon);
+        p.apparel.clear();
+        for (kind, chance) in &t.apparel {
+            if rng.chance(*chance) {
+                p.wear(kind.id());
+            }
+        }
+        p.sidearm = t.sidearms.iter().find(|(k, chance)| Some(k.id()) != p.weapon && rng.chance(*chance)).map(|(k, _)| k.id());
+        p.utility = t.belt.iter().find(|(_, _, chance)| rng.chance(*chance)).map(|(k, count, _)| Stack { kind: k.id(), count: *count });
+        for (kind, chance) in &t.cyberware {
+            let Some(c) = kind.id().def().cyberware.as_ref() else { continue };
+            let free: Vec<CyberSlot> = c.fits.iter().copied().filter(|&s| p.health.implant(s).is_none()).collect();
+            if !free.is_empty() && rng.chance(*chance) {
+                let slot = free[rng.below(free.len())];
+                p.health.install(slot, kind.id(), c.efficiency);
+            }
+        }
+        for skill in [Skill::Shooting, Skill::Melee] {
+            p.skills[skill as usize] = (p.skills[skill as usize] + 2 * tier as u8).min(20);
+        }
     }
 
     /// Hand over what the raiders demand; they leave. False if there's
@@ -462,13 +500,8 @@ impl World {
                 let name = crate::story::raider_name(&mut self.rng);
                 let id = self.spawn_raider(name, at);
                 // A squad fights one way: armed like the first of them.
-                if let Some(&first) = members.first() {
-                    let ranged = self.pawn(first).unwrap().main_attack().ranged;
-                    let i = self.pawn_index(id).unwrap();
-                    if self.pawns[i].main_attack().ranged != ranged {
-                        self.pawns[i].weapon = Pawn::raider_weapon(&mut self.rng, Some(ranged)).or(self.pawns[i].weapon);
-                    }
-                }
+                let ranged = members.first().map(|&first| self.pawn(first).unwrap().main_attack().ranged);
+                self.equip_raider(id, parley.tier, ranged);
                 members.push(id);
             }
             if !members.is_empty() {
@@ -559,6 +592,12 @@ impl World {
         let raiders = parley.raiders();
         let who = if raiders == 1 { "1 raider attacks".to_string() } else { format!("{} raiders attack", raiders) };
         b.events.push(format!("Battle! {}.", who));
+        // A field radio in a unit: more action points from the first round.
+        for u in b.units.iter_mut() {
+            let bonus = self.ap_bonus(&u.members);
+            u.ap += bonus;
+            u.ap_start += bonus;
+        }
         self.battle = Some(b);
         self.push_log(format!("Battle! {} the colony.", who));
     }
@@ -737,6 +776,18 @@ impl World {
         }
     }
 
+    /// Extra action points a unit of `members` gets each round: the best
+    /// field radio anyone standing in it carries (radios don't add up).
+    pub fn ap_bonus(&self, members: &[u32]) -> i32 {
+        members
+            .iter()
+            .filter_map(|&id| self.pawn(id))
+            .filter(|p| p.active())
+            .flat_map(|p| p.apparel.iter().filter_map(|k| k.def().apparel.as_ref()).map(|a| a.ap))
+            .max()
+            .unwrap_or(0)
+    }
+
     // ---------- belt items ----------
 
     /// Who in unit `u` could throw a grenade at unit `t` (someone there in
@@ -802,7 +853,7 @@ impl World {
         let Some(kind) = self.pawns[mi].use_utility() else { return };
         let Some(UtilityEffect::Medkit { quality }) = kind.def().utility.as_ref().map(|d| d.effect) else { return };
         let skill = self.pawns[mi].skill(Skill::Medicine) as f32;
-        let quality = (quality + 0.02 * skill).min(1.0);
+        let quality = (quality + 0.02 * skill + self.pawns[mi].tend_bonus()).min(1.0);
         self.pawns[mi].learn(Skill::Medicine, 2.0);
         let name = self.pawns[mi].name.clone();
         self.sound("rustle", Some(self.pawns[mi].pos));
@@ -1171,11 +1222,12 @@ impl World {
 
     fn new_round(&mut self) {
         {
+            let bonus: Vec<i32> = self.battle.as_ref().unwrap().units.iter().map(|u| self.ap_bonus(&u.members)).collect();
             let b = self.battle.as_mut().unwrap();
             b.round += 1;
-            for u in b.units.iter_mut() {
+            for (u, bonus) in b.units.iter_mut().zip(bonus) {
                 u.acted = false;
-                u.ap = if u.pinned() { AP_MAX * 6 / 10 } else { AP_MAX };
+                u.ap = if u.pinned() { AP_MAX * 6 / 10 } else { AP_MAX } + bonus;
                 u.ap_start = u.ap;
                 if !u.pinned() {
                     u.morale = (u.morale + 5.0).min(90.0);
@@ -1528,7 +1580,7 @@ mod tests {
 
 
     fn fight(w: &mut World, raiders: usize, entry: Pos) {
-        w.start_battle(Parley { squads: vec![raiders], entry, demand: Vec::new() });
+        w.start_battle(Parley { squads: vec![raiders], entry, demand: Vec::new(), tier: 0 });
     }
 
     #[test]
@@ -1583,7 +1635,7 @@ mod tests {
         colonist(&mut w, (5, 5, Z));
         w.map.drop_item((3, 3, Z), Stack { kind: item("steel"), count: 30 });
         w.map.drop_item((4, 3, Z), Stack { kind: item("wood"), count: 50 });
-        w.open_parley(3, (19, 10, Z));
+        w.open_parley(3, (19, 10, Z), 0);
         let demand = w.parley.as_ref().unwrap().demand.clone();
         let value: f32 = demand.iter().map(|s| s.count as f32 * s.kind.def().value).sum();
         assert!(value >= 3.0 * DEMAND_PER_RAIDER, "they want enough: {:?}", demand);
@@ -1604,7 +1656,7 @@ mod tests {
     fn a_poor_colony_has_to_fight() {
         let mut w = world(20, 20, 1);
         colonist(&mut w, (5, 5, Z));
-        w.open_parley(3, (19, 10, Z));
+        w.open_parley(3, (19, 10, Z), 0);
         assert!(w.parley.as_ref().unwrap().demand.is_empty());
         assert!(!w.pay_tribute(), "nothing to pay with");
         let squads = w.parley.as_ref().unwrap().squads.len();
@@ -1945,7 +1997,7 @@ mod tests {
         w.pawns[i].weapon = None;
         w.pawns[i].skills[Skill::Melee as usize] = 0;
         w.map.drop_item((3, 3, Z), Stack { kind: item("steel"), count: 60 });
-        w.open_parley(4, (30, 12, Z));
+        w.open_parley(4, (30, 12, Z), 0);
         let demand = w.parley.as_ref().unwrap().demand.clone();
         assert!(!demand.is_empty());
         w.refuse_tribute();
@@ -2364,6 +2416,50 @@ mod tests {
         let chance = |p: &Pawn| base_hit_chance(p, true, 6.0);
         assert!(chance(&goggles) > chance(&plain) + 0.03, "{} vs {}", chance(&goggles), chance(&plain));
         assert!(chance(&eyes) > chance(&plain) * 1.1, "{} vs {}", chance(&eyes), chance(&plain));
+    }
+
+    #[test]
+    fn raiders_come_better_equipped_as_the_threat_grows() {
+        let mut w = world(40, 20, 41);
+        colonist(&mut w, (5, 10, Z));
+        assert_eq!(w.raid_tier(), 0, "a new colony meets scavengers");
+        w.time = 30.0 * crate::DAY_LEN;
+        let top = defs().raider_tiers.len() - 1;
+        assert_eq!(w.raid_tier(), top, "a month on, the elite");
+        w.difficulty.raid_gear = Some(0);
+        assert_eq!(w.raid_tier(), 0, "unless the setting says otherwise");
+        let raiders = |tier: usize, seed: u64| {
+            let mut w = world(40, 20, seed);
+            colonist(&mut w, (5, 10, Z));
+            w.open_parley(8, (39, 10, Z), tier);
+            w.refuse_tribute();
+            w.pawns.into_iter().filter(|p| !p.is_colonist()).collect::<Vec<Pawn>>()
+        };
+        let weak = raiders(0, 42);
+        assert!(weak.iter().all(|p| p.health.implants().count() == 0 && p.utility.is_none()));
+        assert!(weak.iter().all(|p| p.weapon.is_none_or(|k| k != item("laser_rifle"))));
+        let elite: Vec<Pawn> = (0..3).flat_map(|s| raiders(top, 50 + s)).collect();
+        assert!(elite.iter().filter(|p| p.weapon == Some(item("laser_rifle"))).count() * 2 > elite.len(), "mostly laser rifles");
+        assert!(elite.iter().filter(|p| p.health.implants().count() > 0).count() * 2 > elite.len(), "mostly with cyberware");
+        assert!(elite.iter().any(|p| p.apparel.contains(&item("powered_armor"))));
+        assert!(elite.iter().map(|p| p.armor()).sum::<f32>() > weak.iter().map(|p| p.armor()).sum::<f32>() * 3.0);
+    }
+
+    #[test]
+    fn a_field_radio_gives_the_unit_more_action_points() {
+        let mut w = world(30, 20, 43);
+        let (lead, mate) = (colonist(&mut w, (5, 10, Z)), colonist(&mut w, (5, 11, Z)));
+        w.set_role(lead, Role::Leader).unwrap();
+        w.set_role(mate, Role::Member(lead)).unwrap();
+        for id in [lead, mate] {
+            let i = w.pawn_index(id).unwrap();
+            w.pawns[i].weapon = Some(item("rifle"));
+            w.pawns[i].wear(item("radio_pack"));
+        }
+        fight(&mut w, 1, (29, 10, Z));
+        let u = battle(&w).unit_of(lead).unwrap();
+        assert_eq!(battle(&w).units[u].ap, AP_MAX + 10, "radios don't add up");
+        assert!(!battle(&w).units[u].held_down());
     }
 
     #[test]

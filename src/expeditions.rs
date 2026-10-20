@@ -302,6 +302,15 @@ fn st(id: &str, count: u32) -> Stack {
     Stack { kind: item(id), count }
 }
 
+fn stacks_text(goods: &[Stack]) -> String {
+    goods.iter().map(|s| format!("{} {}", s.count, s.kind.name().to_lowercase())).collect::<Vec<_>>().join(", ")
+}
+
+/// How many things colonists `members` can carry between them.
+pub fn carry_capacity<'a>(members: impl IntoIterator<Item = &'a Pawn>) -> u32 {
+    members.into_iter().map(|p| p.carry()).sum()
+}
+
 fn worth(goods: &[Stack]) -> f32 {
     goods.iter().map(|s| s.count as f32 * s.kind.def().value).sum()
 }
@@ -318,6 +327,35 @@ impl Expedition {
             Effect::GiveAll => !self.cargo.is_empty(),
             _ => true,
         })
+    }
+
+    /// How many things they can carry: `CARRY_EACH` each, more with backpacks
+    /// (the downed are carried, not carrying).
+    pub fn capacity(&self) -> u32 {
+        self.members.iter().filter(|p| p.active()).map(|p| p.carry()).sum()
+    }
+
+    /// How many things they carry now.
+    pub fn load(&self) -> u32 {
+        self.cargo.iter().map(|s| s.count).sum()
+    }
+
+    /// Add `goods` to the cargo as far as there's room; returns what's left behind.
+    fn take_in(&mut self, goods: impl IntoIterator<Item = Stack>) -> Vec<Stack> {
+        let mut left = Vec::new();
+        for s in goods {
+            let room = self.capacity().saturating_sub(self.load());
+            add_stack(&mut self.cargo, Stack { kind: s.kind, count: s.count.min(room) });
+            add_stack(&mut left, Stack { kind: s.kind, count: s.count.saturating_sub(room) });
+        }
+        left
+    }
+
+    /// Write down what had to be left behind for lack of room, if anything.
+    fn note_left(&mut self, left: &[Stack]) {
+        if !left.is_empty() {
+            self.journal.push(format!("No room to carry {} (backpacks carry more): left behind.", stacks_text(left)));
+        }
     }
 
     /// Able to fight: members not downed or dead.
@@ -415,6 +453,11 @@ impl World {
         let have = self.item_totals();
         if goods.iter().any(|g| have[g.kind.index()] < g.count) {
             return Err("not that much in the colony".into());
+        }
+        let can = carry_capacity(ids.iter().filter_map(|&id| self.pawn(id)));
+        let packed: u32 = goods.iter().map(|g| g.count).sum();
+        if packed > can {
+            return Err(format!("they can carry {} things between them, not {} (backpacks carry more)", can, packed));
         }
         let o = self.offers.remove(k);
         self.take_goods(goods);
@@ -666,11 +709,10 @@ impl World {
                     self.expeditions[k].journal.push(format!("Relations with the {} {} ({:+}).", fname, what, g));
                 }
                 Effect::Gain(goods) => {
-                    let text: Vec<String> = goods.iter().map(|s| format!("{} {}", s.count, s.kind.name().to_lowercase())).collect();
-                    for &s in goods {
-                        add_stack(&mut self.expeditions[k].cargo, s);
-                    }
-                    self.expeditions[k].journal.push(format!("Gained {}.", text.join(", ")));
+                    let e = &mut self.expeditions[k];
+                    e.journal.push(format!("Gained {}.", stacks_text(goods)));
+                    let left = e.take_in(goods.iter().copied());
+                    e.note_left(&left);
                 }
                 Effect::Give(goods) => {
                     for &s in goods {
@@ -789,6 +831,11 @@ impl World {
             }
             add_stack(&mut cargo, s);
         }
+        let load: u32 = cargo.iter().map(|s| s.count).sum();
+        let can = self.expeditions[k].capacity();
+        if load > can && load > self.expeditions[k].load() {
+            return Err(format!("they can carry {} things, not {} (backpacks carry more)", can, load));
+        }
         let e = &mut self.expeditions[k];
         e.cargo = cargo;
         e.stage = Stage::Trading { stock };
@@ -859,7 +906,9 @@ impl World {
             site_world.pawns.push(p);
         }
         let squads = crate::battle::raider_squads(enemies, &mut site_world.rng);
-        site_world.start_battle(Parley { squads, entry: (w - 2, h / 2, z), demand: Vec::new() });
+        // They fight as well equipped as the raiders the colony faces.
+        let tier = self.raid_tier();
+        site_world.start_battle(Parley { squads, entry: (w - 2, h / 2, z), demand: Vec::new(), tier });
         self.expeditions[k].site = Some(Box::new(site_world));
         self.expeditions[k].journal.push(format!("A fight: {} against {}.", squad, enemies));
     }
@@ -884,12 +933,18 @@ impl World {
             return;
         }
         if won {
-            // What the fallen left on the field.
+            // What the fallen left on the field, as much as they can carry.
+            let mut loot = Vec::new();
             for i in 0..site.map.len() {
                 for s in site.map.take_all(i) {
-                    add_stack(&mut self.expeditions[k].cargo, s);
+                    add_stack(&mut loot, s);
                 }
             }
+            // The most valuable first.
+            loot.sort_by(|a, b| b.kind.def().value.total_cmp(&a.kind.def().value));
+            let e = &mut self.expeditions[k];
+            let left = e.take_in(loot);
+            e.note_left(&left);
             self.expeditions[k].journal.push("They won the fight.".into());
             self.apply(k, &then, main);
         } else {
@@ -1075,6 +1130,24 @@ mod tests {
         }
         assert!(w.expeditions.is_empty());
         assert!(w.pawns.iter().filter(|p| p.is_colonist()).count() >= 1 || w.colony_lost());
+    }
+
+    #[test]
+    fn expeditions_carry_only_so_much_and_backpacks_carry_more() {
+        let (mut w, ids, offer) = colony(MissionKind::Trade, 0);
+        w.map.drop_item((4, 3, Z), st("steel", 60));
+        let err = w.send_expedition(offer, &ids[..1], &[st("steel", 100)]).unwrap_err();
+        assert!(err.contains("carry"), "{}", err);
+        let i = w.pawn_index(ids[0]).unwrap();
+        w.pawns[i].wear(item("field_pack"));
+        w.send_expedition(offer, &ids[..1], &[st("steel", 100)]).unwrap();
+        let e = &mut w.expeditions[0];
+        assert_eq!((e.load(), e.capacity()), (100, crate::pawn::CARRY_EACH + 90));
+        // More than fits: the rest is left behind, and written down.
+        let left = e.take_in([st("copper_ore", 80)]);
+        assert_eq!(left, vec![st("copper_ore", 30)]);
+        e.note_left(&left);
+        assert!(e.journal.last().unwrap().contains("left behind"));
     }
 
     #[test]

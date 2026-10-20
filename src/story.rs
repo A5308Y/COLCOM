@@ -22,13 +22,17 @@ pub const RAID_SIZES: std::ops::RangeInclusive<f32> = 0.25..=3.0;
 pub struct Difficulty {
     /// Raiders come at all (off: their timer runs on, but nobody comes).
     pub raids: bool,
-    /// How many come, as a multiple of the usual (`RAID_SIZES`).
+    /// How many come, as a multiple of the usual (`RAID_SIZES`); bigger
+    /// raids also come better equipped sooner (`World::threat`).
     pub raid_size: f32,
+    /// Raiders always come equipped like this tier (`raider_tiers`), whatever
+    /// the threat (for testing).
+    pub raid_gear: Option<usize>,
 }
 
 impl Default for Difficulty {
     fn default() -> Self {
-        Difficulty { raids: true, raid_size: 1.0 }
+        Difficulty { raids: true, raid_size: 1.0, raid_gear: None }
     }
 }
 
@@ -90,6 +94,24 @@ impl World {
         (usual * scale).round().clamp(1.0, most) as usize
     }
 
+    /// How dangerous the colony's enemies have grown: a point a day, and one
+    /// per 500 of wealth, scaled by the raid size setting. Picks how well
+    /// raiders come equipped (`raider_tiers`).
+    pub fn threat(&self) -> f32 {
+        let scale = self.difficulty.raid_size.clamp(*RAID_SIZES.start(), *RAID_SIZES.end());
+        (self.day() as f32 + self.wealth() as f32 / 500.0) * scale
+    }
+
+    /// The raider tier the next raid comes as (an index into `raider_tiers`).
+    pub fn raid_tier(&self) -> usize {
+        let tiers = &crate::defs::defs().raider_tiers;
+        if let Some(t) = self.difficulty.raid_gear {
+            return t.min(tiers.len() - 1);
+        }
+        let threat = self.threat();
+        tiers.iter().rposition(|t| t.threat <= threat).unwrap_or(0)
+    }
+
     /// A raid now (unless one is under way already). Returns whether one came.
     pub fn raid_now(&mut self) -> bool {
         if self.parley.is_some() || self.battle.is_some() || self.colony_lost() {
@@ -103,9 +125,11 @@ impl World {
         let size = self.raid_size();
         let Some(entry) = self.random_edge_tile() else { return };
         self.story.raids += 1;
-        self.open_parley(size, entry);
+        let tier = self.raid_tier();
+        self.open_parley(size, entry, tier);
         let who = if size == 1 { "A raider is".to_string() } else { format!("{} raiders are", size) };
-        self.push_log(format!("Raiders! {} at the edge of the colony, demanding goods.", who));
+        let gear = &crate::defs::defs().raider_tiers[tier].name;
+        self.push_log(format!("Raiders! {} at the edge of the colony, demanding goods ({}).", who, gear.to_lowercase()));
     }
 
     /// A cell at the edge of the map to come in at, from which a colonist can
@@ -288,7 +312,7 @@ mod tests {
     #[test]
     fn raids_come_on_demand_and_settings_are_saved() {
         let mut w = test_world();
-        w.difficulty = Difficulty { raids: false, raid_size: 1.5 };
+        w.difficulty = Difficulty { raids: false, raid_size: 1.5, raid_gear: Some(2) };
         assert!(w.raid_now(), "even with raids off");
         let size = w.parley.as_ref().unwrap().raiders();
         assert_eq!(size, w.raid_size());

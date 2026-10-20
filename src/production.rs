@@ -104,12 +104,16 @@ fn wants_upgrade(p: &Pawn, kind: ItemId, outdoors: f32) -> bool {
         return !planned && w.score() > current * 1.1;
     }
     if let Some(a) = &d.apparel {
+        // Backpacks (like sidearms and belt items) only when the player says so.
+        if a.slot == crate::defs::Slot::Back {
+            return false;
+        }
         // Against everything it would take off (a suit replaces a helmet too).
         let off = p.displaced_by(kind);
         let worn = off.iter().filter_map(|k| k.def().apparel.as_ref()).map(|w| w.score_at(outdoors)).sum::<f32>();
         return !planned && (off.is_empty() || a.score_at(outdoors) > worn);
     }
-    // Belt items and sidearms only when the player says so.
+    // Belt items and sidearms only when the player says so too.
     false
 }
 
@@ -621,6 +625,40 @@ mod tests {
     }
 
     #[test]
+    fn armour_covers_its_own_body_parts() {
+        use crate::health::{CyberSlot, Part};
+        let mut w = test_world(8, 8);
+        let id = colonist(&mut w, (2, 2, Z));
+        let mut p = w.pawn(id).unwrap().clone();
+        p.apparel.clear();
+        p.wear(item("steel_helmet"));
+        assert!(p.armor_at(Part::Head) > 0.4 && p.armor_at(Part::Torso) == 0.0, "a helmet protects the head only");
+        p.wear(item("flak_leg_guards"));
+        assert!(p.armor_at(Part::LeftFoot) > 0.3 && p.armor_at(Part::LeftHand) == 0.0);
+        p.wear(item("powered_armor"));
+        assert!(p.armor_at(Part::LeftHand) >= 0.6 && p.armor_at(Part::Nose) >= 0.6, "a sealed suit protects everything");
+        let mut q = w.pawn(id).unwrap().clone();
+        q.apparel.clear();
+        q.health.install(CyberSlot::Dermal, item("subdermal_plating"), 1.0);
+        assert!(Part::ALL.iter().filter(|p| !p.def().inside).all(|&p| (q.armor_at(p) - 0.15).abs() < 1e-5), "plating is everywhere");
+        assert!((q.armor() - 0.15).abs() < 1e-5);
+    }
+
+    #[test]
+    fn backpacks_are_only_worn_when_told() {
+        let mut w = test_world(16, 16);
+        let id = colonist(&mut w, (2, 2, Z));
+        w.map.drop_item((8, 8, Z), Stack { kind: item("field_pack"), count: 1 });
+        run(&mut w, 30.0);
+        assert!(!w.pawn(id).unwrap().apparel.contains(&item("field_pack")), "not of their own accord");
+        assert!(w.order_equip(id, (8, 8, Z)));
+        run(&mut w, 40.0);
+        let p = w.pawn(id).unwrap();
+        assert!(p.apparel.contains(&item("field_pack")) && p.loadout.contains(&item("field_pack")));
+        assert_eq!(p.carry(), crate::pawn::CARRY_EACH + 90);
+    }
+
+    #[test]
     fn colonists_pick_up_better_gear() {
         let mut w = test_world(16, 16);
         let id = colonist(&mut w, (2, 2, Z));
@@ -633,7 +671,8 @@ mod tests {
         let p = w.pawn(id).unwrap();
         assert_eq!(p.weapon, Some(item("knife")));
         assert!(p.apparel.contains(&item("clothes")) && p.apparel.contains(&item("steel_armor")), "{:?}", p.apparel);
-        assert!(p.armor() > 0.3);
+        assert!(p.armor_at(crate::health::Part::Torso) > 0.5, "the chest is well protected");
+        assert!(p.armor_at(crate::health::Part::LeftLeg) < 0.1, "the legs aren't");
         assert!(p.thoughts().iter().any(|t| t.0 == item("clothes").name()), "clothes feel nice");
 
         // A better weapon replaces the old one, which is left on the ground.

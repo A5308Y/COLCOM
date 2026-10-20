@@ -903,6 +903,58 @@
             ],
         ),
         // Legs and face: no worn models yet (the native trousers show).
+        // Backpacks: what an expedition can carry, and specialist kit.
+        (
+            id: "field_pack",
+            value: 45.0,
+            name: "Field pack",
+            category: "Apparel",
+            color: "canvas",
+            model: Some((
+                path: "models/items/FieldPack.gltf",
+                ground: (at: (0.000000, 0.006000, -0.005000), turn: (0.0, 0.0, 0.0), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
+            about: Some("A framed canvas rucksack: far more to carry on an expedition, at a slightly slower step."),
+            apparel: Some((slot: Back, armor: 0.0, mood: 0.0, warmth: 1.0, speed: 0.98, carry: 90)),
+            look: [
+                (shape: Cube, color: "canvas", at: (0.0, 0.1, 0.0), size: (0.3, 0.2, 0.2)),
+            ],
+        ),
+        (
+            id: "medic_pack",
+            value: 90.0,
+            name: "Medic pack",
+            category: "Apparel",
+            color: "white",
+            model: Some((
+                path: "models/items/MedicPack.gltf",
+                ground: (at: (0.000000, 0.006000, -0.005000), turn: (0.0, 0.0, 0.0), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
+            about: Some("A shoulder pack of dressings, splints and tourniquets laid out to hand: better tending, in battle and at home."),
+            apparel: Some((slot: Back, armor: 0.0, mood: 0.0, carry: 30, tend: 0.15)),
+            look: [
+                (shape: Cube, color: "white", at: (0.0, 0.09, 0.0), size: (0.28, 0.18, 0.18)),
+            ],
+        ),
+        (
+            id: "radio_pack",
+            value: 160.0,
+            name: "Field radio",
+            category: "Apparel",
+            color: "iron",
+            model: Some((
+                path: "models/items/RadioPack.gltf",
+                ground: (at: (0.009000, 0.006000, 0.015000), turn: (0.0, 0.0, 0.0), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
+            about: Some("A backpack radio with a whip antenna: whoever carries it keeps their unit coordinated (more action points each round)."),
+            apparel: Some((slot: Back, armor: 0.0, mood: 0.0, speed: 0.97, carry: 15, ap: 10)),
+            look: [
+                (shape: Cube, color: "iron", at: (0.0, 0.1, 0.0), size: (0.26, 0.2, 0.16)),
+            ],
+        ),
         (
             id: "cargo_trousers",
             value: 25.0,
@@ -915,7 +967,7 @@
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
             about: Some("Tough canvas trousers with deep pockets: a little warmth and a little protection."),
-            apparel: Some((slot: Legs, armor: 0.03, mood: 1.0, warmth: 3.0)),
+            apparel: Some((slot: Legs, armor: 0.06, mood: 1.0, warmth: 3.0)),
             look: [
                 (shape: Cube, color: "canvas", at: (0.0, 0.04, 0.0), size: (0.4, 0.08, 0.3)),
             ],
@@ -932,7 +984,7 @@
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
             about: Some("Padded ballistic thigh and shin guards: they stop shrapnel, at the cost of a slower step."),
-            apparel: Some((slot: Legs, armor: 0.15, mood: 0.0, warmth: 1.0, speed: 0.97)),
+            apparel: Some((slot: Legs, armor: 0.35, mood: 0.0, warmth: 1.0, speed: 0.97)),
             look: [
                 (shape: Cube, color: "ballistic_fabric", at: (-0.1, 0.05, 0.0), size: (0.16, 0.1, 0.36)),
                 (shape: Cube, color: "ballistic_fabric", at: (0.1, 0.05, 0.0), size: (0.16, 0.1, 0.36)),
@@ -950,7 +1002,7 @@
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
             about: Some("Shatterproof goggles with a rangefinder in the lens: a better eye for a shot."),
-            apparel: Some((slot: Face, armor: 0.0, mood: 0.0, aim: 0.05)),
+            apparel: Some((slot: Face, armor: 0.2, mood: 0.0, aim: 0.05)),
             look: [
                 (shape: Cube, color: "visor", at: (0.0, 0.03, 0.0), size: (0.2, 0.05, 0.05)),
                 (shape: Cube, color: "rubber", at: (0.0, 0.03, -0.06), size: (0.22, 0.02, 0.1)),
@@ -999,7 +1051,7 @@
                 ground: (at: (0.000000, -0.039800, 0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 0.7),
                 held: (at: (0.0, 0.0, 0.0), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
             )),
-            apparel: Some((slot: Head, armor: 0.12, mood: 0.0, warmth: 1.0, pieces: [
+            apparel: Some((slot: Head, armor: 0.45, mood: 0.0, warmth: 1.0, pieces: [
                 // A dome over the head with an iron brim and a nose guard.
                 (bone: "Head", hides_hair: true,
                     model: Some((path: "models/armor/SteelHelmet.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
@@ -1026,7 +1078,7 @@
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
             about: Some("A tailored padded coat with a folded, fur-lined hood: worn over clothes instead of armour, it keeps out the winter cold."),
-            apparel: Some((slot: Outer, armor: 0.04, mood: 1.0, warmth: 14.0,
+            apparel: Some((slot: Outer, armor: 0.08, mood: 1.0, warmth: 14.0,
                 skinned: Some((male: "models/items/ParkaMale.gltf", female: "models/items/ParkaFemale.gltf")), pieces: [
                 // A padded coat round the body, a hood lying on the shoulders, fur trim.
                 (bone: "spine_03",
@@ -1092,7 +1144,7 @@
                 ground: (at: (0.0, 0.1715, -0.007817), turn: (0.0, 0.0, 0.0), scale: 0.7),
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
-            apparel: Some((slot: Outer, armor: 0.35, mood: 0.0, warmth: 2.0, pieces: [
+            apparel: Some((slot: Outer, armor: 0.45, mood: 0.0, warmth: 2.0, pieces: [
                 (bone: "spine_03", cloth: true,
                     model: Some((path: "models/armor/FlakJacket.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
                     parts: [
@@ -1127,7 +1179,7 @@
                 ground: (at: (0.0, 0.0878, 0.146), turn: (90.0, 0.0, 0.0), scale: 0.4),
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
-            apparel: Some((slot: Outer, also: [Legs, Head, Face], armor: 0.6, mood: 0.0, speed: 1.25, warmth: 12.0,
+            apparel: Some((slot: Outer, also: [Legs, Head, Face], sealed: true, armor: 0.6, mood: 0.0, speed: 1.25, warmth: 12.0,
                 skinned: Some((male: "models/armor/PoweredArmorMale.gltf", female: "models/armor/PoweredArmorFemale.gltf", full_body: true)), pieces: [
                 (bone: "spine_03",
                     model: Some((path: "models/armor/PoweredArmor.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
@@ -1212,7 +1264,41 @@
     // who join later bring one of them at random.
     start_weapons: ["rifle", "pistol", "knife"],
     // Raiders carry one of these (relative chances).
-    raider_weapons: [("pistol", 2.0), ("club", 1.0), ("knife", 1.0)],
+    // How raiders come equipped, by the colony's threat (`World::threat`: days
+    // plus wealth, scaled by the raid size setting). Weapons by relative
+    // chance; apparel, sidearms, belt items (kind, count) and cyberware each
+    // by their chance.
+    raider_tiers: [
+        (name: "Scavengers", threat: 0.0,
+            weapons: [("pistol", 2.0), ("club", 1.0), ("knife", 1.0)],
+            apparel: [("clothes", 0.5)]),
+        (name: "Gangers", threat: 5.0,
+            weapons: [("pistol", 2.0), ("rifle", 2.0), ("club", 1.0), ("knife", 1.0)],
+            apparel: [("clothes", 0.8), ("cargo_trousers", 0.5), ("steel_helmet", 0.2)],
+            sidearms: [("knife", 0.3)]),
+        (name: "Raiders", threat: 10.0,
+            weapons: [("rifle", 3.0), ("assault_rifle", 1.0), ("pistol", 1.0), ("club", 1.0)],
+            apparel: [("clothes", 0.9), ("cargo_trousers", 0.6), ("steel_armor", 0.4), ("steel_helmet", 0.4), ("flak_leg_guards", 0.2)],
+            sidearms: [("knife", 0.4), ("pistol", 0.2)],
+            belt: [("frag_grenade", 1, 0.2)],
+            cyberware: [("prosthetic_arm", 0.05), ("prosthetic_leg", 0.05)]),
+        (name: "Mercenaries", threat: 16.0,
+            weapons: [("assault_rifle", 3.0), ("rifle", 2.0), ("knife", 1.0)],
+            apparel: [("clothes", 1.0), ("flak_leg_guards", 0.6), ("steel_armor", 0.8), ("steel_helmet", 0.8), ("tactical_goggles", 0.4),
+                ("field_pack", 0.2), ("medic_pack", 0.1)],
+            sidearms: [("pistol", 0.5), ("knife", 0.5)],
+            belt: [("frag_grenade", 2, 0.4), ("field_medkit", 1, 0.2)],
+            cyberware: [("bionic_eyes", 0.15), ("bionic_arm", 0.1), ("subdermal_plating", 0.1)]),
+        // The highest: laser rifles, powered armour and cyberware.
+        (name: "Elite", threat: 24.0,
+            weapons: [("laser_rifle", 3.0), ("assault_rifle", 1.0)],
+            apparel: [("clothes", 1.0), ("flak_leg_guards", 0.7), ("steel_armor", 0.9), ("steel_helmet", 0.9), ("tactical_goggles", 0.7),
+                ("powered_armor", 0.35), ("radio_pack", 0.15), ("medic_pack", 0.1)],
+            sidearms: [("pistol", 0.8)],
+            belt: [("frag_grenade", 3, 0.5), ("field_medkit", 2, 0.3)],
+            cyberware: [("neural_coprocessor", 0.5), ("subdermal_plating", 0.5), ("bionic_eyes", 0.5), ("bionic_arm", 0.3),
+                ("bionic_leg", 0.3), ("reinforced_spine", 0.2), ("synthetic_heart", 0.15)]),
+    ],
     // What mining one cell of rock or ore yields (soil yields nothing).
     rock_drops: ("stone", 6),
     ore_drops: ("iron_ore", 4),
@@ -2521,6 +2607,12 @@
             ingredients: [("mechanical_components", 2), ("structural_components", 1), ("textile_components", 1)], products: [("prosthetic_arm", 1)], sound: Some("anvil")),
         (id: "make_prosthetic_leg", name: "Make prosthetic leg", bench: "machinist_bench", work: Crafting, skill: Crafting, time: 12.0,
             ingredients: [("mechanical_components", 2), ("structural_components", 1), ("textile_components", 1)], products: [("prosthetic_leg", 1)], sound: Some("anvil")),
+        (id: "make_field_pack", name: "Make field pack", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 10.0,
+            ingredients: [("cloth", 6), ("textile_components", 1)], products: [("field_pack", 1)]),
+        (id: "make_medic_pack", name: "Make medic pack", bench: "chemistry_lab", work: Crafting, skill: Crafting, time: 10.0,
+            ingredients: [("medicine", 2), ("cloth", 4)], products: [("medic_pack", 1)]),
+        (id: "make_radio_pack", name: "Make field radio", bench: "electronics_bench", work: Crafting, skill: Crafting, time: 16.0,
+            ingredients: [("electrical_components", 2), ("optical_components", 1), ("structural_components", 1)], products: [("radio_pack", 1)]),
         (id: "make_cargo_trousers", name: "Make cargo trousers", bench: "crafting_bench", work: Crafting, skill: Crafting, time: 8.0,
             ingredients: [("cloth", 6)], products: [("cargo_trousers", 1)]),
         (id: "make_flak_leg_guards", name: "Make flak leg guards", bench: "smithy", work: Crafting, skill: Crafting, time: 12.0,

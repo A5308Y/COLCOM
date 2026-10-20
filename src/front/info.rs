@@ -159,7 +159,30 @@ fn item_sheet(k: ItemId) -> Sheet {
 
     if let Some(a) = &d.apparel {
         let slots: Vec<&str> = a.slots().map(Slot::name).collect();
-        let mut rows = vec![row("Worn on", slots.join(", ")), row("Armour", format!("stops {:.0}% of each blow", a.armor * 100.0))];
+        let mut rows = vec![row("Worn on", slots.join(", "))];
+        if a.armor > 0.0 {
+            let parts: Vec<&str> = if a.sealed {
+                vec!["the whole body"]
+            } else {
+                let mut parts: Vec<&str> = Vec::new();
+                for p in a.slots().flat_map(|s| s.protects().iter()) {
+                    if !parts.contains(&p.name()) {
+                        parts.push(p.name());
+                    }
+                }
+                parts
+            };
+            rows.push(row("Armour", format!("stops {:.0}% of each blow landing on {}", a.armor * 100.0, parts.join(", ").to_lowercase())));
+        }
+        if a.carry > 0 {
+            rows.push(row("Carry", format!("+{} things on an expedition", a.carry)));
+        }
+        if a.tend > 0.0 {
+            rows.push(row("Tending", format!("+{:.0}% quality, in battle (medkits) and at home", a.tend * 100.0)));
+        }
+        if a.ap > 0 {
+            rows.push(row("Battle", format!("+{} action points a round for the wearer's unit", a.ap)));
+        }
         if a.aim != 0.0 {
             rows.push(row("Aim", format!("{:+.0}% chance to hit", a.aim * 100.0)));
         }

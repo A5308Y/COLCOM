@@ -941,7 +941,7 @@ fn battle_panels(
                 panel.separator();
                 panel.label(RichText::new(names(w, &unit.members)).strong());
                 panel.add(
-                    ProgressBar::new(unit.ap as f32 / AP_MAX as f32)
+                    ProgressBar::new(unit.ap as f32 / unit.ap_start.max(AP_MAX) as f32)
                         .text(format!("{} action points", unit.ap))
                         .fill(Color32::from_rgb(90, 160, 230)),
                 );
@@ -1100,6 +1100,17 @@ fn battle_panels(
     Ok(())
 }
 
+/// What raiders of tier `tier` look like, for the parley.
+fn tier_look(tier: usize) -> &'static str {
+    match tier {
+        0 => "ragged, with pistols and clubs",
+        1 => "some with rifles and helmets",
+        2 => "rifles, some flak jackets and grenades",
+        3 => "assault rifles, flak armour and grenades, a few with cyberware",
+        _ => "laser rifles, powered armour and cyberware",
+    }
+}
+
 /// Raiders at the gate: pay them off, or fight.
 fn parley_dialog(ctx: &egui::Context, sim: &mut Sim, sounds: &mut SoundQueue) {
     let Some(p) = &sim.world.parley else { return };
@@ -1118,6 +1129,9 @@ fn parley_dialog(ctx: &egui::Context, sim: &mut Sim, sounds: &mut SoundQueue) {
                 groups,
                 if groups == 1 { "" } else { "s" }
             ));
+            if let Some(t) = my_world::defs::defs().raider_tiers.get(p.tier) {
+                ui.label(RichText::new(format!("{}: {}", t.name, tier_look(p.tier))).color(Color32::from_rgb(255, 190, 150)));
+            }
             if p.demand.is_empty() {
                 ui.label("You have nothing they want badly enough. They want a fight.");
             } else {

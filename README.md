@@ -16,8 +16,10 @@ cargo run --release --example look      # the downloaded models in the game's li
 
 Scenarios are fixed worlds for trying things out (`src/scenarios.rs`). `--scenario <name>` or
 `MY_WORLD_SCENARIO=<name>` picks one; an unknown name lists the ones there are. `battle` starts in
-round 1 of a battle on a 48×32 yard: Ada's squad (one member arrives two rounds late), two lone
-fighters (one gears up from the stockpile), a civilian in the house, and six raiders from the east.
+round 1 of a battle on a 48×32 yard: Ada's squad (one member arrives two rounds late; Ada carries the field
+radio), two lone fighters (one gears up from the stockpile), a civilian in the house, and six raiders from
+the east: a squad of four mercenaries (assault rifles, flak armour, grenades, a medic) and an elite pair
+with laser rifles, powered armour and cyberware.
 Every weapon, apparel and belt item appears on a fighter (the assault rifleman carries a knife sidearm
 and frag grenades; the geared fighter cargo trousers, tactical goggles and a field medkit). The stockpile
 also holds a spare of every weapon, apparel and belt item, medicine and cyberware for inspecting models
@@ -83,11 +85,17 @@ for), and `<` goes back.
   Each colonist has a loadout (Combat tab; right-clicking a weapon or clothes with them selected sets it
   too) with a slot for each piece of gear: **Weapon**, **Sidearm** (a light weapon: pistol, knife, club),
   **Utility** (belt items: frag grenades, field medkits), and apparel for **Head**, **Face** (goggles),
-  **Shirt** (inner torso), **Jacket / vest** (outer torso: Flak Jacket, parka) and **Legs** (cargo
-  trousers, flak leg guards). One item can take several slots: powered armour also covers legs, head
-  and face. They fetch it from storage and keep it on, in and out of battle; for apparel slots left
-  empty they pick up the best they find (sidearms and belt items only when told to: loadout, or
-  right-click *Carry … as sidearm*). Leg and face gear has no worn model yet (the trousers under it show). Armour stops part of every
+  **Shirt** (inner torso), **Jacket / vest** (outer torso: Flak Jacket, parka), **Legs** (cargo
+  trousers, flak leg guards) and **Back** (a field pack to carry more on expeditions, a medic pack for
+  better tending in and out of battle, a field radio that gives its unit +10 action points a round).
+  One item can take several slots: powered armour also covers legs, head and face. They fetch it from
+  storage and keep it on, in and out of battle; for apparel slots left empty they pick up the best they
+  find (sidearms, belt items and backpacks only when told to: loadout, or right-click). Leg, face and
+  back gear has no worn model yet (the trousers under it show).
+  Armour protects where it's worn: a blow lands on a body part, and only what covers that part stops
+  it (helmets the head and ears, goggles the eyes, nose and jaw, shirts and jackets the torso, neck,
+  shoulders and arms, legwear the legs and feet; hands are bare). Sealed powered armour and subdermal
+  plating cover everything. The Info window says what each piece protects. Armour stops part of every
   blow (and shows: a fitted Flak Jacket, a steel helmet, powered armour's articulated suit), and
   clothes cheer them up. Powered armour's motors make its wearer a quarter faster, on foot and in
   battle; a limp (low Moving) slows them in both (a squad moves at its slowest member's pace). Pinned down in battle, a unit has 60% of its
@@ -256,6 +264,16 @@ for), and `<` goes back.
 - **Storyteller:** raids that grow with colony wealth and age, wanderers who join, cargo pods (sometimes
   medicine), flu outbreaks and crop blight. **Difficulty** (in the Menu, Esc): switch raids off, scale their
   size (×0.25 to ×3), or call one in now for testing; saved with the game.
+- **Raiders' equipment** grows with the colony's threat (a point a day, one per 500 of wealth, scaled by
+  the raid size setting), in tiers from `raider_tiers` in `assets/defs.ron`: *Scavengers* with pistols and
+  clubs, *Gangers*, *Raiders* (rifles, some flak jackets and grenades), *Mercenaries* (assault rifles, flak
+  armour, goggles, grenades and medkits, some cyberware) and, from threat 24, the *Elite*: laser rifles,
+  powered armour, field radios and cyberware (neural coprocessors, plating, bionic eyes and limbs). The
+  parley names the tier (better equipped raiders demand more), expedition fights face the same tier, and
+  Menu → Difficulty shows the next raid's tier and can fix it (*Raider gear*, for testing). What raiders
+  wear and carry drops when they fall.
+- **Expeditions carry** 60 things a member (packed goods and what they gain or loot); backpacks carry more.
+  Loot that doesn't fit is left behind (the most valuable is taken first), and the journal says so.
 - **Combat:** drafted colonists shoot raiders in range with line of sight. Wounds land on body parts (see
   Health). Hurt raiders flee, and downed ones die if left lying. In battles nobody walks through an
   enemy: units go round them, or can't get past. Members with a sidearm draw it when it does more harm
@@ -300,7 +318,8 @@ editing). A new definition there gets a toolbar button, a shortcut (if it has a 
 simple shapes, and works in hauling, building, mining, harvesting and saves without code changes.
 Behaviour the code has to know about is a field: `nutrition` (food), `medicine`, `special` (`Floor`,
 `Stairs`, `Bed`, `Door`), `blocks_room`, `holds_floors`, `light`, `sow`, `wild`, `harvest`, `raw`,
-`poison`, `weapon` (`sidearm`), `apparel` (`slot`, `also`, `aim`), `cyberware`, `utility`, `beauty`, `daylight`, `storage`, `along_walls`, and `link` on parts. A buildable that a recipe names becomes a workbench.
+`poison`, `weapon` (`sidearm`), `apparel` (`slot`, `also`, `aim`, `sealed`, `carry`, `tend`, `ap`), `cyberware`,
+`raider_tiers`, `utility`, `beauty`, `daylight`, `storage`, `along_walls`, and `link` on parts. A buildable that a recipe names becomes a workbench.
 `cargo test` checks that the file loads and that every buildable can be built and removed, every plant
 harvested and every recipe made.
 

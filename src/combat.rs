@@ -12,8 +12,8 @@ impl World {
         if t.dead {
             return;
         }
-        let armor = t.armor();
-        let hit = t.health.apply_damage(amount, kind, armor, &mut self.rng);
+        let armor: Vec<f32> = crate::health::Part::ALL.iter().map(|&p| t.armor_at(p)).collect();
+        let hit = t.health.apply_damage(amount, kind, |p| armor[p as usize], &mut self.rng);
         t.health.recompute();
         // Blows that don't get through the armour glance off.
         self.sound(if hit.is_some() { "hit" } else { "glance" }, Some(t.pos));

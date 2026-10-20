@@ -127,6 +127,7 @@ impl World {
         if in_bed {
             q += 0.08;
         }
+        q += doctor.tend_bonus();
         if self_tend {
             q *= 0.7;
         }

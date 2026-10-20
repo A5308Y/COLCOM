@@ -134,6 +134,8 @@ fn battle_arena() -> World {
     w.set_role(ada, Role::Leader).unwrap();
     let i = w.pawn_index(ada).unwrap();
     w.pawns[i].bed = Some((4, 13, Z));
+    // The leader carries the field radio: more action points for the squad.
+    w.pawns[i].wear(item("radio_pack"));
     for (at, weapon) in [((12, 14), "assault_rifle"), ((12, 16), "pistol"), ((12, 30), "rifle")] {
         let id = colonist(&mut w, at, 7, 5, weapon);
         w.set_role(id, Role::Member(ada)).unwrap();
@@ -142,6 +144,7 @@ fn battle_arena() -> World {
             w.pawns[i].wear(item("parka"));
             w.pawns[i].wear(item("wool_hat"));
             w.pawns[i].wear(item("flak_leg_guards"));
+            w.pawns[i].wear(item("field_pack"));
         }
         if weapon == "assault_rifle" {
             // A knife for close quarters and grenades on the belt.
@@ -173,8 +176,9 @@ fn battle_arena() -> World {
         w.pawns[gi].wear(kind);
     }
     w.pawns[gi].take_utility(Stack { kind: item("field_medkit"), count: 2 });
+    w.pawns[gi].wear(item("medic_pack"));
     let mut loadout = w.pawns[gi].loadout.clone();
-    loadout.extend([item("cargo_trousers"), item("tactical_goggles"), item("field_medkit")]);
+    loadout.extend([item("cargo_trousers"), item("tactical_goggles"), item("field_medkit"), item("medic_pack")]);
     w.set_loadout(geared, &loadout).unwrap();
     let civilian = colonist(&mut w, (11, 19), 2, 2, "knife");
     w.set_role(civilian, Role::Civilian).unwrap();
@@ -192,11 +196,36 @@ fn battle_arena() -> World {
         w.map.drop_item(w.map.pos(cell), Stack { kind, count: 1 });
     }
 
-    // The raiders: a squad of four and a pair, armed the same way every time.
-    w.start_battle(Parley { squads: vec![4, 2], entry: RAID_ENTRY, demand: vec![Stack { kind: item("steel"), count: 10 }] });
+    // The raiders, equipped the same way every time: a squad of four
+    // mercenaries, and a pair of elite raiders with laser rifles, powered
+    // armour and cyberware.
+    let parley = Parley { squads: vec![4, 2], entry: RAID_ENTRY, demand: vec![Stack { kind: item("steel"), count: 10 }], tier: 0 };
+    w.start_battle(parley);
     let raiders: Vec<usize> = (0..w.pawns.len()).filter(|&i| !w.pawns[i].is_colonist()).collect();
-    for (&i, weapon) in raiders.iter().zip(["rifle", "rifle", "pistol", "club", "rifle", "knife"]) {
-        w.pawns[i].weapon = Some(item(weapon));
+    type Kit = (&'static str, Option<&'static str>, &'static [&'static str], Option<(&'static str, u32)>, &'static [(CyberSlot, &'static str)]);
+    let kits: [Kit; 6] = [
+        ("assault_rifle", Some("knife"), &["clothes", "steel_armor", "steel_helmet", "flak_leg_guards"], Some(("frag_grenade", 2)), &[]),
+        ("rifle", Some("club"), &["clothes", "steel_armor", "steel_helmet", "tactical_goggles"], None, &[(CyberSlot::Eyes, "bionic_eyes")]),
+        ("assault_rifle", Some("pistol"), &["clothes", "steel_armor", "cargo_trousers", "medic_pack"], Some(("field_medkit", 1)), &[]),
+        ("rifle", None, &["clothes", "parka", "steel_helmet", "field_pack"], None, &[(CyberSlot::LeftArm, "prosthetic_arm")]),
+        ("laser_rifle", Some("pistol"), &["clothes", "powered_armor", "radio_pack"], Some(("frag_grenade", 3)),
+            &[(CyberSlot::Brain, "neural_coprocessor"), (CyberSlot::Dermal, "subdermal_plating"), (CyberSlot::RightArm, "bionic_arm")]),
+        ("laser_rifle", Some("pistol"), &["clothes", "steel_armor", "steel_helmet", "tactical_goggles", "flak_leg_guards"], None,
+            &[(CyberSlot::Eyes, "bionic_eyes"), (CyberSlot::LeftLeg, "bionic_leg"), (CyberSlot::Spine, "reinforced_spine"), (CyberSlot::Heart, "synthetic_heart")]),
+    ];
+    for (&i, (weapon, sidearm, apparel, belt, cyberware)) in raiders.iter().zip(kits) {
+        let p = &mut w.pawns[i];
+        p.weapon = Some(item(weapon));
+        p.sidearm = sidearm.map(item);
+        p.apparel.clear();
+        for &a in apparel {
+            p.wear(item(a));
+        }
+        p.utility = belt.map(|(k, count)| Stack { kind: item(k), count });
+        for &(slot, kind) in cyberware {
+            let efficiency = item(kind).def().cyberware.as_ref().unwrap().efficiency;
+            p.health.install(slot, item(kind), efficiency);
+        }
     }
     w.log.clear();
     w.push_log("Scenario: battle. Raiders attack from the east.".into());

@@ -8,7 +8,7 @@
 //! by matching on particular ones. Saves store the definitions' text ids, so
 //! adding or reordering definitions keeps old saves loadable.
 
-use crate::health::{CyberSlot, DamageKind};
+use crate::health::{CyberSlot, DamageKind, Part as BodyPart};
 use crate::map::Desig;
 use crate::pawn::{Skill, WorkType};
 use serde::de::Error as _;
@@ -201,10 +201,12 @@ pub enum Slot {
     Outer,
     /// Trousers and leg guards.
     Legs,
+    /// Backpacks: carrying on expeditions, and specialist kit.
+    Back,
 }
 
 impl Slot {
-    pub const ALL: [Slot; 5] = [Slot::Head, Slot::Face, Slot::Shirt, Slot::Outer, Slot::Legs];
+    pub const ALL: [Slot; 6] = [Slot::Head, Slot::Face, Slot::Shirt, Slot::Outer, Slot::Legs, Slot::Back];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -213,6 +215,21 @@ impl Slot {
             Slot::Shirt => "Shirt",
             Slot::Outer => "Jacket / vest",
             Slot::Legs => "Legs",
+            Slot::Back => "Back",
+        }
+    }
+
+    /// The outer body parts armour in this slot protects (blows that go
+    /// deeper are stopped where they came in). Hands are bare but for sealed suits.
+    pub fn protects(self) -> &'static [BodyPart] {
+        match self {
+            Slot::Head => &[BodyPart::Head, BodyPart::LeftEar, BodyPart::RightEar],
+            Slot::Face => &[BodyPart::LeftEye, BodyPart::RightEye, BodyPart::Nose, BodyPart::Jaw],
+            Slot::Shirt | Slot::Outer => {
+                &[BodyPart::Torso, BodyPart::Neck, BodyPart::LeftShoulder, BodyPart::LeftArm, BodyPart::RightShoulder, BodyPart::RightArm]
+            }
+            Slot::Legs => &[BodyPart::LeftLeg, BodyPart::LeftFoot, BodyPart::RightLeg, BodyPart::RightFoot],
+            Slot::Back => &[BodyPart::Torso],
         }
     }
 }
@@ -236,6 +253,19 @@ pub struct ApparelDef {
     /// Added to the chance to hit (0.05 = 5 percentage points).
     #[serde(default)]
     pub aim: f32,
+    /// Covers the whole body, hands and feet too (a sealed suit): its armour
+    /// protects every part, not just its slots' (`Slot::protects`).
+    #[serde(default)]
+    pub sealed: bool,
+    /// How many more things the wearer carries on an expedition (backpacks).
+    #[serde(default)]
+    pub carry: u32,
+    /// Added to the quality of the wearer's tending, in and out of battle (a medic pack).
+    #[serde(default)]
+    pub tend: f32,
+    /// Action points their unit gets on top each battle round (a field radio; doesn't add up).
+    #[serde(default)]
+    pub ap: i32,
     /// What shows on the wearer: shapes fixed to the character's bones.
     #[serde(default)]
     pub pieces: Vec<WornPiece>,
@@ -300,6 +330,27 @@ pub struct CyberwareDef {
     pub speed: f32,
 }
 
+/// How raiders of one strength come equipped. Each rolls a weapon by the
+/// relative chances, then each listed piece by its chance (later apparel
+/// replaces earlier pieces it overlaps; the first sidearm and belt item that
+/// come up are taken; cyberware goes into a free slot it fits).
+#[derive(Clone, Debug, Deserialize)]
+pub struct RaiderTier {
+    pub name: String,
+    /// Colony threat (`World::threat`) from which raids come like this.
+    pub threat: f32,
+    pub weapons: Vec<(Ref<ItemId>, f32)>,
+    #[serde(default)]
+    pub apparel: Vec<(Ref<ItemId>, f32)>,
+    #[serde(default)]
+    pub sidearms: Vec<(Ref<ItemId>, f32)>,
+    /// Belt items: kind, how many, chance.
+    #[serde(default)]
+    pub belt: Vec<(Ref<ItemId>, u32, f32)>,
+    #[serde(default)]
+    pub cyberware: Vec<(Ref<ItemId>, f32)>,
+}
+
 /// Something carried on the belt and used up in battle.
 #[derive(Clone, Debug, Deserialize)]
 pub struct UtilityDef {
@@ -334,6 +385,11 @@ impl ApparelDef {
     /// Whether it takes up `slot`.
     pub fn covers(&self, slot: Slot) -> bool {
         self.slots().any(|s| s == slot)
+    }
+
+    /// Whether its armour protects outer body part `part`.
+    pub fn protects(&self, part: BodyPart) -> bool {
+        self.sealed || self.slots().any(|s| s.protects().contains(&part))
     }
 
     /// Whether it and `other` can't be worn together.
@@ -863,9 +919,9 @@ pub struct Defs {
     /// is also what new colonists get by default; wanderers get one at random).
     #[serde(default)]
     pub start_weapons: Vec<Ref<ItemId>>,
-    /// Weapons raiders carry, with relative chances.
-    #[serde(default)]
-    pub raider_weapons: Vec<(Ref<ItemId>, f32)>,
+    /// How well raiders come equipped, from the weakest (threat 0) up
+    /// (`World::raid_tier`).
+    pub raider_tiers: Vec<RaiderTier>,
     pub rock_drops: Amount,
     pub ore_drops: Amount,
     /// What mining copper ore gives.
@@ -1143,8 +1199,14 @@ impl Defs {
         for r in self.start_weapons.iter_mut() {
             resolve_ref(r, "start_weapons")?;
         }
-        for (r, _) in self.raider_weapons.iter_mut() {
-            resolve_ref(r, "raider_weapons")?;
+        for t in self.raider_tiers.iter_mut() {
+            let what = format!("raider tier {}", t.name);
+            for r in t.weapons.iter_mut().chain(t.apparel.iter_mut()).chain(t.sidearms.iter_mut()).chain(t.cyberware.iter_mut()) {
+                resolve_ref(&mut r.0, &what)?;
+            }
+            for r in t.belt.iter_mut() {
+                resolve_ref(&mut r.0, &what)?;
+            }
         }
         resolve(&mut self.rock_drops, "rock_drops")?;
         resolve(&mut self.ore_drops, "ore_drops")?;
@@ -1279,6 +1341,9 @@ impl Defs {
                     return Err(format!("{}: a utility item needs a sensible effect, carry and AP (and is nothing else)", d.id));
                 }
             }
+            if d.apparel.as_ref().is_some_and(|a| !(0..40).contains(&a.ap) || a.tend < 0.0) {
+                return Err(format!("{}: a pack's AP bonus is 0 to 39 (less than pinning takes away), and tending can't get worse", d.id));
+            }
             if d.apparel.as_ref().is_some_and(|a| a.also.contains(&a.slot)) {
                 return Err(format!("{}: `also` repeats the apparel's own slot", d.id));
             }
@@ -1402,10 +1467,24 @@ impl Defs {
                 return Err(format!("{}: a workbench can't be a block", r.id));
             }
         }
-        let weapons = self.start_weapons.iter().chain(self.raider_weapons.iter().map(|w| &w.0));
+        let weapons = self.start_weapons.iter().chain(self.raider_tiers.iter().flat_map(|t| t.weapons.iter().map(|w| &w.0)));
         for w in weapons {
             if self.items[w.id().index()].weapon.is_none() {
                 return Err(format!("\"{}\" is not a weapon", w.name));
+            }
+        }
+        if self.raider_tiers.first().is_none_or(|t| t.threat != 0.0) || self.raider_tiers.windows(2).any(|w| w[0].threat >= w[1].threat) {
+            return Err("raider_tiers: the first at threat 0, then rising".into());
+        }
+        for t in &self.raider_tiers {
+            let item = |r: &Ref<ItemId>| &self.items[r.id().index()];
+            let bad = t.weapons.is_empty()
+                || t.apparel.iter().any(|a| item(&a.0).apparel.is_none())
+                || t.sidearms.iter().any(|a| !item(&a.0).weapon.as_ref().is_some_and(|w| w.sidearm))
+                || t.belt.iter().any(|a| item(&a.0).utility.is_none())
+                || t.cyberware.iter().any(|a| item(&a.0).cyberware.is_none());
+            if bad {
+                return Err(format!("raider tier {}: weapons, apparel, sidearms, belt items and cyberware of the right kinds", t.name));
             }
         }
         Ok(())

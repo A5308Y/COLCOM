@@ -67,7 +67,8 @@ Details are in the notes below, under each topic.
 - **Colonists:** single-job priorities, fuller hauling, fixes for starving and trapped colonists,
   recreation and daily schedules, a Work window with click-to-change priorities, longer days.
 - **Items:** components in three tiers, one loadout for everyday and battle, visible armour; body slots
-  (sidearm, belt, head, face, shirt, jacket/vest, legs) and cyberware slots (2026-10-20).
+  (sidearm, belt, head, face, shirt, jacket/vest, legs, back) and cyberware slots, armour by hit
+  location, raider equipment tiers up to elite (2026-10-20).
 - **World:** seasons, temperature and hypothermia, clothing warmth, a power grid with heaters and coolers,
   a vegetation cap and no wild plants beside buildings.
 - **Story:** difficulty settings; expeditions with three factions and goodwill, ten missions, barter
@@ -642,6 +643,20 @@ slopes, and old save versions); the newer note in the same topic says so.
   hit chance, and sight/manipulation above 1 (bionics) count up to 1.2; `BattleOrder::Throw(t)` (6
   cells, everyone in the unit, +30 suppression) and `Medkit`; the AI uses both. Leg, face and cyberware
   items have stored props (`NEW_ITEMS` in `tools/make_items.py`) but nothing drawn on the character yet.
+
+- Hit locations, raider tiers and backpacks (2026-10-20). `Health::apply_damage` takes armour per part:
+  the outer part hit is picked first, and `Pawn::armor_at(part)` sums what protects it (`Slot::protects`,
+  `ApparelDef.sealed` for everything, dermal implants everywhere; capped at 0.8); a deep blow is stopped
+  where it came in. `Pawn::armor` is the hit-weighted average (for display). Armour values were raised to
+  suit (helmet 0.45, Flak Jacket 0.45, leg guards 0.35). `Slot::Back` packs: `carry` (expeditions:
+  `CARRY_EACH` 60 a member plus packs; `Expedition::take_in` leaves the rest behind), `tend` (added to
+  tending and medkit quality), `ap` (`World::ap_bonus`: the best radio in a unit, added to its AP each
+  round; under 40 so a pinned unit stays held down). Packs, sidearms and belt items are never auto-equipped.
+  Raiders: `raider_tiers` replaces `raider_weapons`; `World::threat` (days + wealth/500, × raid size) picks
+  the tier (`raid_tier`, or `Difficulty::raid_gear`), carried in `Parley::tier`; `equip_raider` rolls
+  weapon, apparel, sidearm, belt and cyberware and adds 2 Shooting/Melee a tier. Expedition fights use
+  the colony's tier. In 20 AI-vs-AI runs of the battle scenario (mercenaries and an elite pair) the
+  colony won 18.
 
 ### Seasons, temperature and power
 

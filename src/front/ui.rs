@@ -626,8 +626,22 @@ fn difficulty_ui(ui: &mut egui::Ui, sim: &mut Sim) -> bool {
             ui.add(egui::Slider::new(&mut w.difficulty.raid_size, my_world::story::RAID_SIZES).step_by(0.25).suffix("×"));
         });
         let hours = ((w.story.next_raid - w.time).max(0.0) / DAY_LEN * 24.0).round();
-        let text = format!("The next raid would be {} raiders, in about {} h.", w.raid_size(), hours);
+        let tiers = &defs().raider_tiers;
+        let tier = &tiers[w.raid_tier()].name;
+        let text = format!("The next raid would be {} raiders ({}, threat {:.0}), in about {} h.", w.raid_size(), tier.to_lowercase(), w.threat(), hours);
         ui.label(RichText::new(text).small().weak());
+        ui.horizontal(|ui| {
+            ui.label("Raider gear");
+            let shown = w.difficulty.raid_gear.map_or("By threat".to_string(), |t| tiers[t.min(tiers.len() - 1)].name.clone());
+            egui::ComboBox::from_id_salt("raid_gear").selected_text(shown).show_ui(ui, |ui| {
+                ui.selectable_value(&mut w.difficulty.raid_gear, None, "By threat");
+                for (k, t) in tiers.iter().enumerate() {
+                    ui.selectable_value(&mut w.difficulty.raid_gear, Some(k), &t.name);
+                }
+            })
+            .response
+            .on_hover_text("How well raiders come equipped: rising with the colony's days and wealth, or always one tier (for testing).");
+        });
     });
     let busy = w.parley.is_some() || w.battle.is_some();
     let raided = ui

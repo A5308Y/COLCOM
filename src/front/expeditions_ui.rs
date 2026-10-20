@@ -168,7 +168,11 @@ fn planning(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
     squad_picker(ui, w, &mut plan.squad);
     ui.add_space(4.0);
     let packed = stacks(&plan.pack);
-    ui.label(RichText::new(format!("Pack (worth {:.0})", worth(&packed))).strong());
+    let can = my_world::expeditions::carry_capacity(plan.squad.iter().filter_map(|&id| w.pawn(id)));
+    let load: u32 = packed.iter().map(|s| s.count).sum();
+    ui.label(RichText::new(format!("Pack (worth {:.0}): {} of {} they can carry", worth(&packed), load, can)).strong());
+    let each = format!("Each carries {} things; backpacks carry more. Loot that doesn't fit is left behind.", my_world::pawn::CARRY_EACH);
+    ui.label(RichText::new(each).small().weak());
     if kind.packs() {
         ui.label(RichText::new("Whatever they pack can be traded, given or paid on the way.").small().weak());
     } else {
@@ -188,8 +192,8 @@ fn planning(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
     let mut send = false;
     let mut cancel = false;
     ui.horizontal(|ui| {
-        let ready = !plan.squad.is_empty() && (kind != my_world::expeditions::MissionKind::Trade || !packed.is_empty());
-        send = ui.add_enabled(ready, egui::Button::new("Send them")).on_disabled_hover_text("Pick who goes (and, to trade, what to sell)").clicked();
+        let ready = !plan.squad.is_empty() && (kind != my_world::expeditions::MissionKind::Trade || !packed.is_empty()) && load <= can;
+        send = ui.add_enabled(ready, egui::Button::new("Send them")).on_disabled_hover_text("Pick who goes (and, to trade, what to sell), and no more than they can carry").clicked();
         cancel = ui.button("Back").clicked();
     });
     if send {
@@ -325,7 +329,7 @@ fn away(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
                 .collect();
             ui.label(people.join(", "));
             ui.label(RichText::new(stage_line(&sim.world, e)).color(if matches!(e.stage, Stage::Decide { .. } | Stage::Trading { .. }) { WARN } else { Color32::LIGHT_GRAY }));
-            ui.label(RichText::new(format!("Carrying {} (worth {:.0})", goods(&e.cargo), e.worth())).small());
+            ui.label(RichText::new(format!("Carrying {} (worth {:.0}; {} of {})", goods(&e.cargo), e.worth(), e.load(), e.capacity())).small());
             match &e.stage {
                 Stage::Decide { event, .. } => {
                     ui.add_space(2.0);

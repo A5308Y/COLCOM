@@ -1,7 +1,7 @@
 //! Pawns (colonists and raiders): needs, skills, mood, weapons and jobs.
 
 use crate::defs::{defs, ItemId, PlantId, Slot};
-use crate::health::{DamageKind, Health};
+use crate::health::{DamageKind, Health, Part};
 use crate::map::{Pos, Stack};
 use crate::rng::Rng;
 use crate::DAY_LEN;
@@ -155,6 +155,9 @@ pub struct Attack {
     /// Heard when attacking.
     pub sound: &'static str,
 }
+
+/// Things anyone carries on an expedition without a backpack.
+pub const CARRY_EACH: u32 = 60;
 
 const FISTS: Attack =
     Attack { range: 1.5, damage: (3.0, 6.0), kind: DamageKind::Bruise, cooldown: 1.0, ranged: false, sound: "swing" };
@@ -550,15 +553,15 @@ impl Pawn {
         p
     }
 
-    /// A raider's weapon by the chances in `raider_weapons`, of one kind if
-    /// `ranged` says so (to arm a squad alike).
-    pub fn raider_weapon(rng: &mut Rng, ranged: Option<bool>) -> Option<ItemId> {
-        raider_weapon(rng, ranged)
+    /// A raider's weapon by the chances of raider tier `tier`, of one kind
+    /// if `ranged` says so (to arm a squad alike).
+    pub fn raider_weapon(rng: &mut Rng, tier: usize, ranged: Option<bool>) -> Option<ItemId> {
+        raider_weapon(rng, tier, ranged)
     }
 
     pub fn new_raider(id: u32, name: String, pos: Pos, rng: &mut Rng) -> Pawn {
         let mut p = Pawn::base(id, name, Faction::Raider, pos, rng);
-        p.weapon = raider_weapon(rng, None);
+        p.weapon = raider_weapon(rng, 0, None);
         p.skills[Skill::Shooting as usize] = 3 + rng.below(6) as u8;
         p.skills[Skill::Melee as usize] = 3 + rng.below(6) as u8;
         p.color = [0.85, 0.2, 0.2];
@@ -634,10 +637,28 @@ impl Pawn {
         self.apparel.iter().filter_map(|k| k.def().apparel.as_ref())
     }
 
-    /// Share of damage stopped by what they wear and dermal implants.
+    /// Share of the damage of a blow landing on outer part `part` stopped by
+    /// what protects it there, and dermal implants (which cover everything).
+    pub fn armor_at(&self, part: Part) -> f32 {
+        let worn: f32 = self.apparel_defs().filter(|a| a.protects(part)).map(|a| a.armor).sum();
+        (worn + self.implant_defs().map(|c| c.armor).sum::<f32>()).min(0.8)
+    }
+
+    /// Share of damage stopped on average, over where blows land.
     pub fn armor(&self) -> f32 {
-        let total: f32 = self.apparel_defs().map(|a| a.armor).sum::<f32>() + self.implant_defs().map(|c| c.armor).sum::<f32>();
-        total.min(0.8)
+        let outer = Part::ALL.iter().filter(|p| !p.def().inside);
+        let (total, weight) = outer.fold((0.0, 0.0), |(t, w), &p| (t + self.armor_at(p) * p.def().hit_weight, w + p.def().hit_weight));
+        total / weight
+    }
+
+    /// What their gear adds to the quality of their tending (a medic pack).
+    pub fn tend_bonus(&self) -> f32 {
+        self.apparel_defs().map(|a| a.tend).sum()
+    }
+
+    /// How many things they carry on an expedition: `CARRY_EACH`, and more with a backpack.
+    pub fn carry(&self) -> u32 {
+        CARRY_EACH + self.apparel_defs().map(|a| a.carry).sum::<u32>()
     }
 
     /// Added to their chance to hit, from gear and implants.
@@ -892,9 +913,11 @@ impl Pawn {
 
 
 /// See `Pawn::raider_weapon`.
-fn raider_weapon(rng: &mut Rng, ranged: Option<bool>) -> Option<ItemId> {
+fn raider_weapon(rng: &mut Rng, tier: usize, ranged: Option<bool>) -> Option<ItemId> {
     let fits = |k: ItemId| ranged.is_none_or(|r| k.def().weapon.as_ref().is_some_and(|w| w.ranged() == r));
-    let weapons: Vec<(ItemId, f32)> = defs().raider_weapons.iter().map(|(w, weight)| (w.id(), *weight)).filter(|w| fits(w.0)).collect();
+    let tiers = &defs().raider_tiers;
+    let weapons: Vec<(ItemId, f32)> =
+        tiers[tier.min(tiers.len() - 1)].weapons.iter().map(|(w, weight)| (w.id(), *weight)).filter(|w| fits(w.0)).collect();
     let total: f32 = weapons.iter().map(|w| w.1).sum();
     let mut roll = rng.f32() * total;
     for &(w, weight) in &weapons {
