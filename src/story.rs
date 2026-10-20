@@ -64,14 +64,14 @@ impl World {
         if self.colony_lost() {
             return;
         }
-        if self.time >= self.story.next_raid {
-            self.story.next_raid = self.time + self.rng.range_f32(1.5, 3.0) * DAY_LEN * self.raid_spacing();
+        if self.time() >= self.story.next_raid {
+            self.story.next_raid = self.time() + self.rng.range_f32(1.5, 3.0) * DAY_LEN * self.raid_spacing();
             if self.difficulty.raids {
                 self.spawn_raid();
             }
         }
-        if self.time >= self.story.next_event {
-            self.story.next_event = self.time + self.rng.range_f32(0.7, 1.5) * DAY_LEN;
+        if self.time() >= self.story.next_event {
+            self.story.next_event = self.time() + self.rng.range_f32(0.7, 1.5) * DAY_LEN;
             self.random_event();
         }
     }
@@ -284,10 +284,10 @@ mod tests {
             w.tick(TICK);
         }
         assert!(w.parley.is_none() && w.battle.is_none(), "nobody came");
-        assert!(w.story.next_raid > w.time, "the timer runs on");
+        assert!(w.story.next_raid > w.time(), "the timer runs on");
         // Switched back on, the next one comes as planned.
         w.difficulty.raids = true;
-        w.story.next_raid = w.time + 1.0;
+        w.story.next_raid = w.time() + 1.0;
         for _ in 0..(3.0 / TICK) as usize {
             w.tick(TICK);
         }
@@ -297,14 +297,14 @@ mod tests {
     #[test]
     fn raid_size_scales_with_the_slider() {
         let mut w = test_world();
-        w.time = 12.0 * DAY_LEN; // day 13: usually 5 raiders
+        w.set_time(12.0 * DAY_LEN); // day 13: usually 5 raiders
         let usual = w.raid_size();
         assert_eq!(usual, 5);
         w.difficulty.raid_size = 2.0;
         assert_eq!(w.raid_size(), 10, "twice as many, past the usual cap of 8");
         w.difficulty.raid_size = 0.25;
         assert_eq!(w.raid_size(), 1, "at least one");
-        w.time = 100.0 * DAY_LEN;
+        w.set_time(100.0 * DAY_LEN);
         w.difficulty.raid_size = 3.0;
         assert_eq!(w.raid_size(), 24, "capped at 3 × 8");
     }

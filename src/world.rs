@@ -95,7 +95,11 @@ pub struct World {
     /// (patient, doctor) pairs, so two doctors don't treat the same patient.
     #[serde(default)]
     pub res_patient: Vec<(PawnId, PawnId)>,
-    pub time: f32,
+    /// Game seconds since the start. Kept in f64 and private: an f32 sum of
+    /// 1/30 s ticks drifts within months and stops advancing after a few
+    /// years of game time. Read it with `time()`.
+    #[serde(rename = "time")]
+    clock: f64,
     /// The day length `time` was counted in (saves from before the longer
     /// days have none: 240), so loading can rescale the clock.
     #[serde(default = "old_day_len")]
@@ -211,7 +215,7 @@ impl World {
             res_item: vec![None; n],
             res_cell: vec![None; n],
             res_patient: Vec::new(),
-            time: DAY_LEN * 0.25,
+            clock: (DAY_LEN * 0.25) as f64,
             day_len: DAY_LEN,
             rng,
             next_id: 1,
@@ -256,12 +260,31 @@ impl World {
         df.nearest(max, |i| self.map.stacks(i).any(|s| test(i, s))).map(|i| self.map.pos(i))
     }
 
+    /// Game seconds since the start.
+    pub fn time(&self) -> f32 {
+        self.clock as f32
+    }
+
+    /// Jump the clock (scenarios, tests and loading old saves).
+    pub fn set_time(&mut self, time: f32) {
+        self.clock = time as f64;
+    }
+
+    pub(crate) fn advance_clock(&mut self, dt: f32) {
+        self.clock += dt as f64;
+    }
+
+    /// Run on the same clock as `other` (an expedition's fight site).
+    pub(crate) fn share_clock(&mut self, other: &World) {
+        self.clock = other.clock;
+    }
+
     pub fn day(&self) -> u32 {
-        (self.time / DAY_LEN) as u32 + 1
+        (self.time() / DAY_LEN) as u32 + 1
     }
 
     pub fn hour(&self) -> f32 {
-        (self.time % DAY_LEN) / DAY_LEN * 24.0
+        (self.time() % DAY_LEN) / DAY_LEN * 24.0
     }
 
     pub fn is_night(&self) -> bool {
@@ -271,7 +294,7 @@ impl World {
 
     /// 0 at midnight, 1 at noon.
     pub fn daylight(&self) -> f32 {
-        let t = (self.time % DAY_LEN) / DAY_LEN;
+        let t = (self.time() % DAY_LEN) / DAY_LEN;
         0.5 - 0.5 * (t * std::f32::consts::TAU).cos()
     }
 
@@ -441,8 +464,8 @@ impl World {
             self.age_effects(dt);
             return;
         }
-        self.time += dt;
-        self.check_season(self.time - dt);
+        self.advance_clock(dt);
+        self.check_season(self.time() - dt);
         if self.map.rooms_dirty {
             self.map.recompute_rooms();
             self.mark_roofs();
@@ -871,7 +894,7 @@ impl World {
             // Now and then they sit down on a chair nearby instead.
             if self.rng.chance(0.4) {
                 if let Some(at) = self.free_chair(p, 12) {
-                    let until = self.time + self.rng.range_f32(15.0, 30.0);
+                    let until = self.time() + self.rng.range_f32(15.0, 30.0);
                     self.start_job(p, Job::Sit { at, until });
                     return;
                 }
@@ -1644,6 +1667,20 @@ mod tests {
     }
 
     #[test]
+    fn the_clock_keeps_time_in_long_games() {
+        // An f32 sum of ticks ran ~2x fast around day 1100 and stopped by day 2200.
+        for day in [1.0, 300.0, 1100.0, 2200.0, 5000.0] {
+            let mut w = test_world(10, 10);
+            w.set_time(day * DAY_LEN);
+            let start = w.clock;
+            for _ in 0..30 {
+                w.tick(TICK);
+            }
+            assert!((w.clock - start - 1.0).abs() < 1e-6, "day {day}: one second took {}", w.clock - start);
+        }
+    }
+
+    #[test]
     fn collapsing_never_revives_the_dead_or_recalls_those_who_left() {
         use crate::health::{DamageKind, Part};
         for gone in [Life::Dead, Life::Left] {
@@ -2049,7 +2086,7 @@ mod tests {
             let i = w.map.idx(at);
             w.map.feature[i] = Feature::Plant { kind: crop, growth: 0.0 };
         }
-        w.time = DAY_LEN / 2.0;
+        w.set_time(DAY_LEN / 2.0);
         run(&mut w, 10.0);
         let growth = |w: &World, at: Pos| match w.map.feature[w.map.idx(at)] {
             Feature::Plant { growth, .. } => growth,
@@ -2510,7 +2547,7 @@ mod tests {
         let json = w.save_json().unwrap();
         let loaded = World::load_json(&json).unwrap();
         assert_eq!(loaded.pawns.len(), w.pawns.len());
-        assert_eq!(loaded.time, w.time);
+        assert_eq!(loaded.time(), w.time());
         assert_eq!(loaded.map.items, w.map.items);
         assert_eq!(loaded.map.room.len(), w.map.len());
     }

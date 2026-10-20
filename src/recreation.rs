@@ -166,7 +166,7 @@ impl World {
 
     /// Sitting on the chair at `at` until game second `until`.
     pub(crate) fn run_sit(&mut self, p: &mut Pawn, at: Pos, until: f32, dt: f32) {
-        if !self.map.feature[self.map.idx(at)].is_special(Special::Seat) || self.time >= until {
+        if !self.map.feature[self.map.idx(at)].is_special(Special::Seat) || self.time() >= until {
             self.end_job(p);
             return;
         }
@@ -343,7 +343,7 @@ mod tests {
         assert_eq!(w.free_chair(w.pawn(other).unwrap(), 12), None);
         // Done sitting: they stand up before going anywhere.
         let i = w.pawn_index(id).unwrap();
-        w.pawns[i].job = Some(Job::Sit { at: (6, 6, Z), until: w.time });
+        w.pawns[i].job = Some(Job::Sit { at: (6, 6, Z), until: w.time() });
         run(&mut w, 0.2);
         let i = w.pawn_index(id).unwrap();
         assert!(w.pawns[i].getting_up > 0.0);

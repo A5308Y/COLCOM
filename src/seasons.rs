@@ -56,7 +56,7 @@ pub const SEASON_LEN: f32 = SEASON_DAYS as f32 * DAY_LEN;
 
 impl World {
     pub fn season(&self) -> Season {
-        Season::at(self.time)
+        Season::at(self.time())
     }
 
     /// Which year it is, from 1.
@@ -71,7 +71,7 @@ impl World {
 
     /// Game seconds until the next season starts.
     pub fn season_left(&self) -> f32 {
-        SEASON_LEN - self.time % SEASON_LEN
+        SEASON_LEN - self.time() % SEASON_LEN
     }
 
     /// Time moved on from `before`: if a new season began, say so; winter's
@@ -141,11 +141,11 @@ mod tests {
     fn the_year_goes_round() {
         let mut w = quiet_world(8, 8, 1);
         assert_eq!((w.season(), w.year(), w.day_of_season()), (Season::Spring, 1, 1));
-        w.time = DAY_LEN * (SEASON_DAYS as f32 + 0.5);
+        w.set_time(DAY_LEN * (SEASON_DAYS as f32 + 0.5));
         assert_eq!((w.season(), w.day_of_season()), (Season::Summer, 1));
-        w.time = DAY_LEN * (3.0 * SEASON_DAYS as f32 + 4.5);
+        w.set_time(DAY_LEN * (3.0 * SEASON_DAYS as f32 + 4.5));
         assert_eq!((w.season(), w.day_of_season()), (Season::Winter, 5));
-        w.time = DAY_LEN * (4.0 * SEASON_DAYS as f32 + 0.5);
+        w.set_time(DAY_LEN * (4.0 * SEASON_DAYS as f32 + 0.5));
         assert_eq!((w.season(), w.year()), (Season::Spring, 2));
     }
 
@@ -160,7 +160,7 @@ mod tests {
         };
         // A day in summer, a day in autumn and a day in winter, from the same start.
         let mut day = |season: u32| {
-            w.time = DAY_LEN * (season * SEASON_DAYS + 1) as f32 + 0.25 * DAY_LEN;
+            w.set_time(DAY_LEN * (season * SEASON_DAYS + 1) as f32 + 0.25 * DAY_LEN);
             w.map.set_feature(a, Feature::Plant { kind: crop, growth: 0.0 });
             w.map.zone[a] = Zone::Grow(crop);
             run(&mut w, DAY_LEN);
@@ -170,7 +170,7 @@ mod tests {
         assert!(summer > 0.0 && (autumn - summer * 0.6).abs() < 0.02, "{} {}", summer, autumn);
         assert_eq!(winter, 0.0, "nothing grows in winter");
         // The last moment of autumn: one crop ripe, one not.
-        w.time = SEASON_LEN * 3.0 - 1.0;
+        w.set_time(SEASON_LEN * 3.0 - 1.0);
         w.map.set_feature(a, Feature::Plant { kind: crop, growth: 0.5 });
         w.map.set_feature(b, Feature::Plant { kind: crop, growth: 1.0 });
         assert!(w.crops_frost_will_kill() >= 1);
@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn nothing_grows_back_in_winter() {
         let mut w = quiet_world(30, 30, 3);
-        w.time = SEASON_LEN * 3.0 + DAY_LEN * 0.5;
+        w.set_time(SEASON_LEN * 3.0 + DAY_LEN * 0.5);
         for _ in 0..2000 {
             w.regrow_timer = 0.0;
             w.grow_plants(1.0);

@@ -188,7 +188,7 @@ mod tests {
     fn an_expeditions_fight_is_played_in_place_of_the_colony_and_saved_with_it() {
         let mut world = SimWorld::new(7);
         world.story.next_raid = f32::MAX;
-        world.offers.push(Offer { id: 500, kind: MissionKind::BanditCamp, faction: 2, days: 1.0, until: world.time + DAY_LEN });
+        world.offers.push(Offer { id: 500, kind: MissionKind::BanditCamp, faction: 2, days: 1.0, until: world.time() + DAY_LEN });
         let squad: Vec<my_world::pawn::PawnId> = world.pawns.iter().filter(|p| p.is_living_colonist()).take(2).map(|p| p.id).collect();
         world.send_expedition(500, &squad, &[]).unwrap();
         let id = world.expeditions[0].id;

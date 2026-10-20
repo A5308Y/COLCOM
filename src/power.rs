@@ -150,7 +150,7 @@ mod tests {
     fn heaters_run_on_the_sun_and_the_battery_through_the_night() {
         // A winter morning with two panels and a battery.
         let mut w = colony(2, true);
-        w.time = 3.0 * SEASON_LEN + 0.3 * DAY_LEN;
+        w.set_time(3.0 * SEASON_LEN + 0.3 * DAY_LEN);
         let heater = w.map.idx((4, 4, Z));
         run(&mut w, 0.3 * DAY_LEN);
         assert_eq!(w.device_state(heater), Some(DeviceState::Running), "{:?}", w.power);
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn without_power_at_night_heaters_stay_off() {
         let mut w = colony(1, false);
-        w.time = 3.0 * SEASON_LEN + 0.05 * DAY_LEN;
+        w.set_time(3.0 * SEASON_LEN + 0.05 * DAY_LEN);
         let heater = w.map.idx((4, 4, Z));
         run(&mut w, 2.0);
         assert_eq!(w.device_state(heater), Some(DeviceState::NoPower));
@@ -177,7 +177,7 @@ mod tests {
     fn heaters_rest_when_the_room_is_warm_and_coolers_cool_in_summer() {
         let mut w = colony(3, true);
         // A summer afternoon: the heater rests; a cooler instead cools the room.
-        w.time = SEASON_LEN + 0.55 * DAY_LEN;
+        w.set_time(SEASON_LEN + 0.55 * DAY_LEN);
         run(&mut w, 2.0);
         let at = w.map.idx((4, 4, Z));
         assert_eq!(w.device_state(at), Some(DeviceState::Idle));

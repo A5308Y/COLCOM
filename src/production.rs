@@ -756,11 +756,11 @@ mod tests {
         w.map.drop_item((9, 8, Z), Stack { kind: item("parka"), count: 1 });
         let outer = |w: &World| w.pawn(id).unwrap().worn(crate::defs::Slot::Outer);
         // Summer: the armour.
-        w.time = crate::seasons::SEASON_LEN + 2.6 * crate::DAY_LEN;
+        w.set_time(crate::seasons::SEASON_LEN + 2.6 * crate::DAY_LEN);
         run(&mut w, 60.0);
         assert_eq!(outer(&w), Some(item("steel_armor")));
         // Winter: the parka, the armour put down.
-        w.time = 3.0 * crate::seasons::SEASON_LEN + 0.6 * crate::DAY_LEN;
+        w.set_time(3.0 * crate::seasons::SEASON_LEN + 0.6 * crate::DAY_LEN);
         run(&mut w, 60.0);
         assert_eq!(outer(&w), Some(item("parka")));
         assert_eq!(w.map.count_items(item("steel_armor")), 1);

@@ -1394,7 +1394,7 @@ impl World {
             return;
         }
         // Time passes for wounds and hunger.
-        self.time += TURN_SECS;
+        self.advance_clock(TURN_SECS);
         for i in 0..self.pawns.len() {
             let mut p = self.pawns[i].clone();
             if p.present() {
@@ -1784,9 +1784,9 @@ mod tests {
         assert_eq!(demand[0].kind, item("steel"), "the most valuable first");
 
         // The colony stands still while you decide.
-        let t = w.time;
+        let t = w.time();
         w.tick(TICK);
-        assert_eq!(w.time, t);
+        assert_eq!(w.time(), t);
 
         assert!(w.pay_tribute());
         assert!(w.parley.is_none() && w.battle.is_none());
@@ -1867,12 +1867,12 @@ mod tests {
         assert_eq!(battle(&w).side_to_act, Faction::Colony);
         assert!(w.battle_order(BattleOrder::Activate(ua)).is_err(), "already acted");
         w.battle_order(BattleOrder::Activate(ub)).unwrap();
-        let t = w.time;
+        let t = w.time();
         w.battle_order(BattleOrder::End).unwrap();
         let b = battle(&w);
         assert_eq!(b.round, 2, "everyone has acted: a new round");
         assert!(b.units.iter().all(|u| !u.acted));
-        assert_eq!(w.time, t + TURN_SECS, "time passes per round");
+        assert_eq!(w.time(), t + TURN_SECS, "time passes per round");
     }
 
     #[test]
@@ -2124,11 +2124,11 @@ mod tests {
         let ri = w.pawn_index(r).unwrap();
         w.pawns[ri].weapon = Some(item("knife"));
         w.battle.as_mut().unwrap().auto_colony = true;
-        let t = w.time;
+        let t = w.time();
         play_out(&mut w, 300.0);
         assert!(w.battle.is_none(), "over in time");
         assert!(w.pawn(r).is_none_or(|p| !p.active()), "the raider is down, dead or gone");
-        assert!(w.time > t, "rounds took time");
+        assert!(w.time() > t, "rounds took time");
     }
 
     #[test]
@@ -2687,7 +2687,7 @@ mod tests {
         let mut w = world(40, 20, 41);
         colonist(&mut w, (5, 10, Z));
         assert_eq!(w.raid_tier(), 0, "a new colony meets scavengers");
-        w.time = 30.0 * crate::DAY_LEN;
+        w.set_time(30.0 * crate::DAY_LEN);
         let top = defs().raider_tiers.len() - 1;
         assert_eq!(w.raid_tier(), top, "a month on, the elite");
         w.difficulty.raid_gear = Some(0);

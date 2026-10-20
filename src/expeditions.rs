@@ -370,7 +370,7 @@ impl World {
         if self.factions.is_empty() {
             self.factions = starting_factions();
         }
-        let now = self.time;
+        let now = self.time();
         self.offers.retain(|o| o.until > now);
         // About one new offer a day.
         if self.offers.len() < MAX_OFFERS && self.rng.chance(1.0 / DAY_LEN) {
@@ -431,7 +431,7 @@ impl World {
         };
         let id = self.next_id;
         self.next_id += 1;
-        self.offers.push(Offer { id, kind, faction: f, days, until: self.time + OFFER_DAYS * DAY_LEN });
+        self.offers.push(Offer { id, kind, faction: f, days, until: self.time() + OFFER_DAYS * DAY_LEN });
         self.push_log(format!("New expedition: {} ({}).", kind.name(), self.factions[f].name));
     }
 
@@ -476,7 +476,7 @@ impl World {
         let id = self.next_id;
         self.next_id += 1;
         // Halfway there: something on the road (some missions).
-        let until = self.time + o.days * DAY_LEN * 0.5;
+        let until = self.time() + o.days * DAY_LEN * 0.5;
         self.expeditions.push(Expedition {
             id,
             kind: o.kind,
@@ -752,7 +752,7 @@ impl World {
                     self.expeditions[k].journal.push("Someone new travels with them: they want to join the colony.".into());
                 }
                 Effect::Truce(days) => {
-                    self.story.next_raid = self.story.next_raid.max(self.time + days * DAY_LEN);
+                    self.story.next_raid = self.story.next_raid.max(self.time() + days * DAY_LEN);
                     self.expeditions[k].journal.push(format!("The raiders will keep away for {:.0} days.", days));
                 }
                 Effect::Trade => {
@@ -780,11 +780,12 @@ impl World {
 
     /// After an event: on to the destination, or home.
     fn carry_on(&mut self, k: usize, main: bool, delay: f32) {
+        let now = self.time();
         let e = &mut self.expeditions[k];
         e.stage = if main {
-            Stage::Back { until: self.time + (e.days + delay) * DAY_LEN }
+            Stage::Back { until: now + (e.days + delay) * DAY_LEN }
         } else {
-            Stage::Out { until: self.time + (e.days * 0.5 + delay) * DAY_LEN, waylaid: true }
+            Stage::Out { until: now + (e.days * 0.5 + delay) * DAY_LEN, waylaid: true }
         };
     }
 
@@ -892,7 +893,7 @@ impl World {
         site_world.story.next_raid = f32::MAX;
         site_world.story.next_event = f32::MAX;
         site_world.regrow_timer = f32::MAX;
-        site_world.time = self.time;
+        site_world.share_clock(self);
         site_world.factions = Vec::new();
         site_world.next_id = self.next_id + 10_000;
         let members = std::mem::take(&mut self.expeditions[k].members);
@@ -1013,7 +1014,7 @@ mod tests {
         w.map.drop_item((3, 3, Z), st("steel", 60));
         w.map.drop_item((3, 4, Z), st("meal", 20));
         let days = w.factions[f].days;
-        w.offers.push(Offer { id: 999, kind, faction: f, days, until: w.time + DAY_LEN });
+        w.offers.push(Offer { id: 999, kind, faction: f, days, until: w.time() + DAY_LEN });
         (w, ids, 999)
     }
 
@@ -1064,10 +1065,10 @@ mod tests {
         travel(&mut w, id);
         let ev = event(&w, id);
         assert_eq!(ev.choices.len(), 3);
-        let start = w.time;
+        let start = w.time();
         w.choose(id, 1).unwrap();
         travel(&mut w, id);
-        assert!(w.time - start > 1.9 * DAY_LEN, "a day longer");
+        assert!(w.time() - start > 1.9 * DAY_LEN, "a day longer");
 
         // The market.
         w.choose(id, 0).unwrap();
@@ -1160,9 +1161,9 @@ mod tests {
         w.send_expedition(offer, &ids[..1], &[st("steel", 60)]).unwrap();
         let id = w.expeditions[0].id;
         travel(&mut w, id);
-        w.story.next_raid = w.time + 10.0;
+        w.story.next_raid = w.time() + 10.0;
         w.choose(id, 0).unwrap();
-        assert!(w.story.next_raid > w.time + 4.0 * DAY_LEN, "tribute buys peace");
+        assert!(w.story.next_raid > w.time() + 4.0 * DAY_LEN, "tribute buys peace");
         assert!(w.factions[2].goodwill > -40);
     }
 

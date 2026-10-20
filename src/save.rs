@@ -56,7 +56,7 @@ pub fn from_json(s: &str) -> Result<World, String> {
     let w = &mut save.world;
     if w.day_len != DAY_LEN {
         let k = DAY_LEN / w.day_len;
-        w.time *= k;
+        w.set_time(w.time() * k);
         w.story.next_raid *= k;
         w.story.next_event *= k;
         w.day_len = DAY_LEN;
@@ -135,7 +135,7 @@ mod tests {
     #[test]
     fn saves_from_shorter_days_keep_their_day_and_hour() {
         let mut w = World::new(5);
-        w.time = 240.0 * 4.5; // noon on day 5 when days were 240 s
+        w.set_time(240.0 * 4.5); // noon on day 5 when days were 240 s
         w.day_len = 240.0;
         w.story.next_raid = 240.0 * 6.0;
         let json = to_json(&w).unwrap().replacen("\"day_len\":240.0,", "", 1);

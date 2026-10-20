@@ -61,7 +61,7 @@ pub fn outdoor_at(t: f32) -> f32 {
 
 impl World {
     pub fn outdoor_temperature(&self) -> f32 {
-        outdoor_at(self.time)
+        outdoor_at(self.time())
     }
 
     /// The temperature at `p`: its room's, or the outdoor one.
@@ -182,7 +182,7 @@ mod tests {
         let mut w = quiet_world(12, 12, 1);
         room(&mut w);
         // A winter afternoon: the room starts at the outdoor temperature...
-        w.time = 3.0 * SEASON_LEN + 0.6 * DAY_LEN;
+        w.set_time(3.0 * SEASON_LEN + 0.6 * DAY_LEN);
         run(&mut w, 1.0);
         let start = w.temperature_at((4, 4, Z));
         // ...and through the night stays warmer than outside.
@@ -216,7 +216,7 @@ mod tests {
             }
         }
         // Winter's first day, outdoors all of it, from midnight.
-        w.time = 3.0 * SEASON_LEN;
+        w.set_time(3.0 * SEASON_LEN);
         for _ in 0..8 {
             run(&mut w, 60.0);
             for p in w.pawns.iter_mut() {
@@ -236,7 +236,7 @@ mod tests {
         build(&mut w, (4, 4, Z), "fireplace");
         build(&mut w, (5, 3, Z), "stove");
         // A winter day: the fires have had a day to warm the room.
-        w.time = 3.0 * SEASON_LEN + 0.3 * DAY_LEN;
+        w.set_time(3.0 * SEASON_LEN + 0.3 * DAY_LEN);
         run(&mut w, DAY_LEN);
         assert!(w.temperature_at((5, 5, Z)) > WARM_SPOT && w.outdoor_temperature() < FREEZING, "{} in, {} out", w.temperature_at((5, 5, Z)), w.outdoor_temperature());
         let id = colonist(&mut w, (11, 9, Z));
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn with_nowhere_warm_they_carry_on() {
         let mut w = quiet_world(12, 12, 1);
-        w.time = 3.0 * SEASON_LEN;
+        w.set_time(3.0 * SEASON_LEN);
         let id = colonist(&mut w, (8, 8, Z));
         let i = w.pawn_index(id).unwrap();
         w.pawns[i].health.hypothermia = 0.3;
@@ -279,7 +279,7 @@ mod tests {
         room(&mut w);
         build(&mut w, (4, 4, Z), "fireplace");
         // From an evening at the start of winter through its coldest night.
-        w.time = 3.0 * SEASON_LEN - 0.2 * DAY_LEN;
+        w.set_time(3.0 * SEASON_LEN - 0.2 * DAY_LEN);
         run(&mut w, 0.4 * DAY_LEN);
         assert!(w.outdoor_temperature() < -6.0);
         assert!(w.temperature_at((5, 5, Z)) > FREEZING, "{}", w.temperature_at((5, 5, Z)));
@@ -289,7 +289,7 @@ mod tests {
     fn out_in_the_winter_cold_colonists_freeze_and_warm_up_again() {
         let mut w = quiet_world(12, 12, 1);
         let id = colonist(&mut w, (9, 9, Z));
-        w.time = 3.0 * SEASON_LEN + 0.5 * DAY_LEN;
+        w.set_time(3.0 * SEASON_LEN + 0.5 * DAY_LEN);
         for p in w.pawns.iter_mut() {
             p.priorities = [0; crate::pawn::WorkType::ALL.len()];
         }

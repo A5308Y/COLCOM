@@ -141,7 +141,7 @@ fn offers(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
             });
             ui.label(o.kind.about());
             ui.label(
-                RichText::new(format!("{:.1} days each way · risk: {} · open for {}", o.days, o.kind.risk(), hours(o.until - w.time)))
+                RichText::new(format!("{:.1} days each way · risk: {} · open for {}", o.days, o.kind.risk(), hours(o.until - w.time())))
                     .small()
                     .weak(),
             );
@@ -300,11 +300,11 @@ fn squad_picker(ui: &mut egui::Ui, w: &SimWorld, picked: &mut Vec<PawnId>) {
 
 fn stage_line(w: &SimWorld, e: &Expedition) -> String {
     match &e.stage {
-        Stage::Out { until, .. } => format!("On the road, something ahead in {}", hours(until - w.time)),
+        Stage::Out { until, .. } => format!("On the road, something ahead in {}", hours(until - w.time())),
         Stage::Decide { .. } => "Waiting for your decision".into(),
         Stage::Trading { .. } => "At the market".into(),
         Stage::Fighting { .. } => "Fighting".into(),
-        Stage::Back { until } => format!("Heading home, back in {}", hours(until - w.time)),
+        Stage::Back { until } => format!("Heading home, back in {}", hours(until - w.time())),
     }
 }
 

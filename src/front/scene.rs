@@ -42,7 +42,7 @@ fn update_daylight(
     let w = &sim.world;
     let day = w.daylight();
     // 0 at 6:00 (sunrise in the east), quarter turn at noon, half at 18:00.
-    let t = (w.time % DAY_LEN) / DAY_LEN;
+    let t = (w.time() % DAY_LEN) / DAY_LEN;
     let angle = (t - 0.25) * TAU;
     let elevation = angle.sin();
     let (light, transform) = &mut *sun;

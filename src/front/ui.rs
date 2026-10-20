@@ -550,7 +550,7 @@ fn difficulty_ui(ui: &mut egui::Ui, sim: &mut Sim) -> bool {
             ui.label("Raid size");
             ui.add(egui::Slider::new(&mut w.difficulty.raid_size, my_world::story::RAID_SIZES).step_by(0.25).suffix("×"));
         });
-        let hours = ((w.story.next_raid - w.time).max(0.0) / DAY_LEN * 24.0).round();
+        let hours = ((w.story.next_raid - w.time()).max(0.0) / DAY_LEN * 24.0).round();
         let tiers = &defs().raider_tiers;
         let tier = &tiers[w.raid_tier()].name;
         let text = format!("The next raid would be {} raiders ({}, threat {:.0}), in about {} h.", w.raid_size(), tier.to_lowercase(), w.threat(), hours);
