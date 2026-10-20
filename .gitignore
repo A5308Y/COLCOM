@@ -6,3 +6,6 @@ autosave.json
 # Original asset downloads (FBX, OBJ, .blend): large, and re-downloadable. See assets/CREDITS.md.
 /asset-sources
 .DS_Store
+savegame.json.bak
+autosave.json.bak
+*.json.tmp

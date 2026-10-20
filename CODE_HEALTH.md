@@ -7,21 +7,27 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
 
 ## 1. Confirmed bugs
 
-- [ ] **Game clock loses precision.** `World::time` is an `f32` that gets `TICK` (1/30 s)
+- [x] **Game clock loses precision.** `World::time` is an `f32` that gets `TICK` (1/30 s)
   added each tick (`world.rs`, `tick`). One game second of ticks advances 1.055 s around
   day 136 and 0.94 s around day 300. By day 1100 time runs at almost double speed, and
   around day 2200 it stops, which also stops seasons, raids and timers. Count ticks in a
   `u64` (or keep `f64` time) and derive `f32` values from it.
-- [ ] **A squad's leader is just whoever is first in `members`.** When the real leader
+  Done: the clock is a private f64 (`World::time()`, `set_time`, `advance_clock`).
+- [x] **A squad's leader is just whoever is first in `members`.** When the real leader
   falls, the next member takes `members[0]`. Their death then costs a second −20
   "lost its leader" morale hit (`battle.rs`, `refresh_units`), and the raider AI spares
   them like a leader (`pick_target`). Store `leader: Option<PawnId>` on `Unit` (squads
   only). Decide whether a successor takes command; ask the user if unsure.
-- [ ] **Saves are written in place.** `std::fs::write` goes straight to the target
+  Done: `UnitKind::Squad { leader: Option<PawnId> }`. A fallen leader isn't replaced
+  (decided with the user).
+- [x] **Saves are written in place.** `std::fs::write` goes straight to the target
   (`front/input.rs`: save, save as, autosave on exit). A crash mid-write destroys the only
   copy. "Load newest" also picks the exit autosave over a deliberate save. Write to a
   temporary file and rename it, keep a `.bak`, and keep the autosave out of "Load newest"
   (or make that choice explicit).
+  Done: `write_save` writes `<file>.tmp`, keeps `<file>.bak` and renames into place;
+  loading falls back to the backup. "Load newest" still prefers the exit autosave: that
+  is "continue where you left off", and the log names the file it loaded.
 
 ## 2. Type modelling
 

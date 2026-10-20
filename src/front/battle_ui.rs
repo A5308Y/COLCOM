@@ -760,7 +760,7 @@ fn battle_panels(
                 if !m.is_dead() && m.health.bleed_rate() > 0.0 {
                     painter.circle_filled(egui::pos2(rect.center().x, rect.top() - 3.0), 2.0, theme::RED);
                 }
-                if unit.is_squad() && unit.members.first() == Some(&id) {
+                if unit.leader() == Some(id) {
                     painter.rect_stroke(rect.expand(1.0), 1.0, egui::Stroke::new(1.0, Color32::WHITE), egui::StrokeKind::Outside);
                 }
             }

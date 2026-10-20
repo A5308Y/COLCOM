@@ -624,10 +624,53 @@ fn colonists_in_box(sim: &Sim, ui: &UiState, cam: &Camera, gt: &GlobalTransform,
         .collect()
 }
 
+/// Replace a save without risking it: the new game goes to `<file>.tmp` first and
+/// then takes the old one's place in a single rename, so a crash or a full disk
+/// mid-write leaves the previous save intact. The previous save is kept as
+/// `<file>.bak`.
+fn write_save(path: &std::path::Path, json: &str) -> Result<(), String> {
+    use std::io::Write;
+    let with_suffix = |suffix: &str| {
+        let mut name = path.as_os_str().to_owned();
+        name.push(suffix);
+        std::path::PathBuf::from(name)
+    };
+    let tmp = with_suffix(".tmp");
+    let write = || -> std::io::Result<()> {
+        let mut file = std::fs::File::create(&tmp)?;
+        file.write_all(json.as_bytes())?;
+        file.sync_all()?;
+        if path.exists() {
+            std::fs::copy(path, with_suffix(".bak"))?;
+        }
+        std::fs::rename(&tmp, path)
+    };
+    write().map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        e.to_string()
+    })
+}
+
+/// Read a save; if it's damaged, fall back to its backup. The text says which
+/// was read.
+fn read_save(path: &std::path::Path) -> Result<(SimWorld, String), String> {
+    let read = |p: &std::path::Path| std::fs::read_to_string(p).map_err(|e| e.to_string()).and_then(|s| SimWorld::load_json(&s));
+    match read(path) {
+        Ok(w) => Ok((w, path.display().to_string())),
+        Err(e) => {
+            let mut bak = path.as_os_str().to_owned();
+            bak.push(".bak");
+            let bak = std::path::PathBuf::from(bak);
+            match read(&bak) {
+                Ok(w) => Ok((w, format!("the backup {} ({} could not be read: {})", bak.display(), path.display(), e))),
+                Err(_) => Err(e),
+            }
+        }
+    }
+}
+
 pub fn save(sim: &mut Sim) {
-    let msg = match sim.saveable().save_json().and_then(|json| {
-        std::fs::write(SAVE_PATH, json).map_err(|e| e.to_string())
-    }) {
+    let msg = match sim.saveable().save_json().and_then(|json| write_save(std::path::Path::new(SAVE_PATH), &json)) {
         Ok(()) => format!("Game saved to {}.", SAVE_PATH),
         Err(e) => format!("Saving failed: {}", e),
     };
@@ -654,7 +697,7 @@ pub fn save_as(sim: &mut Sim, name: &str) -> bool {
     let result = std::fs::create_dir_all(SAVES_DIR)
         .map_err(|e| e.to_string())
         .and_then(|_| sim.saveable().save_json())
-        .and_then(|json| std::fs::write(&path, json).map_err(|e| e.to_string()));
+        .and_then(|json| write_save(&path, &json));
     let msg = match &result {
         Ok(()) => format!("Game saved to {}.", path.display()),
         Err(e) => format!("Saving failed: {}", e),
@@ -685,11 +728,11 @@ fn saves_in(dir: &std::path::Path) -> Vec<(String, std::path::PathBuf)> {
 
 /// Load a game saved under a name.
 pub fn load_file(sim: &mut Sim, ui: &mut UiState, path: &std::path::Path) {
-    match std::fs::read_to_string(path).map_err(|e| e.to_string()).and_then(|s| SimWorld::load_json(&s)) {
-        Ok(w) => {
+    match read_save(path) {
+        Ok((w, which)) => {
             sim.replace(w);
             ui.select(None);
-            sim.world.push_log(format!("Loaded {}.", path.display()));
+            sim.world.push_log(format!("Loaded {}.", which));
         }
         Err(e) => sim.world.push_log(format!("Loading {} failed: {}", path.display(), e)),
     }
@@ -701,9 +744,9 @@ pub fn read_newest_save() -> Result<Option<(SimWorld, String)>, String> {
     let Some(path) = newer_file(std::path::Path::new(SAVE_PATH), std::path::Path::new(AUTOSAVE_PATH)) else {
         return Ok(None);
     };
-    let world = std::fs::read_to_string(&path).map_err(|e| e.to_string()).and_then(|s| SimWorld::load_json(&s))?;
+    let (world, file) = read_save(&path)?;
     let which = if path.as_path() == std::path::Path::new(AUTOSAVE_PATH) { "the autosave from exiting" } else { "the save" };
-    Ok(Some((world, format!("{} ({})", which, path.display()))))
+    Ok(Some((world, format!("{} ({})", which, file))))
 }
 
 /// Load the newer of the manual save and the autosave from exiting.
@@ -744,7 +787,7 @@ fn autosave_on_exit(
         return;
     }
     *done = true;
-    match sim.saveable().save_json().and_then(|json| std::fs::write(AUTOSAVE_PATH, json).map_err(|e| e.to_string())) {
+    match sim.saveable().save_json().and_then(|json| write_save(std::path::Path::new(AUTOSAVE_PATH), &json)) {
         Ok(()) => info!("Saved the game to {} on exit.", AUTOSAVE_PATH),
         Err(e) => error!("Saving on exit failed: {}", e),
     }
@@ -1316,6 +1359,26 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(&b, "b").unwrap();
         assert_eq!(newer_file(&a, &b), Some(b.clone()), "the autosave is newer");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn saving_keeps_a_backup_and_loading_falls_back_to_it() {
+        let dir = std::env::temp_dir().join(format!("my-world-safe-saves-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("game.json");
+        let first = SimWorld::with_map(Map::flat(8, 8), my_world::rng::Rng::new(1));
+        let second = SimWorld::with_map(Map::flat(9, 9), my_world::rng::Rng::new(2));
+        write_save(&path, &first.save_json().unwrap()).unwrap();
+        write_save(&path, &second.save_json().unwrap()).unwrap();
+        assert!(!dir.join("game.json.tmp").exists(), "no leftovers");
+        assert_eq!(read_save(&path).unwrap().0.map.len(), second.map.len());
+        // A save cut off mid-write: the backup of the previous one is loaded instead.
+        std::fs::write(&path, "{\"version\":").unwrap();
+        let (loaded, which) = read_save(&path).unwrap();
+        assert_eq!(loaded.map.len(), first.map.len());
+        assert!(which.contains("backup"), "{which}");
+        assert_eq!(saves_in(&dir).len(), 1, "backups aren't listed as saves");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

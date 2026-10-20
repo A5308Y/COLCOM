@@ -109,7 +109,8 @@ impl Cover {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Unit {
     pub side: Faction,
-    /// Pawn ids still fighting; a squad's leader comes first.
+    /// Pawn ids still fighting. The first is where the unit stands and moves from
+    /// (a squad's leader while they stand).
     pub members: Vec<PawnId>,
     pub kind: UnitKind,
     /// Everyone who has fought in it, the fallen too (to show losses).
@@ -140,8 +141,8 @@ pub enum Stance {
 pub enum UnitKind {
     /// One fighter on their own.
     Lone,
-    /// A squad led by `members[0]`.
-    Squad,
+    /// A squad, led until its leader falls; it then fights on leaderless.
+    Squad { leader: Option<PawnId> },
     /// Civilians sheltering in the safe zone: never act, but can be attacked.
     Civilians,
 }
@@ -163,7 +164,15 @@ impl Unit {
     }
 
     pub fn is_squad(&self) -> bool {
-        self.kind == UnitKind::Squad
+        matches!(self.kind, UnitKind::Squad { .. })
+    }
+
+    /// A squad's leader, while they still stand.
+    pub fn leader(&self) -> Option<PawnId> {
+        match self.kind {
+            UnitKind::Squad { leader } => leader,
+            UnitKind::Lone | UnitKind::Civilians => None,
+        }
     }
 
     pub fn is_civilians(&self) -> bool {
@@ -572,7 +581,7 @@ impl World {
                 members.push(id);
             }
             if !members.is_empty() {
-                let kind = if members.len() > 1 { UnitKind::Squad } else { UnitKind::Lone };
+                let kind = if members.len() > 1 { UnitKind::Squad { leader: Some(members[0]) } } else { UnitKind::Lone };
                 b.units.push(Unit::new(Faction::Raider, members, kind, 60.0));
             }
         }
@@ -620,7 +629,7 @@ impl World {
                 }
             }
             let morale = self.unit_morale(&members) + 10.0;
-            b.units.push(Unit::new(Faction::Colony, members, UnitKind::Squad, morale));
+            b.units.push(Unit::new(Faction::Colony, members, UnitKind::Squad { leader: Some(leader) }, morale));
         }
         for &(id, role, _) in &colonists {
             let alone = match role {
@@ -1244,8 +1253,7 @@ impl World {
             .copied()
             .filter(|&o| self.pawn(o).is_some_and(|o| o.active() && self.can_attack(&self.pawns[ai], o)))
             .collect();
-        if unit.is_squad() && targets.len() > 1 {
-            let leader = unit.members[0];
+        if let Some(leader) = unit.leader().filter(|_| targets.len() > 1) {
             targets.retain(|&o| o != leader);
         }
         (!targets.is_empty()).then(|| targets[self.rng.below(targets.len())])
@@ -1488,9 +1496,11 @@ impl World {
                 continue;
             }
             u.morale -= 20.0 * lost as f32;
-            if u.is_squad() && !u.members.contains(&before[0]) {
+            // Losing the leader hurts once; whoever is left fights on leaderless.
+            if let Some(leader) = u.leader().filter(|l| !u.members.contains(l)) {
+                u.kind = UnitKind::Squad { leader: None };
                 u.morale -= 20.0;
-                if let (Some(l), false) = (self.pawn(before[0]), u.out()) {
+                if let (Some(l), false) = (self.pawn(leader), u.out()) {
                     events.push(format!("{}'s squad lost its leader.", l.name));
                 }
             }
@@ -2287,6 +2297,33 @@ mod tests {
         let unit = &battle(&w).units[t];
         assert_eq!(unit.members, vec![leader]);
         assert_eq!(unit.roster.len(), 3, "the fallen are still on the roster");
+    }
+
+    #[test]
+    fn a_fallen_leader_is_not_replaced() {
+        let mut w = world(40, 20, 17);
+        let shooter = colonist(&mut w, (5, 10, Z));
+        let i = w.pawn_index(shooter).unwrap();
+        w.pawns[i].weapon = Some(item("rifle"));
+        fight(&mut w, 3, (14, 10, Z));
+        let t = battle(&w).units.iter().position(|u| u.side == Faction::Raider).unwrap();
+        let ids = battle(&w).units[t].members.clone();
+        assert_eq!(battle(&w).units[t].leader(), Some(ids[0]));
+        let down = |w: &mut World, id: PawnId| {
+            let k = w.pawn_index(id).unwrap();
+            let mut p = w.pawns[k].clone();
+            w.kill(&mut p, "was shot");
+            w.pawns[k] = p;
+            w.refresh_units();
+        };
+        let morale = battle(&w).units[t].morale;
+        down(&mut w, ids[0]);
+        assert_eq!(battle(&w).units[t].leader(), None, "nobody takes command");
+        assert_eq!(battle(&w).units[t].morale, morale - 40.0, "a member and the leader");
+        assert!((0..200).any(|_| w.pick_target(i, t) == Some(ids[1])), "the new first member isn't spared like a leader");
+        // The next one to fall is just a member: no second leader penalty.
+        down(&mut w, ids[1]);
+        assert_eq!(battle(&w).units[t].morale, morale - 60.0, "only the member's 20");
     }
 
     #[test]
