@@ -294,3 +294,79 @@ impl World {
         }
     }
 }
+
+#[cfg(test)]
+mod regression_tests {
+    use super::*;
+    use crate::health::{DamageKind, Part};
+    use crate::map::FLAT_Z as Z;
+    use crate::pawn::Life;
+    use crate::testing::{build, colonist, item, quiet_world};
+
+    #[test]
+    fn rescue_precedes_tending_and_reserved_patients_are_skipped() {
+        let mut w = quiet_world(12, 10, 3);
+        let doctor = colonist(&mut w, (1, 1, Z));
+        let nearby = colonist(&mut w, (2, 1, Z));
+        let downed = colonist(&mut w, (8, 7, Z));
+        build(&mut w, (9, 7, Z), "bed");
+        let ni = w.pawn_index(nearby).unwrap();
+        w.pawns[ni].health.add_flu();
+        w.pawns[ni].resting = true;
+        let di = w.pawn_index(downed).unwrap();
+        w.pawns[di].life = Life::Downed { time: 0.0 };
+        let p = w.pawn(doctor).unwrap();
+        let df = bfs(&w.map, p.pos);
+        let (_, job) = w.doctor_candidate(p, &df, None, None).unwrap();
+        assert!(matches!(job, Job::Rescue { patient, .. } if patient == downed));
+        w.res_patient.push((downed, nearby));
+        let (_, job) = w.doctor_candidate(w.pawn(doctor).unwrap(), &df, None, None).unwrap();
+        assert!(matches!(job, Job::Tend { patient, .. } if patient == nearby));
+    }
+
+    #[test]
+    fn unavailable_medicine_falls_back_to_tending_without_consuming_it() {
+        let mut w = quiet_world(8, 8, 4);
+        let doctor = colonist(&mut w, (2, 2, Z));
+        let patient = colonist(&mut w, (3, 2, Z));
+        let pi = w.pawn_index(patient).unwrap();
+        w.pawns[pi].resting = true;
+        w.pawns[pi].health.injure(Part::LeftArm, 5.0, DamageKind::Cut, &mut w.rng);
+        w.pawns[pi].health.recompute();
+        let medicine = (6, 6, Z);
+        w.map.drop_item(medicine, Stack { kind: item("medicine"), count: 1 });
+        w.with_pawn(doctor, |w, p| w.start_job(p, Job::Tend { patient, medicine: Some(medicine), picked: false }));
+        // Another action removes the source while the doctor is fetching it.
+        assert_eq!(w.map.take_all(w.map.idx(medicine)).len(), 1);
+        // With no source there, arrival reports Gone; treatment still proceeds.
+        for _ in 0..600 {
+            w.with_pawn(doctor, |w, p| w.run_job(p, crate::TICK));
+            if w.pawn(doctor).unwrap().job.is_none() { break; }
+        }
+        assert!(!w.pawn(patient).unwrap().health.needs_tending());
+        assert_eq!(w.map.count_items(item("medicine")), 0);
+        assert!(!w.patient_reserved(patient));
+        assert_eq!(w.res_item[w.map.idx(medicine)], None);
+    }
+
+    #[test]
+    fn feeding_a_patient_consumes_one_meal_and_releases_the_job() {
+        let mut w = quiet_world(8, 8, 5);
+        let doctor = colonist(&mut w, (2, 2, Z));
+        let patient = colonist(&mut w, (3, 2, Z));
+        let pi = w.pawn_index(patient).unwrap();
+        w.pawns[pi].life = Life::Downed { time: 0.0 };
+        w.pawns[pi].hunger = 10.0;
+        let food = (2, 2, Z);
+        w.map.drop_item(food, Stack { kind: item("meal"), count: 2 });
+        w.with_pawn(doctor, |w, p| w.start_job(p, Job::Feed { patient, food, picked: false }));
+        for _ in 0..120 {
+            w.with_pawn(doctor, |w, p| w.run_job(p, crate::TICK));
+            if w.pawn(doctor).unwrap().job.is_none() { break; }
+        }
+        assert!(w.pawn(patient).unwrap().hunger > 10.0);
+        assert_eq!(w.map.count_items(item("meal")), 1);
+        assert!(w.pawn(doctor).unwrap().carrying.is_none());
+        assert!(!w.patient_reserved(patient));
+    }
+}

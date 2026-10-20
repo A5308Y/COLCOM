@@ -1074,3 +1074,80 @@ impl World {
         self.start_job(p, Job::Wander { to });
     }
 }
+
+#[cfg(test)]
+mod regression_tests {
+    use super::*;
+    use crate::map::FLAT_Z as Z;
+    use crate::pawn::{PerWork, WorkPriority};
+    use crate::production::Stockpile;
+    use crate::testing::{build, colonist, item, quiet_world};
+
+    #[test]
+    fn work_selection_respects_priority_disabled_work_and_reservations() {
+        let mut w = quiet_world(12, 10, 6);
+        let id = colonist(&mut w, (1, 1, Z));
+        let other = colonist(&mut w, (1, 2, Z));
+        let tree = (2, 1, Z);
+        let rock = (8, 7, Z);
+        let (ti, ri) = (w.map.idx(tree), w.map.idx(rock));
+        w.map.set_feature(ti, Feature::plant("tree"));
+        w.map.set_block(ri, Block::Rock);
+        w.map.set_desig(ti, Some(Desig::Chop));
+        w.map.set_desig(ri, Some(Desig::Mine));
+        let pi = w.pawn_index(id).unwrap();
+        w.pawns[pi].priorities = PerWork::filled(WorkPriority::Never);
+        w.set_priority(id, WorkType::Mining, WorkPriority::First);
+        w.set_priority(id, WorkType::PlantCutting, WorkPriority::Fourth);
+        assert!(matches!(w.find_work(w.pawn(id).unwrap()), Some(Job::Work { target, task: Task::Mine }) if target == rock));
+        w.res_target.set(ri, Some(other));
+        assert!(matches!(w.find_work(w.pawn(id).unwrap()), Some(Job::Work { target, task: Task::Harvest(_) }) if target == tree));
+        w.set_priority(id, WorkType::PlantCutting, WorkPriority::Never);
+        assert!(w.find_work(w.pawn(id).unwrap()).is_none());
+        w.release(other);
+        assert!(matches!(w.find_work(w.pawn(id).unwrap()), Some(Job::Work { task: Task::Mine, .. })));
+    }
+
+    #[test]
+    fn scan_ignores_unreachable_and_reserved_items_and_tracks_storage_priorities() {
+        let mut w = quiet_world(10, 8, 7);
+        let id = colonist(&mut w, (1, 1, Z));
+        for y in 0..8 { build(&mut w, (4, y, Z), "wall"); }
+        let kind = item("wood");
+        for (at, count) in [((5, 1, Z), 1), ((2, 1, Z), 1), ((1, 4, Z), 2)] {
+            w.map.drop_item(at, Stack { kind, count });
+        }
+        w.res_item.set(w.map.idx((2, 1, Z)), Some(id));
+        for (at, priority) in [((1, 2, Z), StorePriority::Low), ((2, 6, Z), StorePriority::Critical)] {
+            let mut stockpile = Stockpile::new(1);
+            stockpile.priority = priority;
+            let store = w.add_stockpile(stockpile);
+            let i = w.map.idx(at);
+            w.map.zone[i] = Zone::Stockpile(store);
+        }
+        let scan = w.scan((1, 1, Z));
+        assert_eq!(scan.nearest_item[kind.index()], Some((3, (1, 4, Z))));
+        assert_eq!(scan.nearest_cell[kind.index()][StorePriority::Low.index()], Some((1, (1, 2, Z))));
+        assert_eq!(scan.nearest_cell[kind.index()][StorePriority::Critical.index()], Some((6, (2, 6, Z))));
+        assert!(scan.df.dist((5, 1, Z)).is_none());
+    }
+
+    #[test]
+    fn cancelling_a_haul_drops_the_load_and_makes_both_claims_available() {
+        let mut w = quiet_world(8, 8, 8);
+        let id = colonist(&mut w, (2, 2, Z));
+        let (from, to) = ((3, 2, Z), (6, 6, Z));
+        w.with_pawn(id, |w, p| {
+            w.start_job(p, Job::Haul { from, to, deliver: false, picked: true });
+            p.carrying = Some(Stack { kind: item("wood"), count: 7 });
+            p.path.push(to);
+            p.path_goal = Some(to);
+            w.end_job(p);
+        });
+        let p = w.pawn(id).unwrap();
+        assert!(p.job.is_none() && p.carrying.is_none() && p.path.is_empty() && p.path_goal.is_none());
+        assert_eq!(w.map.count_items(item("wood")), 7);
+        assert_eq!(w.res_item[w.map.idx(from)], None);
+        assert_eq!(w.res_cell[w.map.idx(to)], None);
+    }
+}

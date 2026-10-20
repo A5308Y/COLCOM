@@ -122,6 +122,11 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
 
 ## 5. Tests
 
+Uncommitted proposal for review: 15 enabled tests under the `regression_tests`
+filter, plus `tools/benchmark_tests.py` and its `TEST_BENCHMARK.md` report.
+Determinism and direct tests pass. The two save-and-continue tests currently expose
+exact floating-point round-trip differences; production code is unchanged.
+
 - [ ] **Determinism test:** same seed, N ticks, same world hash.
 - [ ] **Save-and-continue test:** save, load and continue must match an uninterrupted run.
 - [ ] **Assertions on log text.** About 31 assertions match log or event text, and

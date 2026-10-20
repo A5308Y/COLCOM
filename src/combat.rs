@@ -103,3 +103,69 @@ impl World {
         .unwrap_or(from)
     }
 }
+
+#[cfg(test)]
+mod regression_tests {
+    use super::*;
+    use crate::map::FLAT_Z as Z;
+    use crate::pawn::{Job, Memory};
+    use crate::testing::{colonist, item, quiet_world};
+
+    #[test]
+    fn death_drops_inventory_frees_reservations_and_only_happens_once() {
+        let mut w = quiet_world(8, 8, 1);
+        let id = colonist(&mut w, (2, 2, Z));
+        let survivor = colonist(&mut w, (6, 6, Z));
+        let (from, to) = ((2, 2, Z), (4, 4, Z));
+        w.with_pawn(id, |w, p| {
+            p.weapon = Some(item("rifle"));
+            p.sidearm = Some(item("knife"));
+            p.apparel = vec![item("clothes")];
+            p.utility = Some(Stack { kind: item("personal_shield"), count: 1 });
+            p.carrying = Some(Stack { kind: item("wood"), count: 3 });
+            w.start_job(p, Job::Haul { from, to, deliver: false, picked: true });
+            w.res_patient.push((survivor, id));
+            w.kill(p, "test injury");
+        });
+        let p = w.pawn(id).unwrap();
+        assert_eq!(p.life, Life::Dead { buried: false });
+        assert!(p.job.is_none() && p.carrying.is_none() && p.weapon.is_none() && p.sidearm.is_none());
+        assert!(p.apparel.is_empty() && p.utility.is_none());
+        assert_eq!(w.res_item[w.map.idx(from)], None);
+        assert_eq!(w.res_cell[w.map.idx(to)], None);
+        assert!(!w.patient_reserved(survivor));
+        assert!(w.pawn(survivor).unwrap().memories.iter().any(|m| m.kind == Memory::ColonistDied));
+        for gear in ["rifle", "knife", "clothes", "personal_shield"] {
+            assert_eq!(w.map.count_items(item(gear)), 1);
+        }
+        assert_eq!(w.map.count_items(item("wood")), 3);
+        let before = w.save_json().unwrap();
+        w.with_pawn(id, |w, p| w.kill(p, "second injury"));
+        let index = w.pawn_index(id).unwrap();
+        w.damage(index, 100.0, DamageKind::Gunshot, "after death");
+        assert_eq!(w.save_json().unwrap(), before, "dead pawns neither drop twice nor consume RNG on damage");
+    }
+
+    #[test]
+    fn a_shield_absorbs_shots_and_only_overflow_reaches_the_body() {
+        let mut w = quiet_world(8, 8, 2);
+        let id = colonist(&mut w, (2, 2, Z));
+        let i = w.pawn_index(id).unwrap();
+        let p = &mut w.pawns[i];
+        p.apparel.clear();
+        p.take_utility(Stack { kind: item("personal_shield"), count: 1 });
+        let energy = p.shield_energy();
+        let health = serde_json::to_string(&p.health).unwrap();
+        w.shot_damage(i, energy - 5.0, DamageKind::Gunshot, "test");
+        assert_eq!(w.pawns[i].shield_energy(), 5.0);
+        assert_eq!(serde_json::to_string(&w.pawns[i].health).unwrap(), health);
+        // Match the overflow against the same pawn and RNG with its shield removed.
+        let mut unshielded = w.clone();
+        unshielded.pawns[i].utility = None;
+        w.shot_damage(i, 15.0, DamageKind::Gunshot, "test");
+        unshielded.damage(i, 10.0, DamageKind::Gunshot, "test");
+        assert_eq!(w.pawns[i].shield_energy(), 0.0);
+        assert!(!w.pawns[i].health.hediffs.is_empty());
+        assert_eq!(serde_json::to_string(&w.pawns[i].health).unwrap(), serde_json::to_string(&unshielded.pawns[i].health).unwrap());
+    }
+}

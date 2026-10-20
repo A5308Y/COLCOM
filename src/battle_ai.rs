@@ -216,3 +216,73 @@ impl World {
         best.map(|(c, _)| c)
     }
 }
+
+#[cfg(test)]
+mod regression_tests {
+    use super::*;
+    use crate::battle::{Parley, Stance, BROKEN};
+    use crate::health::{DamageKind, Part};
+    use crate::map::{FLAT_Z as Z, Stack};
+    use crate::testing::{colonist, item, quiet_world};
+
+    fn fight() -> (World, PawnId, PawnId) {
+        let mut w = quiet_world(24, 14, 9);
+        let far = colonist(&mut w, (2, 6, Z));
+        let near = colonist(&mut w, (10, 6, Z));
+        for id in [far, near] {
+            let i = w.pawn_index(id).unwrap();
+            w.pawns[i].weapon = Some(item("rifle"));
+        }
+        w.start_battle(Parley { squads: vec![1], entry: (23, 6, Z), demand: Vec::new(), tier: 0 });
+        (w, far, near)
+    }
+
+    #[test]
+    fn activation_chooses_the_nearest_eligible_unit() {
+        let (mut w, far, near) = fight();
+        let near_unit = w.current_battle().unit_of(near).unwrap();
+        let far_unit = w.current_battle().unit_of(far).unwrap();
+        w.ai_step();
+        assert_eq!(w.current_battle().active_unit(), Some(near_unit));
+        let b = w.current_battle_mut();
+        b.active = None;
+        b.busy = 0.0;
+        b.units[near_unit].acted = true;
+        w.ai_step();
+        assert_eq!(w.current_battle().active_unit(), Some(far_unit));
+    }
+
+    #[test]
+    fn a_broken_raider_flees_within_its_ap_and_does_not_move_twice() {
+        let (mut w, _, _) = fight();
+        let u = w.current_battle().units.iter().position(|u| u.side == Faction::Raider).unwrap();
+        let raider = w.current_battle().units[u].members[0];
+        let i = w.pawn_index(raider).unwrap();
+        let pos = (16, 7, Z);
+        (w.pawns[i].pos, w.pawns[i].x, w.pawns[i].y, w.pawns[i].z) = (pos, pos.0 as f32, pos.1 as f32, Z as f32);
+        w.current_battle_mut().units[u].morale = BROKEN - 1.0;
+        let active = Activation { unit: u, moved: false };
+        let BattleOrder::Move(to) = w.ai_order(active) else { panic!("broken raider should flee") };
+        let df = w.battle_field(Faction::Raider, pos);
+        let steps = df.dist(to).expect("flee destination is reachable");
+        assert!(steps > 0 && steps * w.step_ap(u) <= w.current_battle().units[u].ap);
+        let edge_distance = |p: Pos| p.0.min(p.1).min(w.map.w - 1 - p.0).min(w.map.h - 1 - p.1);
+        assert!(edge_distance(to) < edge_distance(pos));
+        assert_eq!(w.ai_order(Activation { unit: u, moved: true }), BattleOrder::Hunker);
+    }
+
+    #[test]
+    fn a_bleeding_unit_uses_its_medkit_before_attacking() {
+        let (mut w, _, near) = fight();
+        let u = w.current_battle().unit_of(near).unwrap();
+        let i = w.pawn_index(near).unwrap();
+        w.pawns[i].health.injure(Part::LeftArm, 8.0, DamageKind::Gunshot, &mut w.rng);
+        w.pawns[i].health.recompute();
+        w.pawns[i].take_utility(Stack { kind: item("field_medkit"), count: 1 });
+        assert!(w.pawns[i].health.bleed_rate() > 0.0);
+        assert_eq!(w.ai_order(Activation { unit: u, moved: false }), BattleOrder::Medkit);
+        w.current_battle_mut().units[u].ap = 0;
+        w.current_battle_mut().units[u].stance = Stance::Standing;
+        assert_eq!(w.ai_order(Activation { unit: u, moved: true }), BattleOrder::End);
+    }
+}
