@@ -301,7 +301,7 @@ fn build_sheet(k: BuildId) -> Sheet {
     s.about.extend(purpose(d).map(String::from));
     if d.on_wall {
         s.about.push("Hangs on a wall: in one of five places on either side, counting for the room it faces.".into());
-        if d.id == "calendar" {
+        if d.shows_date {
             s.about.push("Shows the day and time (click its wall).".into());
         }
     }

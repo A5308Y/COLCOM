@@ -262,7 +262,7 @@ impl DamageKind {
     fn pain(self) -> f32 {
         match self {
             DamageKind::Burn => 0.022,
-            _ => 0.015,
+            DamageKind::Cut | DamageKind::Gunshot | DamageKind::Bruise => 0.015,
         }
     }
 

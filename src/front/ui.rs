@@ -1271,7 +1271,7 @@ fn wall_decor(ui: &mut egui::Ui, w: &SimWorld, t: Pos, look_up: &mut Option<Info
                 }));
             }
         });
-        if d.built && d.kind.def().id == "calendar" {
+        if d.built && d.kind.def().shows_date {
             let hour = w.hour();
             let date = format!("Day {}, {:02}:{:02}", w.day(), hour as u32, ((hour - hour.floor()) * 60.0) as u32);
             ui.label(RichText::new(format!("    It says: {}", date)).weak());

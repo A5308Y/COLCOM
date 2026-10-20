@@ -287,6 +287,7 @@
             name: "Scrap metal",
             category: "Scrap",
             color: "rust",
+            raider_loot: Some((1, 2)),
             model: Some((
                 path: "models/items/ScrapMetal.gltf",
                 ground: (at: (0.007462, -0.014537, -0.000000), turn: (0.000000, 0.000000, 0.000000), scale: 1.0),
@@ -1572,6 +1573,7 @@
             work_time: 1.0,
             passable: true,
             on_wall: true,
+            shows_date: true,
             beauty: 0.5,
             model: Some((
                 path: "models/furniture/Calendar.gltf",

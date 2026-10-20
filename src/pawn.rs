@@ -329,7 +329,8 @@ impl Memory {
             Memory::ColonistDied => 3.0 * DAY_LEN,
             Memory::Catharsis => 1.5 * DAY_LEN,
             Memory::AteRawFood | Memory::AteMeal | Memory::DiningRoom(_) | Memory::AteWithoutTable => 0.5 * DAY_LEN,
-            _ => DAY_LEN,
+            Memory::Bedroom(_) | Memory::SleptOutside | Memory::SleptOnGround | Memory::WonBattle
+            | Memory::LostBattle | Memory::RoomThought(_) | Memory::SleptOnSpot => DAY_LEN,
         }
     }
 

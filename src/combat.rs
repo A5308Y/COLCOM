@@ -75,9 +75,11 @@ impl World {
         }
         // Raiders carry odds and ends worth salvaging.
         if p.faction == crate::pawn::Faction::Raider {
-            if let Some(scrap) = ItemId::all().find(|k| k.def().id == "scrap_metal") {
-                let count = 1 + self.rng.below(2) as u32;
-                self.map.drop_item(p.pos, Stack { kind: scrap, count });
+            for kind in ItemId::all() {
+                if let Some((lo, hi)) = kind.def().raider_loot {
+                    let count = lo + self.rng.below((hi - lo + 1) as usize) as u32;
+                    self.map.drop_item(p.pos, Stack { kind, count });
+                }
             }
         }
         p.dead = true;

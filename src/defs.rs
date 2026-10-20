@@ -455,6 +455,9 @@ pub struct ItemDef {
     /// Range of amounts arriving in cargo pods (never, if not given).
     #[serde(default)]
     pub pods: Option<(u32, u32)>,
+    /// Range of amounts a killed raider drops (never, if not given).
+    #[serde(default)]
+    pub raider_loot: Option<(u32, u32)>,
     #[serde(default)]
     pub weapon: Option<WeaponDef>,
     #[serde(default)]
@@ -633,6 +636,9 @@ pub struct BuildDef {
     /// wall, y up from the floor and z out of the wall's face.
     #[serde(default)]
     pub on_wall: bool,
+    /// Shows the in-game day and time when inspected (a calendar).
+    #[serde(default)]
+    pub shows_date: bool,
     /// Lets daylight into rooms it borders (windows).
     #[serde(default)]
     pub daylight: bool,
@@ -1313,6 +1319,9 @@ impl Defs {
             }
             if d.pods.is_some_and(|(lo, hi)| lo == 0 || lo > hi) {
                 return Err(format!("{}: pods need 1 <= min <= max", d.id));
+            }
+            if d.raider_loot.is_some_and(|(lo, hi)| lo == 0 || lo > hi) {
+                return Err(format!("{}: raider loot needs 1 <= min <= max", d.id));
             }
             if !(0.0..=1.0).contains(&d.poison) || d.nutrition < 0.0 || d.medicine < 0.0 {
                 return Err(format!("{}: poison must be 0..1, nutrition and medicine not negative", d.id));

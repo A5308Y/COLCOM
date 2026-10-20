@@ -90,7 +90,7 @@ impl Cover {
         match self {
             Cover::Heavy => Cover::Medium,
             Cover::Medium => Cover::Light,
-            _ => Cover::None,
+            Cover::Light | Cover::None => Cover::None,
         }
     }
 
