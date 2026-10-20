@@ -140,12 +140,12 @@ impl World {
                 }
             }
             if let (Some(id), None) = (m.zone[i].stockpile(), self.res_cell[i]) {
-                let Some(store) = self.stockpiles.get(id as usize) else { continue };
+                let Some(store) = self.stockpile(id) else { continue };
                 let prio = store.priority.index();
                 for kind in ItemId::all() {
                     let k = kind.index();
                     let slot = &mut nearest_cell[k][prio];
-                    if accepts[id as usize][k] && slot.is_none_or(|(bd, _)| d < bd) && m.can_accept(i, kind) {
+                    if accepts[id.index()][k] && slot.is_none_or(|(bd, _)| d < bd) && m.can_accept(i, kind) {
                         *slot = Some((d, pos));
                     }
                 }

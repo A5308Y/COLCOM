@@ -188,11 +188,11 @@ impl World {
             }
         }
         let mut stockpile = Vec::new();
-        w.stockpiles.push(Stockpile::new(1));
+        let store = w.add_stockpile(Stockpile::new(1));
         for y in cy + 2..cy + 5 {
             for x in cx - 4..cx + 2 {
                 let i = w.map.idx((x, y, z));
-                w.map.zone[i] = Zone::Stockpile(0);
+                w.map.zone[i] = Zone::Stockpile(store);
                 stockpile.push((x, y, z));
             }
         }
@@ -1431,7 +1431,7 @@ mod tests {
         colonist(&mut w, (2, 2, Z));
         for x in 2..5 {
             let i = w.map.idx((x, 10, Z));
-            w.map.zone[i] = Zone::Stockpile(0);
+            w.map.zone[i] = Zone::Stockpile(crate::map::StockpileId::new(0));
         }
         let src = w.map.idx((12, 12, Z));
         w.map.items[src] = Some(Stack { kind: item("wood"), count: 20 });
@@ -1735,7 +1735,7 @@ mod tests {
         colonist(&mut w, (2, 2, Z));
         for x in 2..5 {
             let i = w.map.idx((x, 10, Z));
-            w.map.zone[i] = Zone::Stockpile(0);
+            w.map.zone[i] = Zone::Stockpile(crate::map::StockpileId::new(0));
         }
         let src = w.map.idx((15, 15, Z + 1));
         w.map.items[src] = Some(Stack { kind: item("wood"), count: 20 });
@@ -1751,7 +1751,7 @@ mod tests {
         colonist(&mut w, (2, 2, Z));
         for x in 2..5 {
             let i = w.map.idx((x, 10, Z));
-            w.map.zone[i] = Zone::Stockpile(0);
+            w.map.zone[i] = Zone::Stockpile(crate::map::StockpileId::new(0));
         }
         let src = w.map.idx((15, 15, Z + 2));
         w.map.items[src] = Some(Stack { kind: item("wood"), count: 20 });
@@ -2397,7 +2397,7 @@ mod tests {
         }
         for x in 1..4 {
             let i = w.map.idx((x, 2, Z));
-            w.map.zone[i] = Zone::Stockpile(0);
+            w.map.zone[i] = Zone::Stockpile(crate::map::StockpileId::new(0));
         }
         let src = w.map.idx((11, 1, Z + 1));
         w.map.items[src] = Some(Stack { kind: item("stone"), count: 10 });

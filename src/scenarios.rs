@@ -89,11 +89,11 @@ fn battle_arena() -> World {
     }
 
     // The stockpile south of the house, with gear to fight in.
-    w.stockpiles.push(Stockpile::new(1));
+    let store = w.add_stockpile(Stockpile::new(1));
     for y in 19..=24 {
         for x in 3..=9 {
             let i = w.map.idx((x, y, Z));
-            w.map.zone[i] = Zone::Stockpile(0);
+            w.map.zone[i] = Zone::Stockpile(store);
         }
     }
     for (x, kind, count) in [(4, "rifle", 2), (5, "steel_armor", 1), (6, "knife", 1), (7, "steel", 30)] {
@@ -195,7 +195,7 @@ fn battle_arena() -> World {
             continue;
         }
         let cell = (0..w.map.len())
-            .find(|&i| w.map.zone[i] == Zone::Stockpile(0) && !w.map.has_items(i))
+            .find(|&i| w.map.zone[i] == Zone::Stockpile(crate::map::StockpileId::new(0)) && !w.map.has_items(i))
             .expect("the battle stockpile has room for every combat item");
         w.map.drop_item(w.map.pos(cell), Stack { kind, count: 1 });
     }
@@ -306,7 +306,7 @@ mod tests {
             let def = kind.def();
             if def.is_gear() || def.medicine > 0.0 || def.cyberware.is_some() {
                 let stocked: u32 = (0..w.map.len())
-                    .filter(|&i| w.map.zone[i] == Zone::Stockpile(0))
+                    .filter(|&i| w.map.zone[i] == Zone::Stockpile(crate::map::StockpileId::new(0)))
                     .map(|i| w.map.count_in(i, kind))
                     .sum();
                 assert!(stocked >= 1, "{} has a spare in the stockpile", def.id);

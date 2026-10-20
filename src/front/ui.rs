@@ -19,7 +19,7 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::health::{CyberSlot, HediffKind};
 use my_world::decor::DecorState;
 use my_world::defs::{defs, ItemCategory, ItemId, PlantId, RoomDef, RoomId, Slot, Special};
-use my_world::map::{Block, Feature, Pos, Zone};
+use my_world::map::{Block, Feature, Pos, StockpileId, Zone};
 use my_world::pawn::{Pawn, PawnId, Role, Skill, WorkPriority, WorkType};
 use my_world::production::{BillMode, StorePriority};
 use my_world::rooms::{Progress, RoomStats, TIERS};
@@ -1339,8 +1339,8 @@ fn bed_owner(ui: &mut egui::Ui, w: &SimWorld, t: Pos, actions: &mut Vec<Action>)
     }
 }
 
-fn stockpile_settings(ui: &mut egui::Ui, w: &SimWorld, id: u16, actions: &mut Vec<Action>) {
-    let Some(store) = w.stockpiles.get(id as usize) else { return };
+fn stockpile_settings(ui: &mut egui::Ui, w: &SimWorld, id: StockpileId, actions: &mut Vec<Action>) {
+    let Some(store) = w.stockpile(id) else { return };
     ui.separator();
     theme::section(ui, &store.name);
     ui.horizontal(|ui| {

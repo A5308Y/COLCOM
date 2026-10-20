@@ -62,8 +62,10 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
   the right state. Both change the save format.
   Done: `DecorState { Planned { delivered }, Up, ComingDown }` (save format 9) and
   `MoveState { Standing, Lifted { bills, owner } }` (save format 10).
-- [ ] **Indices into def and world tables:** `RoomStats.kind: Option<usize>` (add `RoomId`
+- [x] **Indices into def and world tables:** `RoomStats.kind: Option<usize>` (add `RoomId`
   through `def_id!`), and `Zone::Stockpile(u16)` (add `StockpileId`).
+  Done: `RoomId` (also used for room thoughts in memories, which were saved as an index;
+  save format 11) and `StockpileId` with `World::add_stockpile`/`stockpile(id)`.
 - [ ] Later, if worthwhile:
   - Move the fight site into `Stage::Fighting`.
   - Key skills and priorities by enum rather than by array position, so reordering

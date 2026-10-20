@@ -9,7 +9,7 @@
 //! hauled to stockpiles like anything else.
 
 use crate::defs::{defs, ItemId, RecipeId};
-use crate::map::{Feature, Pos, Stack, Zone};
+use crate::map::{Feature, Pos, Stack, StockpileId, Zone};
 use crate::pawn::{Job, Pawn};
 use crate::world::World;
 use serde::{Deserialize, Serialize};
@@ -373,27 +373,41 @@ impl World {
     /// Priority of the stockpile at cell `i` for `kind`, if it takes it.
     pub(crate) fn storage_priority(&self, i: usize, kind: ItemId) -> Option<StorePriority> {
         let id = self.map.zone[i].stockpile()?;
-        let s = self.stockpiles.get(id as usize)?;
+        let s = self.stockpile(id)?;
         s.accepts(kind).then_some(s.priority)
     }
 
     /// Stockpile id for a new cell at `p`: a stockpile next to it on the same
     /// level (not a shelf's own storage), or a new one.
-    pub(crate) fn stockpile_for(&mut self, p: Pos) -> u16 {
+    /// A stockpile's settings.
+    pub fn stockpile(&self, id: StockpileId) -> Option<&Stockpile> {
+        self.stockpiles.get(id.index())
+    }
+
+    fn stockpile_mut(&mut self, id: StockpileId) -> Option<&mut Stockpile> {
+        self.stockpiles.get_mut(id.index())
+    }
+
+    /// Keep a new stockpile's settings; zone cells refer to it by the id.
+    pub fn add_stockpile(&mut self, store: Stockpile) -> StockpileId {
+        self.stockpiles.push(store);
+        StockpileId::new((self.stockpiles.len() - 1) as u16)
+    }
+
+    pub(crate) fn stockpile_for(&mut self, p: Pos) -> StockpileId {
         let next = self.map.neighbors(p).find_map(|nb| {
             let id = self.map.zone[self.map.idx(nb)].stockpile()?;
             (!self.is_container(id)).then_some(id)
         });
         next.unwrap_or_else(|| {
             let number = self.stockpiles.iter().filter(|s| !s.container).count() + 1;
-            self.stockpiles.push(Stockpile::new(number));
-            (self.stockpiles.len() - 1) as u16
+            self.add_stockpile(Stockpile::new(number))
         })
     }
 
     /// Whether stockpile `id` is the storage of shelves rather than a painted zone.
-    pub fn is_container(&self, id: u16) -> bool {
-        self.stockpiles.get(id as usize).is_some_and(|s| s.container)
+    pub fn is_container(&self, id: StockpileId) -> bool {
+        self.stockpile(id).is_some_and(|s| s.container)
     }
 
     /// Whether cell `i` belongs to a shelf's own storage.
@@ -435,8 +449,7 @@ impl World {
                     let number = self.stockpiles.iter().filter(|s| s.container && s.name.starts_with(name)).count() + 1;
                     // Preferred, so things move onto shelves from plain stockpiles.
                     let store = Stockpile { name: format!("{} {}", name, number), priority: StorePriority::Preferred, container: true, ..Stockpile::new(0) };
-                    self.stockpiles.push(store);
-                    (self.stockpiles.len() - 1) as u16
+                    self.add_stockpile(store)
                 });
                 self.map.zone[i] = Zone::Stockpile(id);
             } else if !storage && self.container_at(i) {
@@ -451,14 +464,14 @@ impl World {
         }
     }
 
-    pub fn set_stockpile_priority(&mut self, id: u16, priority: StorePriority) {
-        if let Some(s) = self.stockpiles.get_mut(id as usize) {
+    pub fn set_stockpile_priority(&mut self, id: StockpileId, priority: StorePriority) {
+        if let Some(s) = self.stockpile_mut(id) {
             s.priority = priority;
         }
     }
 
-    pub fn set_stockpile_allows(&mut self, id: u16, kind: ItemId, allow: bool) {
-        if let Some(s) = self.stockpiles.get_mut(id as usize) {
+    pub fn set_stockpile_allows(&mut self, id: StockpileId, kind: ItemId, allow: bool) {
+        if let Some(s) = self.stockpile_mut(id) {
             s.forbid.retain(|&k| k != kind);
             if !allow {
                 s.forbid.push(kind);
@@ -1165,7 +1178,7 @@ mod tests {
         assert_eq!(id(&w, 5), id(&w, 6));
         assert_ne!(id(&w, 5), id(&w, 10));
         assert!(w.is_container(id(&w, 5)));
-        assert_eq!(w.stockpiles[id(&w, 10) as usize].name, "Shelf 2");
+        assert_eq!(w.stockpile(id(&w, 10)).unwrap().name, "Shelf 2");
         // The one apart takes no wood, so it all goes on the pair.
         w.set_stockpile_allows(id(&w, 10), item("wood"), false);
         w.map.drop_item((12, 12, Z), Stack { kind: item("wood"), count: 200 });
@@ -1208,7 +1221,7 @@ mod tests {
         assert!(w.apply_order((6, 5, Z), Order::Stockpile));
         let beside = w.map.zone[w.map.idx((6, 5, Z))].stockpile().unwrap();
         assert!(!w.is_container(beside));
-        assert_eq!(w.stockpiles[beside as usize].name, "Stockpile 1");
+        assert_eq!(w.stockpile(beside).unwrap().name, "Stockpile 1");
         // Taken down: no more storage, and what doesn't fit on the ground spills over.
         w.map.items[i] = Some(Stack { kind: item("wood"), count: 120 });
         w.map.set_feature(i, Feature::None);

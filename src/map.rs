@@ -216,16 +216,32 @@ pub enum Desig {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Zone {
     None,
-    /// Part of a stockpile (an id into `World::stockpiles`, which holds its settings).
-    Stockpile(u16),
+    /// Part of a stockpile (its settings are `World::stockpile(id)`).
+    Stockpile(StockpileId),
     /// Planted with this crop.
     Grow(PlantId),
     /// Where civilians shelter during battles.
     Safe,
 }
 
+/// Identifies a stockpile. Handed out by `World::add_stockpile`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct StockpileId(u16);
+
+impl StockpileId {
+    /// Stockpiles are added by the world; build one directly only in tests.
+    pub fn new(raw: u16) -> StockpileId {
+        StockpileId(raw)
+    }
+
+    pub(crate) fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
 impl Zone {
-    pub fn stockpile(self) -> Option<u16> {
+    pub fn stockpile(self) -> Option<StockpileId> {
         match self {
             Zone::Stockpile(id) => Some(id),
             _ => None,
