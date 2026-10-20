@@ -78,17 +78,24 @@ shell encloses the entire body, including the fingers, wrists, armpits, hips and
 the helmet. There are no exposed fabric inserts. The foundation derives from the matching
 CC0 base character, retargeted and simplified using the clothing CPU skinning helpers.
 
-The original graphite and titanium panel silhouettes are fitted to the nearest body surface
-and baked onto the continuous shell's triangles. Shared vertices eliminate overlapping plates
-at the shoulders, knees and spine. Cyan lights and machined trim sit in shallow relief and
-inherit interpolated skin weights from that same surface. The chest, back and limbs bend with
-the pawn; the back reactor follows the spine closely instead of floating behind it.
+The shell is not an offset copy of the body: that read as a painted bodysuit. Each segment
+between joints is projected onto low-poly faceted plates (12-sided cuirass with a chest keel and
+fauld lames, 8-sided vambraces, thigh plates and ridged greaves) sized to enclose the body rather
+than trace its muscles, breasts or seat. Faceted domes form pauldrons and knee cops. Boots have
+a faceted shaft with a cuff, a hulled foot with toe cap and heel, a flat sole and a graphite sole
+rim. Plates blend into narrow flexible bands at the neck, shoulders, elbows, wrists, hips, knees
+and ankles, where skin weights blend. Plates stand about 2–5 cm off the body; joints stay close.
+The shell is flat-shaded: vertices split only between facets, and the copies retain position
+and weights, so the enclosure stays closed and bends with the pawn without overlapping layers.
+Cyan lights sit in shallow relief on the finished plates with interpolated skin weights. A full
+suit takes visual precedence over separately equipped leg apparel.
 
 The suit has no skin textures or transparent materials. `full_body: true` hides the original
-torso, limbs and head surfaces only after the suit is ready. Skeletons remain visible to their
-attachments, so the helmet stays in place. Unequipping restores the original body; failed
+torso, limbs, head and all native outfit accessories only after the suit is ready.
+Weapons and helmets always attach to the outfit skeleton, so hidden hair cannot hide them.
+Unequipping restores the original body; failed
 loading retains fallbacks. The helmet remains the shared rigid attachment, and the stored
-1,986-triangle prop remains unchanged. Worn suits use 8,486 male / 7,899 female triangles,
+1,986-triangle prop remains unchanged. Worn suits use 8,551 male / 7,818 female triangles,
 including the complete shell and shallow details, plus the existing helmet. These deforming
 full-body meshes have a higher budget than the static item props.
 

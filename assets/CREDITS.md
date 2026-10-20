@@ -24,6 +24,11 @@ The continuous armor foundations in `models/armor/PoweredArmorMale.gltf` and
 simplifies the anatomy and replaces all skin materials with opaque titanium,
 including the neck covering and gloves. The armor plates and cyan materials are original project artwork.
 
+The worn `CargoTrousersMale/Female.gltf` and `FlakLegGuardsMale/Female.gltf` in
+`models/items/` reuse the matching CC0 Peasant outfit's trousers, boots and skin weights.
+`tools/make_skinned_legs.py` adds original canvas pockets, raised ballistic guards and
+flat-color project materials; it does not reuse the source textures.
+
 ## Models (CC0 1.0, public domain)
 
 By Quaternius (https://quaternius.com, https://www.patreon.com/quaternius). Free "Standard" versions.

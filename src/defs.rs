@@ -269,7 +269,8 @@ pub struct ApparelDef {
     /// What shows on the wearer: shapes fixed to the character's bones.
     #[serde(default)]
     pub pieces: Vec<WornPiece>,
-    /// A body-specific skin; pieces remain loading fallbacks and headgear.
+    /// A body-specific skin; Legs renders independently of the selected upper garment.
+    /// Pieces remain loading fallbacks and headgear.
     #[serde(default)]
     pub skinned: Option<SkinnedApparel>,
 }

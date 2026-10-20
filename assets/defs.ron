@@ -902,7 +902,7 @@
                 (shape: Cube, color: "berry", at: (0.0, 0.105, 0.0), size: (0.02, 0.01, 0.06)),
             ],
         ),
-        // Legs and face: no worn models yet (the native trousers show).
+        // Utility items; leg apparel below includes fitted worn models.
         (
             id: "personal_shield",
             value: 320.0,
@@ -985,7 +985,8 @@
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
             about: Some("Tough canvas trousers with deep pockets: a little warmth and a little protection."),
-            apparel: Some((slot: Legs, armor: 0.06, mood: 1.0, warmth: 3.0)),
+            apparel: Some((slot: Legs, armor: 0.06, mood: 1.0, warmth: 3.0,
+                skinned: Some((male: "models/items/CargoTrousersMale.gltf", female: "models/items/CargoTrousersFemale.gltf")))),
             look: [
                 (shape: Cube, color: "canvas", at: (0.0, 0.04, 0.0), size: (0.4, 0.08, 0.3)),
             ],
@@ -1002,7 +1003,8 @@
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
             about: Some("Padded ballistic thigh and shin guards: they stop shrapnel, at the cost of a slower step."),
-            apparel: Some((slot: Legs, armor: 0.35, mood: 0.0, warmth: 1.0, speed: 0.97)),
+            apparel: Some((slot: Legs, armor: 0.35, mood: 0.0, warmth: 1.0, speed: 0.97,
+                skinned: Some((male: "models/items/FlakLegGuardsMale.gltf", female: "models/items/FlakLegGuardsFemale.gltf")))),
             look: [
                 (shape: Cube, color: "ballistic_fabric", at: (-0.1, 0.05, 0.0), size: (0.16, 0.1, 0.36)),
                 (shape: Cube, color: "ballistic_fabric", at: (0.1, 0.05, 0.0), size: (0.16, 0.1, 0.36)),

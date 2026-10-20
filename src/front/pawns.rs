@@ -241,7 +241,15 @@ fn worn_pieces(apparel: &[ItemId]) -> Vec<&'static WornPiece> {
 
 fn skinned_apparel(apparel: &[ItemId]) -> Option<ItemId> {
     let outer = apparel.iter().any(|k| k.def().apparel.as_ref().is_some_and(|a| a.slot == Slot::Outer && !a.pieces.is_empty()));
-    apparel.iter().copied().find(|k| k.def().apparel.as_ref().is_some_and(|a| a.skinned.is_some() && (!outer || a.slot != Slot::Shirt)))
+    apparel.iter().copied().find(|k| k.def().apparel.as_ref().is_some_and(|a| a.skinned.is_some() && a.slot != Slot::Legs && (!outer || a.slot != Slot::Shirt)))
+}
+
+fn skinned_leg_apparel(apparel: &[ItemId]) -> Option<ItemId> {
+    // A sealed suit supplies its own legs even for stale/conflicting save data.
+    if skinned_apparel(apparel).is_some_and(|k| k.def().apparel.as_ref().unwrap().skinned.as_ref().unwrap().full_body) {
+        return None;
+    }
+    apparel.iter().copied().find(|k| k.def().apparel.as_ref().is_some_and(|a| a.slot == Slot::Legs && a.skinned.is_some()))
 }
 
 /// Direction the pawn should face when not moving: the nearest enemy in a
@@ -475,7 +483,9 @@ fn sync_pawns(
             if let Some((r, ..)) = rig.as_mut().filter(|_| rig_ready) {
                 r.reset_garment(&mut commands);
                 let fabric = skinned_apparel(&p.apparel).map(|k| k.def().apparel.as_ref().unwrap());
+                let leg_fabric = skinned_leg_apparel(&p.apparel).map(|k| k.def().apparel.as_ref().unwrap());
                 let mut fabric_fallbacks = Vec::new();
+                let mut leg_fallbacks = Vec::new();
                 for piece in &pieces {
                     let Some((bone, rest)) = r.bone(&piece.bone) else {
                         warn!("no bone \"{}\" for armour", piece.bone);
@@ -488,10 +498,18 @@ fn sync_pawns(
                     if piece.bone != "Head" && fabric.is_some_and(|a| a.pieces.iter().any(|p| std::ptr::eq(p, *piece))) {
                         fabric_fallbacks.push(e);
                     }
+                    if leg_fabric.is_some_and(|a| a.pieces.iter().any(|p| std::ptr::eq(p, *piece))) {
+                        leg_fallbacks.push(e);
+                    }
                 }
                 if let Some(skin) = fabric.and_then(|a| a.skinned.as_ref()) {
                     let path = if r.female() { &skin.female } else { &skin.male };
                     let e = characters::spawn_garment(&mut commands, props.model(path, 0), v.rig, r, fabric_fallbacks, skin.full_body);
+                    v.armor.push(e);
+                }
+                if let Some(skin) = leg_fabric.and_then(|a| a.skinned.as_ref()) {
+                    let path = if r.female() { &skin.female } else { &skin.male };
+                    let e = characters::spawn_leg_garment(&mut commands, props.model(path, 0), v.rig, r, leg_fallbacks);
                     v.armor.push(e);
                 }
                 r.show_hair(!pieces.iter().any(|w| w.hides_hair), &mut visibility);
@@ -725,6 +743,88 @@ mod tests {
     use my_world::map::{Feature, FLAT_Z as Z};
 
     #[test]
+    fn battle_models_keep_finn_and_bram_armed() {
+        use bevy::render::{RenderPlugin, settings::{RenderCreation, WgpuSettings}};
+        use bevy::time::TimeUpdateStrategy;
+        use bevy::winit::WinitPlugin;
+        use bevy_egui::EguiPlugin;
+        use std::time::{Duration, Instant};
+        let mut app = App::new();
+        app.add_plugins(DefaultPlugins.build().disable::<WinitPlugin>().set(RenderPlugin {
+            render_creation: RenderCreation::Automatic(Box::new(WgpuSettings { backends: None, ..default() })),
+            ..default()
+        }))
+            .add_plugins(EguiPlugin::default())
+            .add_plugins(super::super::FrontPlugin)
+            .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(16)));
+        {
+            let mut sim = app.world_mut().resource_mut::<Sim>();
+            sim.scenario = Some("battle".into());
+            let world = sim.fresh_world();
+            sim.replace(world);
+        }
+        // Asset loaders register in finish(), even without a GPU. Merely calling
+        // update() exercises fallback figures, not the imported character rigs.
+        app.finish();
+        app.cleanup();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            app.update();
+            let world = app.world();
+            let visuals = world.resource::<PawnVisuals>();
+            let loaded = !visuals.map.is_empty() && visuals.map.values().all(|v| {
+                world.get::<Rig>(v.rig).is_some_and(Rig::ready)
+                    && v.rig_weapon.is_some_and(|root| {
+                        world.get::<Children>(root).is_some_and(|children| children.iter().any(|child| {
+                            world.get::<bevy::world_serialization::WorldAssetRoot>(child).is_some()
+                                && world.get::<Children>(child).is_some()
+                        }))
+                    })
+            });
+            if loaded { break; }
+            assert!(Instant::now() < deadline, "battle character and weapon assets did not load");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        for _ in 0..5 { app.update(); }
+        let world = app.world();
+        let sim = world.resource::<Sim>();
+        let visuals = world.resource::<PawnVisuals>();
+        for pawn in sim.world.pawns.iter().filter(|p| {
+            p.weapon.is_some() && sim.world.battle.as_ref().unwrap().unit_of(p.id)
+                .is_some_and(|u| !sim.world.battle.as_ref().unwrap().units[u].passive)
+        }) {
+            let name = &pawn.name;
+            let v = &visuals.map[&pawn.id];
+            let root = v.rig_weapon.unwrap();
+            let hand = world.get::<Rig>(v.rig).unwrap().hand.unwrap();
+            assert_eq!(world.get::<ChildOf>(root).unwrap().parent(), hand);
+            assert!(world.get::<InheritedVisibility>(root).unwrap().get(), "{name}'s weapon must inherit visible ancestors");
+            let mut stack = vec![root];
+            let mut visible_model_meshes = 0;
+            while let Some(e) = stack.pop() {
+                if world.get::<Mesh3d>(e).is_some() && world.get::<InheritedVisibility>(e).is_some_and(|v| v.get()) {
+                    visible_model_meshes += 1;
+                }
+                if let Some(children) = world.get::<Children>(e) { stack.extend(children.iter()); }
+            }
+            assert!(visible_model_meshes > 0, "{name}'s equipped gun model must be visible");
+        }
+        for pawn in sim.world.pawns.iter().filter(|p| p.apparel.contains(&ItemId::named("powered_armor"))) {
+            let mut stack = vec![visuals.map[&pawn.id].rig];
+            let mut checked = 0;
+            while let Some(e) = stack.pop() {
+                if world.get::<bevy::gltf::GltfMaterialName>(e).is_some_and(|n| n.0.starts_with("MI_")) {
+                    assert!(!world.get::<InheritedVisibility>(e).unwrap().get(),
+                            "{}'s full suit exposes a native body/outfit mesh {:?}", pawn.name, world.get::<Name>(e));
+                    checked += 1;
+                }
+                if let Some(children) = world.get::<Children>(e) { stack.extend(children.iter()); }
+            }
+            assert!(checked > 0, "loaded the native body to check its visibility");
+        }
+    }
+
+    #[test]
     fn skinned_apparel_follow_outer_layer_selection() {
         let clothes = ItemId::named("clothes");
         let parka = ItemId::named("parka");
@@ -734,6 +834,26 @@ mod tests {
         let powered = ItemId::named("powered_armor");
         assert_eq!(skinned_apparel(&[clothes, powered]), Some(powered));
         assert_eq!(skinned_apparel(&[powered, clothes]), Some(powered));
+    }
+
+    #[test]
+    fn leg_apparel_layers_with_tops_but_not_a_full_suit() {
+        for legs in ["cargo_trousers", "flak_leg_guards"] {
+            let legs = ItemId::named(legs);
+            for top in ["clothes", "parka", "steel_armor"] {
+                let top = ItemId::named(top);
+                for items in [[legs, top], [top, legs]] {
+                    assert_eq!(skinned_leg_apparel(&items), Some(legs));
+                    assert_ne!(skinned_apparel(&items), Some(legs), "legs cannot displace an upper garment");
+                }
+            }
+            assert_eq!(skinned_leg_apparel(&[legs]), Some(legs));
+            let suit = ItemId::named("powered_armor");
+            for items in [[suit, legs], [legs, suit]] {
+                assert_eq!(skinned_apparel(&items), Some(suit));
+                assert_eq!(skinned_leg_apparel(&items), None, "sealed suits own their leg coverage");
+            }
+        }
     }
 
     #[test]

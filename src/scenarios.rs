@@ -349,6 +349,19 @@ mod tests {
     }
 
     #[test]
+    fn finn_and_bram_start_with_drawn_primary_weapons() {
+        let w = battle_world();
+        let b = w.battle.as_ref().unwrap();
+        for (name, weapon) in [("Finn", "rifle"), ("Bram", "assault_rifle")] {
+            let p = w.pawns.iter().find(|p| p.name == name).unwrap();
+            assert_eq!(p.weapon, Some(item(weapon)), "{name}'s primary weapon is equipped");
+            assert!(!p.dead && !p.lying());
+            let unit = &b.units[b.unit_of(p.id).expect("present in round one")];
+            assert!(!unit.passive, "{name} should display the weapon in hand");
+        }
+    }
+
+    #[test]
     fn the_battle_plays_to_an_end() {
         let mut w = battle_world();
         w.battle.as_mut().unwrap().auto_colony = true;

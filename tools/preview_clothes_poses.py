@@ -27,8 +27,10 @@ POSES = [
 ]
 
 
-def posed(sex, coat, clip, time, upper=None):
+def posed(sex, coat, clip, time, upper=None, leg_top="SimpleClothes"):
     powered = coat == "PoweredArmor"
+    legged = coat in ("CargoTrousers", "FlakLegGuards")
+    weapon_offset = 5
     outfit = Gltf(ROOT / f"assets/models/characters/outfits/{sex}_Peasant.gltf")
     folder = "armor" if powered else "items"
     garment = Gltf(ROOT / f"assets/models/{folder}/{coat}{sex}.gltf")
@@ -49,10 +51,16 @@ def posed(sex, coat, clip, time, upper=None):
               for m in garment.data["materials"][:3]]
     palette = [("Fabric", colors[0], 0, .9), ("Trim", colors[1], 0, .9), ("Seams", colors[2], 0, .9),
                ("Skin without textures", (.52, .40, .32), 0, .9), ("Trousers and boots", (.23, .26, .27), 0, .9)] + list(PALETTE)
-    if powered:
+    if powered or legged:
         palette = [(m["name"], tuple(pow(v, 1/2.2) for v in m["pbrMetallicRoughness"]["baseColorFactor"][:3]),
                     m["pbrMetallicRoughness"]["metallicFactor"], m["pbrMetallicRoughness"]["roughnessFactor"])
                    for m in garment.data["materials"]] + list(PALETTE)
+    if legged:
+        top = Gltf(ROOT / f"assets/models/items/{leg_top}{sex}.gltf")
+        top_palette = [(m['name'], tuple(pow(v, 1/2.2) for v in m['pbrMetallicRoughness']['baseColorFactor'][:3]), 0, .9)
+                       for m in top.data['materials'][:3]]
+        palette = palette[:5]+top_palette+[("Skin without textures", (.52,.40,.32), 0, .9)]+list(PALETTE)
+        weapon_offset = 9
     result = Gear(palette)
 
     def add(source, mesh, material):
@@ -63,7 +71,7 @@ def posed(sex, coat, clip, time, upper=None):
             indices = [i[0] for i in source.values(primitive["indices"])]
             used = sorted(set(indices))
             remap = {j: i for i, j in enumerate(used)}
-            mat = primitive["material"] if material is None else material
+            mat = primitive["material"] if material is None else material[primitive["material"]] if isinstance(material, dict) else material
             dst = result.groups[mat]
             offset = len(dst[0])
             dst[0].extend(positions[i] for i in used)
@@ -82,6 +90,13 @@ def posed(sex, coat, clip, time, upper=None):
             dst[0].extend(point(transform, tuple(p[k]+rest[k][3] for k in range(3))) for p in positions)
             dst[1].extend(unit(point(transform, n, 0)) for n in normals)
             dst[2].extend(i+offset for i in indices)
+    elif legged:
+        for i in range(len(garment.data['meshes'])):
+            add(garment, i, None)
+        add(top, 0, {0: 5, 1: 6, 2: 7})
+        add(top, 1, 8)
+        for i, mesh in enumerate(head.data['meshes']):
+            add(head, i, 7 if 'Face' in mesh.get('name', '') else 8)
     else:
         add(garment, 0, None)
         add(garment, 1, 3)
@@ -98,7 +113,7 @@ def posed(sex, coat, clip, time, upper=None):
         grip = matrix({"rotation": [-aim[0], -aim[1], -aim[2], aim[3]]})
         transform = multiply(globals[hand], grip)
         weapon = laser_rifle() if powered else Rifle().build()
-        for dst, (positions, normals, indices) in zip(result.groups[5:], weapon.groups):
+        for dst, (positions, normals, indices) in zip(result.groups[weapon_offset:], weapon.groups):
             offset = len(dst[0])
             dst[0].extend(point(transform, p) for p in positions)
             dst[1].extend(unit(point(transform, n, 0)) for n in normals)
@@ -110,7 +125,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=Path("target/clothes-poses"))
     parser.add_argument("--pose", nargs="+", choices=[p[0] for p in POSES], help="Render only these poses")
-    parser.add_argument("--garment", nargs="+", choices=["SimpleClothes", "Parka", "PoweredArmor"], default=["SimpleClothes", "Parka"])
+    parser.add_argument("--garment", nargs="+", choices=["SimpleClothes", "Parka", "PoweredArmor", "CargoTrousers", "FlakLegGuards"], default=["SimpleClothes", "Parka"])
+    parser.add_argument("--leg-top", choices=["SimpleClothes", "Parka"], default="SimpleClothes", help="Upper garment for leg-apparel previews")
     args = parser.parse_args()
     entries = []
     for sex in ("Male", "Female"):
@@ -118,7 +134,7 @@ if __name__ == "__main__":
             for label, clip, time, upper in POSES:
                 if args.pose and label not in args.pose:
                     continue
-                geometry = posed(sex, coat, clip, time, upper)
+                geometry = posed(sex, coat, clip, time, upper, args.leg_top)
                 for view, turn in [("", 0), ("-Side", -123), ("-Back", 180)]:
                     shown = geometry if turn == 0 else Gear(geometry.palette).add(geometry, turn=(0, turn, 0))
                     entries.append(("armor", f"{coat}-{sex}-{label}{view}", shown, None))

@@ -715,6 +715,8 @@ mod tests {
             .add_plugins(EguiPlugin::default())
             .add_plugins(front::FrontPlugin)
             .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_millis(16)));
+        app.finish();
+        app.cleanup();
         {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             for (i, pawn) in sim.world.pawns.iter_mut().enumerate() {
@@ -778,18 +780,19 @@ mod tests {
         // Switching from armor to fabric must use live skinned joints in gun poses.
         {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
-            sim.world.pawns[0].apparel = vec![my_world::defs::ItemId::named("clothes")];
-            sim.world.pawns[1].apparel = vec![my_world::defs::ItemId::named("parka")];
+            sim.world.pawns[0].apparel = vec![my_world::defs::ItemId::named("clothes"), my_world::defs::ItemId::named("cargo_trousers")];
+            sim.world.pawns[1].apparel = vec![my_world::defs::ItemId::named("parka"), my_world::defs::ItemId::named("flak_leg_guards")];
         }
         let cloth_skins = |app: &mut App| {
             let mut query = app.world_mut().query::<(&Name, &bevy::mesh::skinning::SkinnedMesh)>();
-            query.iter(app.world()).filter(|(name, _)| name.as_str().starts_with("SimpleClothes") || name.as_str().starts_with("Parka"))
+            query.iter(app.world()).filter(|(name, _)| ["SimpleClothes", "Parka", "CargoTrousers", "FlakLegGuards"].iter().any(|prefix| name.as_str().starts_with(prefix)))
                 .map(|(name, skin)| (name.to_string(), skin.joints.clone())).collect::<Vec<_>>()
         };
         // Material groups become separate mesh entities; check both parts of
         // each garment rather than assuming a fixed number of primitives.
-        let parts = ["SimpleClothes", "Parka"].map(|item| ["Fabric", "NativeArms"].map(|part| (item, part)));
-        let complete = |skins: &[(String, Vec<Entity>)]| parts.iter().flatten().all(|(item, part)| skins.iter().any(|(name, _)| name.starts_with(*item) && name.contains(*part)));
+        let parts = [("SimpleClothes", "Fabric"), ("SimpleClothes", "NativeArms"), ("Parka", "Fabric"), ("Parka", "NativeArms"),
+                     ("CargoTrousers", "Legs"), ("CargoTrousers", "Pockets"), ("FlakLegGuards", "Legs"), ("FlakLegGuards", "Pads")];
+        let complete = |skins: &[(String, Vec<Entity>)]| parts.iter().all(|(item, part)| skins.iter().any(|(name, _)| name.starts_with(*item) && name.contains(*part)));
         let mut skins = Vec::new();
         for _ in 0..2000 {
             app.update();
@@ -797,7 +800,7 @@ mod tests {
             if complete(&skins) && skins.iter().flat_map(|(_, joints)| joints).all(|&joint| app.world().get::<bevy::animation::AnimatedBy>(joint).is_some()) { break; }
             std::thread::sleep(Duration::from_millis(5));
         }
-        assert!(complete(&skins), "fabric and native arms on both clothed characters");
+        assert!(complete(&skins), "upper clothing, leg apparel and boots on both clothed characters");
         assert!(skins.iter().flat_map(|(_, joints)| joints).all(|&joint| app.world().get::<bevy::animation::AnimatedBy>(joint).is_some()), "clothes follow the character animation, with no imported bind-pose joints left");
         app.world_mut().resource_mut::<front::Sim>().world.pawns[0].apparel = vec![my_world::defs::ItemId::named("powered_armor")];
         let mut suit = Vec::new();
@@ -810,6 +813,7 @@ mod tests {
                 && suit.iter().flat_map(|(_, joints)| joints).all(|&joint| app.world().get::<bevy::animation::AnimatedBy>(joint).is_some()) { break; }
             std::thread::sleep(Duration::from_millis(5));
         }
+        assert!(cloth_skins(&mut app).iter().all(|(name, _)| !name.starts_with("CargoTrousers")), "the powered suit replaces the previous leg outfit");
         assert!(["Details", "Shell"].iter().all(|part| suit.iter().any(|(name, _)| name.contains(*part))), "the powered suit includes complete body coverage");
         assert!(suit.iter().flat_map(|(_, joints)| joints).all(|&joint| app.world().get::<bevy::animation::AnimatedBy>(joint).is_some()), "the sealed suit follows the live outfit skeleton");
     }

@@ -13,6 +13,8 @@ fit recipe, known failure modes and review commands.
   before adding decorative detail. Use the guide's full pose review before finishing.
 - Powered armor must enclose the body with a snug, continuous metal shell. The user
   explicitly prefers armor bending with the pawn over rigid plates that float away.
+- Leg apparel must have its own worn model, including boots, and render alongside
+  upper garments. A full powered suit takes precedence over separate leg equipment.
 - Keep generators and generated `.gltf`/`.bin` pairs together. Report CPU preview
   results separately from actual in-game GPU verification.
 
