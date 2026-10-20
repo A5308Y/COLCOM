@@ -39,17 +39,81 @@ pub fn adjacent(a: Pos, target: Pos) -> bool {
     (flat == 1 && a.2.abs_diff(target.2) <= 1) || (flat == 0 && a.2.abs_diff(target.2) == 1)
 }
 
-/// The four horizontal directions; stairs and other turned structures store an index into this.
+/// The four horizontal steps, in `Dir` order (for going round neighbours).
 pub const DIRS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
 
-/// Direction `local` (as modelled) of something turned to face `DIRS[dir]`
-/// (its +x turned there), both indices into `DIRS`.
-pub fn turn_dir(local: u8, dir: u8) -> u8 {
-    let (x, y) = DIRS[local as usize % 4];
-    // Cosine and sine of the quarter turns, as the front end turns models.
-    let (c, s) = [(1, 0), (-1, 0), (0, -1), (0, 1)][dir as usize % 4];
-    let v = (x * c + y * s, y * c - x * s);
-    DIRS.iter().position(|&d| d == v).unwrap() as u8
+/// A horizontal direction: the way stairs rise, furniture faces or decor
+/// looks out. Saved (and written in `defs.ron`) as its `DIRS` index:
+/// 0 = +x, 1 = -x, 2 = +y, 3 = -y.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum Dir {
+    #[default]
+    PlusX,
+    MinusX,
+    PlusY,
+    MinusY,
+}
+
+impl Dir {
+    pub const ALL: [Dir; 4] = [Dir::PlusX, Dir::MinusX, Dir::PlusY, Dir::MinusY];
+
+    /// Position in `ALL` and `DIRS`, for per-direction tables.
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    /// One cell's step this way.
+    pub fn offset(self) -> (i32, i32) {
+        DIRS[self.index()]
+    }
+
+    pub fn from_offset(offset: (i32, i32)) -> Option<Dir> {
+        Dir::ALL.into_iter().find(|d| d.offset() == offset)
+    }
+
+    pub fn opposite(self) -> Dir {
+        match self {
+            Dir::PlusX => Dir::MinusX,
+            Dir::MinusX => Dir::PlusX,
+            Dir::PlusY => Dir::MinusY,
+            Dir::MinusY => Dir::PlusY,
+        }
+    }
+
+    /// This direction of a model (as modelled) once the model is turned to
+    /// face `facing` (its +x turned there).
+    pub fn turned(self, facing: Dir) -> Dir {
+        let (x, y) = self.offset();
+        // Cosine and sine of the quarter turns, as the front end turns models.
+        let (c, s) = match facing {
+            Dir::PlusX => (1, 0),
+            Dir::MinusX => (-1, 0),
+            Dir::PlusY => (0, -1),
+            Dir::MinusY => (0, 1),
+        };
+        Dir::from_offset((x * c + y * s, y * c - x * s)).expect("a quarter turn stays on the grid")
+    }
+
+    /// A quarter turn, one way or the other: +x, +y, -x, -y round the compass.
+    pub fn quarter_turn(self, clockwise: bool) -> Dir {
+        const ROUND: [Dir; 4] = [Dir::PlusX, Dir::PlusY, Dir::MinusX, Dir::MinusY];
+        let k = ROUND.iter().position(|&d| d == self).expect("every direction is on the round");
+        ROUND[(k + if clockwise { 1 } else { 3 }) % 4]
+    }
+}
+
+impl TryFrom<u8> for Dir {
+    type Error = String;
+    fn try_from(n: u8) -> Result<Dir, String> {
+        Dir::ALL.get(n as usize).copied().ok_or_else(|| format!("direction {n} is not 0 to 3"))
+    }
+}
+
+impl From<Dir> for u8 {
+    fn from(d: Dir) -> u8 {
+        d as u8
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -94,10 +158,10 @@ pub enum Feature {
     None,
     /// Trees, bushes, crops. `growth` runs from 0 to 1.
     Plant { kind: PlantId, growth: f32 },
-    /// A finished structure. For stairs, the steps rise towards `DIRS[dir]`
+    /// A finished structure. For stairs, the steps rise towards `dir`
     /// and the only way in or out at this level is from the foot (the
     /// opposite side).
-    Built { kind: BuildId, dir: u8 },
+    Built { kind: BuildId, dir: Dir },
     /// `dir`: how it's turned once built (as in `Built`). `over`: a wall,
     /// door or window still standing here (and turned so) until this
     /// replaces it; the cell acts as that meanwhile.
@@ -105,16 +169,16 @@ pub enum Feature {
         kind: BuildId,
         delivered: u32,
         #[serde(default)]
-        dir: u8,
+        dir: Dir,
         #[serde(default)]
-        over: Option<(BuildId, u8)>,
+        over: Option<(BuildId, Dir)>,
     },
 }
 
 impl Feature {
     /// A finished structure, by definition id (tests and fixed content).
     pub fn built(id: &str) -> Feature {
-        Feature::Built { kind: BuildId::named(id), dir: 0 }
+        Feature::Built { kind: BuildId::named(id), dir: crate::map::Dir::PlusX }
     }
 
     /// A fully grown plant, by definition id.
@@ -123,7 +187,7 @@ impl Feature {
     }
 
     /// A blueprint of `kind`, to be built from scratch.
-    pub fn blueprint(kind: BuildId, delivered: u32, dir: u8) -> Feature {
+    pub fn blueprint(kind: BuildId, delivered: u32, dir: Dir) -> Feature {
         Feature::Blueprint { kind, delivered, dir, over: None }
     }
 
@@ -471,7 +535,7 @@ impl Map {
     /// Rising direction of stairs (or a ladder) in cell `p`, if there are any.
     pub fn stairs_dir(&self, p: Pos) -> Option<(i32, i32)> {
         match self.feature[self.idx(p)] {
-            Feature::Built { kind, dir } if kind.def().special == Special::Stairs => Some(DIRS[dir as usize % 4]),
+            Feature::Built { kind, dir } if kind.def().special == Special::Stairs => Some(dir.offset()),
             _ => None,
         }
     }
@@ -490,7 +554,7 @@ impl Map {
     /// their low end (planned ones are built facing as their blueprint does).
     pub fn stairs_foot(&self, p: Pos) -> Option<Pos> {
         let (dx, dy) = match self.feature[self.idx(p)] {
-            Feature::Blueprint { kind, dir, .. } if kind.def().special == Special::Stairs => DIRS[dir as usize % 4],
+            Feature::Blueprint { kind, dir, .. } if kind.def().special == Special::Stairs => dir.offset(),
             _ => self.stairs_dir(p)?,
         };
         self.at(p.0 as i32 - dx, p.1 as i32 - dy, p.2 as i32)
@@ -498,18 +562,19 @@ impl Map {
 
     /// Which way new stairs at `p` should rise: away from walkable ground at
     /// their foot, ideally towards somewhere to stand at the top.
-    pub fn stairs_facing(&self, p: Pos) -> u8 {
-        (0..4).max_by_key(|&d| (self.stairs_score(p, d), 4 - d)).unwrap_or(0)
+    pub fn stairs_facing(&self, p: Pos) -> Dir {
+        // Ties go to the first direction.
+        Dir::ALL.into_iter().max_by_key(|&d| (self.stairs_score(p, d), std::cmp::Reverse(d.index()))).unwrap_or_default()
     }
 
-    /// Whether stairs at `p` rising towards `DIRS[dir]` can be walked at both ends.
-    pub fn stairs_fit(&self, p: Pos, dir: u8) -> bool {
+    /// Whether stairs at `p` rising towards `dir` can be walked at both ends.
+    pub fn stairs_fit(&self, p: Pos, dir: Dir) -> bool {
         self.stairs_score(p, dir) == 3
     }
 
     /// 2 if the foot can be stood on, plus 1 if the top can.
-    fn stairs_score(&self, p: Pos, dir: u8) -> u8 {
-        let (dx, dy) = DIRS[dir as usize % 4];
+    fn stairs_score(&self, p: Pos, dir: Dir) -> u8 {
+        let (dx, dy) = dir.offset();
         let (x, y, z) = (p.0 as i32, p.1 as i32, p.2 as i32);
         let foot = self.at(x - dx, y - dy, z).is_some_and(|f| self.standable(f));
         let top = self.at(x + dx, y + dy, z + 1).is_some_and(|t| self.standable(t));
@@ -594,7 +659,7 @@ impl Map {
         if !d.turnable() {
             return None;
         }
-        let (dx, dy) = DIRS[turn_dir(d.front, dir) as usize];
+        let (dx, dy) = d.front.turned(dir).offset();
         self.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32).filter(|&f| self.standable(f))
     }
 
@@ -1130,16 +1195,22 @@ mod tests {
 
     #[test]
     fn quarter_turns_go_round() {
-        for l in 0..4u8 {
-            assert_eq!(turn_dir(l, 0), l, "unturned");
+        for l in Dir::ALL {
+            assert_eq!(l.turned(Dir::PlusX), l, "unturned");
             // Two half turns, or four quarter turns of the same way, come back round.
-            assert_eq!(turn_dir(turn_dir(l, 1), 1), l);
-            let (x, y) = DIRS[l as usize];
-            let (tx, ty) = DIRS[turn_dir(l, 2) as usize];
+            assert_eq!(l.turned(Dir::MinusX).turned(Dir::MinusX), l);
+            let (x, y) = l.offset();
+            let (tx, ty) = l.turned(Dir::PlusY).offset();
             assert_eq!(x * tx + y * ty, 0, "a quarter turn is square to where it was");
+            assert_eq!(l.opposite().offset(), (-x, -y));
+            assert_eq!((0..4).fold(l, |d, _| d.quarter_turn(true)), l, "round the compass");
+            assert_eq!(l.quarter_turn(true).quarter_turn(false), l);
         }
         // Turned to face +y, the model's +x points there.
-        assert_eq!(turn_dir(0, 2), 2);
+        assert_eq!(Dir::PlusX.turned(Dir::PlusY), Dir::PlusY);
+        // Saved as the index, as before.
+        assert_eq!(serde_json::to_string(&Dir::PlusY).unwrap(), "2");
+        assert!(serde_json::from_str::<Dir>("4").is_err());
     }
 
     #[test]
@@ -1147,11 +1218,11 @@ mod tests {
         let mut m = Map::flat(8, 8);
         let z = FLAT_Z;
         let stove = BuildId::named("stove");
-        assert_eq!(stove.def().front, 2, "modelled facing +y");
+        assert_eq!(stove.def().front, crate::map::Dir::PlusY, "modelled facing +y");
         let i = m.idx((4, 4, z));
-        m.set_feature(i, Feature::Built { kind: stove, dir: 0 });
+        m.set_feature(i, Feature::Built { kind: stove, dir: crate::map::Dir::PlusX });
         assert_eq!(m.front_cell((4, 4, z)), Some((4, 5, z)));
-        m.set_feature(i, Feature::Built { kind: stove, dir: 2 });
+        m.set_feature(i, Feature::Built { kind: stove, dir: crate::map::Dir::PlusY });
         assert_eq!(m.front_cell((4, 4, z)), Some((3, 4, z)), "turned a quarter");
         let front = m.idx((3, 4, z));
         m.set_feature(front, Feature::built("wall"));
@@ -1350,10 +1421,10 @@ mod tests {
             }
         }
         let dir = m.stairs_facing((4, 1, Z));
-        assert_eq!(DIRS[dir as usize], (1, 0));
+        assert_eq!(dir, Dir::PlusX);
         // Turned that way they fit; turned away from the platform they don't.
-        assert!(m.stairs_fit((4, 1, Z), 0));
-        assert!(!m.stairs_fit((4, 1, Z), 1));
+        assert!(m.stairs_fit((4, 1, Z), crate::map::Dir::PlusX));
+        assert!(!m.stairs_fit((4, 1, Z), crate::map::Dir::MinusX));
     }
 
     #[test]

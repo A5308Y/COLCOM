@@ -401,7 +401,7 @@ mod tests {
             build(&mut w, (x, 8, Z), "wall");
         }
         let wall = w.map.idx((7, 8, Z));
-        w.map.decor.insert(wall as u32, vec![crate::decor::Decor { kind: crate::defs::BuildId::named("dartboard"), face: 2, slot: 2, state: crate::decor::DecorState::Up }]);
+        w.map.decor.insert(wall as u32, vec![crate::decor::Decor { kind: crate::defs::BuildId::named("dartboard"), face: crate::map::Dir::PlusY, slot: 2, state: crate::decor::DecorState::Up }]);
         let id = person(&mut w, (2, 2, Z), 20.0, Block::Fun);
         run(&mut w, 2.0);
         assert!(matches!(job(&w, id), Some(Job::Relax { stand: (7, 9, _), .. })), "{:?}", job(&w, id));

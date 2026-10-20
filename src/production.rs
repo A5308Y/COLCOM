@@ -1032,7 +1032,7 @@ mod tests {
         let stove = (10, 10, Z);
         place_bench(&mut w, "stove", stove);
         let i = w.map.idx(stove);
-        w.map.set_feature(i, Feature::Built { kind: crate::defs::BuildId::named("stove"), dir: 2 });
+        w.map.set_feature(i, Feature::Built { kind: crate::defs::BuildId::named("stove"), dir: crate::map::Dir::PlusY });
         assert_eq!(cooking_spot(&mut w, cook, stove), (9, 10, Z), "at the front, turned towards -x");
         // With the front walled off, from beside it.
         let mut w = test_world(20, 20);

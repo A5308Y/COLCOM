@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::{egui_wants_any_keyboard_input, EguiWantsInput};
 use my_world::defs::{defs, BuildId, Special};
-use my_world::map::{Block, Desig, Map, Pos, Zone, DIRS};
+use my_world::map::{Block, Desig, Dir, Map, Pos, Zone};
 use my_world::pawn::{Faction, PawnId};
 use my_world::world::{Order, World as SimWorld};
 use std::f32::consts::FRAC_PI_2;
@@ -281,8 +281,8 @@ pub struct UiState {
     pub dropped_tool: bool,
     /// The right-click menu of jobs to prioritize, while it's open.
     pub job_menu: Option<JobMenu>,
-    /// How what's being placed is turned (index into `DIRS`; `,` and `.` turn it).
-    pub place_dir: u8,
+    /// How what's being placed is turned (`,` and `.` turn it).
+    pub place_dir: Dir,
     /// The build menu docked on the left.
     pub show_build: bool,
     /// Search text in the build menu.
@@ -297,7 +297,7 @@ pub struct UiState {
     /// Width of the docked build menu last frame (in logical pixels).
     pub dock_width: f32,
     /// The wall face and slot under the cursor (wall cell, face, slot), when it points at a wall.
-    pub wall_slot: Option<(Pos, u8, u8)>,
+    pub wall_slot: Option<(Pos, Dir, u8)>,
     /// The info window, what it shows, what it showed before (for Back),
     /// and its search text.
     pub show_info: bool,
@@ -342,7 +342,7 @@ impl UiState {
             roof_version: 0,
             dropped_tool: false,
             job_menu: None,
-            place_dir: 0,
+            place_dir: my_world::map::Dir::PlusX,
             show_build: true,
             build_filter: String::new(),
             dock_width: 0.0,
@@ -565,23 +565,24 @@ fn update_hover(
 
 /// The face of the wall at `wall` the ray meets first, and the slot on it
 /// (faces turned away from the camera don't count).
-fn wall_slot_at(ray: Ray3d, wall: Pos) -> Option<(u8, u8)> {
+fn wall_slot_at(ray: Ray3d, wall: Pos) -> Option<(Dir, u8)> {
     use my_world::decor::{SLOTS, WALL_A, WALL_B};
     let (o, d) = (ray.origin, *ray.direction);
     let (x, y) = (wall.0 as f32, wall.1 as f32);
     let (lo, hi) = (wall.2 as f32 * LEVEL_H, (wall.2 + 1) as f32 * LEVEL_H);
-    let mut best: Option<(f32, u8, u8)> = None;
-    for face in 0..4u8 {
-        let (nx, ny) = DIRS[face as usize];
+    let mut best: Option<(f32, Dir, u8)> = None;
+    for face in Dir::ALL {
+        let (nx, ny) = face.offset();
+        let along_x = matches!(face, Dir::PlusX | Dir::MinusX);
         if nx as f32 * d.x + ny as f32 * d.z >= 0.0 {
             continue;
         }
         let off = if nx + ny > 0 { WALL_B } else { WALL_A };
         // Faces looking along x sit at a fixed x and run along z; the others the other way.
-        let (plane, o_n, d_n) = if face < 2 { (x + off, o.x, d.x) } else { (y + off, o.z, d.z) };
+        let (plane, o_n, d_n) = if along_x { (x + off, o.x, d.x) } else { (y + off, o.z, d.z) };
         let t = (plane - o_n) / d_n;
         let hit = o + d * t;
-        let along = if face < 2 { hit.z - y } else { hit.x - x };
+        let along = if along_x { hit.z - y } else { hit.x - x };
         if t <= 0.0 || !(0.0..1.0).contains(&along) || !(lo..hi).contains(&hit.y) {
             continue;
         }
@@ -900,7 +901,7 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
     if ui.turning(&sim.world).is_some() {
         let turn = [KeyCode::Comma, KeyCode::Period].iter().position(|&k| keys.just_pressed(k));
         if let Some(t) = turn {
-            ui.place_dir = turn_dir(ui.place_dir, t == 1);
+            ui.place_dir = ui.place_dir.quarter_turn(t == 1);
         }
     }
     if shift && keys.just_pressed(KeyCode::KeyR) {
@@ -1100,14 +1101,6 @@ pub fn hollow(order: Order, shift: bool) -> bool {
     matches!(order, Order::Build(kind) if kind.def().is_block()) && !shift
 }
 
-/// The next direction (index into `DIRS`) a quarter turn from `dir`, one way or the other.
-pub fn turn_dir(dir: u8, clockwise: bool) -> u8 {
-    // +x, +y, -x, -y: round the compass.
-    const ROUND: [u8; 4] = [0, 2, 1, 3];
-    let k = ROUND.iter().position(|&d| d == dir % 4).unwrap_or(0);
-    ROUND[(k + if clockwise { 1 } else { 3 }) % 4]
-}
-
 /// The cells `order` would go to over the rectangle from `a` to `b` (only
 /// its edge if `hollow`): in each column the first of `a`'s level, one up and
 /// one down where it applies (a quarry: the column's ground).
@@ -1135,7 +1128,7 @@ pub fn box_cells(w: &SimWorld, a: Pos, b: Pos, order: Order, hollow: bool) -> Ve
 
 /// Apply `order` over the rectangle from `a` to `b` (see `box_cells`);
 /// blueprints are turned to face `dir`.
-fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order, hollow: bool, dir: u8) -> usize {
+fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order, hollow: bool, dir: Dir) -> usize {
     let turnable = matches!(order, Order::Build(kind) if kind.def().turnable());
     let mut done = 0;
     for p in box_cells(w, a, b, order, hollow) {
@@ -1172,8 +1165,8 @@ pub fn floor_outline(gizmos: &mut Gizmos, t: Pos, inset: f32, color: Color) {
 /// An arrow from cell `at` towards the front of `kind` turned to `dir`:
 /// where it's used from (stairs: the way up).
 /// Stairs that couldn't be climbed that way (yet) get an orange arrow.
-fn front_arrow(gizmos: &mut Gizmos, m: &Map, at: Pos, kind: BuildId, dir: u8) {
-    let (dx, dy) = DIRS[super::props::turned(kind.def().front, dir) as usize];
+fn front_arrow(gizmos: &mut Gizmos, m: &Map, at: Pos, kind: BuildId, dir: Dir) {
+    let (dx, dy) = kind.def().front.turned(dir).offset();
     let c = tile_center(at) + Vec3::Y * 0.1;
     let blocked = kind.def().special == Special::Stairs && !m.stairs_fit(at, dir);
     let color = if blocked { Color::srgb(1.0, 0.45, 0.15) } else { Color::srgb(1.0, 0.85, 0.3) };
@@ -1248,7 +1241,7 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
             }
             floor_outline(&mut gizmos, top, 0.06, amber);
             let c = tile_center(top) + Vec3::Y * 0.1;
-            let (dx, dy) = DIRS[q.out as usize];
+            let (dx, dy) = q.out.offset();
             gizmos.arrow(c, c + Vec3::new(dx as f32, 0.0, dy as f32) * 0.7, amber);
             gizmos.line(c, Vec3::new(c.x, q.bottom() as f32 * LEVEL_H + 0.1, c.z), amber);
         }
@@ -1415,7 +1408,7 @@ mod tests {
         let cells = box_cells(&w, (2, 2, z), (5, 4, z), wall, true);
         assert!(!cells.iter().any(|c| (c.0, c.1) == (2, 2)) && cells.len() == 4 * 3 - 2 - 1, "the outline but the chair's cell: {:?}", cells);
         // And painting takes just those.
-        assert_eq!(paint_box(&mut w, (2, 2, z), (5, 4, z), wall, true, 0), cells.len());
+        assert_eq!(paint_box(&mut w, (2, 2, z), (5, 4, z), wall, true, my_world::map::Dir::PlusX), cells.len());
     }
 
     #[test]
@@ -1437,21 +1430,21 @@ mod tests {
         // Looking at the wall at (3, 3) from +z (map +y), down a little, aimed at x = 3.9.
         let wall = (3, 3, 1);
         let ray = |x: f32| Ray3d::new(Vec3::new(x, 1.8, 8.0), Dir3::new(Vec3::new(0.0, -0.3, -5.0)).unwrap());
-        assert_eq!(wall_slot_at(ray(3.9), wall), Some((2, 4)), "the +y face, last slot");
-        assert_eq!(wall_slot_at(ray(3.05), wall), Some((2, 0)));
+        assert_eq!(wall_slot_at(ray(3.9), wall), Some((Dir::PlusY, 4)), "the +y face, last slot");
+        assert_eq!(wall_slot_at(ray(3.05), wall), Some((Dir::PlusY, 0)));
         assert_eq!(wall_slot_at(ray(5.5), wall), None, "missed");
     }
 
     #[test]
     fn turning_goes_round_the_compass() {
-        let mut d = 0;
+        let mut d = Dir::PlusX;
         let mut seen = Vec::new();
         for _ in 0..4 {
-            d = turn_dir(d, true);
-            seen.push(DIRS[d as usize]);
+            d = d.quarter_turn(true);
+            seen.push(d.offset());
         }
         assert_eq!(seen, vec![(0, 1), (-1, 0), (0, -1), (1, 0)], "a quarter turn at a time, back to the start");
-        assert_eq!(turn_dir(turn_dir(2, true), false), 2, "and back");
+        assert_eq!(Dir::PlusY.quarter_turn(true).quarter_turn(false), Dir::PlusY, "and back");
     }
 
     #[test]
@@ -1460,15 +1453,15 @@ mod tests {
         use my_world::rng::Rng;
         let mut w = SimWorld::with_map(Map::flat(12, 12), Rng::new(1));
         let wall = Order::Build(BuildId::named("wall"));
-        assert_eq!(paint_box(&mut w, (2, 2, Z), (6, 5, Z), wall, hollow(wall, false), 0), 14, "5×4 edge");
+        assert_eq!(paint_box(&mut w, (2, 2, Z), (6, 5, Z), wall, hollow(wall, false), my_world::map::Dir::PlusX), 14, "5×4 edge");
         let at = |w: &SimWorld, x, y| matches!(w.map.feature[w.map.idx((x, y, Z))], Feature::Blueprint { .. });
         assert!(at(&w, 2, 2) && at(&w, 6, 5) && at(&w, 4, 2) && at(&w, 2, 4));
         assert!(!at(&w, 3, 3) && !at(&w, 5, 4), "the inside stays empty");
         assert!(hollow(wall, false) && !hollow(wall, true), "Shift fills");
         let chair = Order::Build(BuildId::named("chair"));
         assert!(!hollow(chair, false), "furniture fills the rectangle");
-        assert_eq!(paint_box(&mut w, (8, 8, Z), (9, 9, Z), chair, false, 2), 4);
-        assert!(matches!(w.map.feature[w.map.idx((8, 8, Z))], Feature::Blueprint { dir: 2, .. }), "turned as placed");
+        assert_eq!(paint_box(&mut w, (8, 8, Z), (9, 9, Z), chair, false, my_world::map::Dir::PlusY), 4);
+        assert!(matches!(w.map.feature[w.map.idx((8, 8, Z))], Feature::Blueprint { dir: my_world::map::Dir::PlusY, .. }), "turned as placed");
     }
 
     #[test]
@@ -1482,7 +1475,7 @@ mod tests {
                 if x == 2 || y == 2 || x == 6 || y == 6 {
                     m.set_feature(i, Feature::built("wall"));
                 } else if (x, y) == (4, 4) {
-                    m.feature[above] = Feature::blueprint(defs().roof().unwrap(), 0, 0);
+                    m.feature[above] = Feature::blueprint(defs().roof().unwrap(), 0, my_world::map::Dir::PlusX);
                 } else if (x, y) != (3, 3) {
                     m.set_roof(above, true);
                 }

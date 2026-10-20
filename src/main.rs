@@ -389,7 +389,7 @@ mod tests {
                 slot,
                 state: if built { my_world::decor::DecorState::Up } else { my_world::decor::DecorState::Planned { delivered: 0 } },
             };
-            let things = vec![up("painting", 2, 0, true), up("wall_lamp", 2, 2, true), up("wall_shelf", 2, 4, true), up("poster", 3, 1, false)];
+            let things = vec![up("painting", my_world::map::Dir::PlusY, 0, true), up("wall_lamp", my_world::map::Dir::PlusY, 2, true), up("wall_shelf", my_world::map::Dir::PlusY, 4, true), up("poster", my_world::map::Dir::MinusY, 1, false)];
             w.map.decor.insert(decor_wall as u32, things);
             w.map.set_stacks(decor_wall, vec![my_world::map::Stack { kind: my_world::defs::ItemId::named("wood"), count: 20 }]);
             // A window to be built into a standing wall.
@@ -506,7 +506,7 @@ mod tests {
             };
             let mut ui = app.world_mut().resource_mut::<front::UiState>();
             ui.tool = front::Tool::Paint(my_world::world::Order::Build(my_world::defs::BuildId::named("painting")));
-            ui.wall_slot = Some((wall, 2, 1));
+            ui.wall_slot = Some((wall, my_world::map::Dir::PlusY, 1));
             ui.selected = Some(front::Selection::Tile(wall));
         }
         app.update();
@@ -559,7 +559,7 @@ mod tests {
             ui.start_move(bed, &world);
             assert_eq!(ui.place_dir, world.facing_of(bed));
             assert!(ui.turning(&world).is_some(), "a bed can be turned");
-            ui.place_dir = (ui.place_dir + 2) % 4;
+            ui.place_dir = ui.place_dir.quarter_turn(true);
             ui.place_dir
         };
         app.update();

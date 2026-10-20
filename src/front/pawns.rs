@@ -12,7 +12,7 @@ use super::sim::Sim;
 use super::tile_point;
 use bevy::prelude::*;
 use my_world::defs::{Bone, ItemId, Slot, Special, WornPiece};
-use my_world::map::{turn_dir, Feature, Map, Pos, DIRS};
+use my_world::map::{Feature, Map, Pos, DIRS};
 use my_world::recreation::GET_UP;
 use my_world::pawn::{Job, Pawn, PawnId, Task};
 use my_world::world::World as SimWorld;
@@ -280,7 +280,7 @@ fn facing(p: &Pawn, w: &SimWorld) -> Option<f32> {
         // Sitting on a chair: the way it faces.
         Some(Job::Sit { at, .. }) if at == p.pos => match m.feature[m.idx(at)] {
             Feature::Built { kind, dir } => {
-                let (dx, dy) = DIRS[turn_dir(kind.def().front, dir) as usize];
+                let (dx, dy) = kind.def().front.turned(dir).offset();
                 Some((at.0 as f32 + dx as f32, at.1 as f32 + dy as f32))
             }
             _ => None,
@@ -363,7 +363,7 @@ fn snugged(p: &Pawn, m: &Map) -> Vec2 {
 fn bed_yaw(m: &Map, at: Pos) -> f32 {
     match m.feature[m.idx(at)] {
         Feature::Built { dir, .. } => {
-            let (dx, dy) = DIRS[dir as usize % 4];
+            let (dx, dy) = dir.offset();
             (-dy as f32).atan2(dx as f32)
         }
         _ => 0.0,

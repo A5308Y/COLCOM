@@ -16,21 +16,21 @@ use bevy::gltf::GltfMaterialName;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot, WorldInstanceReady};
 use my_world::pawn::PawnId;
 use my_world::defs::{defs, BuildDef, BuildId, BuildLook, ItemId, ModelPose, Part, PlantId, Shape, Special, Storage, WornPiece};
-use my_world::map::{Feature, Map, Pos, DIRS};
+use my_world::map::{Dir, Feature, Map, Pos, DIRS};
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::{FRAC_PI_2, TAU};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum PropKey {
     Plant { kind: PlantId, stage: u8 },
-    /// Turned so the model's +x faces `DIRS[dir]`. `owner`: who sleeps in
+    /// Turned so the model's +x faces `dir`. `owner`: who sleeps in
     /// a bed. `open`: a door someone is passing through, or a grave nobody
     /// is buried in yet. `links`: bit per
     /// direction (`DIRS`) with a neighbour that linked parts join up with.
     /// `snug`: how far it's drawn pushed back against a wall behind it (see `snug`).
-    Built { kind: BuildId, dir: u8, owner: Option<PawnId>, open: bool, links: u8, snug: (f32, f32) },
+    Built { kind: BuildId, dir: Dir, owner: Option<PawnId>, open: bool, links: u8, snug: (f32, f32) },
     /// `over`: around a wall still standing there (a slightly bigger ghost).
-    Blueprint { kind: BuildId, dir: u8, over: bool, snug: (f32, f32) },
+    Blueprint { kind: BuildId, dir: Dir, over: bool, snug: (f32, f32) },
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -51,7 +51,7 @@ struct Props {
     features: Vec<Option<(PropKey, Entity)>>,
     items: Vec<Option<(ItemsKey, Entity)>>,
     /// What hangs on walls, by wall cell, face and slot.
-    decor: HashMap<(u32, u8, u8), (DecorKey, Entity)>,
+    decor: HashMap<(u32, Dir, u8), (DecorKey, Entity)>,
 }
 
 /// Something on a wall as drawn: up or planned, and what stands on it (a wall shelf).
@@ -194,11 +194,6 @@ fn links(m: &Map, pos: Pos, kind: BuildId) -> u8 {
     mask
 }
 
-/// The world direction (index into `DIRS`) a model's direction `l` faces once turned by `dir`.
-pub fn turned(l: u8, dir: u8) -> u8 {
-    my_world::map::turn_dir(l, dir)
-}
-
 /// Torches and other flames: light that wavers around `base` intensity.
 #[derive(Component)]
 struct Flicker {
@@ -216,30 +211,30 @@ fn flicker_lights(time: Res<Time>, mut lights: Query<(&Flicker, &mut PointLight)
 
 /// A seat beside a table faces it (if it doesn't face one already);
 /// otherwise it stays as it was placed. `front`: the way its model faces.
-pub fn seat_dir(m: &Map, pos: Pos, front: u8, dir: u8) -> u8 {
-    let table = |d: usize| {
-        let (dx, dy) = DIRS[d];
+pub fn seat_dir(m: &Map, pos: Pos, front: Dir, dir: Dir) -> Dir {
+    let table = |d: Dir| {
+        let (dx, dy) = d.offset();
         m.at(pos.0 as i32 + dx, pos.1 as i32 + dy, pos.2 as i32)
             .is_some_and(|t| m.feature[m.idx(t)].is_special(Special::Table))
     };
-    if table(turned(front, dir) as usize) {
+    if table(front.turned(dir)) {
         return dir;
     }
-    let Some(t) = (0..4).find(|&d| table(d)) else { return dir };
-    (0..4u8).find(|&d| turned(front, d) as usize == t).unwrap_or(dir)
+    let Some(t) = Dir::ALL.into_iter().find(|&d| table(d)) else { return dir };
+    Dir::ALL.into_iter().find(|&d| front.turned(d) == t).unwrap_or(dir)
 }
 
 /// How far furniture `kind` turned to `dir` at `pos` is drawn pushed back
 /// (map x, y): until it touches a wall (or window, or rock) right behind it,
 /// the side away from its front. Walls are drawn thin, so it would stand
 /// clear of them otherwise. Stairs, ladders and seats stay put.
-pub fn snug(m: &Map, pos: Pos, kind: BuildId, dir: u8) -> Vec2 {
+pub fn snug(m: &Map, pos: Pos, kind: BuildId, dir: Dir) -> Vec2 {
     let d = kind.def();
     if !d.turnable() || matches!(d.special, Special::Stairs | Special::Seat) {
         return Vec2::ZERO;
     }
-    let back = d.front ^ 1;
-    let (bx, by) = DIRS[turned(back, dir) as usize];
+    let back = d.front.opposite();
+    let (bx, by) = back.turned(dir).offset();
     let Some(behind) = m.at(pos.0 as i32 + bx, pos.1 as i32 + by, pos.2 as i32) else { return Vec2::ZERO };
     let bi = m.idx(behind);
     // Where what's behind starts, from the middle of this cell.
@@ -251,7 +246,7 @@ pub fn snug(m: &Map, pos: Pos, kind: BuildId, dir: u8) -> Vec2 {
         return Vec2::ZERO;
     };
     // How far the model reaches towards its back.
-    let (lx, ly) = DIRS[back as usize];
+    let (lx, ly) = back.offset();
     let reach = d
         .parts()
         .iter()
@@ -269,9 +264,9 @@ pub fn built_snug(m: &Map, pos: Pos) -> Vec2 {
     }
 }
 
-/// Rotation that turns +x towards `DIRS[dir]`.
-fn facing(dir: u8) -> Quat {
-    let (dx, dy) = DIRS[dir as usize % 4];
+/// Rotation that turns +x towards `dir`.
+fn facing(dir: Dir) -> Quat {
+    let (dx, dy) = dir.offset();
     Quat::from_rotation_y((-dy as f32).atan2(dx as f32))
 }
 
@@ -335,7 +330,7 @@ fn sync_props(
             Feature::None => None,
             Feature::Plant { kind, growth } => Some(PropKey::Plant { kind, stage: kind.def().stage(growth) as u8 }),
             // To be built over a wall that's drawn with the terrain.
-            Feature::Blueprint { kind, over: Some(_), .. } => Some(PropKey::Blueprint { kind, dir: 0, over: true, snug: (0.0, 0.0) }),
+            Feature::Blueprint { kind, over: Some(_), .. } => Some(PropKey::Blueprint { kind, dir: Dir::PlusX, over: true, snug: (0.0, 0.0) }),
             // Drawn with the terrain.
             f if f.is_block() => None,
             Feature::Built { kind, dir } => Some({
@@ -354,9 +349,9 @@ fn sync_props(
                 // Modelled spanning x; a quarter turn when the walls run along y.
                 let dir = if def.along_walls {
                     if m.runs_along_x(pos) {
-                        0
+                        Dir::PlusX
                     } else {
-                        3
+                        Dir::MinusY
                     }
                 } else if def.special == Special::Seat {
                     seat_dir(m, pos, def.front, dir)
@@ -369,7 +364,7 @@ fn sync_props(
                 PropKey::Built { kind, dir, owner, open, links, snug: (snug.x, snug.y) }
             }),
             Feature::Blueprint { kind, dir, .. } => {
-                let dir = if kind.def().turnable() { dir } else { 0 };
+                let dir = if kind.def().turnable() { dir } else { Dir::PlusX };
                 let snug = snug(m, pos, kind, dir);
                 Some(PropKey::Blueprint { kind, dir, over: false, snug: (snug.x, snug.y) })
             }
@@ -438,7 +433,7 @@ fn sync_props(
     }
 
     // What hangs on walls: each wall shelf holds the next of its wall's stacks.
-    let mut want: HashMap<(u32, u8, u8), DecorKey> = HashMap::new();
+    let mut want: HashMap<(u32, Dir, u8), DecorKey> = HashMap::new();
     for (&i, list) in &m.decor {
         let mut stacks = m.stacks(i as usize);
         for d in list {
@@ -447,7 +442,7 @@ fn sync_props(
             want.insert((i, d.face, d.slot), DecorKey { kind: d.kind, built: d.is_up(), item });
         }
     }
-    let stale: Vec<(u32, u8, u8)> = props.decor.iter().filter(|(k, (key, _))| want.get(*k) != Some(key)).map(|(k, _)| *k).collect();
+    let stale: Vec<(u32, Dir, u8)> = props.decor.iter().filter(|(k, (key, _))| want.get(*k) != Some(key)).map(|(k, _)| *k).collect();
     for k in stale {
         if let Some((_, e)) = props.decor.remove(&k) {
             commands.entity(e).despawn();
@@ -472,7 +467,7 @@ fn sync_props(
 #[derive(Default)]
 struct Preview {
     cells: Vec<(Pos, PropKey)>,
-    decor: Option<(Pos, u8, u8, BuildId)>,
+    decor: Option<(Pos, Dir, u8, BuildId)>,
     entities: Vec<Entity>,
 }
 
@@ -505,9 +500,9 @@ fn preview_blueprints(
                 }
                 // Into a standing wall (a window): the shell around it, as once planned.
                 let over = matches!(m.feature[m.idx(p)], Feature::Built { .. });
-                let dir = if d.turnable() { ui.place_dir } else { 0 };
+                let dir = if d.turnable() { ui.place_dir } else { my_world::map::Dir::PlusX };
                 let key = if over {
-                    PropKey::Blueprint { kind, dir: 0, over: true, snug: (0.0, 0.0) }
+                    PropKey::Blueprint { kind, dir: my_world::map::Dir::PlusX, over: true, snug: (0.0, 0.0) }
                 } else {
                     let s = snug(m, p, kind, dir);
                     PropKey::Blueprint { kind, dir, over: false, snug: (s.x, s.y) }
@@ -547,11 +542,11 @@ fn key_along_walls(key: PropKey) -> bool {
 /// Where slot `slot` on face `face` of the wall at `pos` is: on the face
 /// (half a wall's thickness out from the middle of the cell), turned so the
 /// model's +z looks out of the wall and +x runs along it.
-pub fn decor_transform(pos: Pos, face: u8, slot: u8, lift: f32) -> Transform {
-    let (nx, ny) = DIRS[face as usize % 4];
+pub fn decor_transform(pos: Pos, face: Dir, slot: u8, lift: f32) -> Transform {
+    let (nx, ny) = face.offset();
     let n = Vec3::new(nx as f32, 0.0, ny as f32);
     let (_, plus) = my_world::decor::slot_axis(face);
-    let (ux, uy) = DIRS[plus];
+    let (ux, uy) = plus.offset();
     let u = Vec3::new(ux as f32, 0.0, uy as f32);
     let (s0, s1) = my_world::decor::slot_span(slot);
     let at = tile_center(pos) + n * (my_world::decor::WALL_T / 2.0) + u * ((s0 + s1) / 2.0 - 0.5) + Vec3::Y * lift;
@@ -561,7 +556,7 @@ pub fn decor_transform(pos: Pos, face: u8, slot: u8, lift: f32) -> Transform {
 
 /// Something on a wall (or the ghost of one planned), with its light and
 /// what stands on it.
-fn spawn_decor(commands: &mut Commands, a: &PropAssets, key: DecorKey, pos: Pos, face: u8, slot: u8, lift: f32) -> Entity {
+fn spawn_decor(commands: &mut Commands, a: &PropAssets, key: DecorKey, pos: Pos, face: Dir, slot: u8, lift: f32) -> Entity {
     let def = key.kind.def();
     let root = decor_transform(pos, face, slot, lift);
     let pose = Pose { ghost: !key.built, ..default() };
@@ -592,8 +587,8 @@ struct Pose {
     ghost: bool,
     /// Hinged parts swung open.
     open: bool,
-    /// Turn of the model (index into `DIRS`), to match linked parts to neighbours.
-    dir: u8,
+    /// Turn of the model, to match linked parts to neighbours.
+    dir: Dir,
     /// Directions with a neighbour that linked parts join (see `links`).
     links: u8,
 }
@@ -611,7 +606,7 @@ fn spawn_parts(
     let mut e = commands.spawn((root, Visibility::default()));
     e.with_children(|c| {
         for p in parts {
-            if p.link.is_some_and(|l| links & (1 << turned(l, dir)) == 0) {
+            if p.link.is_some_and(|l| links & (1 << l.turned(dir).index()) == 0) {
                 continue;
             }
             // Graves: the pit while open, the mound once filled.
@@ -948,10 +943,10 @@ mod tests {
         assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0);
         let lamp = BuildId::named("lamp");
         let pos = (3, 3, Z);
-        spawn_feature(&mut world.commands(), &a, PropKey::Blueprint { kind: lamp, dir: 0, over: false, snug: (0.0, 0.0) }, pos, 0.0, a.blanket_free.clone());
+        spawn_feature(&mut world.commands(), &a, PropKey::Blueprint { kind: lamp, dir: my_world::map::Dir::PlusX, over: false, snug: (0.0, 0.0) }, pos, 0.0, a.blanket_free.clone());
         world.flush();
         assert_eq!(world.query::<&PointLight>().iter(&world).count(), 0, "previews do not cast light");
-        spawn_feature(&mut world.commands(), &a, PropKey::Built { kind: lamp, dir: 0, owner: None, open: false, links: 0, snug: (0.0, 0.0) }, pos, 0.0, a.blanket_free.clone());
+        spawn_feature(&mut world.commands(), &a, PropKey::Built { kind: lamp, dir: my_world::map::Dir::PlusX, owner: None, open: false, links: 0, snug: (0.0, 0.0) }, pos, 0.0, a.blanket_free.clone());
         world.flush();
         let light = world.query::<&PointLight>().single(&world).unwrap();
         assert_eq!(light.intensity, lamp.def().light.as_ref().unwrap().intensity);
@@ -1155,7 +1150,7 @@ mod tests {
             } else {
                 assert!(min.y < 0.01, "{} rests on the floor", def.id);
                 if def.turnable() && def.special != Special::Seat {
-                    let (x, z) = DIRS[(def.front ^ 1) as usize];
+                    let (x, z) = def.front.opposite().offset();
                     let back = Vec3::new(x as f32, 0.0, z as f32);
                     let actual = (if x > 0 || z > 0 { max } else { min }).dot(back);
                     let expected = def.parts().iter().map(|p| p.at.0 * back.x + p.at.2 * back.z + if x != 0 { p.size.0 / 2.0 } else { p.size.2 / 2.0 }).fold(0.0f32, f32::max);
@@ -1177,32 +1172,32 @@ mod tests {
         let bed = BuildId::named("bed");
         // Unturned, a bed's head (pillow) is towards -y.
         let at = (4, 4, Z);
-        assert_eq!(snug(&m, at, bed, 0), Vec2::ZERO, "nothing behind it");
+        assert_eq!(snug(&m, at, bed, my_world::map::Dir::PlusX), Vec2::ZERO, "nothing behind it");
         let wall = m.idx((4, 3, Z));
         m.set_feature(wall, Feature::built("wall"));
-        let s = snug(&m, at, bed, 0);
+        let s = snug(&m, at, bed, my_world::map::Dir::PlusX);
         assert!(s.x == 0.0 && s.y < -0.4, "pushed back to the wall: {:?}", s);
         // Its far end then just touches the wall's face.
         assert!((0.46 - s.y - (1.0 - my_world::decor::WALL_T / 2.0)).abs() < 0.02);
-        assert_eq!(snug(&m, at, bed, 2), Vec2::ZERO, "turned, its head isn't at the wall");
+        assert_eq!(snug(&m, at, bed, my_world::map::Dir::PlusY), Vec2::ZERO, "turned, its head isn't at the wall");
         m.set_feature(wall, Feature::built("door"));
-        assert_eq!(snug(&m, at, bed, 0), Vec2::ZERO, "not into a doorway");
+        assert_eq!(snug(&m, at, bed, my_world::map::Dir::PlusX), Vec2::ZERO, "not into a doorway");
         m.set_feature(wall, Feature::built("wall"));
-        assert_eq!(snug(&m, at, BuildId::named("chair"), 0), Vec2::ZERO, "chairs stay by their table");
-        assert_eq!(snug(&m, at, BuildId::named("stairs"), 1), Vec2::ZERO);
+        assert_eq!(snug(&m, at, BuildId::named("chair"), my_world::map::Dir::PlusX), Vec2::ZERO, "chairs stay by their table");
+        assert_eq!(snug(&m, at, BuildId::named("stairs"), my_world::map::Dir::MinusX), Vec2::ZERO);
     }
 
     #[test]
     fn decor_sits_on_its_wall_face() {
         let wall = (3, 3, Z);
         // The +y face (world +z), first slot: towards -x, a wall's half thickness out.
-        let t = decor_transform(wall, 2, 0, 0.0);
+        let t = decor_transform(wall, my_world::map::Dir::PlusY, 0, 0.0);
         let c = tile_center(wall);
         assert!((t.translation.z - (c.z + my_world::decor::WALL_T / 2.0)).abs() < 1e-4);
         assert!((t.translation.x - (c.x - 0.4)).abs() < 1e-4);
         assert!((t.rotation * Vec3::Z - Vec3::Z).length() < 1e-4, "looking out of the wall");
         // The -x face: looking -x, its slots running along +z.
-        let t = decor_transform(wall, 1, 4, 0.0);
+        let t = decor_transform(wall, my_world::map::Dir::MinusX, 4, 0.0);
         assert!((t.rotation * Vec3::Z - Vec3::NEG_X).length() < 1e-4);
         assert!((t.translation.z - (c.z + 0.4)).abs() < 1e-4);
         assert!((t.rotation * Vec3::Y - Vec3::Y).length() < 1e-4, "upright");
@@ -1210,12 +1205,12 @@ mod tests {
 
     #[test]
     fn turning_matches_how_models_are_turned() {
-        for l in 0..4u8 {
-            for dir in 0..4u8 {
-                let (lx, ly) = DIRS[l as usize];
+        for l in Dir::ALL {
+            for dir in Dir::ALL {
+                let (lx, ly) = l.offset();
                 let v = facing(dir) * Vec3::new(lx as f32, 0.0, ly as f32);
-                let (x, y) = DIRS[turned(l, dir) as usize];
-                assert!((x as f32 - v.x).abs() < 0.01 && (y as f32 - v.z).abs() < 0.01, "{} turned {}", l, dir);
+                let (x, y) = l.turned(dir).offset();
+                assert!((x as f32 - v.x).abs() < 0.01 && (y as f32 - v.z).abs() < 0.01, "{:?} turned {:?}", l, dir);
             }
         }
     }
@@ -1225,15 +1220,15 @@ mod tests {
         let mut m = Map::flat(8, 8);
         let front = defs().builds[BuildId::named("chair").index()].front;
         let chair = (4, 4, Z);
-        assert_eq!(seat_dir(&m, chair, front, 1), 1, "no table: as placed");
+        assert_eq!(seat_dir(&m, chair, front, Dir::MinusX), Dir::MinusX, "no table: as placed");
         let t = m.idx((3, 4, Z));
         m.set_feature(t, Feature::built("table"));
-        let d = seat_dir(&m, chair, front, 1);
-        assert_eq!(DIRS[turned(front, d) as usize], (-1, 0), "towards the table");
+        let d = seat_dir(&m, chair, front, Dir::MinusX);
+        assert_eq!(front.turned(d).offset(), (-1, 0), "towards the table");
         // Facing one of two tables already: left as it is.
         let t2 = m.idx((4, 5, Z));
         m.set_feature(t2, Feature::built("table"));
-        let towards_second = (0..4).find(|&d| DIRS[turned(front, d) as usize] == (0, 1)).unwrap();
+        let towards_second = Dir::ALL.into_iter().find(|&d| front.turned(d).offset() == (0, 1)).unwrap();
         assert_eq!(seat_dir(&m, chair, front, towards_second), towards_second);
     }
 }

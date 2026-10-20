@@ -66,14 +66,15 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
   through `def_id!`), and `Zone::Stockpile(u16)` (add `StockpileId`).
   Done: `RoomId` (also used for room thoughts in memories, which were saved as an index;
   save format 11) and `StockpileId` with `World::add_stockpile`/`stockpile(id)`.
-- [ ] Later, if worthwhile:
+- [x] Later, if worthwhile:
   - [x] Move the fight site into `Stage::Fighting`. Done: `Stage::Fighting { site: Option<SiteWorld> }`;
     save format 12.
   - [x] Key skills and priorities by enum rather than by array position, so reordering
     `Skill` or `WorkType` can't shift old saves. Done: `per_key::PerKey` (`PerSkill`,
     `PerWork`), indexed by the enum and saved by name; save format 13.
   - [x] Use `Option` for the injury `infection_timer` (`-1.0` sentinel). Done; save format 14.
-  - Add a `Dir` enum for facing directions.
+  - [x] Add a `Dir` enum for facing directions. Done: `map::Dir` with `offset`, `opposite`,
+    `turned` and `quarter_turn`; still saved and written in `defs.ron` as 0 to 3.
 
 ## 3. Saves and robustness
 

@@ -9,7 +9,7 @@
 //! adding or reordering definitions keeps old saves loadable.
 
 use crate::health::{CyberSlot, DamageKind, Part as BodyPart};
-use crate::map::Desig;
+use crate::map::{Desig, Dir};
 use crate::pawn::{Skill, WorkType};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -281,10 +281,10 @@ pub struct Part {
     /// A door leaf: swings a quarter turn around its left edge when open.
     #[serde(default)]
     pub hinge: bool,
-    /// Only shown when the neighbour towards `DIRS[link]` (before turning)
+    /// Only shown when the neighbour towards `link` (before turning)
     /// is the same structure or a wall: fence rails joining up.
     #[serde(default)]
-    pub link: Option<u8>,
+    pub link: Option<Dir>,
     /// Only shown while a grave is filled (`Some(true)`) or still open (`Some(false)`).
     #[serde(default)]
     pub filled: Option<bool>,
@@ -756,12 +756,12 @@ pub struct BuildDef {
     /// Modelled spanning x; turned to run along the walls beside it.
     #[serde(default)]
     pub along_walls: bool,
-    /// The side it's used from, as modelled (index into `map::DIRS`: 0 +x,
-    /// 1 -x, 2 +y, 3 -y; +y if not given): the arrow while placing points
+    /// The side it's used from, as modelled (written 0 +x, 1 -x, 2 +y, 3 -y;
+    /// +y if not given): the arrow while placing points
     /// there, crafters stand there at workbenches, seats face their table
     /// with it. Stairs: the way up.
     #[serde(default = "plus_y")]
-    pub front: u8,
+    pub front: Dir,
     /// Looks the same from every side (a lamp, a table): no front, nothing to turn.
     #[serde(default)]
     pub any_way: bool,
@@ -985,8 +985,8 @@ pub struct Stage {
     pub variants: Vec<Vec<Part>>,
 }
 
-fn plus_y() -> u8 {
-    2
+fn plus_y() -> Dir {
+    Dir::PlusY
 }
 
 fn one_each() -> f32 {
@@ -1533,9 +1533,6 @@ impl Defs {
             if d.work_time <= 0.0 {
                 return Err(format!("{}: needs a work time", d.id));
             }
-            if d.front > 3 {
-                return Err(format!("{}: front must be 0 to 3", d.id));
-            }
             if d.climb && d.special != Special::Stairs {
                 return Err(format!("{}: a ladder is a kind of stairs (special: Stairs)", d.id));
             }
@@ -1563,9 +1560,6 @@ impl Defs {
             }
             if d.special == Special::Seat && !d.passable {
                 return Err(format!("{}: seats must be passable", d.id));
-            }
-            if d.parts().iter().any(|p| p.link.is_some_and(|l| l > 3)) {
-                return Err(format!("{}: link must be 0 to 3", d.id));
             }
             if matches!(d.special, Special::Floor | Special::Roof | Special::Stairs | Special::Bed | Special::Door | Special::Grave)
                 && !d.passable
@@ -1697,7 +1691,6 @@ mod tests {
     fn furniture_fronts_make_sense() {
         for k in BuildId::all() {
             let d = k.def();
-            assert!(d.front <= 3, "{}", d.id);
             if d.any_way {
                 assert!(!d.turnable(), "{}: looks the same every way, so isn't turned", d.id);
             }

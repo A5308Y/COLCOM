@@ -6,7 +6,7 @@
 
 use crate::pawn::PawnId;
 use crate::defs::{BuildId, Special};
-use crate::map::{Feature, Pos, Stack};
+use crate::map::{Dir, Feature, Pos, Stack};
 use crate::production::Bill;
 use crate::world::{Order, World};
 use serde::{Deserialize, Serialize};
@@ -22,7 +22,7 @@ pub struct Move {
     pub state: MoveState,
     /// How it was turned where it stood.
     #[serde(default)]
-    pub dir: u8,
+    pub dir: Dir,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -71,16 +71,16 @@ impl World {
         self.order_move_facing(from, to, self.facing_of(from))
     }
 
-    /// How the structure at `p` is turned (0 if there's none).
-    pub fn facing_of(&self, p: Pos) -> u8 {
+    /// How the structure at `p` is turned (unturned if there's none).
+    pub fn facing_of(&self, p: Pos) -> Dir {
         match self.map.feature[self.map.idx(p)] {
             Feature::Built { dir, .. } => dir,
-            _ => 0,
+            _ => Dir::default(),
         }
     }
 
     /// Have the furniture at `from` moved to `to`, turned to `dir` there.
-    pub fn order_move_facing(&mut self, from: Pos, to: Pos, dir: u8) -> bool {
+    pub fn order_move_facing(&mut self, from: Pos, to: Pos, dir: Dir) -> bool {
         if !self.move_target_ok(from, to) {
             return false;
         }
@@ -88,7 +88,7 @@ impl World {
         let (fi, ti) = (self.map.idx(from), self.map.idx(to));
         // How it stands now, for if it goes back; what can't be turned keeps that.
         let was = self.facing_of(from);
-        let dir = if kind.def().turnable() { dir % 4 } else { was };
+        let dir = if kind.def().turnable() { dir } else { was };
         // Moving it instead of taking it down.
         self.map.desig[fi] = None;
         self.map.feature[ti] = Feature::blueprint(kind, 0, dir);
@@ -259,15 +259,15 @@ mod tests {
         let (from, to) = ((5, 5, Z), (10, 9, Z));
         let bed = BuildId::named("bed");
         let i = w.map.idx(from);
-        w.map.set_feature(i, Feature::Built { kind: bed, dir: 1 });
-        assert!(w.order_move_facing(from, to, 3));
-        assert_eq!(w.moves[0].dir, 1, "how it stood, for if it goes back");
+        w.map.set_feature(i, Feature::Built { kind: bed, dir: crate::map::Dir::MinusX });
+        assert!(w.order_move_facing(from, to, crate::map::Dir::MinusY));
+        assert_eq!(w.moves[0].dir, crate::map::Dir::MinusX, "how it stood, for if it goes back");
         run(&mut w, 60.0);
-        assert_eq!(feature(&w, to), Feature::Built { kind: bed, dir: 3 });
+        assert_eq!(feature(&w, to), Feature::Built { kind: bed, dir: crate::map::Dir::MinusY });
         // Moved without turning, it keeps facing the same way.
         assert!(w.order_move(to, from));
         run(&mut w, 60.0);
-        assert_eq!(feature(&w, from), Feature::Built { kind: bed, dir: 3 });
+        assert_eq!(feature(&w, from), Feature::Built { kind: bed, dir: crate::map::Dir::MinusY });
     }
 
     #[test]
@@ -292,11 +292,11 @@ mod tests {
         w.spawn_colonist((2, 2, Z));
         let (from, to) = ((5, 5, Z), (10, 9, Z));
         let i = w.map.idx(from);
-        w.map.set_feature(i, Feature::Built { kind: BuildId::named("chair"), dir: 2 });
+        w.map.set_feature(i, Feature::Built { kind: BuildId::named("chair"), dir: crate::map::Dir::PlusY });
         assert!(w.order_move(from, to));
-        assert!(matches!(feature(&w, to), Feature::Blueprint { dir: 2, .. }));
+        assert!(matches!(feature(&w, to), Feature::Blueprint { dir: crate::map::Dir::PlusY, .. }));
         run(&mut w, 60.0);
-        assert_eq!(feature(&w, to), Feature::Built { kind: BuildId::named("chair"), dir: 2 });
+        assert_eq!(feature(&w, to), Feature::Built { kind: BuildId::named("chair"), dir: crate::map::Dir::PlusY });
     }
 
     #[test]

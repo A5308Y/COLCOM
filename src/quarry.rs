@@ -24,7 +24,7 @@
 //! they don't hold up the layers around them.
 
 use crate::defs::defs;
-use crate::map::{Block, Desig, Feature, Map, Pos, DIRS};
+use crate::map::{Block, Desig, Dir, Feature, Map, Pos, DIRS};
 use crate::world::World;
 use serde::{Deserialize, Serialize};
 
@@ -47,7 +47,7 @@ pub struct Quarry {
     #[serde(default)]
     pub shaft: Option<(u16, u16)>,
     #[serde(default)]
-    pub out: u8,
+    pub out: Dir,
 }
 
 impl Quarry {
@@ -128,13 +128,14 @@ impl World {
         let q = &self.quarries[k];
         // Nearest the colonists, then the highest ground, then the first.
         type Key = (bool, i32, std::cmp::Reverse<usize>);
-        let mut best: Option<(Key, (u16, u16), u8, usize)> = None;
+        let mut best: Option<(Key, (u16, u16), Dir, usize)> = None;
         for &c in &q.cols {
             let (x, y) = (c.0 as usize, c.1 as usize);
             if m.column_taken(x, y, 0) {
                 continue;
             }
-            for (d, &(dx, dy)) in DIRS.iter().enumerate() {
+            for d in Dir::ALL {
+                let (dx, dy) = d.offset();
                 let Some(o) = m.at(x as i32 + dx, y as i32 + dy, 0) else { continue };
                 if m.quarry_at(o.0, o.1).is_some() {
                     continue;
@@ -147,7 +148,7 @@ impl World {
                 let dist = df.as_ref().and_then(|df| df.dist(outside));
                 let key = (dist.is_none(), dist.unwrap_or(0), std::cmp::Reverse(g));
                 if best.as_ref().is_none_or(|b| key < b.0) {
-                    best = Some((key, c, d as u8, g));
+                    best = Some((key, c, d, g));
                 }
             }
         }
@@ -188,7 +189,7 @@ impl World {
         touching.dedup();
         let k = match touching.split_first() {
             None => {
-                self.quarries.push(Quarry { cols: vec![c], depth: DEFAULT_DEPTH, ground: 0, shaft: None, out: 0 });
+                self.quarries.push(Quarry { cols: vec![c], depth: DEFAULT_DEPTH, ground: 0, shaft: None, out: crate::map::Dir::PlusX });
                 self.quarries.len() - 1
             }
             Some((&first, rest)) => {
@@ -408,7 +409,7 @@ impl World {
 
     /// Stairs built in a quarry's shaft keep facing out of it, whatever the
     /// ground around them looks like while it's being dug.
-    pub(crate) fn quarry_stairs_dir(&self, p: Pos) -> Option<u8> {
+    pub(crate) fn quarry_stairs_dir(&self, p: Pos) -> Option<Dir> {
         let q = &self.quarries[self.map.quarry_at(p.0, p.1)?];
         (q.shaft == Some((p.0 as u16, p.1 as u16))).then_some(q.out)
     }
@@ -480,7 +481,7 @@ mod tests {
         let q = &w.quarries[0];
         let shaft = q.shaft.unwrap();
         assert_eq!(shaft.0, 8, "on the east edge, facing them");
-        assert_eq!(DIRS[q.out as usize], (1, 0), "stairs out to the east");
+        assert_eq!(q.out, Dir::PlusX, "stairs out to the east");
     }
 
     #[test]
@@ -630,7 +631,7 @@ mod tests {
         let shaft = w.quarries[0].shaft.unwrap();
         let s = w.map.idx((shaft.0 as usize, shaft.1 as usize, 7));
         w.map.block[s] = Block::Air;
-        w.map.feature[s] = Feature::Built { kind: defs().stairs().unwrap(), dir: 0 };
+        w.map.feature[s] = Feature::Built { kind: defs().stairs().unwrap(), dir: crate::map::Dir::PlusX };
         w.update_quarries();
         for (x, y) in [(5, 5), (6, 6), (5, 4), (4, 5)] {
             let i = w.map.idx((x, y, 7));
@@ -673,15 +674,15 @@ mod tests {
         // Two stacked up a wall of rock, and one on its own.
         for z in 8..10 {
             let i = w.map.idx((2, 2, z));
-            w.map.feature[i] = Feature::Built { kind: stairs, dir: 1 };
+            w.map.feature[i] = Feature::Built { kind: stairs, dir: crate::map::Dir::MinusX };
         }
         let alone = w.map.idx((6, 6, 8));
-        w.map.feature[alone] = Feature::Built { kind: stairs, dir: 0 };
+        w.map.feature[alone] = Feature::Built { kind: stairs, dir: crate::map::Dir::PlusX };
         let loaded = World::load_json(&w.save_json().unwrap()).unwrap();
         for z in 8..10 {
-            assert_eq!(loaded.map.feature[loaded.map.idx((2, 2, z))], Feature::Built { kind: defs().ladder().unwrap(), dir: 1 });
+            assert_eq!(loaded.map.feature[loaded.map.idx((2, 2, z))], Feature::Built { kind: defs().ladder().unwrap(), dir: crate::map::Dir::MinusX });
         }
-        assert_eq!(loaded.map.feature[alone], Feature::Built { kind: stairs, dir: 0 }, "real stairs stay");
+        assert_eq!(loaded.map.feature[alone], Feature::Built { kind: stairs, dir: crate::map::Dir::PlusX }, "real stairs stay");
     }
 
     #[test]

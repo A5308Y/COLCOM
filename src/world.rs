@@ -3,7 +3,7 @@
 use crate::battle::{Battle, Parley};
 use crate::health::TickCtx;
 use crate::defs::{defs, BuildId, PlantId, Special};
-use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone};
+use crate::map::{Block, Desig, Dir, Feature, Map, Pos, Stack, Zone};
 use crate::moving::Move;
 use crate::pawn::{Faction, Job, Life, Memory, Pawn, PawnId, WorkPriority, WorkType};
 use crate::pathing::{bfs, DistField};
@@ -1181,7 +1181,7 @@ impl World {
                     Feature::Blueprint { over, .. } => over,
                     _ => None,
                 };
-                self.map.feature[i] = Feature::Blueprint { kind, delivered: 0, dir: 0, over };
+                self.map.feature[i] = Feature::Blueprint { kind, delivered: 0, dir: crate::map::Dir::PlusX, over };
             }
             Order::Cancel => {
                 self.map.desig[i] = None;
@@ -1241,11 +1241,11 @@ impl World {
     }
 
     /// Turn the blueprint at `p` to face `dir` once built. Returns false if there's none.
-    pub fn turn_blueprint(&mut self, p: Pos, dir: u8) -> bool {
+    pub fn turn_blueprint(&mut self, p: Pos, dir: Dir) -> bool {
         let i = self.map.idx(p);
         match &mut self.map.feature[i] {
             Feature::Blueprint { dir: d, .. } => {
-                *d = dir % 4;
+                *d = dir;
                 true
             }
             _ => false,
@@ -1262,7 +1262,7 @@ impl World {
         for &i in &m.roof_wanted {
             wanted[i] = true;
             if m.feature[i] == Feature::None {
-                m.feature[i] = Feature::blueprint(roof, 0, 0);
+                m.feature[i] = Feature::blueprint(roof, 0, crate::map::Dir::PlusX);
             }
         }
         for (i, &keep) in wanted.iter().enumerate() {
@@ -1949,7 +1949,7 @@ mod tests {
         // Called off half-way: exactly what was brought comes back.
         assert!(w.apply_order((12, 12, Z), Order::Build(bench)));
         let j = w.map.idx((12, 12, Z));
-        w.map.feature[j] = Feature::blueprint(bench, 8 + 10, 0);
+        w.map.feature[j] = Feature::blueprint(bench, 8 + 10, crate::map::Dir::PlusX);
         assert!(w.apply_order((12, 12, Z), Order::Cancel));
         assert_eq!((w.map.count_items(structural), w.map.count_items(steel)), (8, 10));
     }
@@ -2005,8 +2005,8 @@ mod tests {
         let chair = BuildId::named("chair");
         w.map.drop_item((3, 3, Z), Stack { kind: chair.def().cost[0].item, count: 10 });
         assert!(w.apply_order((8, 8, Z), Order::Build(chair)));
-        assert!(w.turn_blueprint((8, 8, Z), 3));
-        assert!(!w.turn_blueprint((9, 9, Z), 1), "no blueprint there");
+        assert!(w.turn_blueprint((8, 8, Z), crate::map::Dir::MinusY));
+        assert!(!w.turn_blueprint((9, 9, Z), crate::map::Dir::MinusX), "no blueprint there");
         // Stairs with a platform to the east, turned west (where they can't be climbed): still built as placed.
         let stairs = BuildId::named("stairs");
         for x in 13..16 {
@@ -2016,17 +2016,17 @@ mod tests {
             }
         }
         let s = w.map.idx((12, 10, Z));
-        w.map.feature[s] = Feature::blueprint(stairs, stairs.def().total_cost(), 1);
+        w.map.feature[s] = Feature::blueprint(stairs, stairs.def().total_cost(), crate::map::Dir::MinusX);
         run(&mut w, 60.0);
-        assert_eq!(w.map.feature[w.map.idx((8, 8, Z))], Feature::Built { kind: chair, dir: 3 });
-        assert_eq!(w.map.feature[s], Feature::Built { kind: stairs, dir: 1 }, "as the blueprint shows");
+        assert_eq!(w.map.feature[w.map.idx((8, 8, Z))], Feature::Built { kind: chair, dir: crate::map::Dir::MinusY });
+        assert_eq!(w.map.feature[s], Feature::Built { kind: stairs, dir: crate::map::Dir::MinusX }, "as the blueprint shows");
     }
 
     #[test]
     fn stairs_get_no_roof_over_them() {
         let mut w = test_world(16, 16);
         let i = w.map.idx((7, 7, Z));
-        w.map.set_feature(i, Feature::Built { kind: BuildId::named("stairs"), dir: 0 });
+        w.map.set_feature(i, Feature::Built { kind: BuildId::named("stairs"), dir: crate::map::Dir::PlusX });
         house(&mut w, 5, 5, 9, 9);
         let marked = roof_blueprints(&w, Z + 1);
         assert!(!marked.contains(&(7, 7)), "the way up stays open");
@@ -2070,7 +2070,7 @@ mod tests {
         }
         w.map.recompute_rooms();
         let i = w.map.idx((7, 7, Z));
-        w.map.feature[i] = Feature::blueprint(BuildId::named("stairs"), BuildId::named("stairs").def().total_cost(), 0);
+        w.map.feature[i] = Feature::blueprint(BuildId::named("stairs"), BuildId::named("stairs").def().total_cost(), crate::map::Dir::PlusX);
         run(&mut w, 60.0);
         assert!(w.map.feature[i].is_special(Special::Stairs), "built");
         assert!(!w.map.roof[w.map.idx((7, 7, Z + 1))], "no roof over the stairs");
@@ -2155,7 +2155,7 @@ mod tests {
         let mut w = test_world(16, 16);
         house(&mut w, 5, 5, 9, 9);
         let corner = w.map.idx((6, 6, Z + 1));
-        w.map.feature[corner] = Feature::blueprint(defs().roof().unwrap(), 1, 0);
+        w.map.feature[corner] = Feature::blueprint(defs().roof().unwrap(), 1, crate::map::Dir::PlusX);
         let gap = w.map.idx((9, 7, Z));
         w.map.set_feature(gap, Feature::None);
         w.map.recompute_rooms();
@@ -2260,10 +2260,10 @@ mod tests {
         let at = (10, 10, Z);
         let i = w.map.idx(at);
         assert!(w.apply_order(at, Order::Build(wall)));
-        w.map.feature[i] = Feature::blueprint(wall, 3, 0);
+        w.map.feature[i] = Feature::blueprint(wall, 3, crate::map::Dir::PlusX);
         assert!(!w.apply_order(at, Order::Build(wall)), "the same thing again changes nothing");
         assert!(w.apply_order(at, Order::Build(door)), "a door replaces the wall blueprint");
-        assert_eq!(w.map.feature[i], Feature::blueprint(door, 0, 0));
+        assert_eq!(w.map.feature[i], Feature::blueprint(door, 0, crate::map::Dir::PlusX));
         assert_eq!(w.map.count_items(wall.def().cost[0].item), 3, "what was delivered is left for the haulers");
         w.map.drop_item((4, 4, Z), Stack { kind: door.def().cost[0].item, count: door.def().total_cost() });
         run(&mut w, 160.0);
@@ -2425,13 +2425,13 @@ mod tests {
                 let wall = (8, 8, Z);
                 let i = w.map.idx(wall);
                 w.map.set_feature(i, Feature::built("wall"));
-                assert!(w.order_decor(wall, 2, 2, kind), "{} can be hung", def.id);
+                assert!(w.order_decor(wall, crate::map::Dir::PlusY, 2, kind), "{} can be hung", def.id);
                 run(&mut w, 40.0 + 15.0 * def.cost.len() as f32 + 3.0 * def.work_time);
                 assert!(w.map.decor(i).iter().all(|d| d.is_up()), "{} put up", def.id);
                 for c in &def.cost {
                     assert_eq!(w.map.count_items(c.item), 0, "{} used its {}", def.id, c.item.def().id);
                 }
-                assert!(w.cancel_decor(wall, 2, 2));
+                assert!(w.cancel_decor(wall, crate::map::Dir::PlusY, 2));
                 run(&mut w, 30.0 + def.work_time);
                 assert!(w.map.decor(i).is_empty(), "{} taken down", def.id);
                 for (item, count) in def.drops() {

@@ -212,7 +212,7 @@ mod tests {
         let (near, far) = ((4, 4, Z), (16, 16, Z));
         for at in [near, far] {
             let k = w.map.idx(at);
-            w.map.feature[k] = Feature::blueprint(grave, grave.def().total_cost(), 0);
+            w.map.feature[k] = Feature::blueprint(grave, grave.def().total_cost(), crate::map::Dir::PlusX);
         }
         let options = w.job_options(id, far);
         let (label, job) = options.iter().find(|(_, j)| matches!(j, Job::Work { .. })).expect("dig it").clone();
@@ -236,7 +236,7 @@ mod tests {
         let at = (12, 12, Z);
         let k = w.map.idx(at);
         let table = BuildId::named("table");
-        w.map.feature[k] = Feature::blueprint(table, 0, 0);
+        w.map.feature[k] = Feature::blueprint(table, 0, crate::map::Dir::PlusX);
         w.map.drop_item((3, 3, Z), Stack { kind: table.def().cost[0].item, count: 20 });
         let (label, job) = w.job_options(id, at).into_iter().next().expect("deliver");
         assert!(label.starts_with("Prioritize delivering"), "{}", label);
