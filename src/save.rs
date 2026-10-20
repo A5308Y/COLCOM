@@ -7,7 +7,7 @@ use crate::DAY_LEN;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Bump whenever the save format changes incompatibly.
-pub const SAVE_VERSION: u32 = 14;
+pub const SAVE_VERSION: u32 = 15;
 
 #[derive(Serialize)]
 struct SaveOut<'a> {
@@ -85,6 +85,7 @@ fn check(w: &World) -> Result<(), String> {
     cells("res_target", w.res_target.len())?;
     cells("res_item", w.res_item.len())?;
     cells("res_cell", w.res_cell.len())?;
+    cells("cell_temp", w.cell_temp.len())?;
     if let Some(&i) = m.shelved.keys().chain(m.decor.keys()).find(|&&i| i as usize >= n) {
         return Err(format!("something is stored in cell {} outside the map", i));
     }
@@ -99,6 +100,22 @@ fn check(w: &World) -> Result<(), String> {
         return Err(format!("{:?} is outside the map", p));
     }
     Ok(())
+}
+
+/// `rle` for per-cell temperatures, with NaN (outside rooms) as `null`:
+/// JSON has no NaN.
+pub mod rle_nan {
+    use super::*;
+
+    pub fn serialize<S: Serializer>(v: &[f32], s: S) -> Result<S::Ok, S::Error> {
+        let values: Vec<Option<f32>> = v.iter().map(|&t| (!t.is_nan()).then_some(t)).collect();
+        rle::serialize(&values, s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<f32>, D::Error> {
+        let values: Vec<Option<f32>> = rle::deserialize(d)?;
+        Ok(values.into_iter().map(|t| t.unwrap_or(f32::NAN)).collect())
+    }
 }
 
 /// Run-length encoding for per-cell vectors: `[[count, value], ...]`.
@@ -140,6 +157,42 @@ mod tests {
         assert_eq!(loaded.map.block, w.map.block);
         assert_eq!(loaded.map.items, w.map.items);
         assert_eq!(loaded.pawns.len(), w.pawns.len());
+    }
+
+    #[test]
+    fn loading_restores_what_the_last_second_worked_out() {
+        let mut w = World::new(42);
+        // A walled, roofed room to be warm in.
+        let z = (0..w.map.d).find(|&z| w.map.standable((10, 10, z))).unwrap();
+        for x in 8..=12 {
+            for y in 8..=12 {
+                if x == 8 || x == 12 || y == 8 || y == 12 {
+                    let i = w.map.idx((x, y, z));
+                    w.map.set_feature(i, crate::map::Feature::built("wall"));
+                }
+                let r = w.map.idx((x, y, z + 1));
+                w.map.set_roof(r, true);
+            }
+        }
+        for _ in 0..(3.0 / crate::TICK) as usize {
+            w.tick(crate::TICK);
+        }
+        let room = w.map.room[w.map.idx((10, 10, z))];
+        assert!(room != 0, "the test room is a room");
+        // As the last once-a-second pass left it: the room warmed up, a heater on.
+        for i in 0..w.map.len() {
+            if w.map.room[i] == room {
+                w.cell_temp[i] = 21.5;
+            }
+        }
+        w.running.insert(w.map.idx((10, 10, z)) as u32);
+        let loaded = crate::world::World::load_json(&w.save_json().unwrap()).unwrap();
+        let bits = |v: &[f32]| v.iter().map(|t| t.to_bits()).collect::<Vec<_>>();
+        assert_eq!(bits(&loaded.cell_temp), bits(&w.cell_temp), "rooms as warm as they were");
+        assert_eq!(loaded.running, w.running);
+        assert_eq!(loaded.power, w.power);
+        assert_eq!(loaded.trapped, w.trapped);
+        assert_eq!(loaded.quarry_out_of_reach, w.quarry_out_of_reach);
     }
 
     #[test]

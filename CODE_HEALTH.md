@@ -82,9 +82,13 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
   fails with a message instead of panicking during a later tick.
   Done: `save::check` also covers map-keyed shelves and decor, stockpile ids in
   zones, and pawn, bench and move positions.
-- [ ] **Recompute derived state on load.** `running`, `trapped` and `cell_temp` are
+- [x] **Recompute derived state on load.** `running`, `trapped` and `cell_temp` are
   `#[serde(skip)]`; recompute them in `load_json`, so a loaded game continues exactly like
   an uninterrupted one.
+  Done: room temperatures are state, not derived (rooms warm and cool with a lag),
+  so `cell_temp` is saved (NaN as `null`), as are the last pass's powered devices, power
+  summary, trapped colonists and unreachable quarry cells; rooms and room stats are
+  rebuilt. Save format 15.
 - [ ] **Migrations that never run.** Any save that isn't the current version is refused
   (`save.rs`), so the in-place migrations never run on old files. Remove them, or add
   version-stepped migrations.

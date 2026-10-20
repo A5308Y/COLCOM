@@ -121,28 +121,26 @@ pub struct World {
     /// Furniture being moved (see `moving.rs`).
     #[serde(default)]
     pub moves: Vec<Move>,
-    /// Each cell's room temperature as last worked out (NaN outside rooms;
-    /// not saved: rooms start from the outdoor temperature). See `temperature.rs`.
-    #[serde(skip)]
+    /// Each cell's room temperature as last worked out (NaN outside rooms).
+    /// Rooms warm and cool over time, so this is saved. See `temperature.rs`.
+    #[serde(with = "crate::save::rle_nan")]
     pub cell_temp: Vec<f32>,
     /// Charge in the colony's batteries (watt-hours; see `power.rs`).
     #[serde(default)]
     pub stored_wh: f32,
-    /// Cells of the heaters and coolers running this second, and how the grid did.
-    #[serde(skip)]
-    pub running: std::collections::HashSet<u32>,
-    #[serde(skip)]
+    /// Cells of the heaters and coolers running this second, and how the grid
+    /// did (saved: what had power depends on the batteries at the time).
+    pub running: std::collections::BTreeSet<u32>,
     pub power: crate::power::PowerState,
     /// Areas dug out level by level (see `quarry.rs`).
     #[serde(default)]
     pub quarries: Vec<crate::quarry::Quarry>,
     /// Per quarry, how many of the cells marked to dig nobody can get to
-    /// (counted once a second in `update_quarries`).
-    #[serde(skip)]
+    /// (counted once a second in `update_quarries`; saved with the rest of
+    /// that second's results, so loading doesn't change what happens next).
     pub quarry_unreachable: Vec<usize>,
     /// Those cells (indices): left standing for now, so the layers go on around them.
-    #[serde(skip)]
-    pub quarry_out_of_reach: std::collections::HashSet<usize>,
+    pub quarry_out_of_reach: std::collections::BTreeSet<usize>,
     /// Counts down to the next once-a-second pass over benches and rooms.
     pub colony_timer: f32,
     /// Quality per room id (index 0 unused). Derived, so not saved.
@@ -159,7 +157,6 @@ pub struct World {
     pub sounds: Vec<SoundEvent>,
     /// Colonists who can't walk to the edge of the map (shut in by
     /// furniture, walls or doors), checked once a second. They climb out.
-    #[serde(skip)]
     pub trapped: Vec<PawnId>,
     /// The neighbouring factions, the missions on offer, and squads away (see `expeditions`).
     #[serde(default)]
@@ -232,7 +229,7 @@ impl World {
             stored_wh: 0.0,
             running: Default::default(),
             power: Default::default(),
-            cell_temp: Vec::new(),
+            cell_temp: vec![f32::NAN; n],
             quarry_unreachable: Vec::new(),
             quarry_out_of_reach: Default::default(),
             colony_timer: 0.0,

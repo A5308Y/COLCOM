@@ -10,14 +10,14 @@
 use crate::map::Feature;
 use crate::world::World;
 use crate::DAY_LEN;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 /// Room temperatures (°C) below which heaters run, and above which coolers do.
 pub const HEAT_BELOW: f32 = 18.0;
 pub const COOL_ABOVE: f32 = 24.0;
 
 /// How the grid did in the last second.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PowerState {
     /// Watts the panels make now, and the most they could.
     pub made: f32,
@@ -83,7 +83,7 @@ impl World {
         let hours = dt / DAY_LEN * 24.0;
         let mut stored = self.stored_wh.min(capacity);
         let mut spare = made;
-        let mut running = HashSet::new();
+        let mut running = BTreeSet::new();
         let mut unpowered = 0;
         for (i, draw) in wanting {
             // From the panels first, then from the batteries.
