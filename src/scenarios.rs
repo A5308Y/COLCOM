@@ -46,6 +46,7 @@ fn colonist(w: &mut World, at: (usize, usize), shooting: u8, melee: u8, weapon: 
     p.skills[Skill::Shooting as usize] = shooting;
     p.skills[Skill::Melee as usize] = melee;
     p.weapon = Some(item(weapon));
+    p.wear(item("clothes"));
     p.hunger = 100.0;
     p.rest = 100.0;
     p.mood = 60.0;
@@ -132,11 +133,18 @@ fn battle_arena() -> World {
     w.set_role(ada, Role::Leader).unwrap();
     let i = w.pawn_index(ada).unwrap();
     w.pawns[i].bed = Some((4, 13, Z));
-    for (at, weapon) in [((12, 14), "rifle"), ((12, 16), "pistol"), ((12, 30), "rifle")] {
+    for (at, weapon) in [((12, 14), "assault_rifle"), ((12, 16), "pistol"), ((12, 30), "rifle")] {
         let id = colonist(&mut w, at, 7, 5, weapon);
         w.set_role(id, Role::Member(ada)).unwrap();
+        if weapon == "pistol" {
+            let i = w.pawn_index(id).unwrap();
+            w.pawns[i].wear(item("parka"));
+            w.pawns[i].wear(item("wool_hat"));
+        }
     }
-    colonist(&mut w, (14, 9), 8, 4, "rifle");
+    let powered = colonist(&mut w, (14, 9), 8, 4, "laser_rifle");
+    let pi = w.pawn_index(powered).unwrap();
+    w.pawns[pi].wear(item("powered_armor"));
     let geared = colonist(&mut w, (14, 21), 6, 6, "knife");
     w.set_loadout(geared, &[item("rifle"), item("steel_armor")]).unwrap();
     // Already fetched from the stockpile (the knife put down there).
@@ -148,8 +156,22 @@ fn battle_arena() -> World {
             w.map.drop_item(w.map.pos(cell), Stack { kind: old, count: 1 });
         }
     }
+    w.pawns[gi].wear(item("steel_helmet"));
     let civilian = colonist(&mut w, (11, 19), 2, 2, "knife");
     w.set_role(civilian, Role::Civilian).unwrap();
+
+    // Keep a spare of every weapon, apparel item and medicine on separate
+    // stockpile cells for inspecting models and trying different loadouts.
+    // Read definitions so newly added combat gear is included automatically.
+    for kind in ItemId::all().filter(|k| k.def().is_gear() || k.def().medicine > 0.0) {
+        if w.map.count_items(kind) > 0 {
+            continue;
+        }
+        let cell = (0..w.map.len())
+            .find(|&i| w.map.zone[i] == Zone::Stockpile(0) && !w.map.has_items(i))
+            .expect("the battle stockpile has room for every combat item");
+        w.map.drop_item(w.map.pos(cell), Stack { kind, count: 1 });
+    }
 
     // The raiders: a squad of four and a pair, armed the same way every time.
     w.start_battle(Parley { squads: vec![4, 2], entry: RAID_ENTRY, demand: vec![Stack { kind: item("steel"), count: 10 }] });
@@ -221,7 +243,25 @@ mod tests {
         assert_eq!(geared.weapon, Some(item("rifle")));
         assert!(geared.apparel.contains(&item("steel_armor")));
         assert_eq!(w.map.count_items(item("rifle")), 1);
-        assert_eq!(w.map.count_items(item("steel_armor")), 0);
+        assert_eq!(w.map.count_items(item("steel_armor")), 1, "a spare remains for inspection");
+    }
+
+    #[test]
+    fn every_combat_item_is_available_and_fighting_gear_is_equipped() {
+        let w = battle_world();
+        for kind in ItemId::all() {
+            let def = kind.def();
+            if def.is_gear() || def.medicine > 0.0 {
+                let stocked: u32 = (0..w.map.len())
+                    .filter(|&i| w.map.zone[i] == Zone::Stockpile(0))
+                    .map(|i| w.map.count_in(i, kind))
+                    .sum();
+                assert!(stocked >= 1, "{} has a spare in the stockpile", def.id);
+            }
+            if def.is_gear() {
+                assert!(w.pawns.iter().any(|p| p.role != Role::Civilian && p.has_on(kind)), "{} appears on a fighter", def.id);
+            }
+        }
     }
 
     #[test]

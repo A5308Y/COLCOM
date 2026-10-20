@@ -18,6 +18,8 @@ Scenarios are fixed worlds for trying things out (`src/scenarios.rs`). `--scenar
 `MY_WORLD_SCENARIO=<name>` picks one; an unknown name lists the ones there are. `battle` starts in
 round 1 of a battle on a 48×32 yard: Ada's squad (one member arrives two rounds late), two lone
 fighters (one gears up from the stockpile), a civilian in the house, and six raiders from the east.
+Every weapon and combat armor type appears on a fighter. The stockpile also holds a spare of every
+weapon, apparel item and medicine for inspecting models and trying loadouts.
 
 (No Rust yet? `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
 
