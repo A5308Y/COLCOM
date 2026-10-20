@@ -123,6 +123,6 @@ if __name__ == "__main__":
                     shown = geometry if turn == 0 else Gear(geometry.palette).add(geometry, turn=(0, turn, 0))
                     entries.append(("armor", f"{coat}-{sex}-{label}{view}", shown, None))
     if args.garment == ["PoweredArmor"]:
-        write_gallery(entries, args.out, "powered armor pose review", "Male and female fits, rigid titanium plates over a continuous hood, gloves and undersuit. Sampled game animation clips and laser-rifle grip; CPU skinning without game lighting or emissive effects.")
+        write_gallery(entries, args.out, "powered armor pose review", "Male and female fits, a continuous metal shell with integrated panels and fitted cyan details that bend with the body. Sampled game animation clips and laser-rifle grip; CPU skinning without game lighting or emissive effects.")
     else:
         write_gallery(entries, args.out, "apparel pose review", "Actual outfit skeletons and shared animation clips. Includes movement, carrying, work, sitting and layered kneeling aim. CPU skinning; textures and game lighting omitted. Counts include native body parts and weapons where equipped.")

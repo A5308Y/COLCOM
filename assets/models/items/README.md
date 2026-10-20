@@ -81,7 +81,7 @@ the hands. Missing joints or failed loading retain the original outfit and fallb
 Unequipping restores the original torso/arms; bedding hides the new garment with the body.
 Clothes that finish loading on a dead character receive its death tint, including the fabric.
 The Flak Jacket keeps its rigid attachments. Powered armor shares this skinning lifecycle,
-with rigid plates over a continuous protective undersuit; see the [armor notes](../armor/README.md).
+with fitted, deforming panels over a continuous titanium shell; see the [armor notes](../armor/README.md).
 
 Original shape definitions remain visible during loading or if loading fails. Gameplay properties,
 item IDs, crafting, nutrition, medical effects, clothing stats, and save formats are unchanged.

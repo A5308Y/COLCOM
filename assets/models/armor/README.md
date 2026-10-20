@@ -69,26 +69,29 @@ Head pieces keep the existing hair-hiding behavior.
 
 Live colonists use `PoweredArmorMale.gltf` or `PoweredArmorFemale.gltf` through the same
 `ApparelDef.skinned` loader, outfit-bone binding and cleanup as clothes and parkas.
-Each fit uses the matching outfit's bind matrices and actual limb lengths. The chest, abdominal
-and back plates follow separate spine bones; limb plates retain their rigid shapes.
-Flexible hip and knee seals bridge the joints.
+Each fit uses the matching outfit's bind matrices and actual limb lengths. A continuous titanium
+shell encloses the entire body, including the fingers, wrists, armpits, hips and neck beneath
+the helmet. There are no exposed fabric inserts. The foundation derives from the matching
+CC0 base character, retargeted and simplified using the clothing CPU skinning helpers.
 
-A continuous, deforming graphite undersuit covers the entire body, including fingers, wrists,
-armpits, hips, neck and head beneath the existing helmet. It derives from the matching CC0 base
-character, retargeted and simplified using the same CPU skinning helpers as clothing. It has no
-skin textures or transparent materials. `full_body: true` hides the original torso, limbs and head
-surfaces only after the suit is ready. Skeletons remain visible to their attachments, so the
-helmet stays in place. Unequipping restores the original body; failed loading retains fallbacks.
+The original graphite and titanium panel silhouettes are fitted to the nearest body surface
+and baked onto the continuous shell's triangles. Shared vertices eliminate overlapping plates
+at the shoulders, knees and spine. Cyan lights and machined trim sit in shallow relief and
+inherit interpolated skin weights from that same surface. The chest, back and limbs bend with
+the pawn; the back reactor follows the spine closely instead of floating behind it.
 
-Worn armor and joint seals use 1,852 triangles. The continuous undersuit reuses simplified
-character anatomy (8,297 male / 7,564 female triangles); the helmet remains the shared rigid
-attachment. These replace the native outfit and head surfaces rather than layering visible skin
-or regular clothes through the suit. The stored 1,986-triangle prop remains unchanged.
+The suit has no skin textures or transparent materials. `full_body: true` hides the original
+torso, limbs and head surfaces only after the suit is ready. Skeletons remain visible to their
+attachments, so the helmet stays in place. Unequipping restores the original body; failed
+loading retains fallbacks. The helmet remains the shared rigid attachment, and the stored
+1,986-triangle prop remains unchanged. Worn suits use 8,486 male / 7,899 female triangles,
+including the complete shell and shallow details, plus the existing helmet. These deforming
+full-body meshes have a higher budget than the static item props.
 
 ## Review
 
 `target/gear-review/index.html` is a CPU geometry gallery; it does not reproduce the game's PBR,
-shadows, bodies or animation. All item meshes fit the 2,000-triangle/five-material budget. Checks
+shadows, bodies or animation. Static item props fit the 2,000-triangle/five-material budget. Checks
 verify scene/mesh reuse, bone names in both character skeletons, floor clearance and tile bounds,
 weapon/armor cleanup, and loading fallbacks. The ignored GPU tests load every gear asset and check
 weapons, armor and helmets on animated characters:
@@ -108,8 +111,9 @@ python3 -B tools/test_power_armor.py
 
 The older `armor-fit-review` shows rigid inventory/fallback pieces. The `powered-armor-poses`
 gallery samples idle, walking, carrying, aiming, firing, kneeling and sitting clips on both
-outfit skeletons, with front/side/back views and the laser rifle. Geometry checks verify complete
-body-region coverage, opaque suit materials, matching bind poses and rigid plate deformation.
+outfit skeletons, with front/side/back views and the laser rifle. Geometry checks verify
+complete body-surface coverage, opaque metal materials, matching bind poses and close fitting
+through combat and movement poses.
 
 The older gallery produces a standalone `index.html` with male/female front and powered-suit rear views.
 The base bodies use neutral colors without their textures, and a simple weighted arm pose lowers

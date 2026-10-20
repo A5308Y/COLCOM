@@ -18,11 +18,11 @@ outfit's bare forearms/hands and textures from `models/characters/outfits/`; fem
 include bare arms cut from `base/Superhero_Female_FullBody.gltf`, with its textures from
 `models/characters/base/`. Fabric uses the project's own flat-color materials.
 
-The continuous undersuits in `models/armor/PoweredArmorMale.gltf` and
+The continuous armor foundations in `models/armor/PoweredArmorMale.gltf` and
 `PoweredArmorFemale.gltf` derive from the matching Universal Base Characters (CC0).
 `tools/make_skinned_power_armor.py` retargets their skin weights to the outfit skeleton,
-simplifies the anatomy and replaces all skin materials with opaque protective fabric,
-including the hood and gloves. The armor plates and cyan materials are original project artwork.
+simplifies the anatomy and replaces all skin materials with opaque titanium,
+including the neck covering and gloves. The armor plates and cyan materials are original project artwork.
 
 ## Models (CC0 1.0, public domain)
 
