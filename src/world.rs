@@ -100,10 +100,6 @@ pub struct World {
     /// years of game time. Read it with `time()`.
     #[serde(rename = "time")]
     clock: f64,
-    /// The day length `time` was counted in (saves from before the longer
-    /// days have none: 240), so loading can rescale the clock.
-    #[serde(default = "old_day_len")]
-    pub day_len: f32,
     pub rng: Rng,
     pub next_id: u32,
     pub log: Vec<String>,
@@ -213,7 +209,6 @@ impl World {
             res_cell: vec![None; n],
             res_patient: Vec::new(),
             clock: (DAY_LEN * 0.25) as f64,
-            day_len: DAY_LEN,
             rng,
             next_id: 1,
             log: Vec::new(),
@@ -1325,34 +1320,17 @@ impl World {
     /// Load a save file, refusing other format versions with a readable message.
     pub fn load_json(s: &str) -> Result<World, String> {
         let mut w = crate::save::from_json(s)?;
+        // Rebuild only what's derived from saved state; nothing saved changes.
         w.index_quarries();
-        // Gear chosen before that was the loadout: into the loadout, where its slot is free.
-        for i in 0..w.pawns.len() {
-            let chosen = std::mem::take(&mut w.pawns[i].chosen);
-            for k in chosen {
-                if k.def().is_gear() && !w.pawns[i].loadout.iter().any(|&o| crate::squads::conflicts(o, k)) {
-                    w.pawns[i].loadout.push(k);
-                }
-            }
-        }
-        w.stairs_to_ladders();
         w.map.recompute_rooms();
         w.mark_roofs();
         w.sync_containers();
         w.update_room_stats();
-        let n = w.map.len();
-        if w.map.blood.len() != n {
-            w.map.blood = vec![0.0; n];
-        }
         for p in w.pawns.iter_mut() {
             p.health.recompute();
         }
         Ok(w)
     }
-}
-
-fn old_day_len() -> f32 {
-    240.0
 }
 
 /// Hours of the day between which it's light (plants grow, people work).

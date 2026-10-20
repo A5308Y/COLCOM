@@ -765,22 +765,6 @@ mod tests {
     }
 
     #[test]
-    fn gear_kept_in_old_saves_moves_into_the_loadout() {
-        let mut w = test_world(12, 12);
-        let id = colonist(&mut w, (2, 2, Z));
-        let i = w.pawn_index(id).unwrap();
-        w.pawns[i].loadout = vec![item("steel_armor")];
-        let mut v: serde_json::Value = serde_json::from_str(&w.save_json().unwrap()).unwrap();
-        // As saved before: the player's kept rifle and armour (the loadout's armour slot is taken).
-        let pawn = v["world"]["pawns"].as_array_mut().unwrap().iter_mut().find(|p| p["id"] == id.get()).unwrap();
-        pawn["chosen"] = serde_json::json!(["rifle", "powered_armor"]);
-        let loaded = World::load_json(&v.to_string()).unwrap();
-        let p = loaded.pawn(id).unwrap();
-        assert_eq!(p.loadout, vec![item("steel_armor"), item("rifle")]);
-        assert!(p.chosen.is_empty());
-    }
-
-    #[test]
     fn fetching_their_loadout_they_take_nothing_else() {
         let mut w = test_world(20, 20);
         let id = colonist(&mut w, (2, 2, Z));

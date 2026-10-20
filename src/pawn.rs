@@ -540,10 +540,6 @@ pub struct Pawn {
     pub shield_drain: f32,
     /// Worn items, at most one per slot (`Slot`; one item can take several).
     pub apparel: Vec<ItemId>,
-    /// Gear the player told them to keep, from before that was the loadout:
-    /// moved into the loadout when loading (`World::load_json`), never saved.
-    #[serde(default, skip_serializing)]
-    pub chosen: Vec<ItemId>,
     pub cooldown: f32,
     pub life: Life,
     pub sleeping: bool,
@@ -634,7 +630,6 @@ impl Pawn {
             utility: None,
             shield_drain: 0.0,
             apparel: Vec::new(),
-            chosen: Vec::new(),
             cooldown: 0.0,
             life: Life::Up,
             sleeping: false,

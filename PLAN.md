@@ -278,8 +278,7 @@ slopes, and old save versions); the newer note in the same topic says so.
   cell marked Fill, since those may be further down than the cells around reachable ones.
 - Deconstruct (Orders menu, Backspace): marks structures, floors and roofs to be taken down by builders
   (Construction work and skill) in half their work time (at least 1 s), dropping `drops` (half the cost
-  by default). Mine is for rock, ore and soil only now; old saves' Mine marks on structures and floors
-  load as Deconstruct. Marked cells are outlined in red.
+  by default). Mine is for rock, ore and soil only. Marked cells are outlined in red.
 - Walls, doors and windows (`blocks_room`) can be placed straight on top of a wall or window (anything
   `holds_floors`) without a floor first: click the wall's top, or the cell above it in the layer view.
   Builders work up to one level above where they stand, so the second level is built from the ground;
@@ -370,8 +369,7 @@ slopes, and old save versions); the newer note in the same topic says so.
   over them must be open), and down again the same way, like a natural one-level slope. The cell over
   stairs is no longer somewhere to stand. Ladders (`Map::ladder_dir`) keep the old vertical climb and
   hold up the cell (and the ladder) above them. `pawns::stairs_height` draws people walking up the
-  steps. Loading turns stairs used as ladders (stacked on or under stairs, or in a quarry's shaft)
-  into ladders facing the same way (`World::stairs_to_ladders`), so old ways up keep working.
+  steps.
 - Where builders stand (2026-10-18): building, deconstructing and packing up (`jobs::builds`) and
   deliveries go by `Map::build_around`: the eight cells around (diagonals too) on the level or one up or
   down, not straight above or below, plus the cell below for floors and roofs (`Map::overhead_work`).
@@ -536,8 +534,7 @@ slopes, and old save versions); the newer note in the same topic says so.
   walking pace. Per-second need rates halved (`HUNGER_DRAIN` 0.2, `REST_DRAIN` 0.165, `SLEEP_GAIN` 0.4 on
   the ground, ×1.5 in a bed; also during battle turns), crop `grow_time` doubled and wild regrowth every 8 s,
   so all of these stay the same per day. Healing, illness, memories and the storyteller already count in
-  days, so they take twice as long in real time (raids are spaced further apart). `World::day_len` is saved
-  (missing = 240 in older saves); loading rescales the clock and storyteller timers so day and hour stay put.
+  days, so they take twice as long in real time (raids are spaced further apart).
 - Recreation and schedules (2026-10-18): `src/recreation.rs`. `Pawn::joy` (saved, 70 for old saves)
   drains `JOY_DRAIN` (a full need lasts 1.5 days) while awake; thoughts Bored/Very bored/Entertained.
   `BuildDef::fun` (chess table 1.6, bookshelf 1.3, dartboard 1.2 as wall decor); `Job::Relax { at,
@@ -1039,7 +1036,10 @@ slopes, and old save versions); the newer note in the same topic says so.
 ### Saves, performance and history
 
 - Saves carry a format version (`save.rs`, `SAVE_VERSION`) and refuse older or newer formats with a
-  readable message. Per-cell arrays are stored as runs, which took a fresh colony's save from 5.2 MB to
+  readable message. There are no migrations (removed 2026-10-20, when they could only run on current
+  saves and some changed them on load): change the format, bump the version. Loading checks per-cell
+  sizes and references (`save::check`) and only rebuilds derived state, so save, load and save again
+  gives the same file; room temperatures and the last once-a-second pass are saved for that. Per-cell arrays are stored as runs, which took a fresh colony's save from 5.2 MB to
   0.1 MB and save/load from 4/8 ms to about 1 ms each.
 - Pinned to Bevy 0.20 and bevy_egui 0.43.
 - Old save games don't load since Phase 2 (the format changed).

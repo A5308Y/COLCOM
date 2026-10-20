@@ -1,13 +1,17 @@
 //! Save files: a format version around the world, and compact storage of the
 //! big per-cell arrays (mostly long runs of identical values).
+//!
+//! There are no migrations: when the format changes, `SAVE_VERSION` goes up
+//! and saves of any other version are refused with a clear message. Loading
+//! a current save must not change the game (see `check` and
+//! `World::load_json`, which only rebuild what's derived).
 
-use crate::map::{Desig, Pos};
+use crate::map::Pos;
 use crate::world::World;
-use crate::DAY_LEN;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Bump whenever the save format changes incompatibly.
-pub const SAVE_VERSION: u32 = 15;
+pub const SAVE_VERSION: u32 = 16;
 
 #[derive(Serialize)]
 struct SaveOut<'a> {
@@ -39,28 +43,7 @@ pub fn from_json(s: &str) -> Result<World, String> {
         Some(v) => return Err(format!("this save is from an older version of My World (format {})", v)),
         None => return Err("this save is from an older version of My World".into()),
     }
-    let mut save: SaveIn = serde_json::from_str(s).map_err(|e| format!("the save file is damaged ({})", e))?;
-    let m = &mut save.world.map;
-    // Saves from before roofs have none.
-    if m.roof.len() != m.len() {
-        m.roof = vec![false; m.len()];
-    }
-    // Mine used to take down structures and floors too; that's Deconstruct now.
-    for i in 0..m.len() {
-        let p = m.pos(i);
-        if m.desig[i] == Some(Desig::Mine) && !m.mineable(p) && m.deconstructable(p) {
-            m.desig[i] = Some(Desig::Deconstruct);
-        }
-    }
-    // Days used to be shorter: keep the day, hour and timers where they were.
-    let w = &mut save.world;
-    if w.day_len != DAY_LEN {
-        let k = DAY_LEN / w.day_len;
-        w.set_time(w.time() * k);
-        w.story.next_raid *= k;
-        w.story.next_event *= k;
-        w.day_len = DAY_LEN;
-    }
+    let save: SaveIn = serde_json::from_str(s).map_err(|e| format!("the save file is damaged ({})", e))?;
     check(&save.world).map_err(|e| format!("the save file is damaged ({})", e))?;
     Ok(save.world)
 }
@@ -255,32 +238,13 @@ mod tests {
     }
 
     #[test]
-    fn saves_from_shorter_days_keep_their_day_and_hour() {
-        let mut w = World::new(5);
-        w.set_time(240.0 * 4.5); // noon on day 5 when days were 240 s
-        w.day_len = 240.0;
-        w.story.next_raid = 240.0 * 6.0;
-        let json = to_json(&w).unwrap().replacen("\"day_len\":240.0,", "", 1);
-        assert!(!json.contains("day_len"), "an old save has no day length");
-        let loaded = from_json(&json).unwrap();
-        assert_eq!(loaded.day(), 5);
-        assert!((loaded.hour() - 12.0).abs() < 0.01);
-        assert_eq!(loaded.story.next_raid, 6.0 * DAY_LEN);
-        assert_eq!(loaded.day_len, DAY_LEN);
-    }
-
-    #[test]
-    fn mine_orders_on_structures_load_as_deconstruct() {
+    fn loading_changes_nothing_that_was_saved() {
         let mut w = World::new(3);
-        let (x, y) = (w.map.w / 2, w.map.h / 2);
-        let z = w.map.surface(x, y).unwrap();
-        let wall = w.map.idx((x, y, z));
-        w.map.set_feature(wall, crate::map::Feature::built("wall"));
-        w.map.desig[wall] = Some(Desig::Mine);
-        let rock = w.map.idx((x, y, z - 1));
-        w.map.desig[rock] = Some(Desig::Mine);
-        let loaded = from_json(&to_json(&w).unwrap()).unwrap();
-        assert_eq!(loaded.map.desig[wall], Some(Desig::Deconstruct));
-        assert_eq!(loaded.map.desig[rock], Some(Desig::Mine));
+        for _ in 0..(20.0 / crate::TICK) as usize {
+            w.tick(crate::TICK);
+        }
+        let json = w.save_json().unwrap();
+        let again = crate::world::World::load_json(&json).unwrap().save_json().unwrap();
+        assert!(json == again, "a save loaded and saved again is the same save");
     }
 }

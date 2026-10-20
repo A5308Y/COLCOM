@@ -89,9 +89,12 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
   so `cell_temp` is saved (NaN as `null`), as are the last pass's powered devices, power
   summary, trapped colonists and unreachable quarry cells; rooms and room stats are
   rebuilt. Save format 15.
-- [ ] **Migrations that never run.** Any save that isn't the current version is refused
+- [x] **Migrations that never run.** Any save that isn't the current version is refused
   (`save.rs`), so the in-place migrations never run on old files. Remove them, or add
   version-stepped migrations.
+  Done: removed (day-length rescale, roof and blood resets, Mine to Deconstruct,
+  kept gear into loadouts, stairs to ladders; stairs to ladders also changed current saves
+  on load). Policy in `save.rs`: bump the version, refuse other versions. Save format 16.
 
 ## 4. Performance
 
