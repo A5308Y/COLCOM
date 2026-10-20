@@ -1419,84 +1419,84 @@
     {
       "buffer": 0,
       "byteOffset": 0,
-      "byteLength": 8160,
+      "byteLength": 8640,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 8160,
-      "byteLength": 8160,
+      "byteOffset": 8640,
+      "byteLength": 8640,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 16320,
-      "byteLength": 5440,
+      "byteOffset": 17280,
+      "byteLength": 5760,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 21760,
-      "byteLength": 10880,
+      "byteOffset": 23040,
+      "byteLength": 11520,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 32640,
-      "byteLength": 7824,
+      "byteOffset": 34560,
+      "byteLength": 8784,
       "target": 34963
     },
     {
       "buffer": 0,
-      "byteOffset": 40464,
+      "byteOffset": 43344,
       "byteLength": 2400,
       "target": 34963
     },
     {
       "buffer": 0,
-      "byteOffset": 42864,
+      "byteOffset": 45744,
       "byteLength": 336,
       "target": 34963
     },
     {
       "buffer": 0,
-      "byteOffset": 43200,
+      "byteOffset": 46080,
       "byteLength": 29964,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 73164,
+      "byteOffset": 76044,
       "byteLength": 29964,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 103128,
+      "byteOffset": 106008,
       "byteLength": 19976,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 123104,
+      "byteOffset": 125984,
       "byteLength": 19976,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 143080,
+      "byteOffset": 145960,
       "byteLength": 39952,
       "target": 34962
     },
     {
       "buffer": 0,
-      "byteOffset": 183032,
+      "byteOffset": 185912,
       "byteLength": 47160,
       "target": 34963
     },
     {
       "buffer": 0,
-      "byteOffset": 230192,
+      "byteOffset": 233072,
       "byteLength": 4160
     }
   ],
@@ -1504,7 +1504,7 @@
     {
       "bufferView": 0,
       "componentType": 5126,
-      "count": 680,
+      "count": 720,
       "type": "VEC3",
       "min": [
         -0.6651999040870056,
@@ -1520,7 +1520,7 @@
     {
       "bufferView": 1,
       "componentType": 5126,
-      "count": 680,
+      "count": 720,
       "type": "VEC3",
       "min": [
         -1.0,
@@ -1536,19 +1536,19 @@
     {
       "bufferView": 2,
       "componentType": 5123,
-      "count": 680,
+      "count": 720,
       "type": "VEC4"
     },
     {
       "bufferView": 3,
       "componentType": 5126,
-      "count": 680,
+      "count": 720,
       "type": "VEC4"
     },
     {
       "bufferView": 4,
       "componentType": 5125,
-      "count": 1956,
+      "count": 2196,
       "type": "SCALAR"
     },
     {
@@ -1766,7 +1766,7 @@
   "buffers": [
     {
       "uri": "ParkaMale.bin",
-      "byteLength": 234352
+      "byteLength": 237232
     }
   ]
 }

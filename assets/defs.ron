@@ -880,7 +880,8 @@
                 ground: (at: (0.0, 0.0878, 0.146), turn: (90.0, 0.0, 0.0), scale: 0.4),
                 held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
             )),
-            apparel: Some((slot: Outer, armor: 0.6, mood: 0.0, speed: 1.25, warmth: 12.0, pieces: [
+            apparel: Some((slot: Outer, armor: 0.6, mood: 0.0, speed: 1.25, warmth: 12.0,
+                skinned: Some((male: "models/armor/PoweredArmorMale.gltf", female: "models/armor/PoweredArmorFemale.gltf", full_body: true)), pieces: [
                 (bone: "spine_03",
                     model: Some((path: "models/armor/PoweredArmor.gltf", scene: 1, pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
                     parts: [

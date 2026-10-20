@@ -19,8 +19,8 @@ is 1,000 triangles; use fewer faces for small resources. Broad facets, chamfers 
 follow the [Rifle benchmark](../weapons/README.md).
 
 These counts describe stored inventory props. The deforming clothes described below use
-684 fabric triangles for each shirt and 880 for each parka (ceiling: 1,800 per body variant),
-and reuse the native outfit's textured arms/hands.
+684 fabric triangles for each shirt and 960 for each parka (ceiling: 1,800 per body variant),
+and include 3,930 male or 4,326 female bare-arm triangles from the character assets.
 Their fabric remains matte and texture-free; the existing hand textures are retained.
 
 Resources keep their natural identity instead of receiving olive paint. Bark and end grain distinguish
@@ -65,16 +65,23 @@ The live character uses `SimpleClothesMale/Female.gltf` or `ParkaMale/Female.glt
 `tools/make_skinned_clothes.py` to fit the CC0 Peasant outfits actually worn in-game. The generator
 builds clean, tapered fabric sections with straight hems, narrow cuffs and blended torso/sleeve
 weights. Small pockets, a placket and the parka's folded hood keep the utility-clothing style.
-The source's puffed upper sleeves are pulled inside the new fabric. Each vertex uses at most four joints.
+The male variants retain the outfit's bare forearms/hands; the female variants use continuous bare
+arms cut from the matching base character. The old puffed sleeves and forearm wraps are omitted.
+Sleeve roots overlap inside the torso; extra hip sections let the parka bend around raised thighs,
+with hem weights transferred from the trousers. Chest details follow the new torso surface and weights.
+Each vertex uses at most four joints.
 Each variant has its own bind matrices and fit; the native trousers, boots, head and hair remain.
 
 `ApparelDef.skinned` names the male and female paths. Once the new scene is ready, the renderer
-rebinds its skin to the live character's named bones and removes its temporary bind-pose skeleton.
+rebinds its skin to the live outfit's named bones and removes its temporary bind-pose skeleton.
+Head/hair loading order cannot select a different bind pose.
 The original torso/arms and rigid garment fallbacks are then hidden. The new garment includes the
-native arms/hands with their existing textures, so replacing the outfit's sleeves does not remove
+bare arms/hands with their existing textures, so replacing the outfit's sleeves does not remove
 the hands. Missing joints or failed loading retain the original outfit and fallbacks.
 Unequipping restores the original torso/arms; bedding hides the new garment with the body.
-Flak and powered armor keep their existing rigid plate attachments.
+Clothes that finish loading on a dead character receive its death tint, including the fabric.
+The Flak Jacket keeps its rigid attachments. Powered armor shares this skinning lifecycle,
+with rigid plates over a continuous protective undersuit; see the [armor notes](../armor/README.md).
 
 Original shape definitions remain visible during loading or if loading fails. Gameplay properties,
 item IDs, crafting, nutrition, medical effects, clothing stats, and save formats are unchanged.
@@ -89,6 +96,7 @@ and cleanup. The existing GPU asset test includes all 40 inventory models:
 ```sh
 cargo test --release
 cargo test --release -- --ignored
+python3 -B tools/test_skinned_clothes.py
 python3 tools/preview_armor.py --clothing --out target/clothing-review
 python3 tools/preview_clothes_poses.py --out target/clothes-poses
 ```
@@ -97,10 +105,15 @@ python3 tools/preview_clothes_poses.py --out target/clothes-poses
 both actual base body meshes. It includes front/rear views and close cap views, uses neutral base
 body colors without textures, and interpolates cloth normals. It does not reproduce game lighting.
 This older fit gallery shows the rigid inventory/fallback pieces. For worn clothes, use
-`target/clothes-poses/index.html`: it samples the actual idle, gun-aiming and firing clips on both
-Peasant outfits and uses the game's rifle grip transform. It skins the generated clothes and
+`target/clothes-poses/index.html`: it samples idle, walking, carrying, aiming, firing, kneeling and
+sitting on both Peasant outfits, including walking with a carrying upper-body layer and kneeling
+with an aiming upper-body layer. Each pose has front, side and rear views. Gun poses use the
+game's rifle grip transform. It skins the generated clothes and
 native body parts with the same bind matrices/weights as the game. The CPU renders omit textures,
 hair and game lighting; their triangle counts include native body parts and the rifle.
+Use `--pose Idle Aim` to render a smaller selection. Geometry regression tests check continuous
+bare arms and preservation of the source hands through idle, aiming and firing. Renderer tests
+also cover both part-loading orders, failed/stale garment loads, bedding, death tint and cleanup.
 
 For in-game review, use Menu → Spawn items, place a few stacks on the ground and in storage, and
 order a colonist to haul or equip them. Review normal/close zoom, daylight/dusk, carrying and walking.

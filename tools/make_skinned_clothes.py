@@ -6,10 +6,8 @@ Blended torso/sleeve weights and matching bind poses keep the fabric aligned
 with the outfit used in-game. Stored props and loading fallbacks stay separate.
 """
 import copy
-import json
 import math
 from pathlib import Path
-import struct
 import sys
 
 sys.dont_write_bytecode = True
@@ -17,6 +15,7 @@ from gltf_pose import Gltf, deform, multiply, unit
 from make_items import palette
 from make_items import Item
 from make_rifle import linear
+from skinned_asset import SkinnedAsset
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -73,7 +72,7 @@ def bare_arms(outfit):
     return body, arms
 
 
-def build(sex, parka):
+def build(sex, parka, *, details=True):
     source = Gltf(ROOT / f"assets/models/characters/outfits/{sex}_Peasant.gltf")
     g = source.data
     names = [g["nodes"][j]["name"] for j in g["skins"][0]["joints"]]
@@ -144,6 +143,11 @@ def build(sex, parka):
             (shoulder[1]+.025, .211, .116, -.036),
             (neck[1]+.012, .077 / width, .073-extra, neck[2]),
             (neck[1]+(.045 if parka else .025), .079 / width, .075-extra, neck[2])]
+    if parka:
+        # Extra hip cuts let the cloth bend around a seated/raised thigh
+        # instead of stretching one long quad across the top of the trousers.
+        cuts[2:2] = [(waist-.045, .190 / width, .138, -.013),
+                     (waist+.005, .178 / width, .128, -.008)]
     rings = [[((rx*width+extra)*math.cos(i*math.tau/20), y,
                z-(rz+extra)*math.sin(i*math.tau/20)) for i in range(20)] for y, rx, rz, z in cuts]
     torso_bindings = [
@@ -154,11 +158,13 @@ def build(sex, parka):
         {"spine_03": 1}, {"spine_03": 1},
         {"spine_03": .85, "neck_01": .15}, {"spine_03": .85, "neck_01": .15},
     ]
+    if parka:
+        torso_bindings[2:2] = [{}, {}]  # Hip cuts use transferred trouser weights.
     def torso_weights(k, p):
-        if parka and k < 2:
+        if parka and k < 4:
             return weights_for(p, leg_samples)
         return torso_bindings[k]
-    surface(rings, torso_weights, [1, 0, 0, 0, 0, 0, 1])
+    surface(rings, torso_weights, [1]+[0]*(len(rings)-3)+[1])
 
     for suffix, side in [("l", 1), ("r", -1)]:
         start = origins[f"upperarm_{suffix}"]
@@ -192,6 +198,9 @@ def build(sex, parka):
             t = max(0, min(1, (x-ex+.055)/.11))
             return {f"upperarm_{suffix}": 1-t, f"lowerarm_{suffix}": t}
         surface(sleeve_rings, sleeve_weights, [0]*(len(sleeve_cuts)-2)+[1], reverse=side < 0)
+
+    if not details:
+        return source, vertices, triangles, groups
 
     # A narrow placket and two flat chest patches read as work clothes at game zoom.
     detail = Item(palette((.51, .37, .23)))
@@ -234,23 +243,8 @@ def write(sex, parka):
     body, arms = bare_arms(source)
     name = ("Parka" if parka else "SimpleClothes") + sex
     out = ROOT / "assets/models/items"
-    blob = bytearray()
-    g = {"asset": {"version": "2.0", "generator": "My World make_skinned_clothes.py; Quaternius CC0 tailoring"},
-         "scene": 0, "scenes": [{"nodes": [68]}], "nodes": copy.deepcopy(source.data["nodes"][:65]),
-         "meshes": [], "materials": [], "bufferViews": [], "accessors": []}
-
-    def accessor(rows, kind, ctype=5126, target=34962):
-        while len(blob) % 4:
-            blob.append(0)
-        flat = [v for row in rows for v in row]
-        raw = struct.pack("<" + len(flat) * {5126: "f", 5123: "H", 5125: "I"}[ctype], *flat)
-        g["bufferViews"].append({"buffer": 0, "byteOffset": len(blob), "byteLength": len(raw), **({"target": target} if target else {})})
-        a = {"bufferView": len(g["bufferViews"]) - 1, "componentType": ctype, "count": len(rows), "type": kind}
-        if kind == "VEC3":
-            a.update(min=[min(r[i] for r in rows) for i in range(3)], max=[max(r[i] for r in rows) for i in range(3)])
-        g["accessors"].append(a)
-        blob.extend(raw)
-        return len(g["accessors"]) - 1
+    asset = SkinnedAsset(source, "My World make_skinned_clothes.py; Quaternius CC0 tailoring")
+    g, accessor = asset.data, asset.accessor
 
     pal = palette((.51, .37, .23) if parka else (.31, .38, .40), (.34, .30, .23) if parka else (.24, .29, .29))
     for label, color, metal, rough in pal[:3]:
@@ -275,17 +269,9 @@ def write(sex, parka):
                       for key, values in native.items() if key in ("POSITION", "NORMAL", "TANGENT", "TEXCOORD_0", "JOINTS_0", "WEIGHTS_0")}
         primitives.append({"attributes": attributes, "indices": accessor([(i,) for i in indices], "SCALAR", 5125, 34963), "material": mat + 3})
     g["meshes"].append({"name": name + "NativeArms", "primitives": primitives})
-    skin = copy.deepcopy(source.data["skins"][0])
-    skin["inverseBindMatrices"] = accessor(source.values(skin["inverseBindMatrices"]), "MAT4", target=0)
-    g["skins"] = [skin]
-    g["nodes"].extend([{"name": "Armature", "children": [64]},
-                       {"name": name + "Fabric", "mesh": 0, "skin": 0},
-                       {"name": name + "NativeArms", "mesh": 1, "skin": 0},
-                       {"name": name, "children": [65, 66, 67]}])
-    g["buffers"] = [{"uri": name + ".bin", "byteLength": len(blob)}]
-    (out / (name + ".bin")).write_bytes(blob)
-    (out / (name + ".gltf")).write_text(json.dumps(g, indent=2) + "\n")
-    print(f"{name}: {len(triangles)} fabric triangles, {sum(len(a[2]) // 3 for a in arms)} bare arm triangles, {len(blob):,} bytes")
+    asset.write(out / (name + ".gltf"))
+    print(f"{name}: {len(triangles)} fabric triangles, {sum(len(a[2]) // 3 for a in arms)} bare arm triangles, {len(asset.blob):,} bytes")
+
 
 
 if __name__ == "__main__":

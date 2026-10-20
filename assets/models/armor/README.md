@@ -4,6 +4,7 @@ Original project artwork, generated alongside the [weapons](../weapons/README.md
 
 ```sh
 python3 tools/make_gear.py
+python3 tools/make_skinned_power_armor.py
 python3 tools/preview_gear.py --out target/gear-review
 ```
 
@@ -64,6 +65,26 @@ The most protective head piece takes visual precedence when a suit's integrated 
 separate headgear. This prevents duplicate shells from flickering; protection calculations are unchanged.
 Head pieces keep the existing hair-hiding behavior.
 
+## Sealed, articulated powered suit
+
+Live colonists use `PoweredArmorMale.gltf` or `PoweredArmorFemale.gltf` through the same
+`ApparelDef.skinned` loader, outfit-bone binding and cleanup as clothes and parkas.
+Each fit uses the matching outfit's bind matrices and actual limb lengths. The chest, abdominal
+and back plates follow separate spine bones; limb plates retain their rigid shapes.
+Flexible hip and knee seals bridge the joints.
+
+A continuous, deforming graphite undersuit covers the entire body, including fingers, wrists,
+armpits, hips, neck and head beneath the existing helmet. It derives from the matching CC0 base
+character, retargeted and simplified using the same CPU skinning helpers as clothing. It has no
+skin textures or transparent materials. `full_body: true` hides the original torso, limbs and head
+surfaces only after the suit is ready. Skeletons remain visible to their attachments, so the
+helmet stays in place. Unequipping restores the original body; failed loading retains fallbacks.
+
+Worn armor and joint seals use 1,852 triangles. The continuous undersuit reuses simplified
+character anatomy (8,297 male / 7,564 female triangles); the helmet remains the shared rigid
+attachment. These replace the native outfit and head surfaces rather than layering visible skin
+or regular clothes through the suit. The stored 1,986-triangle prop remains unchanged.
+
 ## Review
 
 `target/gear-review/index.html` is a CPU geometry gallery; it does not reproduce the game's PBR,
@@ -81,9 +102,16 @@ For a CPU fit review on both actual base character meshes:
 
 ```sh
 python3 tools/preview_armor.py --out target/armor-fit-review
+python3 -B tools/preview_clothes_poses.py --garment PoweredArmor --out target/powered-armor-poses
+python3 -B tools/test_power_armor.py
 ```
 
-This produces a standalone `index.html` with male/female front and powered-suit rear views.
+The older `armor-fit-review` shows rigid inventory/fallback pieces. The `powered-armor-poses`
+gallery samples idle, walking, carrying, aiming, firing, kneeling and sitting clips on both
+outfit skeletons, with front/side/back views and the laser rifle. Geometry checks verify complete
+body-region coverage, opaque suit materials, matching bind poses and rigid plate deformation.
+
+The older gallery produces a standalone `index.html` with male/female front and powered-suit rear views.
 The base bodies use neutral colors without their textures, and a simple weighted arm pose lowers
 their arms. Armor uses each skeleton's actual bone positions. These are fit previews, not game
 screenshots. In the battle scenario Eve wears powered armor and holds a laser rifle from round 1;

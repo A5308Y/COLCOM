@@ -280,7 +280,7 @@ def flak_shoulder(side):
     return g
 
 
-def power_chest():
+def power_chest(articulated=False):
     g = powered_piece()
     g.section([(-.29, .20, .17, -.035), (-.06, .22, .17, -.025),
                (.17, .205, .16, -.025)], 2, sides=12)
@@ -302,8 +302,14 @@ def power_chest():
     g.section([(.13, .18, .17, -.06), (.24, .11, .125, -.04)], 1)
     # Compact spine reactor and exhaust slots: no bulky backpack.
     rear = powered_piece()
-    rear.panel([(-.13, -.22, .18), (.13, -.22, .18), (.16, .10, .18),
-                (0, .175, .17), (-.16, .10, .18)], 0, lift=.045)
+    if articulated:
+        rear.panel([(-.15, -.075, .18), (.15, -.075, .18), (.16, .10, .18),
+                    (0, .175, .17), (-.16, .10, .18)], 0, lift=.045)
+        rear.panel([(-.13, -.22, .18), (.13, -.22, .18), (.145, -.09, .18),
+                    (-.145, -.09, .18)], 0, lift=.035)
+    else:
+        rear.panel([(-.13, -.22, .18), (.13, -.22, .18), (.16, .10, .18),
+                    (0, .175, .17), (-.16, .10, .18)], 0, lift=.045)
     rear.box((0, -.015, .228), (.049, .22, .014), 1, bevel=.007)
     for y in (-.06, -.015, .03):
         rear.box((0, y, .238), (.022, .022, .008), 4, bevel=.003)

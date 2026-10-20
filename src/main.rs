@@ -782,5 +782,18 @@ mod tests {
         }
         assert!(complete(&skins), "fabric and native arms on both clothed characters");
         assert!(skins.iter().flat_map(|(_, joints)| joints).all(|&joint| app.world().get::<bevy::animation::AnimatedBy>(joint).is_some()), "clothes follow the character animation, with no imported bind-pose joints left");
+        app.world_mut().resource_mut::<front::Sim>().world.pawns[0].apparel = vec![my_world::defs::ItemId::named("powered_armor")];
+        let mut suit = Vec::new();
+        for _ in 0..2000 {
+            app.update();
+            let mut query = app.world_mut().query::<(&Name, &bevy::mesh::skinning::SkinnedMesh)>();
+            suit = query.iter(app.world()).filter(|(name, _)| name.as_str().starts_with("PoweredArmor"))
+                .map(|(name, skin)| (name.to_string(), skin.joints.clone())).collect::<Vec<_>>();
+            if ["Plates", "Flex", "Undersuit"].iter().all(|part| suit.iter().any(|(name, _)| name.contains(*part)))
+                && suit.iter().flat_map(|(_, joints)| joints).all(|&joint| app.world().get::<bevy::animation::AnimatedBy>(joint).is_some()) { break; }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(["Plates", "Flex", "Undersuit"].iter().all(|part| suit.iter().any(|(name, _)| name.contains(*part))), "the powered suit includes complete body coverage");
+        assert!(suit.iter().flat_map(|(_, joints)| joints).all(|&joint| app.world().get::<bevy::animation::AnimatedBy>(joint).is_some()), "the sealed suit follows the live outfit skeleton");
     }
 }

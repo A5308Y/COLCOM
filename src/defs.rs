@@ -210,7 +210,7 @@ pub struct ApparelDef {
     /// What shows on the wearer: shapes fixed to the character's bones.
     #[serde(default)]
     pub pieces: Vec<WornPiece>,
-    /// Deforming fabric fitted to each outfit; pieces remain loading fallbacks.
+    /// A body-specific skin; pieces remain loading fallbacks and headgear.
     #[serde(default)]
     pub skinned: Option<SkinnedApparel>,
 }
@@ -219,6 +219,9 @@ pub struct ApparelDef {
 pub struct SkinnedApparel {
     pub male: String,
     pub female: String,
+    /// Replace the native body and head under a sealed suit.
+    #[serde(default)]
+    pub full_body: bool,
 }
 
 /// Part of a piece of apparel as worn, following one bone of the character
