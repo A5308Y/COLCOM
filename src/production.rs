@@ -68,13 +68,53 @@ impl Bench {
     }
 }
 
-pub const PRIORITY_NAMES: [&str; 5] = ["", "Low", "Normal", "Preferred", "Critical"];
+/// How much a stockpile wants its items: haulers move things to higher ones.
+/// Saved as 1 (low) to 4 (critical).
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum StorePriority {
+    Low,
+    Normal,
+    Preferred,
+    Critical,
+}
+
+impl StorePriority {
+    pub const ALL: [StorePriority; 4] = [StorePriority::Low, StorePriority::Normal, StorePriority::Preferred, StorePriority::Critical];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            StorePriority::Low => "Low",
+            StorePriority::Normal => "Normal",
+            StorePriority::Preferred => "Preferred",
+            StorePriority::Critical => "Critical",
+        }
+    }
+
+    /// 0 (low) to 3 (critical), for tables per priority.
+    pub fn index(self) -> usize {
+        self as usize
+    }
+}
+
+impl TryFrom<u8> for StorePriority {
+    type Error = String;
+    fn try_from(n: u8) -> Result<StorePriority, String> {
+        StorePriority::ALL.get((n as usize).wrapping_sub(1)).copied().ok_or_else(|| format!("stockpile priority {n} is not 1 to 4"))
+    }
+}
+
+impl From<StorePriority> for u8 {
+    fn from(p: StorePriority) -> u8 {
+        p as u8 + 1
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Stockpile {
     pub name: String,
     /// 1 = low .. 4 = critical. Items move to higher-priority stockpiles.
-    pub priority: u8,
+    pub priority: StorePriority,
     /// Item kinds it doesn't take.
     pub forbid: Vec<ItemId>,
     /// The storage of shelves (storage furniture) standing outside any
@@ -85,7 +125,7 @@ pub struct Stockpile {
 
 impl Stockpile {
     pub fn new(number: usize) -> Stockpile {
-        Stockpile { name: format!("Stockpile {}", number), priority: 2, forbid: Vec::new(), container: false }
+        Stockpile { name: format!("Stockpile {}", number), priority: StorePriority::Normal, forbid: Vec::new(), container: false }
     }
 
     pub fn accepts(&self, kind: ItemId) -> bool {
@@ -331,7 +371,7 @@ impl World {
     // ---------- stockpiles and zones ----------
 
     /// Priority of the stockpile at cell `i` for `kind`, if it takes it.
-    pub(crate) fn storage_priority(&self, i: usize, kind: ItemId) -> Option<u8> {
+    pub(crate) fn storage_priority(&self, i: usize, kind: ItemId) -> Option<StorePriority> {
         let id = self.map.zone[i].stockpile()?;
         let s = self.stockpiles.get(id as usize)?;
         s.accepts(kind).then_some(s.priority)
@@ -394,7 +434,7 @@ impl World {
                     let name = kind.map_or("Storage", |k| k.name());
                     let number = self.stockpiles.iter().filter(|s| s.container && s.name.starts_with(name)).count() + 1;
                     // Preferred, so things move onto shelves from plain stockpiles.
-                    let store = Stockpile { name: format!("{} {}", name, number), priority: 3, container: true, ..Stockpile::new(0) };
+                    let store = Stockpile { name: format!("{} {}", name, number), priority: StorePriority::Preferred, container: true, ..Stockpile::new(0) };
                     self.stockpiles.push(store);
                     (self.stockpiles.len() - 1) as u16
                 });
@@ -411,9 +451,9 @@ impl World {
         }
     }
 
-    pub fn set_stockpile_priority(&mut self, id: u16, priority: u8) {
+    pub fn set_stockpile_priority(&mut self, id: u16, priority: StorePriority) {
         if let Some(s) = self.stockpiles.get_mut(id as usize) {
-            s.priority = priority.clamp(1, 4);
+            s.priority = priority;
         }
     }
 
@@ -619,7 +659,7 @@ mod tests {
         assert_eq!(in_b, 10, "wood skips the stockpile that refuses it");
 
         // A more important stockpile pulls things out of a less important one.
-        w.set_stockpile_priority(a, 4);
+        w.set_stockpile_priority(a, StorePriority::Critical);
         w.set_stockpile_allows(a, item("wood"), true);
         run(&mut w, 120.0);
         let in_a: u32 = (2..5).filter_map(|x| w.map.items[w.map.idx((x, 10, Z))]).map(|s| s.count).sum();
@@ -899,7 +939,7 @@ mod tests {
         }
         w.map.drop_item((2, 2, Z), Stack { kind: item("stone"), count: 30 });
         let i = w.pawn_index(id).unwrap();
-        w.pawns[i].priorities[crate::pawn::WorkType::Construction as usize] = 1;
+        w.pawns[i].priorities[crate::pawn::WorkType::Construction as usize] = crate::pawn::WorkPriority::First;
         let most = most_carried(&mut w, 120.0);
         assert!(most >= 20, "stone for several walls at once: at most {}", most);
         let built = (20..26).filter(|&x| w.map.feature[w.map.idx((x, 8, Z))] == Feature::built("wall")).count();
@@ -939,8 +979,8 @@ mod tests {
         let cook = colonist(&mut w, (2, 2, Z));
         // Nobody hauls: only cooking is switched on.
         let i = w.pawn_index(cook).unwrap();
-        w.pawns[i].priorities = [0; crate::pawn::WorkType::ALL.len()];
-        w.pawns[i].priorities[crate::pawn::WorkType::Cooking as usize] = 1;
+        w.pawns[i].priorities = [crate::pawn::WorkPriority::Never; crate::pawn::WorkType::ALL.len()];
+        w.pawns[i].priorities[crate::pawn::WorkType::Cooking as usize] = crate::pawn::WorkPriority::First;
         let stove = (10, 10, Z);
         place_bench(&mut w, "stove", stove);
         place_bench(&mut w, "shelf", (16, 16, Z));
@@ -958,8 +998,8 @@ mod tests {
     /// Where the only (cooking) colonist stands once they're cooking at the stove at `stove`.
     fn cooking_spot(w: &mut World, cook: PawnId, stove: Pos) -> Pos {
         let i = w.pawn_index(cook).unwrap();
-        w.pawns[i].priorities = [0; crate::pawn::WorkType::ALL.len()];
-        w.pawns[i].priorities[crate::pawn::WorkType::Cooking as usize] = 1;
+        w.pawns[i].priorities = [crate::pawn::WorkPriority::Never; crate::pawn::WorkType::ALL.len()];
+        w.pawns[i].priorities[crate::pawn::WorkType::Cooking as usize] = crate::pawn::WorkPriority::First;
         w.map.drop_item((stove.0 - 2, stove.1, Z), Stack { kind: item("raw_food"), count: 10 });
         w.add_bill(stove, RecipeId::named("cook_meal"), BillMode::Count(5));
         for _ in 0..(60.0 / TICK) as usize {
@@ -999,7 +1039,7 @@ mod tests {
         for &id in &ids {
             let i = w.pawn_index(id).unwrap();
             w.pawns[i].hunger = 10.0;
-            w.pawns[i].priorities = [0; crate::pawn::WorkType::ALL.len()];
+            w.pawns[i].priorities = [crate::pawn::WorkPriority::Never; crate::pawn::WorkType::ALL.len()];
         }
         place_bench(&mut w, "shelf", (12, 12, Z));
         w.sync_containers();

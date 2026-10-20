@@ -26,6 +26,72 @@ impl PawnId {
     }
 }
 
+/// When a colonist takes on a kind of work: first to fourth, or never. Not
+/// ordered: job choice sorts by `rank`. Saved as 0 (never) or 1 to 4.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub enum WorkPriority {
+    Never,
+    First,
+    Second,
+    Third,
+    Fourth,
+}
+
+impl WorkPriority {
+    /// 1 (first) to 4 (last), or `None` for never.
+    pub fn rank(self) -> Option<u8> {
+        match self {
+            WorkPriority::Never => None,
+            p => Some(u8::from(p)),
+        }
+    }
+
+    pub fn is_enabled(self) -> bool {
+        self != WorkPriority::Never
+    }
+
+    /// One step sooner: never → 4 → 3 → 2 → 1 (and 1 stays 1).
+    pub fn raised(self) -> WorkPriority {
+        match self {
+            WorkPriority::Never => WorkPriority::Fourth,
+            WorkPriority::Fourth => WorkPriority::Third,
+            WorkPriority::Third => WorkPriority::Second,
+            WorkPriority::Second | WorkPriority::First => WorkPriority::First,
+        }
+    }
+
+    /// One step later: 1 → 2 → 3 → 4 → never (and never stays never).
+    pub fn lowered(self) -> WorkPriority {
+        match self {
+            WorkPriority::First => WorkPriority::Second,
+            WorkPriority::Second => WorkPriority::Third,
+            WorkPriority::Third => WorkPriority::Fourth,
+            WorkPriority::Fourth | WorkPriority::Never => WorkPriority::Never,
+        }
+    }
+}
+
+impl TryFrom<u8> for WorkPriority {
+    type Error = String;
+    fn try_from(n: u8) -> Result<WorkPriority, String> {
+        match n {
+            0 => Ok(WorkPriority::Never),
+            1 => Ok(WorkPriority::First),
+            2 => Ok(WorkPriority::Second),
+            3 => Ok(WorkPriority::Third),
+            4 => Ok(WorkPriority::Fourth),
+            _ => Err(format!("work priority {n} is not 0 to 4")),
+        }
+    }
+}
+
+impl From<WorkPriority> for u8 {
+    fn from(p: WorkPriority) -> u8 {
+        p as u8
+    }
+}
+
 /// Whether a pawn is up and about, and if not, why. Asleep or resting are
 /// separate: those pawns are still up.
 #[derive(Clone, Copy, PartialEq, Debug, Default, Serialize, Deserialize)]
@@ -436,8 +502,8 @@ pub struct Pawn {
     pub health: Health,
     pub skills: [u8; Skill::ALL.len()],
     pub xp: [f32; Skill::ALL.len()],
-    /// Per work type: 0 = disabled, 1 = highest .. 4 = lowest.
-    pub priorities: [u8; WorkType::ALL.len()],
+    /// Per work type.
+    pub priorities: [WorkPriority; WorkType::ALL.len()],
     pub weapon: Option<ItemId>,
     /// A light second weapon, drawn in battle when it suits better.
     #[serde(default)]
@@ -540,7 +606,7 @@ impl Pawn {
             health: Health::new(),
             skills: [0; Skill::ALL.len()],
             xp: [0.0; Skill::ALL.len()],
-            priorities: [3; WorkType::ALL.len()],
+            priorities: [WorkPriority::Third; WorkType::ALL.len()],
             weapon: defs().start_weapons.first().map(|w| w.id()),
             sidearm: None,
             sidearm_drawn: false,
@@ -596,7 +662,7 @@ impl Pawn {
         p.skills[Skill::Shooting as usize] = 3 + rng.below(6) as u8;
         p.skills[Skill::Melee as usize] = 3 + rng.below(6) as u8;
         p.color = [0.85, 0.2, 0.2];
-        p.priorities = [0; WorkType::ALL.len()];
+        p.priorities = [WorkPriority::Never; WorkType::ALL.len()];
         p
     }
 

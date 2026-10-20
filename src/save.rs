@@ -106,6 +106,19 @@ mod tests {
     }
 
     #[test]
+    fn priorities_save_as_before_and_reject_nonsense() {
+        use crate::pawn::WorkPriority;
+        use crate::production::StorePriority;
+        assert_eq!(serde_json::to_string(&StorePriority::Low).unwrap(), "1");
+        assert_eq!(serde_json::from_str::<StorePriority>("4").unwrap(), StorePriority::Critical);
+        assert!(serde_json::from_str::<StorePriority>("0").is_err());
+        assert!(serde_json::from_str::<StorePriority>("7").is_err(), "used to panic in the job scan");
+        assert_eq!(serde_json::to_string(&WorkPriority::Never).unwrap(), "0");
+        assert_eq!(serde_json::from_str::<WorkPriority>("3").unwrap(), WorkPriority::Third);
+        assert!(serde_json::from_str::<WorkPriority>("5").is_err());
+    }
+
+    #[test]
     fn reservations_and_life_states_round_trip() {
         use crate::pawn::{Life, PawnId};
         assert_eq!(std::mem::size_of::<Option<PawnId>>(), 4, "a free cell costs no more than an id");

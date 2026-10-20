@@ -349,7 +349,7 @@ mod tests {
         let patient = colonist(w, (5, 3, Z));
         let (d, pt) = (w.pawn_index(doctor).unwrap(), w.pawn_index(patient).unwrap());
         w.pawns[d].skills[Skill::Medicine as usize] = 15;
-        w.pawns[pt].priorities[WorkType::Doctor as usize] = 0;
+        w.pawns[pt].priorities[WorkType::Doctor as usize] = crate::pawn::WorkPriority::Never;
         build(w, (10, 10, Z), "operating_table");
         (doctor, patient)
     }

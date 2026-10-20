@@ -34,12 +34,13 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
 - [x] **`Pawn.buried` belongs in `Life::Dead { buried }`.** Today a living pawn can be
   buried. Changes the save format.
   Done: `Life::Dead { buried }`, `Pawn::is_buried()`; save format 8.
-- [ ] **Two opposite priority scales share `u8`.** Work priority is 0 = off, 1 = highest
+- [x] **Two opposite priority scales share `u8`.** Work priority is 0 = off, 1 = highest
   … 4 = lowest (`Pawn.priorities`). Stockpile priority is 1 = low … 4 = critical. Both are
   used as raw array indices. Only the UI setter clamps the stockpile priority, so an
   out-of-range value in a save panics in the job scan (`jobs.rs`, `nearest_cell[k][prio]`).
   Give each its own type (for example `WorkPriority`, and
   `StorePriority { Low, Normal, Preferred, Critical }`).
+  Done: `WorkPriority` (with `rank()`, `raised()`, `lowered()`) and `StorePriority`; both still saved as\n  the same numbers, and out-of-range values now fail at load.
 - [ ] **Expedition and offer ids are raw `u32`** and share `World.next_id` with pawns.
   An offer id passed as an expedition id compiles, and the trade window uses `0` as
   "none" (`front/expeditions_ui.rs`, `Haggle`). Add `ExpeditionId`/`OfferId` newtypes

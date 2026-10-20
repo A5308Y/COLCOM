@@ -5,6 +5,7 @@ use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone, STACK_MAX};
 use crate::moving::MOVE_SHARE;
 use crate::pathing::{bfs, DistField, ANY_DISTANCE};
 use crate::pawn::{Job, Memory, Pawn, PawnId, Skill, Task, WorkType};
+use crate::production::StorePriority;
 use crate::world::{Reach, Step, World, SLEEP_GAIN};
 
 /// Base seconds to mine out one cell.
@@ -29,7 +30,8 @@ pub(crate) enum Fetch {
 /// Nearest (distance, cell) per item kind.
 pub(crate) type Nearest = Vec<Option<(i32, Pos)>>;
 /// Per item kind, the nearest stockpile cell that takes it, per stockpile priority (1..=4).
-pub(crate) type NearestStore = Vec<[Option<(i32, Pos)>; 5]>;
+/// Per item kind and stockpile priority, the nearest cell that takes it.
+pub(crate) type NearestStore = Vec<[Option<(i32, Pos)>; StorePriority::ALL.len()]>;
 
 /// Cells worth checking for work: everywhere the pawn can walk, plus the
 /// cells next to those (trees, rock faces and walls are worked from beside).
@@ -125,7 +127,7 @@ impl World {
         // stockpile cell of each priority that can take each kind (for hauling).
         let kinds = defs().items.len();
         let mut nearest_item: Nearest = vec![None; kinds];
-        let mut nearest_cell: NearestStore = vec![[None; 5]; kinds];
+        let mut nearest_cell: NearestStore = vec![[None; StorePriority::ALL.len()]; kinds];
         let accepts: Vec<Vec<bool>> =
             self.stockpiles.iter().map(|s| ItemId::all().map(|k| s.accepts(k)).collect()).collect();
         for &i in &df.order {
@@ -139,7 +141,7 @@ impl World {
             }
             if let (Some(id), None) = (m.zone[i].stockpile(), self.res_cell[i]) {
                 let Some(store) = self.stockpiles.get(id as usize) else { continue };
-                let prio = store.priority as usize;
+                let prio = store.priority.index();
                 for kind in ItemId::all() {
                     let k = kind.index();
                     let slot = &mut nearest_cell[k][prio];
@@ -173,10 +175,7 @@ impl World {
         // highest priority wins, nearest first among equal priorities.
         let mut per_type: Vec<(u8, i32, Job)> = Vec::new();
         for wt in WorkType::ALL {
-            let prio = p.priorities[wt as usize];
-            if prio == 0 {
-                continue;
-            }
+            let Some(prio) = p.priorities[wt as usize].rank() else { continue };
             let found = if wt == WorkType::Doctor {
                 let (medicine, food) = scan.medicine_and_food();
                 self.doctor_candidate(p, df, medicine, food)
@@ -222,10 +221,15 @@ impl World {
                     let to = m.stacks(i).find_map(|s| {
                         // Into a stockpile that takes it, preferring higher priorities
                         // (and only to better ones if it's already stored).
-                        let here = self.storage_priority(i, s.kind).unwrap_or(0) as usize;
-                        let to = (here + 1..=4).rev().find_map(|prio| nearest_cell[s.kind.index()][prio]).map(|(_, to)| to);
+                        let here = self.storage_priority(i, s.kind);
+                        let to = StorePriority::ALL
+                            .into_iter()
+                            .rev()
+                            .filter(|&prio| Some(prio) > here)
+                            .find_map(|prio| nearest_cell[s.kind.index()][prio.index()])
+                            .map(|(_, to)| to);
                         // Refused where it's stored, and no stockpile takes it: out onto open ground.
-                        let refused = m.zone[i].stockpile().is_some() && here == 0;
+                        let refused = m.zone[i].stockpile().is_some() && here.is_none();
                         to.or_else(|| refused.then(|| self.dump_spot(pos, s.kind, df)).flatten())
                     });
                     return to.map(|to| (d, Job::Haul { from: pos, to, deliver: false, picked: false }));
@@ -717,7 +721,7 @@ impl World {
         m.stacks(fi).map(|s| s.kind).find(|&k| {
             let here = self.storage_priority(fi, k);
             let there = self.storage_priority(ti, k);
-            m.can_accept(ti, k) && (there > here.or(Some(0)) || here.is_none() && m.zone[fi].stockpile().is_some())
+            m.can_accept(ti, k) && (there > here || here.is_none() && m.zone[fi].stockpile().is_some())
         })
     }
 
@@ -734,9 +738,9 @@ impl World {
             return None;
         }
         let ti = self.map.idx(to);
-        let target = self.storage_priority(ti, kind).unwrap_or(0);
+        let target = self.storage_priority(ti, kind);
         self.nearest_stack(&bfs(&self.map, from), NEARBY_STEPS, |i, s| {
-            i != ti && s.kind == kind && self.res_item[i].is_none() && self.storage_priority(i, kind).unwrap_or(0) < target
+            i != ti && s.kind == kind && self.res_item[i].is_none() && self.storage_priority(i, kind) < target
         })
     }
 

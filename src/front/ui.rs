@@ -19,8 +19,8 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::health::{CyberSlot, HediffKind};
 use my_world::defs::{defs, ItemCategory, ItemId, PlantId, RoomDef, Slot, Special};
 use my_world::map::{Block, Feature, Pos, Zone};
-use my_world::pawn::{Pawn, PawnId, Role, Skill, WorkType};
-use my_world::production::{BillMode, PRIORITY_NAMES};
+use my_world::pawn::{Pawn, PawnId, Role, Skill, WorkPriority, WorkType};
+use my_world::production::{BillMode, StorePriority};
 use my_world::rooms::{Progress, RoomStats, TIERS};
 use my_world::world::{Order, World as SimWorld};
 use my_world::DAY_LEN;
@@ -1348,8 +1348,8 @@ fn stockpile_settings(ui: &mut egui::Ui, w: &SimWorld, id: u16, actions: &mut Ve
     theme::section(ui, &store.name);
     ui.horizontal(|ui| {
         ui.label("Priority");
-        for prio in 1..=4u8 {
-            if ui.add(egui::Button::new(PRIORITY_NAMES[prio as usize]).selected(store.priority == prio)).clicked() {
+        for prio in StorePriority::ALL {
+            if ui.add(egui::Button::new(prio.name()).selected(store.priority == prio)).clicked() {
                 actions.push(Box::new(move |w| w.set_stockpile_priority(id, prio)));
             }
         }
@@ -1539,35 +1539,19 @@ fn schedules(ui: &mut egui::Ui, sim: &mut Sim, st: &mut UiState) {
     });
 }
 
-/// One step more urgent: never → 4 → 3 → 2 → 1 (and 1 stays 1).
-fn raise_priority(prio: u8) -> u8 {
-    match prio {
-        0 => 4,
-        p => (p - 1).max(1),
-    }
-}
-
-/// One step less urgent: 1 → 2 → 3 → 4 → never (and never stays never).
-fn lower_priority(prio: u8) -> u8 {
-    match prio {
-        0 | 4 => 0,
-        p => p + 1,
-    }
-}
-
 /// A work priority's background: the more urgent, the stronger the green; never, plain.
-fn priority_color(prio: u8) -> Color32 {
+fn priority_color(prio: WorkPriority) -> Color32 {
     match prio {
-        1 => Color32::from_rgb(64, 132, 72),
-        2 => Color32::from_rgb(60, 108, 68),
-        3 => Color32::from_rgb(56, 88, 64),
-        4 => Color32::from_rgb(52, 70, 60),
-        _ => Color32::from_rgb(42, 42, 42),
+        WorkPriority::First => Color32::from_rgb(64, 132, 72),
+        WorkPriority::Second => Color32::from_rgb(60, 108, 68),
+        WorkPriority::Third => Color32::from_rgb(56, 88, 64),
+        WorkPriority::Fourth => Color32::from_rgb(52, 70, 60),
+        WorkPriority::Never => Color32::from_rgb(42, 42, 42),
     }
 }
 
 fn work_panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState) {
-    let rows: Vec<(PawnId, String, [u8; WorkType::ALL.len()], [u8; Skill::ALL.len()])> = sim
+    let rows: Vec<(PawnId, String, [WorkPriority; WorkType::ALL.len()], [u8; Skill::ALL.len()])> = sim
         .world
         .pawns
         .iter()
@@ -1599,17 +1583,17 @@ fn work_panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState) {
                     ui.label(name);
                     for wt in WorkType::ALL {
                         let prio = prios[wt as usize];
-                        let label = match (prio, wt.skill()) {
-                            (0, _) => "-".to_string(),
-                            (p, Some(s)) => format!("{}  (lv {})", p, skills[s as usize]),
-                            (p, None) => p.to_string(),
+                        let label = match (prio.rank(), wt.skill()) {
+                            (None, _) => "-".to_string(),
+                            (Some(p), Some(s)) => format!("{}  (lv {})", p, skills[s as usize]),
+                            (Some(p), None) => p.to_string(),
                         };
                         let button = egui::Button::new(label).fill(priority_color(prio)).min_size(egui::vec2(84.0, 22.0));
                         let response = ui.add(button);
                         if response.clicked() {
-                            sim.world.set_priority(*id, wt, raise_priority(prio));
+                            sim.world.set_priority(*id, wt, prio.raised());
                         } else if response.secondary_clicked() {
-                            sim.world.set_priority(*id, wt, lower_priority(prio));
+                            sim.world.set_priority(*id, wt, prio.lowered());
                         }
                     }
                     ui.end_row();
@@ -1627,13 +1611,14 @@ mod tests {
     #[test]
     fn clicks_step_priorities_up_and_down() {
         // Left: never, 4, 3, 2, 1, and no further.
-        let up: Vec<u8> = std::iter::successors(Some(0u8), |&p| Some(raise_priority(p))).take(6).collect();
-        assert_eq!(up, [0, 4, 3, 2, 1, 1]);
+        use WorkPriority::*;
+        let up: Vec<WorkPriority> = std::iter::successors(Some(Never), |p| Some(p.raised())).take(6).collect();
+        assert_eq!(up, [Never, Fourth, Third, Second, First, First]);
         // Right: back down to never, and no further.
-        let down: Vec<u8> = std::iter::successors(Some(1u8), |&p| Some(lower_priority(p))).take(6).collect();
-        assert_eq!(down, [1, 2, 3, 4, 0, 0]);
+        let down: Vec<WorkPriority> = std::iter::successors(Some(First), |p| Some(p.lowered())).take(6).collect();
+        assert_eq!(down, [First, Second, Third, Fourth, Never, Never]);
         // Every step looks a little different.
-        let shades: std::collections::HashSet<_> = (0..=4).map(|p| priority_color(p).to_array()).collect();
+        let shades: std::collections::HashSet<_> = [Never, First, Second, Third, Fourth].map(|p| priority_color(p).to_array()).into_iter().collect();
         assert_eq!(shades.len(), 5);
     }
 }
