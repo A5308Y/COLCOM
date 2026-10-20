@@ -214,11 +214,21 @@ impl CharacterLibrary {
     }
 }
 
+/// How far a character has loaded.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RigState {
+    /// Some parts (outfit, head, hair) are still being spawned.
+    Spawning { parts_left: usize },
+    /// Every part is in; waiting for the animation graph.
+    Spawned,
+    /// Animations attached: the character can be shown.
+    Ready,
+}
+
 /// On a pawn's character entity (which holds its `AnimationPlayer`).
 #[derive(Component)]
 pub struct Rig {
-    /// Parts still being spawned.
-    pending: usize,
+    state: RigState,
     /// The right hand bone, where weapons go.
     pub hand: Option<Entity>,
     /// The outfit part (the body below the head), hidden under a blanket in bed.
@@ -253,8 +263,6 @@ pub struct Rig {
     outfit_bones: HashMap<String, Entity>,
     /// Hair parts (not the beard), hidden under a helmet.
     hair_parts: Vec<Entity>,
-    /// The animation graph is attached.
-    animated: bool,
     /// Clip nodes playing and their weight, fading in (wanted) or out.
     layers: Vec<(AnimationNodeIndex, f32)>,
 }
@@ -262,7 +270,7 @@ pub struct Rig {
 impl Rig {
     /// Every part is spawned and the animations are attached.
     pub fn ready(&self) -> bool {
-        self.pending == 0 && self.animated
+        self.state == RigState::Ready
     }
 }
 
@@ -383,7 +391,7 @@ pub fn spawn_rig(commands: &mut Commands, assets: &AssetServer, p: &Pawn, parent
         .collect();
     let hair_parts: Vec<Entity> = parts.iter().zip(&hairy).filter(|(_, h)| **h).map(|(e, _)| *e).collect();
     commands.entity(rig).insert(Rig {
-        pending: parts.len(),
+        state: if parts.is_empty() { RigState::Spawned } else { RigState::Spawning { parts_left: parts.len() } },
         hand: None,
         outfit: parts[0],
         covered: false,
@@ -409,7 +417,6 @@ pub fn spawn_rig(commands: &mut Commands, assets: &AssetServer, p: &Pawn, parent
         bones: HashMap::new(),
         outfit_bones: HashMap::new(),
         hair_parts,
-        animated: false,
         layers: Vec::new(),
     });
     rig
@@ -439,7 +446,9 @@ fn rig_part(
     let Ok(mut rig) = rigs.get_mut(character) else {
         return;
     };
-    rig.pending = rig.pending.saturating_sub(1);
+    if let RigState::Spawning { parts_left } = rig.state {
+        rig.state = if parts_left > 1 { RigState::Spawning { parts_left: parts_left - 1 } } else { RigState::Spawned };
+    }
     if part == rig.outfit {
         rig.outfit_surfaces.extend(children.iter_descendants(part).filter(|&e| meshes.get(e).is_ok()));
         rig.upper_body.extend(children.iter_descendants(part).filter(|&e| {
@@ -513,10 +522,10 @@ fn rig_part(
 /// Attach the animation graph once the library and every part are ready.
 /// Returns whether the character can be shown.
 pub fn prepare(commands: &mut Commands, library: &CharacterLibrary, rig_entity: Entity, rig: &mut Rig) -> bool {
-    if !rig.animated && rig.pending == 0 {
+    if rig.state == RigState::Spawned {
         if let Some(graph) = &library.graph {
             commands.entity(rig_entity).insert(AnimationGraphHandle(graph.clone()));
-            rig.animated = true;
+            rig.state = RigState::Ready;
         }
     }
     rig.ready()
@@ -894,12 +903,12 @@ mod tests {
 
     fn test_rig(outfit: Entity) -> Rig {
         Rig {
-            pending: 0, hand: None, outfit, covered: false, dead: false, female: false,
+            state: RigState::Ready, hand: None, outfit, covered: false, dead: false, female: false,
             upper_body: Vec::new(), lower_body: Vec::new(), head_surfaces: Vec::new(), outfit_surfaces: Vec::new(), garment: GarmentState::None, leg_garment: GarmentState::None, garment_materials: Vec::new(),
             eyes: Vec::new(), lids: None, lid_color: Color::WHITE, closed: false,
             clothes: Color::WHITE, skin: Color::WHITE, hair: Color::WHITE, variant: false,
             own: Vec::new(), bones: HashMap::new(), outfit_bones: HashMap::new(),
-            hair_parts: Vec::new(), animated: true, layers: Vec::new(),
+            hair_parts: Vec::new(), layers: Vec::new(),
         }
     }
 
@@ -1082,7 +1091,7 @@ mod tests {
                 bones.push(world.spawn((Name::new("upperarm_l"), Transform::from_xyz(if part == head { 0.02 } else { 0.0 }, 0.0, 0.0), ChildOf(armature))).id());
             }
             let mut rig = test_rig(outfit);
-            rig.pending = 2;
+            rig.state = RigState::Spawning { parts_left: 2 };
             world.entity_mut(character).insert(rig);
             for part in if head_first { [head, outfit] } else { [outfit, head] } {
                 instance_ready(&mut world, part);
@@ -1123,7 +1132,7 @@ mod tests {
                     Visibility::Inherited, ChildOf(armature))).id());
             }
             let mut rig = test_rig(parts[0]);
-            rig.pending = 3;
+            rig.state = RigState::Spawning { parts_left: 3 };
             rig.hair_parts = vec![parts[2]];
             world.entity_mut(character).insert(rig);
             for i in order { instance_ready(&mut world, parts[i]); }
