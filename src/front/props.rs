@@ -442,9 +442,9 @@ fn sync_props(
     for (&i, list) in &m.decor {
         let mut stacks = m.stacks(i as usize);
         for d in list {
-            let shelf = d.built && d.kind.def().storage.is_some();
+            let shelf = d.is_up() && d.kind.def().storage.is_some();
             let item = if shelf { stacks.next().map(|s| ItemKey { kind: s.kind, big: s.count >= 25 }) } else { None };
-            want.insert((i, d.face, d.slot), DecorKey { kind: d.kind, built: d.built, item });
+            want.insert((i, d.face, d.slot), DecorKey { kind: d.kind, built: d.is_up(), item });
         }
     }
     let stale: Vec<(u32, u8, u8)> = props.decor.iter().filter(|(k, (key, _))| want.get(*k) != Some(key)).map(|(k, _)| *k).collect();

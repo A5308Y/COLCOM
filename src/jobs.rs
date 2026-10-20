@@ -523,7 +523,7 @@ impl World {
             }
             Task::Decorate => {
                 let (d, _) = self.decor_job(target)?;
-                let share = if d.built { DECONSTRUCT_SHARE } else { 1.0 };
+                let share = if d.is_up() { DECONSTRUCT_SHARE } else { 1.0 };
                 Some((d.kind.def().skill, (d.kind.def().work_time * share).max(1.0)))
             }
         }

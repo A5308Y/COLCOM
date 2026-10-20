@@ -17,6 +17,7 @@ use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, RichText};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::health::{CyberSlot, HediffKind};
+use my_world::decor::DecorState;
 use my_world::defs::{defs, ItemCategory, ItemId, PlantId, RoomDef, Slot, Special};
 use my_world::map::{Block, Feature, Pos, Zone};
 use my_world::pawn::{Pawn, PawnId, Role, Skill, WorkPriority, WorkType};
@@ -1248,22 +1249,18 @@ fn wall_decor(ui: &mut egui::Ui, w: &SimWorld, t: Pos, look_up: &mut Option<Info
             None => "outside".to_string(),
         };
         ui.horizontal(|ui| {
-            let state = if !d.built {
-                match d.kind.def().missing(d.delivered) {
-                    Some((item, n)) => format!(" (planned: needs {} {})", n, item.name().to_lowercase()),
-                    None => " (planned: ready to put up)".to_string(),
-                }
-            } else if d.remove {
-                " (to be taken down)".to_string()
-            } else {
-                String::new()
+            let state = match (d.state, d.still_needs()) {
+                (DecorState::Planned { .. }, Some((item, n))) => format!(" (planned: needs {} {})", n, item.name().to_lowercase()),
+                (DecorState::Planned { .. }, None) => " (planned: ready to put up)".to_string(),
+                (DecorState::ComingDown, _) => " (to be taken down)".to_string(),
+                (DecorState::Up, _) => String::new(),
             };
             ui.label(format!("{}{} - place {} facing {}", d.kind.name(), state, slot + 1, side));
             info::button(ui, InfoTarget::Build(d.kind), look_up);
-            let (label, hint) = match (d.built, d.remove) {
-                (false, _) => ("Cancel", "Call it off; what was brought is put down"),
-                (true, false) => ("Take down", "A builder takes it down and gets half its materials back"),
-                (true, true) => ("Keep", "Leave it up after all"),
+            let (label, hint) = match d.state {
+                DecorState::Planned { .. } => ("Cancel", "Call it off; what was brought is put down"),
+                DecorState::Up => ("Take down", "A builder takes it down and gets half its materials back"),
+                DecorState::ComingDown => ("Keep", "Leave it up after all"),
             };
             if ui.small_button(label).on_hover_text(hint).clicked() {
                 actions.push(Box::new(move |w| {
@@ -1271,7 +1268,7 @@ fn wall_decor(ui: &mut egui::Ui, w: &SimWorld, t: Pos, look_up: &mut Option<Info
                 }));
             }
         });
-        if d.built && d.kind.def().shows_date {
+        if d.is_up() && d.kind.def().shows_date {
             let hour = w.hour();
             let date = format!("Day {}, {:02}:{:02}", w.day(), hour as u32, ((hour - hour.floor()) * 60.0) as u32);
             ui.label(RichText::new(format!("    It says: {}", date)).weak());

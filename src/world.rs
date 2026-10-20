@@ -2427,7 +2427,7 @@ mod tests {
                 w.map.set_feature(i, Feature::built("wall"));
                 assert!(w.order_decor(wall, 2, 2, kind), "{} can be hung", def.id);
                 run(&mut w, 40.0 + 15.0 * def.cost.len() as f32 + 3.0 * def.work_time);
-                assert!(w.map.decor(i).iter().all(|d| d.built), "{} put up", def.id);
+                assert!(w.map.decor(i).iter().all(|d| d.is_up()), "{} put up", def.id);
                 for c in &def.cost {
                     assert_eq!(w.map.count_items(c.item), 0, "{} used its {}", def.id, c.item.def().id);
                 }

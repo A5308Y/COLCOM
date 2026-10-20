@@ -409,7 +409,7 @@ impl World {
     /// shelves on its wall.
     fn storage_kind(&self, i: usize) -> Option<crate::defs::BuildId> {
         if self.map.wall_shelves(i) > 0 {
-            return self.map.decor(i).iter().find(|d| d.built && d.kind.def().storage.is_some()).map(|d| d.kind);
+            return self.map.decor(i).iter().find(|d| d.is_up() && d.kind.def().storage.is_some()).map(|d| d.kind);
         }
         self.map.feature[i].structure_id().filter(|k| k.def().storage.is_some())
     }

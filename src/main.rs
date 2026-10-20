@@ -383,13 +383,11 @@ mod tests {
                 w.map.feature[i] = my_world::map::Feature::built("wall");
             }
             let decor_wall = w.map.idx((cx + 7, cy + 8, z));
-            let up = |id: &str, face, slot, built| my_world::decor::Decor {
+            let up = |id: &str, face, slot, built: bool| my_world::decor::Decor {
                 kind: my_world::defs::BuildId::named(id),
                 face,
                 slot,
-                delivered: 0,
-                built,
-                remove: false,
+                state: if built { my_world::decor::DecorState::Up } else { my_world::decor::DecorState::Planned { delivered: 0 } },
             };
             let things = vec![up("painting", 2, 0, true), up("wall_lamp", 2, 2, true), up("wall_shelf", 2, 4, true), up("poster", 3, 1, false)];
             w.map.decor.insert(decor_wall as u32, things);

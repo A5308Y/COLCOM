@@ -112,7 +112,7 @@ impl World {
                 }
             }
             // On walls (a dartboard): from in front of it.
-            for d in m.decor(i).iter().filter(|d| d.built && d.kind.def().fun > 0.0) {
+            for d in m.decor(i).iter().filter(|d| d.is_up() && d.kind.def().fun > 0.0) {
                 if let Some(stand) = m.decor_front(at, d.face, d.slot) {
                     if let Some(dist) = df.dist(stand) {
                         consider(d.kind.def().fun * self.fun_bonus(stand) / (1.0 + dist as f32 / 20.0), Job::Relax { at, stand });
@@ -209,7 +209,7 @@ impl World {
     /// or what's built there (a chess table).
     fn fun_at(&self, at: Pos) -> f32 {
         let i = self.map.idx(at);
-        let on_wall = self.map.decor(i).iter().filter(|d| d.built).map(|d| d.kind.def().fun).fold(0.0, f32::max);
+        let on_wall = self.map.decor(i).iter().filter(|d| d.is_up()).map(|d| d.kind.def().fun).fold(0.0, f32::max);
         let built = self.map.feature[i].structure().map_or(0.0, |d| d.fun);
         on_wall.max(built)
     }
@@ -401,7 +401,7 @@ mod tests {
             build(&mut w, (x, 8, Z), "wall");
         }
         let wall = w.map.idx((7, 8, Z));
-        w.map.decor.insert(wall as u32, vec![crate::decor::Decor { kind: crate::defs::BuildId::named("dartboard"), face: 2, slot: 2, delivered: 2, built: true, remove: false }]);
+        w.map.decor.insert(wall as u32, vec![crate::decor::Decor { kind: crate::defs::BuildId::named("dartboard"), face: 2, slot: 2, state: crate::decor::DecorState::Up }]);
         let id = person(&mut w, (2, 2, Z), 20.0, Block::Fun);
         run(&mut w, 2.0);
         assert!(matches!(job(&w, id), Some(Job::Relax { stand: (7, 9, _), .. })), "{:?}", job(&w, id));

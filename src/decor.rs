@@ -13,7 +13,7 @@
 //! What hangs in a slot counts for the room it faces: beauty, light. A wall
 //! shelf holds a stack in its wall's cell, which is storage as long as it has one.
 
-use crate::defs::BuildId;
+use crate::defs::{BuildId, ItemId};
 use crate::map::{Feature, Map, Pos, Stack, DIRS};
 use crate::world::World;
 use serde::{Deserialize, Serialize};
@@ -35,22 +35,39 @@ pub struct Decor {
     /// Which place on the face, 0..`SLOTS`, counting towards +x (on faces
     /// looking along y) or +y (on faces looking along x).
     pub slot: u8,
-    /// Materials brought for it so far (in the order of its cost).
-    pub delivered: u32,
-    /// Up on the wall (else still planned).
-    pub built: bool,
-    /// To be taken down.
-    #[serde(default)]
-    pub remove: bool,
+    pub state: DecorState,
+}
+
+/// Where a piece of wall decor is in its life.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DecorState {
+    /// Planned; `delivered` counts the materials brought so far (in the order of its cost).
+    Planned { delivered: u32 },
+    Up,
+    /// Up, and to be taken down.
+    ComingDown,
 }
 
 impl Decor {
+    /// On the wall (even if it's to come down).
+    pub fn is_up(&self) -> bool {
+        matches!(self.state, DecorState::Up | DecorState::ComingDown)
+    }
+
     /// Waiting for a builder: everything is there to put it up, or it's to come down.
     pub fn ready(&self) -> bool {
-        if self.built {
-            self.remove
-        } else {
-            self.kind.def().missing(self.delivered).is_none()
+        match self.state {
+            DecorState::Planned { delivered } => self.kind.def().missing(delivered).is_none(),
+            DecorState::Up => false,
+            DecorState::ComingDown => true,
+        }
+    }
+
+    /// Planned, with materials still to bring: what's missing next.
+    pub fn still_needs(&self) -> Option<(ItemId, u32)> {
+        match self.state {
+            DecorState::Planned { delivered } => self.kind.def().missing(delivered),
+            DecorState::Up | DecorState::ComingDown => None,
         }
     }
 }
@@ -122,7 +139,7 @@ impl Map {
 
     /// Wall shelves up on the wall in cell `i` (each holds one stack there).
     pub fn wall_shelves(&self, i: usize) -> usize {
-        self.decor(i).iter().filter(|d| d.built && d.kind.def().storage.is_some()).count()
+        self.decor(i).iter().filter(|d| d.is_up() && d.kind.def().storage.is_some()).count()
     }
 }
 
@@ -144,7 +161,7 @@ impl World {
         }
         let i = self.map.idx(p) as u32;
         let list = self.map.decor.entry(i).or_default();
-        list.push(Decor { kind, face, slot, delivered: 0, built: false, remove: false });
+        list.push(Decor { kind, face, slot, state: DecorState::Planned { delivered: 0 } });
         list.sort_by_key(|d| (d.face, d.slot));
         true
     }
@@ -155,11 +172,13 @@ impl World {
         let i = self.map.idx(p);
         let Some(k) = self.map.decor(i).iter().position(|d| d.face == face && d.slot == slot) else { return false };
         let list = self.map.decor.get_mut(&(i as u32)).unwrap();
-        if list[k].built {
-            list[k].remove = !list[k].remove;
-        } else {
-            let d = list.remove(k);
-            self.drop_decor(p, d);
+        match list[k].state {
+            DecorState::Up => list[k].state = DecorState::ComingDown,
+            DecorState::ComingDown => list[k].state = DecorState::Up,
+            DecorState::Planned { .. } => {
+                let d = list.remove(k);
+                self.drop_decor(p, d);
+            }
         }
         true
     }
@@ -179,11 +198,14 @@ impl World {
     fn drop_decor(&mut self, p: Pos, d: Decor) {
         let at = self.decor_landing(p, &d);
         let def = d.kind.def();
-        let back = if d.built { def.drops() } else { def.delivered_split(d.delivered) };
+        let back = match d.state {
+            DecorState::Planned { delivered } => def.delivered_split(delivered),
+            DecorState::Up | DecorState::ComingDown => def.drops(),
+        };
         for (item, count) in back {
             self.map.drop_item(at, Stack { kind: item, count });
         }
-        if d.built && def.storage.is_some() {
+        if d.is_up() && def.storage.is_some() {
             self.release_shelved(p);
             self.sync_containers();
         }
@@ -209,19 +231,20 @@ impl World {
 
     /// What the next thing planned for the wall at `p` still needs.
     pub(crate) fn decor_need(&self, p: Pos) -> Option<Stack> {
-        let d = self.map.decor(self.map.idx(p)).iter().find(|d| !d.built && !d.ready())?;
-        d.kind.def().missing(d.delivered).map(|(item, count)| Stack { kind: item, count })
+        let (item, count) = self.map.decor(self.map.idx(p)).iter().find_map(Decor::still_needs)?;
+        Some(Stack { kind: item, count })
     }
 
     /// Hand `carry` over for the next thing planned for the wall at `p`; returns how many were used.
     pub(crate) fn stock_decor(&mut self, p: Pos, carry: Stack) -> u32 {
         let Some(need) = self.decor_need(p).filter(|n| n.kind == carry.kind) else { return 0 };
         let i = self.map.idx(p) as u32;
-        let Some(d) = self.map.decor.get_mut(&i).and_then(|l| l.iter_mut().find(|d| !d.built && !d.ready())) else {
+        let Some(d) = self.map.decor.get_mut(&i).and_then(|l| l.iter_mut().find(|d| d.still_needs().is_some())) else {
             return 0;
         };
+        let DecorState::Planned { delivered } = &mut d.state else { return 0 };
         let used = need.count.min(carry.count);
-        d.delivered += used;
+        *delivered += used;
         used
     }
 
@@ -241,14 +264,19 @@ impl World {
         let i = self.map.idx(p) as u32;
         let list = self.map.decor.get_mut(&i).unwrap();
         let k = list.iter().position(|x| *x == d).unwrap();
-        if d.built {
-            let gone = list.remove(k);
-            self.drop_decor(p, gone);
-        } else {
-            list[k].built = true;
-            if d.kind.def().storage.is_some() {
-                self.sync_containers();
+        match d.state {
+            DecorState::ComingDown => {
+                let gone = list.remove(k);
+                self.drop_decor(p, gone);
             }
+            DecorState::Planned { .. } => {
+                list[k].state = DecorState::Up;
+                if d.kind.def().storage.is_some() {
+                    self.sync_containers();
+                }
+            }
+            // Not ready, so `decor_job` never returns it.
+            DecorState::Up => {}
         }
         if self.map.decor.get(&i).is_some_and(|l| l.is_empty()) {
             self.map.decor.remove(&i);
@@ -339,7 +367,7 @@ mod tests {
         }
         run(&mut w, 120.0);
         let i = w.map.idx(wall);
-        assert!(w.map.decor(i).iter().all(|d| d.built), "{:?}", w.map.decor(i));
+        assert!(w.map.decor(i).iter().all(|d| d.is_up()), "{:?}", w.map.decor(i));
         assert_eq!(w.map.decor(i).len(), 2);
         assert_eq!(w.item_totals().iter().sum::<u32>(), 0, "all used");
         // Taken down, it gives back half.
@@ -366,7 +394,7 @@ mod tests {
         let mut w = walled();
         let wall = (5, 5, Z);
         let i = w.map.idx(wall);
-        w.map.decor.insert(i as u32, vec![Decor { kind: painting(), face: 2, slot: 2, delivered: 3, built: true, remove: false }]);
+        w.map.decor.insert(i as u32, vec![Decor { kind: painting(), face: 2, slot: 2, state: DecorState::Up }]);
         w.update_decor();
         assert_eq!(w.map.decor(i).len(), 1, "still on its wall");
         w.map.set_feature(i, Feature::None);
@@ -392,7 +420,7 @@ mod tests {
         w.update_room_stats();
         let before = w.room_at((4, 4, Z)).unwrap().beauty;
         assert!(!w.room_at((4, 4, Z)).unwrap().lit);
-        let up = |kind: &str, face, slot| Decor { kind: BuildId::named(kind), face, slot, delivered: 9, built: true, remove: false };
+        let up = |kind: &str, face, slot| Decor { kind: BuildId::named(kind), face, slot, state: DecorState::Up };
         // On the north wall's inside (+y face) and the east wall's outside (+x face).
         let north = w.map.idx((4, 2, Z)) as u32;
         let east = w.map.idx((6, 4, Z)) as u32;
@@ -418,7 +446,7 @@ mod tests {
         let wall = (5, 5, Z);
         let i = w.map.idx(wall);
         let shelf = BuildId::named("wall_shelf");
-        let up = |face, slot| Decor { kind: shelf, face, slot, delivered: 2, built: true, remove: false };
+        let up = |face, slot| Decor { kind: shelf, face, slot, state: DecorState::Up };
         w.map.decor.insert(i as u32, vec![up(2, 0), up(3, 4)]);
         w.sync_containers();
         assert_eq!(w.map.slots(i), 2);

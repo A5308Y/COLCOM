@@ -195,7 +195,7 @@ impl World {
         // What hangs on walls counts for the room it faces.
         for (&wall, list) in &m.decor {
             let p = m.pos(wall as usize);
-            for d in list.iter().filter(|d| d.built) {
+            for d in list.iter().filter(|d| d.is_up()) {
                 let Some(front) = m.decor_front(p, d.face, d.slot) else { continue };
                 let r = m.room.get(m.idx(front)).copied().unwrap_or(0) as usize;
                 if r == 0 || r >= stats.len() {
