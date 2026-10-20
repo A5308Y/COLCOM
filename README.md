@@ -82,7 +82,7 @@ for), and `<` goes back.
   Each colonist has a loadout (Combat tab; right-clicking a weapon or clothes with them selected sets it
   too): the weapon, clothes, armour and helmet they use. They fetch it from storage and keep it on, in
   and out of battle; for slots left empty they pick up the best they find. Armour stops part of every
-  blow (and shows: a breastplate with shoulder plates, a helmet, powered armour's sealed suit), and
+  blow (and shows: a fitted Flak Jacket, a steel helmet, powered armour's articulated suit), and
   clothes cheer them up. Powered armour's motors make its wearer a quarter faster, on foot and in
   battle; a limp (low Moving) slows them in both (a squad moves at its slowest member's pace). Pinned down in battle, a unit has 60% of its
   action points and each step costs twice as much. Ranged squads can deploy: down on one knee, aiming
@@ -91,7 +91,7 @@ for), and `<` goes back.
   descriptions say what they stand for: gears, wiring, lenses ...) made at fitting benches: structural at
   the smithy, textile at the crafting bench, mechanical at the machinist's bench, chemical at the chemistry
   lab, electrical and optical at the electronics bench. Gear needs them: knives, pistols, rifles, assault
-  rifles, steel armour and helmets (smithy), prosthetics (machinist), and at the **fabricator** powered
+  rifles, Flak Jackets and steel helmets (smithy), prosthetics (machinist), and at the **fabricator** powered
   armour and the laser rifle (its burns don't bleed but hurt more). The benches themselves cost components
   and climb a ladder (machinist → refinery → chemistry lab → electronics bench → fabricator), each built
   from what the ones before make. Buildings can cost several materials, brought in order. The **salvage
@@ -296,7 +296,7 @@ harvested and every recipe made.
 - `assets/models/weapons/`: all six weapons in a shared faceted sci-fi style; [asset notes](assets/models/weapons/README.md)
   include quality budgets and regeneration/preview commands. Models appear in hands, on the ground
   and on shelves; shape definitions remain the loading fallback.
-- `assets/models/armor/`: matching helmet, steel and powered armor; [asset notes](assets/models/armor/README.md).
+- `assets/models/armor/`: steel helmet, fitted Flak Jacket and cyan-lit powered armor; [asset notes](assets/models/armor/README.md).
   Stored displays and pieces attached to character bones share the same meshes and materials.
 - `assets/models/items/`: all remaining resources, components, food, medical supplies, prosthetics
   and clothing in the same faceted style; [asset notes](assets/models/items/README.md). Ground,

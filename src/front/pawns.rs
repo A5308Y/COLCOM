@@ -445,14 +445,24 @@ fn sync_pawns(
             }
             let pieces = worn_pieces(&p.apparel);
             for piece in &pieces {
-                let (parent, at, turn) = match piece.bone.as_str() {
-                    "spine_03" => (v.figure, Vec3::new(0.0, 0.62, 0.0), Quat::IDENTITY),
-                    "Head" => (v.figure, Vec3::new(0.0, 0.90, 0.0), Quat::IDENTITY),
-                    "upperarm_l" => (v.arms[1], Vec3::ZERO, Quat::from_rotation_z(-FRAC_PI_2)),
-                    "upperarm_r" => (v.arms[0], Vec3::ZERO, Quat::from_rotation_z(FRAC_PI_2)),
+                let (parent, at, turn, proportions) = match piece.bone.as_str() {
+                    "spine_03" => (v.figure, Vec3::new(0.0, 0.62, 0.0), Quat::IDENTITY, Vec3::ONE),
+                    "Head" => (v.figure, Vec3::new(0.0, 0.90, 0.0), Quat::IDENTITY, Vec3::ONE),
+                    "upperarm_l" => (v.arms[1], Vec3::ZERO, Quat::from_rotation_z(-FRAC_PI_2), Vec3::ONE),
+                    "upperarm_r" => (v.arms[0], Vec3::ZERO, Quat::from_rotation_z(FRAC_PI_2), Vec3::ONE),
+                    "lowerarm_l" => (v.arms[1], Vec3::new(0.0, -0.16, 0.0), Quat::from_rotation_z(-FRAC_PI_2), Vec3::ONE),
+                    "lowerarm_r" => (v.arms[0], Vec3::new(0.0, -0.16, 0.0), Quat::from_rotation_z(FRAC_PI_2), Vec3::ONE),
+                    // The fallback figure has shorter legs than the character rigs.
+                    "pelvis" => (v.figure, Vec3::new(0.0, 0.36, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                    "thigh_l" => (v.legs[1], Vec3::ZERO, Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                    "thigh_r" => (v.legs[0], Vec3::ZERO, Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                    "calf_l" => (v.legs[1], Vec3::new(0.0, -0.17, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                    "calf_r" => (v.legs[0], Vec3::new(0.0, -0.17, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                    "foot_l" => (v.legs[1], Vec3::new(0.0, -0.31, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
+                    "foot_r" => (v.legs[0], Vec3::new(0.0, -0.31, 0.0), Quat::IDENTITY, Vec3::new(1.0, 0.62, 1.0)),
                     _ => continue,
                 };
-                let tf = Transform::from_translation(at).with_rotation(turn).with_scale(Vec3::splat(characters::RIG_SCALE / SCALE));
+                let tf = Transform::from_translation(at).with_rotation(turn).with_scale(proportions * (characters::RIG_SCALE / SCALE));
                 let e = props::spawn_worn(&mut commands, &props, tf, piece);
                 commands.entity(e).insert(ChildOf(parent));
                 v.armor.push(e);
@@ -708,7 +718,7 @@ mod tests {
             let heads: Vec<_> = pieces.iter().filter(|p| p.bone == "Head").collect();
             assert_eq!(heads.len(), 1);
             assert!(heads[0].model.as_ref().unwrap().path.ends_with("PoweredArmor.gltf"));
-            assert_eq!(pieces.len(), 4, "body and both shoulders are still present");
+            assert_eq!(pieces.len(), 13, "all articulated body pieces are still present");
         }
         let pieces = worn_pieces(&[ItemId::named("steel_armor"), helmet]);
         assert_eq!(pieces.iter().filter(|p| p.bone == "Head").count(), 1);

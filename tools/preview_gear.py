@@ -14,7 +14,7 @@ from make_gear import models
 from preview_rifle import cross, dot, render, unit
 
 
-def write_gallery(entries, out, title="weapons &amp; armor", subtitle="Shared olive, steel, charcoal and amber palette."):
+def write_gallery(entries, out, title="weapons &amp; armor", subtitle="Frontier gear and fitted flak jackets; powered armor uses graphite, titanium and ion cyan."):
     out.mkdir(parents=True, exist_ok=True)
     cards = []
     for folder, name, geometry, _ in entries:
