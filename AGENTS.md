@@ -1,5 +1,8 @@
 # Project instructions
 
+Before picking up roadmap work from `PLAN.md`, check [CODE_HEALTH.md](CODE_HEALTH.md): its
+open items come first. Tick items off as they land.
+
 ## Types and data modelling
 
 Use algebraic data types to make illegal states unrepresentable, wherever practical.

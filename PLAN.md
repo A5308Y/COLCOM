@@ -80,6 +80,8 @@ Details are in the notes below, under each topic.
 
 In the suggested order. Graphics first: the content has settled, so the look can catch up.
 
+0. **Code health first.** Work through [CODE_HEALTH.md](CODE_HEALTH.md) (confirmed bugs, type
+   modelling, save robustness, performance, tests) before starting the items below.
 1. **10d. glTF models** for trees, plants, crops, furniture and buildings. The converted Quaternius
    packs are already in `assets/models/nature|trees|crops|village`, so this changes the look the most
    for the least new work.
