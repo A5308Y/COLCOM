@@ -363,7 +363,7 @@ const BANNER_SECS: f32 = 1.8;
 
 /// The colony's unit taking its turn, when the player can give it orders.
 fn my_unit(b: &Battle) -> Option<usize> {
-    (b.side_to_act == Faction::Colony && !b.auto_colony).then_some(b.active).flatten()
+    (b.side_to_act == Faction::Colony && !b.auto_colony).then_some(b.active_unit()).flatten()
 }
 
 fn names(w: &SimWorld, members: &[PawnId]) -> String {
@@ -412,7 +412,7 @@ fn battle_input(
     }
     if !typing && keys.just_pressed(KeyCode::Tab) {
         let ready = ready_units(b);
-        let next = match b.active {
+        let next = match b.active_unit() {
             Some(a) => ready.iter().copied().find(|&u| u > a).or(ready.first().copied()),
             None => ready.first().copied(),
         };
@@ -487,8 +487,8 @@ fn follow_action(
         view.followed = None;
         return;
     };
-    if b.active != view.followed {
-        view.followed = b.active;
+    if b.active_unit() != view.followed {
+        view.followed = b.active_unit();
         view.follow = 0.8;
     }
     let camera_keys = [
@@ -510,7 +510,7 @@ fn follow_action(
         return;
     }
     view.follow -= time.delta_secs();
-    let Some(lead) = b.active.and_then(|u| b.units[u].members.first()).and_then(|&id| sim.world.pawn(id)) else {
+    let Some(lead) = b.active_unit().and_then(|u| b.units[u].members.first()).and_then(|&id| sim.world.pawn(id)) else {
         return;
     };
     let target = tile_point(lead.x, lead.y, lead.z);
@@ -527,7 +527,7 @@ fn draw_battle(sim: Res<Sim>, ui: Res<UiState>, area: Res<ReachArea>, mut gizmos
     for (u, unit) in b.units.iter().enumerate() {
         let color = match unit.side {
             Faction::Raider => Color::srgb(0.95, 0.2, 0.15),
-            _ if b.active == Some(u) => Color::srgb(1.0, 0.82, 0.1),
+            _ if b.active_unit() == Some(u) => Color::srgb(1.0, 0.82, 0.1),
             _ if unit.is_civilians() => Color::srgb(0.4, 0.85, 0.5),
             _ if unit.acted => Color::srgb(0.55, 0.55, 0.6),
             _ => Color::srgb(0.35, 0.65, 1.0),
@@ -1039,7 +1039,7 @@ fn battle_panels(
                 }
             });
             for (u, unit) in b.units.iter().enumerate().filter(|(_, u)| u.side == Faction::Colony && u.can_act()) {
-                let status = if b.active == Some(u) {
+                let status = if b.active_unit() == Some(u) {
                     "acting".to_string()
                 } else if unit.acted {
                     "done".to_string()

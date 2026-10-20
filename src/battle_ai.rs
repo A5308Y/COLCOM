@@ -1,7 +1,7 @@
 //! The battle AI: plays the raiders (and, in tests, the colony). One step
 //! at a time, so its moves and attacks play out like the player's.
 
-use crate::battle::{battle_sight, BattleOrder, Cover, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MOVE};
+use crate::battle::{battle_sight, Activation, BattleOrder, Cover, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MOVE};
 use crate::defs::ItemId;
 use crate::map::Pos;
 use crate::pathing::bfs;
@@ -16,7 +16,7 @@ impl World {
     pub(crate) fn ai_step(&mut self) {
         let Some(b) = self.battle.as_ref() else { return };
         let side = b.side_to_act;
-        let Some(u) = b.active else {
+        let Some(active) = b.active else {
             let ready: Vec<usize> =
                 (0..b.units.len()).filter(|&u| b.units[u].side == side && b.units[u].can_act() && !b.units[u].acted).collect();
             // The unit nearest the enemy goes first.
@@ -29,7 +29,7 @@ impl World {
             }
             return;
         };
-        let order = self.ai_order(u);
+        let order = self.ai_order(active);
         if self.do_order(order).is_err() {
             let _ = self.do_order(BattleOrder::End);
         }
@@ -91,14 +91,15 @@ impl World {
         best
     }
 
-    fn ai_order(&self, u: usize) -> BattleOrder {
-        let b = self.battle.as_ref().unwrap();
+    fn ai_order(&self, active: Activation) -> BattleOrder {
+        let (u, moved) = (active.unit, active.moved);
+        let b = self.current_battle();
         let unit = &b.units[u];
         if unit.broken() {
             return match unit.side {
                 // To run, a deployed squad has to stand up first.
                 Faction::Raider if unit.is_deployed() && unit.ap >= AP_DEPLOY + AP_MOVE => BattleOrder::Deploy,
-                Faction::Raider if !unit.moved && !unit.is_deployed() => self.flee_order(u),
+                Faction::Raider if !moved && !unit.is_deployed() => self.flee_order(u),
                 _ if unit.ap >= AP_HUNKER => BattleOrder::Hunker,
                 _ => BattleOrder::End,
             };
@@ -118,19 +119,19 @@ impl World {
         let attack = self.best_attack(u).filter(|&(t, _)| unit.ap >= self.attack_cost(u, t));
         if let Some((t, score)) = attack {
             // A squad staying put to fire goes down on one knee first (a fresh activation only).
-            let staying = score >= GOOD_ODDS && !unit.moved && unit.ap == unit.ap_start;
+            let staying = score >= GOOD_ODDS && !moved && unit.ap == unit.ap_start;
             if !unit.is_deployed() && staying && unit.ap >= AP_DEPLOY + AP_ATTACK && self.can_deploy(u) {
                 return BattleOrder::Deploy;
             }
-            if score >= GOOD_ODDS || unit.moved || unit.is_deployed() {
+            if score >= GOOD_ODDS || moved || unit.is_deployed() {
                 return BattleOrder::Attack(t);
             }
         }
         // To move, a deployed squad stands up first.
-        if unit.is_deployed() && !unit.moved && unit.ap >= AP_DEPLOY + 2 * AP_MOVE && self.best_spot(u).is_some() {
+        if unit.is_deployed() && !moved && unit.ap >= AP_DEPLOY + 2 * AP_MOVE && self.best_spot(u).is_some() {
             return BattleOrder::Deploy;
         }
-        if !unit.moved && !unit.is_deployed() && unit.ap >= AP_MOVE {
+        if !moved && !unit.is_deployed() && unit.ap >= AP_MOVE {
             if let Some(to) = self.best_spot(u) {
                 return BattleOrder::Move(to);
             }
@@ -144,7 +145,7 @@ impl World {
 
     /// Run for the nearest edge of the map, as far as the AP allow.
     fn flee_order(&self, u: usize) -> BattleOrder {
-        let b = self.battle.as_ref().unwrap();
+        let b = self.current_battle();
         let unit = &b.units[u];
         let Some(lead) = unit.members.first().and_then(|&id| self.pawn(id)) else { return BattleOrder::End };
         let edge = self.nearest_edge(lead.pos);

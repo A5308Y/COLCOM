@@ -119,7 +119,6 @@ pub struct Unit {
     /// AP at the start of this round (switching units is allowed until some is spent).
     pub ap_start: i32,
     pub acted: bool,
-    pub moved: bool,
     pub stance: Stance,
     pub suppression: f32,
     pub morale: f32,
@@ -157,7 +156,6 @@ impl Unit {
             ap: AP_MAX,
             ap_start: AP_MAX,
             acted: false,
-            moved: false,
             stance: Stance::Standing,
             suppression: 0.0,
             morale,
@@ -277,6 +275,14 @@ pub enum Outcome {
     Lost,
 }
 
+/// The unit taking its turn, and what it has done in it so far.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Activation {
+    pub unit: usize,
+    /// It has moved during this activation.
+    pub moved: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Battle {
     pub round: u32,
@@ -284,7 +290,7 @@ pub struct Battle {
     pub arrivals: Vec<Arrival>,
     pub side_to_act: Faction,
     /// The unit taking its activation.
-    pub active: Option<usize>,
+    pub active: Option<Activation>,
     /// Seconds the last attack still plays out.
     pub busy: f32,
     /// Pawns walking to their unit's new cell.
@@ -321,6 +327,10 @@ impl Battle {
     }
 
     /// The unit pawn `id` fights in.
+    pub fn active_unit(&self) -> Option<usize> {
+        self.active.map(|a| a.unit)
+    }
+
     pub fn unit_of(&self, id: PawnId) -> Option<usize> {
         self.units.iter().position(|u| u.members.contains(&id))
     }
@@ -385,6 +395,16 @@ pub fn base_hit_chance(a: &Pawn, ranged: bool, d: f32) -> f32 {
 }
 
 impl World {
+    /// The battle under way. Orders and ticks return early without one, so
+    /// the helpers below are only ever reached while it runs.
+    pub(crate) fn current_battle(&self) -> &Battle {
+        self.battle.as_ref().expect("battle helpers run only during a battle")
+    }
+
+    pub(crate) fn current_battle_mut(&mut self) -> &mut Battle {
+        self.battle.as_mut().expect("battle helpers run only during a battle")
+    }
+
     /// Whether unit `u` can go down on one knee (or, deployed, stand up):
     /// squads that fight at range (a whole squad fights one way, like its leader).
     pub fn can_deploy(&self, u: usize) -> bool {
@@ -732,21 +752,20 @@ impl World {
             if unit.side != b.side_to_act || unit.acted || !unit.can_act() {
                 return Err("that unit can't act now".into());
             }
-            if let Some(a) = b.active {
+            if let Some(a) = b.active_unit() {
                 if a != u && b.units[a].ap < b.units[a].ap_start {
                     return Err("finish with the active unit first".into());
                 }
             }
-            let b = self.battle.as_mut().unwrap();
-            b.active = Some(u);
+            let b = self.current_battle_mut();
+            b.active = Some(Activation { unit: u, moved: false });
             // Hunkering lasts until the unit's next turn; deploying until it stands up.
             if b.units[u].is_hunkered() {
                 b.units[u].stance = Stance::Standing;
             }
-            b.units[u].moved = false;
             return Ok(());
         }
-        let u = b.active.ok_or("pick a unit first")?;
+        let u = b.active_unit().ok_or("pick a unit first")?;
         let ap = b.units[u].ap;
         match order {
             BattleOrder::Activate(_) => unreachable!(),
@@ -761,7 +780,7 @@ impl World {
                 if ap < AP_DEPLOY {
                     return Err("not enough action points".into());
                 }
-                let b = self.battle.as_mut().unwrap();
+                let b = self.current_battle_mut();
                 b.units[u].stance = if b.units[u].is_deployed() { Stance::Standing } else { Stance::Deployed };
                 b.units[u].ap -= AP_DEPLOY;
                 Ok(())
@@ -770,7 +789,7 @@ impl World {
                 if ap < AP_HUNKER {
                     return Err("not enough action points".into());
                 }
-                let b = self.battle.as_mut().unwrap();
+                let b = self.current_battle_mut();
                 // Taking cover means getting up off one knee.
                 b.units[u].stance = Stance::Hunkered;
                 b.units[u].ap = 0;
@@ -778,7 +797,7 @@ impl World {
                 Ok(())
             }
             BattleOrder::Move(to) => {
-                if self.battle.as_ref().unwrap().units[u].is_deployed() {
+                if self.current_battle().units[u].is_deployed() {
                     return Err(format!("deployed: stand up first ({} AP)", AP_DEPLOY));
                 }
                 let cost = self.move_cost(u, to)?;
@@ -786,9 +805,9 @@ impl World {
                     return Err("too far for the action points left".into());
                 }
                 self.start_move(u, to);
-                let b = self.battle.as_mut().unwrap();
+                let b = self.current_battle_mut();
                 b.units[u].ap -= cost;
-                b.units[u].moved = true;
+                b.active = Some(Activation { unit: u, moved: true });
                 Ok(())
             }
             BattleOrder::Attack(t) => {
@@ -822,7 +841,7 @@ impl World {
                     return Err("not enough action points".into());
                 }
                 self.use_medkit(medic, u);
-                let b = self.battle.as_mut().unwrap();
+                let b = self.current_battle_mut();
                 b.units[u].ap -= cost;
                 Ok(())
             }
@@ -991,7 +1010,7 @@ impl World {
 
     /// The whole unit sets off for `to` together.
     fn start_move(&mut self, u: usize, to: Pos) {
-        let unit = &self.battle.as_ref().unwrap().units[u];
+        let unit = &self.current_battle().units[u];
         let (members, side) = (unit.members.clone(), unit.side);
         // Plan each walk around the enemy (`go_to` keeps a path planned for the same goal).
         for &id in &members {
@@ -1002,7 +1021,7 @@ impl World {
             p.path_goal = Some(to);
         }
         let moving = members.iter().map(|&pawn| Mover { pawn, goal: to }).collect();
-        let b = self.battle.as_mut().unwrap();
+        let b = self.current_battle_mut();
         b.moving = moving;
         b.hurry = false;
     }
@@ -1159,7 +1178,7 @@ impl World {
             at += if volley { VOLLEY_GAP.max(blows) } else { blows };
         }
         strikes.sort_by(|a, b| a.delay.total_cmp(&b.delay));
-        let b = self.battle.as_mut().unwrap();
+        let b = self.current_battle_mut();
         b.strikes = strikes;
         b.quiet_rounds = 0;
         // Coming under attack keeps heads down, however many shots it is.
@@ -1317,8 +1336,8 @@ impl World {
 
     fn end_activation(&mut self) {
         let Some(b) = self.battle.as_mut() else { return };
-        if let Some(u) = b.active.take() {
-            b.units[u].acted = true;
+        if let Some(a) = b.active.take() {
+            b.units[a.unit].acted = true;
         }
         let (side, next) = (b.side_to_act, other(b.side_to_act));
         if b.has_turn_left(next) {
@@ -1331,8 +1350,8 @@ impl World {
     fn new_round(&mut self) {
         {
             let mut shields = Vec::new();
-            let bonus: Vec<i32> = self.battle.as_ref().unwrap().units.iter().map(|u| self.ap_bonus(&u.members)).collect();
-            let b = self.battle.as_mut().unwrap();
+            let bonus: Vec<i32> = self.current_battle().units.iter().map(|u| self.ap_bonus(&u.members)).collect();
+            let b = self.current_battle_mut();
             b.round += 1;
             for (u, bonus) in b.units.iter_mut().zip(bonus) {
                 u.acted = false;
@@ -1356,7 +1375,7 @@ impl World {
                     p.shield_drain = (p.shield_drain - recharge).max(0.0);
                 }
             }
-            let b = self.battle.as_mut().unwrap();
+            let b = self.current_battle_mut();
             for a in b.arrivals.iter_mut() {
                 a.rounds = a.rounds.saturating_sub(1);
             }
@@ -1364,7 +1383,7 @@ impl World {
         }
         // Closing in counts as progress too.
         let gap = self.gap_between_sides();
-        let b = self.battle.as_mut().unwrap();
+        let b = self.current_battle_mut();
         if gap.is_some_and(|g| b.closest.is_none_or(|c| g < c)) {
             b.closest = gap;
             b.quiet_rounds = 0;
@@ -1415,12 +1434,12 @@ impl World {
 
     /// Squad members whose time is up join their leader.
     fn arrive(&mut self) {
-        let b = self.battle.as_mut().unwrap();
+        let b = self.current_battle_mut();
         let (due, waiting): (Vec<Arrival>, Vec<Arrival>) = b.arrivals.drain(..).partition(|a| a.rounds == 0);
         b.arrivals = waiting;
         for a in due {
             let Some(pi) = self.pawn_index(a.pawn).filter(|&i| self.pawns[i].active()) else { continue };
-            let b = self.battle.as_ref().unwrap();
+            let b = self.current_battle();
             let leader_unit = b.unit_of(a.leader).filter(|&u| !b.units[u].out());
             let name = self.pawns[pi].name.clone();
             match leader_unit {
@@ -1428,7 +1447,7 @@ impl World {
                     let members = b.units[u].members.clone();
                     let at = self.pawn(members[0]).unwrap().pos;
                     place(&mut self.pawns[pi], at);
-                    let b = self.battle.as_mut().unwrap();
+                    let b = self.current_battle_mut();
                     b.units[u].members.push(a.pawn);
                     b.units[u].roster.push(a.pawn);
                     b.units[u].morale = (b.units[u].morale + 5.0).min(90.0);
@@ -1437,7 +1456,7 @@ impl World {
                 }
                 None => {
                     let morale = self.unit_morale(&[a.pawn]);
-                    let b = self.battle.as_mut().unwrap();
+                    let b = self.current_battle_mut();
                     b.units.push(Unit::new(Faction::Colony, vec![a.pawn], UnitKind::Lone, morale));
                     self.battle_event(format!("{} arrives; their leader is down, so they fight alone.", name));
                 }
@@ -1483,7 +1502,7 @@ impl World {
                 });
             }
         }
-        let b = self.battle.as_mut().unwrap();
+        let b = self.current_battle_mut();
         b.units = units;
         for e in events {
             self.battle_event(e);
@@ -1552,7 +1571,7 @@ impl World {
                 self.pawns[i] = p;
             }
             let done = still.is_empty();
-            let b = self.battle.as_mut().unwrap();
+            let b = self.current_battle_mut();
             b.moving = still;
             b.hurry &= !done;
             if done {
@@ -1561,19 +1580,19 @@ impl World {
             }
             return;
         }
-        let b = self.battle.as_ref().unwrap();
-        if let Some(u) = b.active {
+        let b = self.current_battle();
+        if let Some(u) = b.active_unit() {
             if b.units[u].out() || b.units[u].ap < self.step_ap(u) {
                 self.end_activation();
                 return;
             }
         }
-        let b = self.battle.as_ref().unwrap();
+        let b = self.current_battle();
         if b.side_to_act == Faction::Raider || b.auto_colony {
             self.ai_step();
         } else if b.colony_passes {
             // Passing for the round: end the active unit's turn, or the next one's.
-            let next = b.active.or_else(|| b.units.iter().position(|u| u.side == Faction::Colony && u.can_act() && !u.acted));
+            let next = b.active_unit().or_else(|| b.units.iter().position(|u| u.side == Faction::Colony && u.can_act() && !u.acted));
             if let Some(u) = next {
                 if b.active.is_none() {
                     let _ = self.do_order(BattleOrder::Activate(u));
