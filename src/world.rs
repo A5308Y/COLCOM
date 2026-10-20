@@ -474,7 +474,6 @@ impl World {
         if self.map.support_dirty {
             self.settle_unsupported();
         }
-        self.grow_plants(dt);
         self.colony_timer -= dt;
         if self.colony_timer <= 0.0 {
             self.colony_timer = 1.0;
@@ -490,12 +489,14 @@ impl World {
             self.update_graves();
             self.update_trapped();
             self.update_expeditions();
+            // Whole-map passes: once a second rather than every tick.
+            self.grow_plants(1.0);
+            let fade = 1.0 / (1.5 * DAY_LEN);
+            for b in self.map.blood.iter_mut() {
+                *b = (*b - fade).max(0.0);
+            }
         }
         self.storyteller_tick();
-        let fade = dt / (1.5 * DAY_LEN);
-        for b in self.map.blood.iter_mut() {
-            *b = (*b - fade).max(0.0);
-        }
 
         // Each pawn is updated on a copy so it can freely read and modify the
         // rest of the world (including other pawns) while it thinks.

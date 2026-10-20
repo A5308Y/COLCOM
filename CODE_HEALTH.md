@@ -98,9 +98,11 @@ guidance in [AGENTS.md](AGENTS.md) for all of it.
 
 ## 4. Performance
 
-- [ ] **Full-map passes every tick.** Plant growth (`grow_plants`) and blood fading scan
+- [x] **Full-map passes every tick.** Plant growth (`grow_plants`) and blood fading scan
   the whole map at 30 Hz, multiplied by game speed. Move them into the once-a-second pass
   with an accumulated dt.
+  Done: both run in the once-a-second pass with a 1 s step. `--example profile`:
+  0.185 → 0.167 ms per tick.
 - [ ] **`World::release` scans three full-map reservation vectors** on every job end.
   Keep a per-pawn list of reserved cells instead.
 - [ ] **Pathing.** Every BFS allocates and clears about 900 KB. The trapped check runs a
