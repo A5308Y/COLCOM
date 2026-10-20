@@ -200,22 +200,23 @@ fn battle_arena() -> World {
         w.map.drop_item(w.map.pos(cell), Stack { kind, count: 1 });
     }
 
-    // The raiders, equipped the same way every time: a squad of four
-    // mercenaries, and a pair of elite raiders with laser rifles, powered
-    // armour and cyberware.
-    let parley = Parley { squads: vec![4, 2], entry: RAID_ENTRY, demand: vec![Stack { kind: item("steel"), count: 10 }], tier: 0 };
+    // The raiders, equipped the same way every time: three pairs, of
+    // mercenaries (a grenadier and a medic), elite raiders with laser rifles,
+    // powered armour and cyberware, and melee fighters behind personal
+    // shields. (Six raiders: with eight the colony rarely wins.)
+    let parley = Parley { squads: vec![2, 2, 2], entry: RAID_ENTRY, demand: vec![Stack { kind: item("steel"), count: 10 }], tier: 0 };
     w.start_battle(parley);
     let raiders: Vec<usize> = (0..w.pawns.len()).filter(|&i| !w.pawns[i].is_colonist()).collect();
     type Kit = (&'static str, Option<&'static str>, &'static [&'static str], Option<(&'static str, u32)>, &'static [(CyberSlot, &'static str)]);
     let kits: [Kit; 6] = [
         ("assault_rifle", Some("pistol"), &["clothes", "steel_armor", "steel_helmet", "flak_leg_guards"], Some(("frag_grenade", 2)), &[]),
-        ("rifle", None, &["clothes", "steel_armor", "steel_helmet", "tactical_goggles"], None, &[(CyberSlot::Eyes, "bionic_eyes")]),
         ("assault_rifle", Some("pistol"), &["clothes", "steel_armor", "cargo_trousers", "medic_pack"], Some(("field_medkit", 1)), &[]),
-        ("rifle", None, &["clothes", "parka", "steel_helmet", "field_pack"], None, &[(CyberSlot::LeftArm, "prosthetic_arm")]),
         ("laser_rifle", Some("pistol"), &["clothes", "powered_armor", "radio_pack"], Some(("frag_grenade", 3)),
             &[(CyberSlot::Brain, "neural_coprocessor"), (CyberSlot::Dermal, "subdermal_plating"), (CyberSlot::RightArm, "bionic_arm")]),
         ("laser_rifle", Some("pistol"), &["clothes", "steel_armor", "steel_helmet", "tactical_goggles", "flak_leg_guards"], None,
             &[(CyberSlot::Eyes, "bionic_eyes"), (CyberSlot::LeftLeg, "bionic_leg"), (CyberSlot::Spine, "reinforced_spine"), (CyberSlot::Heart, "synthetic_heart")]),
+        ("knife", None, &["clothes", "steel_armor", "steel_helmet", "flak_leg_guards"], Some(("personal_shield", 1)), &[(CyberSlot::RightLeg, "bionic_leg")]),
+        ("club", Some("knife"), &["clothes", "steel_armor", "cargo_trousers"], Some(("personal_shield", 1)), &[]),
     ];
     for (&i, (weapon, sidearm, apparel, belt, cyberware)) in raiders.iter().zip(kits) {
         let p = &mut w.pawns[i];
@@ -262,7 +263,7 @@ mod tests {
         assert_eq!(b.round, 1);
         assert_eq!(b.side_to_act, Faction::Colony);
         let raiders: Vec<usize> = b.units.iter().filter(|u| u.side == Faction::Raider).map(|u| u.members.len()).collect();
-        assert_eq!(raiders, vec![4, 2]);
+        assert_eq!(raiders, vec![2, 2, 2]);
         // It's the same every time.
         let again = battle_world();
         let pos = |w: &World| w.pawns.iter().map(|p| (p.pos, p.weapon)).collect::<Vec<_>>();
@@ -323,6 +324,9 @@ mod tests {
             let members: Vec<&crate::pawn::Pawn> = u.members.iter().filter_map(|&id| w.pawn(id)).collect();
             let ranged: Vec<bool> = members.iter().map(|p| p.main_attack().ranged).collect();
             assert!(ranged.windows(2).all(|k| k[0] == k[1]), "{:?} squad with mixed main weapons", u.side);
+            if u.side == Faction::Raider && members.iter().all(|p| p.shield().is_some()) {
+                assert!(!ranged[0], "shielded raiders fight in melee");
+            }
             for p in members.iter().filter(|p| p.main_attack().ranged) {
                 assert!(p.sidearm.is_none_or(|k| crate::pawn::attack_with(Some(k)).ranged), "{} has a melee sidearm", p.name);
             }

@@ -357,7 +357,8 @@ pub struct UtilityDef {
     pub effect: UtilityEffect,
     /// How many one colonist carries.
     pub carry: u32,
-    /// Action points to use one.
+    /// Action points to use one (none for a shield, which is worn, not used).
+    #[serde(default)]
     pub ap: i32,
 }
 
@@ -367,6 +368,10 @@ pub enum UtilityEffect {
     Grenade { damage: (f32, f32), range: f32 },
     /// Tends the wounds of everyone in the user's unit with this quality.
     Medkit { quality: f32 },
+    /// A personal energy shield, worn on the belt: it takes up to `energy`
+    /// damage from shots and blasts (not blows), getting `recharge` back each
+    /// battle round. Its field stops the wearer's own shots: no ranged weapons.
+    Shield { energy: f32, recharge: f32 },
 }
 
 impl ItemDef {
@@ -1334,10 +1339,11 @@ impl Defs {
             }
             if let Some(u) = &d.utility {
                 let ok = match u.effect {
-                    UtilityEffect::Grenade { damage, range } => damage.0 > 0.0 && damage.0 <= damage.1 && range > 0.0,
-                    UtilityEffect::Medkit { quality } => quality > 0.0 && quality <= 1.0,
+                    UtilityEffect::Grenade { damage, range } => damage.0 > 0.0 && damage.0 <= damage.1 && range > 0.0 && u.ap > 0,
+                    UtilityEffect::Medkit { quality } => quality > 0.0 && quality <= 1.0 && u.ap > 0,
+                    UtilityEffect::Shield { energy, recharge } => energy > 0.0 && recharge >= 0.0 && u.carry == 1 && u.ap == 0,
                 };
-                if !ok || u.carry == 0 || u.ap <= 0 || d.weapon.is_some() || d.apparel.is_some() {
+                if !ok || u.carry == 0 || d.weapon.is_some() || d.apparel.is_some() {
                     return Err(format!("{}: a utility item needs a sensible effect, carry and AP (and is nothing else)", d.id));
                 }
             }

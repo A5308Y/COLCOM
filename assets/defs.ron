@@ -903,6 +903,24 @@
             ],
         ),
         // Legs and face: no worn models yet (the native trousers show).
+        (
+            id: "personal_shield",
+            value: 320.0,
+            name: "Personal shield",
+            category: "Weapons",
+            color: "graphite",
+            model: Some((
+                path: "models/items/PersonalShield.gltf",
+                ground: (at: (0.000000, 0.006000, 0.001664), turn: (0.0, 0.0, 0.0), scale: 1.0),
+                held: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0),
+            )),
+            about: Some("A belt-worn energy field that turns shots and shrapnel aside until it runs out of charge. It stops the wearer's own shots too: melee fighters only."),
+            utility: Some((effect: Shield(energy: 40.0, recharge: 10.0), carry: 1)),
+            look: [
+                (shape: Cube, color: "graphite", at: (0.0, 0.03, 0.0), size: (0.36, 0.05, 0.1)),
+                (shape: Cylinder, color: "steel", at: (0.0, 0.06, 0.0), size: (0.1, 0.03, 0.1)),
+            ],
+        ),
         // Backpacks: what an expedition can carry, and specialist kit.
         (
             id: "field_pack",
@@ -1267,7 +1285,7 @@
     // How raiders come equipped, by the colony's threat (`World::threat`: days
     // plus wealth, scaled by the raid size setting). Weapons by relative
     // chance; apparel, sidearms, belt items (kind, count) and cyberware each
-    // by their chance.
+    // by their chance. Personal shields only go to melee raiders.
     raider_tiers: [
         (name: "Scavengers", threat: 0.0,
             weapons: [("pistol", 2.0), ("club", 1.0), ("knife", 1.0)],
@@ -1280,14 +1298,14 @@
             weapons: [("rifle", 3.0), ("assault_rifle", 1.0), ("pistol", 1.0), ("club", 1.0)],
             apparel: [("clothes", 0.9), ("cargo_trousers", 0.6), ("steel_armor", 0.4), ("steel_helmet", 0.4), ("flak_leg_guards", 0.2)],
             sidearms: [("knife", 0.4), ("pistol", 0.2)],
-            belt: [("frag_grenade", 1, 0.2)],
+            belt: [("personal_shield", 1, 0.15), ("frag_grenade", 1, 0.2)],
             cyberware: [("prosthetic_arm", 0.05), ("prosthetic_leg", 0.05)]),
         (name: "Mercenaries", threat: 16.0,
             weapons: [("assault_rifle", 3.0), ("rifle", 2.0), ("knife", 1.0)],
             apparel: [("clothes", 1.0), ("flak_leg_guards", 0.6), ("steel_armor", 0.8), ("steel_helmet", 0.8), ("tactical_goggles", 0.4),
                 ("field_pack", 0.2), ("medic_pack", 0.1)],
             sidearms: [("pistol", 0.5), ("knife", 0.5)],
-            belt: [("frag_grenade", 2, 0.4), ("field_medkit", 1, 0.2)],
+            belt: [("personal_shield", 1, 0.5), ("frag_grenade", 2, 0.4), ("field_medkit", 1, 0.2)],
             cyberware: [("bionic_eyes", 0.15), ("bionic_arm", 0.1), ("subdermal_plating", 0.1)]),
         // The highest: laser rifles, powered armour and cyberware.
         (name: "Elite", threat: 24.0,
@@ -2619,6 +2637,8 @@
             ingredients: [("structural_components", 2), ("textile_components", 2)], products: [("flak_leg_guards", 1)], sound: Some("anvil")),
         (id: "make_tactical_goggles", name: "Make tactical goggles", bench: "electronics_bench", work: Crafting, skill: Crafting, time: 10.0,
             ingredients: [("optical_components", 1), ("electrical_components", 1), ("textile_components", 1)], products: [("tactical_goggles", 1)]),
+        (id: "make_personal_shield", name: "Make personal shield", bench: "electronics_bench", work: Crafting, skill: Crafting, time: 24.0,
+            ingredients: [("electrical_components", 3), ("optical_components", 1), ("chemical_components", 1), ("textile_components", 1)], products: [("personal_shield", 1)]),
         (id: "make_frag_grenades", name: "Make frag grenades", bench: "machinist_bench", work: Crafting, skill: Crafting, time: 8.0,
             ingredients: [("chemical_components", 1), ("structural_components", 1)], products: [("frag_grenade", 2)], sound: Some("anvil")),
         (id: "make_field_medkit", name: "Make field medkit", bench: "chemistry_lab", work: Crafting, skill: Crafting, time: 8.0,

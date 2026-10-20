@@ -3,7 +3,7 @@
 For clothing changes, start with the [apparel authoring guide](../../../tools/APPAREL_GUIDE.md):
 it gives the fit workflow, reusable helpers, failure diagnoses and pose review requirements.
 
-Original artwork for all 47 inventory items outside the weapons and armor sets:
+Original artwork for all 48 inventory items outside the weapons and armor sets:
 
 ```sh
 python3 tools/make_items.py
@@ -41,7 +41,7 @@ The wool cap has a low rounded crown and rolled knit cuff rather than a helmet-l
 | Food | 2 | Produce crate and an open field mess tin |
 | Medicine | 4 | Tied roots, herbal pouch, medical case, field medkit pouch |
 | Cyberware | 10 | Prosthetic and bionic arm and leg, cased bionic eyes, coprocessor chip, vertebra chain, overlapping ceramic plates, pump heart, paired filter lungs |
-| Belt | 1 | A pair of banded frag grenades |
+| Belt | 2 | A pair of banded frag grenades, a shield belt with its field generator and emitter discs |
 | Backpacks | 3 | Framed field pack, medic pack with a red cross, field radio with dials and a whip antenna |
 | Clothing | 6 | Utility jacket, insulated coat with folded hood, cuffed wool cap, folded cargo trousers, padded leg guards, strapped goggles |
 
@@ -100,7 +100,7 @@ Prosthetics and other cyberware are inventory items only; nothing is drawn on th
 
 The tests cover every inventory model's floor clearance, tile bounds, material/triangle budget,
 stored/worn mesh reuse, both skeletons' bone names, carried stack replacement, clothing layers,
-and cleanup. The existing GPU asset test includes all 56 inventory models:
+and cleanup. The existing GPU asset test includes all 57 inventory models:
 
 ```sh
 cargo test --release

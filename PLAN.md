@@ -666,6 +666,15 @@ slopes, and old save versions); the newer note in the same topic says so.
   ranged squads only ranged sidearms (loadout and right-click refuse others; `World::sidearm_barred`
   keeps one given anyway holstered in battle), melee squads and lone fighters anything; raiders follow
   the same rule. AI-vs-AI battle scenario: the colony still won 18 of 20.
+- Melee pace and shields (2026-10-20). `MELEE_PACE` 1.15: `step_ap` and the walk itself are faster for a
+  unit whose members all fight in melee (`World::melee_pace`). `UtilityEffect::Shield { energy, recharge }`
+  (`personal_shield`, belt, `ap` 0): `Pawn::shield_drain` (saved), `shield_energy`; `World::shot_damage`
+  (shots and grenades, not blows) drains it first, the rest breaking through; recharged each round in
+  `battle_tick`, reset in `end_battle`. `Pawn::can_use` bars ranged weapons while shielded, so `held`,
+  `attack`, `main_attack`, `weapons` and `squads::fights_at_range` all treat the wearer as melee. Raiders
+  only get shields with melee weapons. Balance (AI vs AI, battle scenario): melee raiders are strong
+  against this colony whatever `CLOSE_QUARTERS` (0.2–1.0) or `MELEE_PACE` (1.0–1.15): eight raiders
+  (4+2+2) won 16 of 20; the scenario now has three pairs (2+2+2), and the colony wins about 21 of 30.
 
 ### Seasons, temperature and power
 

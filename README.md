@@ -18,8 +18,8 @@ Scenarios are fixed worlds for trying things out (`src/scenarios.rs`). `--scenar
 `MY_WORLD_SCENARIO=<name>` picks one; an unknown name lists the ones there are. `battle` starts in
 round 1 of a battle on a 48×32 yard: Ada's squad (one member arrives two rounds late; Ada carries the field
 radio), two lone fighters (one gears up from the stockpile), a civilian in the house, and six raiders from
-the east: a squad of four mercenaries (assault rifles, flak armour, grenades, a medic) and an elite pair
-with laser rifles, powered armour and cyberware.
+the east in three pairs: mercenaries (assault rifles, flak armour, grenades, a medic), elite raiders with
+laser rifles, powered armour and cyberware, and a melee pair (knife, club) behind personal shields.
 Every weapon, apparel and belt item appears on a fighter (the assault rifleman carries a pistol sidearm
 and frag grenades; the geared fighter cargo trousers, tactical goggles, a field medkit and a club sidearm).
 A ranged squad's sidearms are pistols; only melee squads and lone fighters (Eve's knife) carry other kinds. The stockpile
@@ -282,7 +282,10 @@ for), and `<` goes back.
   riflemen draw their pistols in close quarters; an attack in which everyone uses their sidearm costs 25
   AP instead of 40. A squad's style comes from main weapons only: a ranged squad's sidearms must shoot
   (pistols; a melee sidearm stays holstered), while a melee squad may carry pistols to fire on the way in
-  (it still can't deploy). Lone fighters carry anything. A unit carrying grenades can throw one (*Grenade* button,
+  (it still can't deploy). Lone fighters carry anything. Melee units move 15% faster (fewer AP a
+  step). A **personal shield** on the belt takes up to 40 damage from shots and grenade blasts (not
+  blows), recharging 10 a round and full again after the battle; its field stops the wearer's own shots,
+  so they fight (and count for squads) as melee. Mercenary and Raiders-tier melee raiders may wear one. A unit carrying grenades can throw one (*Grenade* button,
   then click an enemy unit within 6 cells and in sight: everyone in it is caught, whatever their cover);
   a unit with a medkit can tend everyone's wounds mid-battle (*Medkit*).
 

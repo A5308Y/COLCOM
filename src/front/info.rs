@@ -226,12 +226,17 @@ fn item_sheet(k: ItemId) -> Sheet {
                 format!("thrown up to {:.0} cells at a unit: {:.0}-{:.0} damage to everyone in it, whatever their cover", range, damage.0, damage.1)
             }
             UtilityEffect::Medkit { quality } => format!("tends everyone's wounds in the unit ({:.0}% quality, more with Medicine skill)", quality * 100.0),
+            UtilityEffect::Shield { energy, recharge } => format!(
+                "takes up to {:.0} damage from shots and blasts (not blows), {:.0} back each round; full again after the battle",
+                energy, recharge
+            ),
         };
-        let rows = vec![
-            row("In battle", effect),
-            row("Carried", format!("up to {} on the belt (the Utility slot)", u.carry)),
-            row("Costs", format!("{} AP to use, and one is used up", u.ap)),
-        ];
+        let mut rows = vec![row("In battle", effect), row("Carried", format!("up to {} on the belt (the Utility slot)", u.carry))];
+        if matches!(u.effect, UtilityEffect::Shield { .. }) {
+            rows.push(row("But", "its field stops the wearer's own shots: no ranged weapons, so they fight (and squad) in melee"));
+        } else {
+            rows.push(row("Costs", format!("{} AP to use, and one is used up", u.ap)));
+        }
         s.section("Belt item", rows);
     }
 

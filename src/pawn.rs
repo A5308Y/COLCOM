@@ -411,9 +411,12 @@ pub struct Pawn {
     /// The sidearm is in hand rather than the main weapon (in battle).
     #[serde(default)]
     pub sidearm_drawn: bool,
-    /// What they carry on the belt to use in battle (grenades, medkits).
+    /// What they carry on the belt to use in battle (grenades, medkits, a shield).
     #[serde(default)]
     pub utility: Option<Stack>,
+    /// Damage their shield has taken since it was last full (see `shield`).
+    #[serde(default)]
+    pub shield_drain: f32,
     /// Worn items, at most one per slot (`Slot`; one item can take several).
     pub apparel: Vec<ItemId>,
     /// Gear the player told them to keep, from before that was the loadout:
@@ -515,6 +518,7 @@ impl Pawn {
             sidearm: None,
             sidearm_drawn: false,
             utility: None,
+            shield_drain: 0.0,
             apparel: Vec::new(),
             chosen: Vec::new(),
             cooldown: 0.0,
@@ -604,13 +608,29 @@ impl Pawn {
         speed.max(0.05)
     }
 
-    /// The weapon in hand: the sidearm while it's drawn, else the main one.
-    pub fn held(&self) -> Option<ItemId> {
-        if self.sidearm_drawn && self.sidearm.is_some() {
-            self.sidearm
-        } else {
-            self.weapon
+    /// The personal shield on their belt, if any: (energy when full, recharge a round).
+    pub fn shield(&self) -> Option<(f32, f32)> {
+        match self.utility?.kind.def().utility.as_ref()?.effect {
+            crate::defs::UtilityEffect::Shield { energy, recharge } => Some((energy, recharge)),
+            _ => None,
         }
+    }
+
+    /// Energy left in their shield (0 without one).
+    pub fn shield_energy(&self) -> f32 {
+        self.shield().map_or(0.0, |(energy, _)| (energy - self.shield_drain).max(0.0))
+    }
+
+    /// Whether they can fight with weapon `kind`: not a ranged one through their own shield.
+    pub fn can_use(&self, kind: Option<ItemId>) -> bool {
+        self.shield().is_none() || !attack_with(kind).ranged
+    }
+
+    /// The weapon in hand: the sidearm while it's drawn, else the main one
+    /// (none, so fists, if their shield stops it).
+    pub fn held(&self) -> Option<ItemId> {
+        let held = if self.sidearm_drawn && self.sidearm.is_some() { self.sidearm } else { self.weapon };
+        held.filter(|&k| self.can_use(Some(k)))
     }
 
     /// The numbers of the weapon in hand, or fists.
@@ -618,14 +638,17 @@ impl Pawn {
         attack_with(self.held())
     }
 
-    /// The numbers of the main weapon, or fists: how they fight (at range or not).
+    /// The numbers of the main weapon (fists if their shield stops it): how
+    /// they fight (at range or not).
     pub fn main_attack(&self) -> Attack {
-        attack_with(self.weapon)
+        attack_with(self.weapon.filter(|&k| self.can_use(Some(k))))
     }
 
-    /// What they could fight with: the main weapon (or fists), and the sidearm if they have one.
-    pub fn weapons(&self) -> impl Iterator<Item = Option<ItemId>> {
-        std::iter::once(self.weapon).chain(self.sidearm.map(Some))
+    /// What they could fight with: the main weapon (or fists), and the
+    /// sidearm if they have one; ranged weapons not through a shield.
+    pub fn weapons(&self) -> impl Iterator<Item = Option<ItemId>> + '_ {
+        let main = self.weapon.filter(|&k| self.can_use(Some(k)));
+        std::iter::once(main).chain(self.sidearm.filter(|&k| self.can_use(Some(k))).map(Some))
     }
 
     pub fn weapon_name(&self) -> &'static str {

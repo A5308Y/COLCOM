@@ -42,7 +42,10 @@ pub fn loadout_worn(p: &Pawn, slot: Slot) -> Option<ItemId> {
 /// Bare hands are melee.
 pub fn fights_at_range(p: &Pawn) -> bool {
     let weapon = p.loadout.iter().copied().find(|k| k.def().weapon.is_some()).or(p.weapon);
-    weapon.and_then(|k| k.def().weapon.as_ref()).is_some_and(|w| w.ranged())
+    // A personal shield (planned or worn) stops their shots: they fight in melee.
+    let belt = p.loadout.iter().copied().find(|k| k.def().utility.is_some()).or(p.utility.map(|s| s.kind));
+    let shielded = belt.and_then(|k| k.def().utility.as_ref()).is_some_and(|u| matches!(u.effect, crate::defs::UtilityEffect::Shield { .. }));
+    !shielded && weapon.and_then(|k| k.def().weapon.as_ref()).is_some_and(|w| w.ranged())
 }
 
 /// "ranged" or "melee".

@@ -458,6 +458,25 @@ def field_medkit():
     return g
 
 
+def personal_shield():
+    """A belt laid in a loose U, with the field generator and its emitter discs."""
+    g = Item(cyber_palette(GRAPHITE, (.30, .32, .27)))
+    for i in range(9):
+        a, b = math.pi * i / 9, math.pi * (i + 1) / 9
+        p, q = (.15 * math.cos(a), -.11 * math.sin(a) + .03), (.15 * math.cos(b), -.11 * math.sin(b) + .03)
+        mid = ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)
+        strap = Item(g.palette)
+        strap.box((0, 0, 0), (math.hypot(q[0] - p[0], q[1] - p[1]) + .006, .014, .05), 1, bevel=.002)
+        g.add(strap, (mid[0], .007, mid[1]), (0, -math.degrees(math.atan2(q[1] - p[1], q[0] - p[0])), 0))
+    g.box((0, .035, .06), (.16, .07, .07), 0, bevel=.01)
+    for x in (-.05, 0, .05):
+        g.cylinder((x, .074, .06), .018, .008, 4, "y", sides=10)
+    g.box((0, .035, .097), (.06, .03, .006), 3, bevel=.002)
+    for x in (-.15, .15):
+        g.box((x, .03, .03), (.03, .05, .04), 2, bevel=.004)
+    return g
+
+
 def backpack(kind="field"):
     """A framed pack lying on its back: body, lid, side pouches and straps."""
     colors = {"field": ((.45, .41, .30), (.34, .31, .23), CREAM, OLIVE),
@@ -617,6 +636,7 @@ NEW_ITEMS = [
     ("tactical_goggles", "TacticalGoggles", tactical_goggles),
     ("field_pack", "FieldPack", backpack), ("medic_pack", "MedicPack", lambda: backpack("medic")),
     ("radio_pack", "RadioPack", lambda: backpack("radio")),
+    ("personal_shield", "PersonalShield", personal_shield),
 ]
 
 

@@ -31,6 +31,8 @@ const DEPLOYED_TARGET: f32 = 0.8;
 /// Suppression from being attacked, and from each hit.
 const SUPPRESS_ATTACK: f32 = 15.0;
 const SUPPRESS_HIT: f32 = 10.0;
+/// Melee units move this much faster in battle (fewer AP a step).
+pub const MELEE_PACE: f32 = 1.15;
 /// An attack in which everyone uses their sidearm (quick to draw and fire).
 pub const AP_SIDEARM_ATTACK: i32 = 25;
 /// Long guns hit this share as often at someone right next to them (pistols and
@@ -434,7 +436,13 @@ impl World {
         let ranged = p.main_attack().ranged;
         let fits = |k: ItemId| Some(k) != p.weapon && (!ranged || attack_with(Some(k)).ranged);
         p.sidearm = t.sidearms.iter().find(|(k, chance)| fits(k.id()) && rng.chance(*chance)).map(|(k, _)| k.id());
-        p.utility = t.belt.iter().find(|(_, _, chance)| rng.chance(*chance)).map(|(k, count, _)| Stack { kind: k.id(), count: *count });
+        // Shields only for melee raiders (they'd stop a rifleman's shots).
+        let shield = |k: ItemId| k.def().utility.as_ref().is_some_and(|u| matches!(u.effect, UtilityEffect::Shield { .. }));
+        p.utility = t
+            .belt
+            .iter()
+            .find(|(k, _, chance)| !(ranged && shield(k.id())) && rng.chance(*chance))
+            .map(|(k, count, _)| Stack { kind: k.id(), count: *count });
         for (kind, chance) in &t.cyberware {
             let Some(c) = kind.id().def().cyberware.as_ref() else { continue };
             let free: Vec<CyberSlot> = c.fits.iter().copied().filter(|&s| p.health.implant(s).is_none()).collect();
@@ -642,6 +650,8 @@ impl World {
         for p in self.pawns.iter_mut() {
             p.running = false;
             p.sidearm_drawn = false;
+            // Shields are full again by the next fight.
+            p.shield_drain = 0.0;
         }
         let colonists: Vec<u32> = self.pawns.iter().filter(|p| p.is_living_colonist()).map(|p| p.id).collect();
         for &id in &colonists {
@@ -847,7 +857,7 @@ impl World {
         for m in members {
             let Some(ti) = self.pawn_index(m).filter(|&i| self.pawns[i].active()) else { continue };
             let dmg = self.rng.range_f32(damage.0, damage.1);
-            self.damage(ti, dmg, crate::health::DamageKind::Cut, &by);
+            self.shot_damage(ti, dmg, crate::health::DamageKind::Cut, &by);
         }
         if let Some(b) = self.battle.as_mut() {
             b.units[t].suppression += SUPPRESS_BLAST;
@@ -916,8 +926,20 @@ impl World {
         let Some(unit) = self.battle.as_ref().and_then(|b| b.units.get(u)) else { return AP_MOVE };
         let speed = unit.members.iter().filter_map(|&id| self.pawn(id)).map(|p| p.pace()).fold(f32::MAX, f32::min);
         let speed = if speed == f32::MAX { 1.0 } else { speed.max(0.25) };
+        let speed = speed * self.melee_pace(&unit.members);
         let pinned = if unit.held_down() { PINNED_MOVE } else { 1 };
         ((AP_MOVE as f32 / speed).round() as i32).max(1) * pinned
+    }
+
+    /// How much faster a unit of `members` moves for fighting in melee
+    /// (`MELEE_PACE` if all of them do, lightly equipped; else 1).
+    pub fn melee_pace(&self, members: &[u32]) -> f32 {
+        let melee = !members.is_empty() && members.iter().filter_map(|&id| self.pawn(id)).all(|p| !p.main_attack().ranged);
+        if melee {
+            MELEE_PACE
+        } else {
+            1.0
+        }
     }
 
     /// Walking distances from `from` for side `side` in the battle: nobody
@@ -1150,7 +1172,11 @@ impl World {
             let (lo, hi) = w.damage;
             let dmg = self.rng.range_f32(lo, hi);
             let by = self.pawns[ai].name.clone();
-            self.damage(ti, dmg, w.kind, &by);
+            if w.ranged {
+                self.shot_damage(ti, dmg, w.kind, &by);
+            } else {
+                self.damage(ti, dmg, w.kind, &by);
+            }
         }
         self.refresh_units();
     }
@@ -1271,11 +1297,15 @@ impl World {
 
     fn new_round(&mut self) {
         {
+            let mut shields = Vec::new();
             let bonus: Vec<i32> = self.battle.as_ref().unwrap().units.iter().map(|u| self.ap_bonus(&u.members)).collect();
             let b = self.battle.as_mut().unwrap();
             b.round += 1;
             for (u, bonus) in b.units.iter_mut().zip(bonus) {
                 u.acted = false;
+                for &id in &u.members {
+                    shields.push(id);
+                }
                 u.ap = if u.pinned() { AP_MAX * 6 / 10 } else { AP_MAX } + bonus;
                 u.ap_start = u.ap;
                 if !u.pinned() {
@@ -1285,6 +1315,15 @@ impl World {
             }
             b.side_to_act = Faction::Colony;
             b.colony_passes = false;
+            // Shields recharge a little each round.
+            for id in shields {
+                if let Some(i) = self.pawns.iter().position(|p| p.id == id) {
+                    let p = &mut self.pawns[i];
+                    let recharge = p.shield().map_or(0.0, |s| s.1);
+                    p.shield_drain = (p.shield_drain - recharge).max(0.0);
+                }
+            }
+            let b = self.battle.as_mut().unwrap();
             for a in b.arrivals.iter_mut() {
                 a.rounds = a.rounds.saturating_sub(1);
             }
@@ -1466,6 +1505,8 @@ impl World {
             let steps = if b.hurry { HURRY } else { 1 };
             // Everyone keeps to the pace of the slowest, so the squad stays together.
             let pace = moving.iter().filter_map(|m| self.pawn(m.pawn)).map(|p| p.move_speed()).fold(f32::MAX, f32::min);
+            let ids: Vec<u32> = moving.iter().map(|m| m.pawn).collect();
+            let pace = pace * self.melee_pace(&ids);
             let mut still = Vec::new();
             for m in moving {
                 let Some(i) = self.pawn_index(m.pawn) else { continue };
@@ -2450,6 +2491,55 @@ mod tests {
         let (a, o) = (w.pawn(lead).unwrap(), w.pawn(r).unwrap());
         assert!(w.sidearm_barred(a));
         assert_eq!(w.choose_weapon(a, a.pos, o), Some(Some(item("rifle"))), "a ranged squad fights at range, even up close");
+    }
+
+    #[test]
+    fn melee_units_move_faster() {
+        let mut w = world(30, 20, 37);
+        let (gun, blade) = (colonist(&mut w, (5, 8, Z)), colonist(&mut w, (5, 12, Z)));
+        for (id, weapon) in [(gun, "rifle"), (blade, "knife")] {
+            let i = w.pawn_index(id).unwrap();
+            w.pawns[i].weapon = Some(item(weapon));
+        }
+        fight(&mut w, 1, (29, 10, Z));
+        let b = battle(&w);
+        let (gu, bu) = (b.unit_of(gun).unwrap(), b.unit_of(blade).unwrap());
+        assert_eq!(w.step_ap(gu), AP_MOVE);
+        assert!(w.step_ap(bu) < AP_MOVE, "{} AP a step", w.step_ap(bu));
+        assert!(AP_MAX / w.step_ap(bu) > AP_MAX / w.step_ap(gu), "more cells a round");
+    }
+
+    #[test]
+    fn a_personal_shield_takes_shots_but_stops_its_wearers_own() {
+        let mut w = world(30, 20, 38);
+        let id = colonist(&mut w, (5, 10, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].weapon = Some(item("rifle"));
+        w.pawns[i].take_utility(Stack { kind: item("personal_shield"), count: 1 });
+        let p = w.pawn(id).unwrap();
+        assert!(!p.main_attack().ranged && p.held().is_none(), "no shooting through it: fists");
+        assert!(!crate::squads::fights_at_range(p), "they count as melee");
+        assert_eq!(p.shield_energy(), 40.0);
+        // Shots: the shield takes them until it breaks; blows go straight through.
+        let before = w.pawn(id).unwrap().health.hediffs.len();
+        w.shot_damage(i, 15.0, crate::health::DamageKind::Gunshot, "a test");
+        assert_eq!(w.pawns[i].health.hediffs.len(), before, "absorbed");
+        assert_eq!(w.pawns[i].shield_energy(), 25.0);
+        w.pawns[i].apparel.clear();
+        w.shot_damage(i, 35.0, crate::health::DamageKind::Gunshot, "a test");
+        assert_eq!(w.pawns[i].shield_energy(), 0.0);
+        assert!(w.pawns[i].health.hediffs.len() > before, "the rest broke through");
+        assert!(w.log.iter().any(|l| l.contains("shield broke")));
+        // It recharges each round, and is full after the battle.
+        fight(&mut w, 1, (29, 10, Z));
+        w.battle.as_mut().unwrap().auto_colony = true;
+        let round = battle(&w).round;
+        while w.battle.as_ref().is_some_and(|b| b.round == round) {
+            w.tick(TICK);
+        }
+        if w.battle.is_some() {
+            assert!(w.pawn(id).unwrap().shield_energy() >= 10.0, "recharged a little");
+        }
     }
 
     #[test]

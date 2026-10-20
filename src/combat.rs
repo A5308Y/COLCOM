@@ -39,9 +39,30 @@ impl World {
         self.pawns[ti] = t;
     }
 
+    /// A shot or blast at pawn `ti`: their shield, if it has energy left,
+    /// takes what it can (and a blow too big for it breaks through with the rest).
+    pub fn shot_damage(&mut self, ti: usize, amount: f32, kind: DamageKind, by: &str) {
+        let left = self.pawns[ti].shield_energy();
+        if left <= 0.0 {
+            self.damage(ti, amount, kind, by);
+            return;
+        }
+        let taken = amount.min(left);
+        let t = &mut self.pawns[ti];
+        t.shield_drain += taken;
+        let (pos, broke, name) = (t.pos, t.shield_energy() <= 0.0, t.name.clone());
+        if broke {
+            self.push_log(format!("{}'s shield broke.", name));
+        }
+        self.sound("glance", Some(pos));
+        if amount - taken >= 1.0 {
+            self.damage(ti, amount - taken, kind, by);
+        }
+    }
+
     pub(crate) fn kill(&mut self, p: &mut Pawn, cause: &str) {
         if p.dead {
-            return;
+            return; 
         }
         self.end_job(p);
         // Their gear stays behind for others to use.

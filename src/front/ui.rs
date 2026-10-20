@@ -909,7 +909,10 @@ fn gear_list(ui: &mut egui::Ui, p: &Pawn) {
         lines.push(format!("Sidearm: {}{}", k.name(), drawn));
     }
     if let Some(s) = p.utility {
-        lines.push(format!("Utility: {} ×{}", s.kind.name(), s.count));
+        match p.shield() {
+            Some((full, _)) => lines.push(format!("Utility: {} ({:.0}/{:.0} energy; no ranged weapons)", s.kind.name(), p.shield_energy(), full)),
+            None => lines.push(format!("Utility: {} ×{}", s.kind.name(), s.count)),
+        }
     }
     for &k in &p.apparel {
         let Some(a) = k.def().apparel.as_ref() else { continue };
