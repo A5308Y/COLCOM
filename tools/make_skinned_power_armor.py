@@ -188,6 +188,9 @@ def sealed_body(outfit):
 
 CUFF = .13  # Boot shafts reach this far above the ankle joint.
 CLEARANCE = .014
+LAMES = 4  # Belly plates between the hips and the chest plate.
+LAME_STEP = .016  # How far each lame tucks under the one above.
+LAME_TUCK_HEIGHT = .02
 
 
 def smooth(x):
@@ -272,7 +275,7 @@ class Faceted:
                 angle = corner
         for j, ring in enumerate(self.rings[1:-1], 1):
             gap = min(ring-self.rings[j-1], self.rings[j+1]-ring)
-            if abs(s-ring) < min(.03, gap*.25):
+            if abs(s-ring) < min(.03, max(.006, gap*.25)):
                 s = ring
         radius = self.radius(s, angle)
         return tuple(self.origin[k]+self.along[k]*s+(self.u[k]*math.cos(angle)+self.v[k]*math.sin(angle))*radius
@@ -403,10 +406,14 @@ def armor_form(suit, indices, names, origins):
             continue
         if name == 'torso':
             hips = origins['thigh_l'][1]
-            ys = [min(q[1] for q in points), hips-.05, hips+.02, hips+.05, hips+.08, hips+.11, hips+.14,
-                  origins['spine_02'][1]+.04, (origins['spine_02'][1]+origins['spine_03'][1])/2+.05,
-                  origins['spine_03'][1]+.06, origins['neck_01'][1]-.06,
-                  max(q[1] for q in points)]
+            # Overlapping belly lames up to the chest plate: each flares out at its
+            # lower edge and tucks under the plate above at its upper edge.
+            chest = origins['spine_02'][1]+.04
+            edges = [hips+.02+k*(chest-hips-.02)/LAMES for k in range(LAMES+1)]
+            tucks = [e-LAME_TUCK_HEIGHT for e in edges[1:]]
+            ys = sorted([min(q[1] for q in points), hips-.05, *edges, *tucks,
+                         (origins['spine_02'][1]+origins['spine_03'][1])/2+.05,
+                         origins['spine_03'][1]+.06, origins['neck_01'][1]-.06, max(q[1] for q in points)])
             shoulders = [origins['upperarm_l'], origins['upperarm_r']]
             for i in members:
                 p = suit[i][0]
@@ -417,9 +424,10 @@ def armor_form(suit, indices, names, origins):
             # Fit only what the plate covers; shoulder caps would widen the back.
             fitted = [suit[i][0] for i in members if plate[i] > .3]
             form = Faceted((0, 0, 0), (0, 1, 0), (1, 0, 0), ys, [i*30 for i in range(12)], fitted)
-            # Fauld lames: each band steps in slightly at its lower edge.
-            for j in (2, 3, 4, 5, 6):
-                form.radii[j] = [r-.006 for r in form.radii[j]]
+            # Set the tucks back after fitting so the taper can't smooth the steps away.
+            for j, y in enumerate(ys):
+                if y in tucks:
+                    form.radii[j] = [r-LAME_STEP for r in form.radii[j]]
             for i in members:
                 target[i] = form.project(suit[i][0])
             continue

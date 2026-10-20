@@ -79,9 +79,9 @@ the helmet. There are no exposed fabric inserts. The foundation derives from the
 CC0 base character, retargeted and simplified using the clothing CPU skinning helpers.
 
 The shell is not an offset copy of the body: that read as a painted bodysuit. Each segment
-between joints is projected onto low-poly faceted plates (12-sided cuirass with a chest keel and
-fauld lames, 8-sided vambraces, thigh plates and ridged greaves) sized to enclose the body rather
-than trace its muscles, breasts or seat. Faceted domes form pauldrons and knee cops. Boots have
+between joints is projected onto low-poly faceted plates (12-sided cuirass with a chest keel,
+four overlapping belly lames that tuck under one another, 8-sided vambraces, thigh plates and
+ridged greaves) sized to enclose the body rather than trace its muscles, breasts or seat. Faceted domes form pauldrons and knee cops. Boots have
 a faceted shaft with a cuff, a hulled foot with toe cap and heel, a flat sole and a graphite sole
 rim. Plates blend into narrow flexible bands at the neck, shoulders, elbows, wrists, hips, knees
 and ankles, where skin weights blend. Plates stand about 2–5 cm off the body; joints stay close.
@@ -95,7 +95,7 @@ torso, limbs, head and all native outfit accessories only after the suit is read
 Weapons and helmets always attach to the outfit skeleton, so hidden hair cannot hide them.
 Unequipping restores the original body; failed
 loading retains fallbacks. The helmet remains the shared rigid attachment, and the stored
-1,986-triangle prop remains unchanged. Worn suits use 8,551 male / 7,818 female triangles,
+1,986-triangle prop remains unchanged. Worn suits use 8,562 male / 7,821 female triangles,
 including the complete shell and shallow details, plus the existing helmet. These deforming
 full-body meshes have a higher budget than the static item props.
 
