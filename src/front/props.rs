@@ -14,6 +14,7 @@ use bevy::prelude::*;
 use bevy::gltf::GltfAssetLabel;
 use bevy::gltf::GltfMaterialName;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot, WorldInstanceReady};
+use my_world::pawn::PawnId;
 use my_world::defs::{defs, BuildDef, BuildId, BuildLook, ItemId, ModelPose, Part, PlantId, Shape, Special, Storage, WornPiece};
 use my_world::map::{Feature, Map, Pos, DIRS};
 use std::collections::{HashMap, HashSet};
@@ -27,7 +28,7 @@ enum PropKey {
     /// is buried in yet. `links`: bit per
     /// direction (`DIRS`) with a neighbour that linked parts join up with.
     /// `snug`: how far it's drawn pushed back against a wall behind it (see `snug`).
-    Built { kind: BuildId, dir: u8, owner: Option<u32>, open: bool, links: u8, snug: (f32, f32) },
+    Built { kind: BuildId, dir: u8, owner: Option<PawnId>, open: bool, links: u8, snug: (f32, f32) },
     /// `over`: around a wall still standing there (a slightly bigger ghost).
     Blueprint { kind: BuildId, dir: u8, over: bool, snug: (f32, f32) },
 }
@@ -320,8 +321,8 @@ fn sync_props(
         props.view = Some(view);
     }
 
-    let mut owners: HashMap<Pos, (u32, [f32; 3])> = HashMap::new();
-    for p in w.pawns.iter().filter(|p| !p.dead) {
+    let mut owners: HashMap<Pos, (PawnId, [f32; 3])> = HashMap::new();
+    for p in w.pawns.iter().filter(|p| !p.is_dead()) {
         if let Some(b) = p.bed {
             owners.insert(b, (p.id, p.color));
         }
@@ -342,7 +343,7 @@ fn sync_props(
                 let owner = (def.special == Special::Bed).then(|| owners.get(&pos).map(|o| o.0)).flatten();
                 let open = match def.special {
                     Special::Door => w.pawns.iter().any(|p| {
-                        !p.dead
+                        !p.is_dead()
                             && (p.x - pos.0 as f32).abs() < 0.9
                             && (p.y - pos.1 as f32).abs() < 0.9
                             && (p.z - pos.2 as f32).abs() < 0.9

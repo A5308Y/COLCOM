@@ -7,6 +7,38 @@ use crate::rng::Rng;
 use crate::DAY_LEN;
 use serde::{Deserialize, Serialize};
 
+/// Identifies a pawn for as long as it exists. Distinct from expedition and
+/// offer ids, which come from the same counter but name different things.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PawnId(std::num::NonZeroU32);
+
+impl PawnId {
+    /// Ids count up from 1 and are handed out by `World::spawn_colonist` and
+    /// `World::spawn_raider`; build one directly only in tests.
+    pub fn new(raw: u32) -> PawnId {
+        PawnId(std::num::NonZeroU32::new(raw).expect("pawn ids start at 1"))
+    }
+
+    /// The raw number, for deterministic per-pawn variety (looks, hashing).
+    pub fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
+/// Whether a pawn is up and about, and if not, why. Asleep or resting are
+/// separate: those pawns are still up.
+#[derive(Clone, Copy, PartialEq, Debug, Default, Serialize, Deserialize)]
+pub enum Life {
+    #[default]
+    Up,
+    /// Collapsed or knocked down; `time` counts the seconds spent down.
+    Downed { time: f32 },
+    Dead,
+    /// A raider who left the map; removed at the end of the tick.
+    Left,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Faction {
     Colony,
@@ -196,11 +228,11 @@ pub enum Job {
     /// Lie in bed (or on the ground) to be treated and recover.
     Patient { bed: Option<Pos> },
     /// Fetch medicine (if any) and treat a patient (possibly oneself).
-    Tend { patient: u32, medicine: Option<Pos>, picked: bool },
+    Tend { patient: PawnId, medicine: Option<Pos>, picked: bool },
     /// Carry a downed colonist to a bed.
-    Rescue { patient: u32, bed: Pos, carrying: bool },
+    Rescue { patient: PawnId, bed: Pos, carrying: bool },
     /// Bring food to a downed colonist.
-    Feed { patient: u32, food: Pos, picked: bool },
+    Feed { patient: PawnId, food: Pos, picked: bool },
     /// Pick up a weapon, piece of apparel or belt item and use it: their loadout's, or
     /// a better one for a slot it leaves free; `chosen` by the player (it goes
     /// into their loadout).
@@ -213,12 +245,12 @@ pub enum Job {
         sidearm: bool,
     },
     /// Carry a dead colonist to an empty grave and bury them.
-    Bury { corpse: u32, grave: Pos, carrying: bool },
+    Bury { corpse: PawnId, grave: Pos, carrying: bool },
     /// Lie on an operating table and wait for an operation (see `surgery.rs`).
     Operation { table: Pos },
     /// Operate on a patient on an operating table: fetch the cyberware at
     /// `prosthetic` and install it, or (`None`) take some out.
-    Surgery { patient: u32, prosthetic: Option<Pos>, picked: bool },
+    Surgery { patient: PawnId, prosthetic: Option<Pos>, picked: bool },
     /// Have fun at something built for it at `at`, standing at `stand` (see `recreation.rs`).
     Relax { at: Pos, stand: Pos },
     /// Stroll outdoors for fun, on to `to`.
@@ -360,7 +392,7 @@ pub enum Role {
     /// Leads a squad: the colonists assigned to them fight as one unit with them.
     Leader,
     /// In the squad of the leader with this pawn id.
-    Member(u32),
+    Member(PawnId),
 }
 
 impl Role {
@@ -382,7 +414,7 @@ pub struct MemoryEntry {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Pawn {
-    pub id: u32,
+    pub id: PawnId,
     pub name: String,
     pub faction: Faction,
     /// Last tile fully reached.
@@ -425,11 +457,7 @@ pub struct Pawn {
     #[serde(default, skip_serializing)]
     pub chosen: Vec<ItemId>,
     pub cooldown: f32,
-    pub downed: bool,
-    pub downed_time: f32,
-    pub dead: bool,
-    /// Raider left the map; removed at the end of the tick.
-    pub left: bool,
+    pub life: Life,
     pub sleeping: bool,
     /// Lying down awake (as a patient).
     pub resting: bool,
@@ -494,7 +522,7 @@ fn content_joy() -> f32 {
 }
 
 impl Pawn {
-    fn base(id: u32, name: String, faction: Faction, pos: Pos, rng: &mut Rng) -> Pawn {
+    fn base(id: PawnId, name: String, faction: Faction, pos: Pos, rng: &mut Rng) -> Pawn {
         Pawn {
             id,
             name,
@@ -523,10 +551,7 @@ impl Pawn {
             apparel: Vec::new(),
             chosen: Vec::new(),
             cooldown: 0.0,
-            downed: false,
-            downed_time: 0.0,
-            dead: false,
-            left: false,
+            life: Life::Up,
             sleeping: false,
             resting: false,
             memories: Vec::new(),
@@ -551,7 +576,7 @@ impl Pawn {
         }
     }
 
-    pub fn new_colonist(id: u32, name: String, pos: Pos, rng: &mut Rng) -> Pawn {
+    pub fn new_colonist(id: PawnId, name: String, pos: Pos, rng: &mut Rng) -> Pawn {
         let mut p = Pawn::base(id, name, Faction::Colony, pos, rng);
         for s in p.skills.iter_mut() {
             *s = rng.below(7) as u8;
@@ -568,7 +593,7 @@ impl Pawn {
         raider_weapon(rng, tier, ranged)
     }
 
-    pub fn new_raider(id: u32, name: String, pos: Pos, rng: &mut Rng) -> Pawn {
+    pub fn new_raider(id: PawnId, name: String, pos: Pos, rng: &mut Rng) -> Pawn {
         let mut p = Pawn::base(id, name, Faction::Raider, pos, rng);
         p.weapon = raider_weapon(rng, 0, None);
         p.skills[Skill::Shooting as usize] = 3 + rng.below(6) as u8;
@@ -584,12 +609,29 @@ impl Pawn {
 
     /// Alive, conscious and still on the map.
     pub fn active(&self) -> bool {
-        !self.dead && !self.downed && !self.left
+        self.life == Life::Up
+    }
+
+    pub fn is_dead(&self) -> bool {
+        self.life == Life::Dead
+    }
+
+    pub fn is_downed(&self) -> bool {
+        matches!(self.life, Life::Downed { .. })
+    }
+
+    pub fn has_left(&self) -> bool {
+        self.life == Life::Left
+    }
+
+    /// Alive and on the map, perhaps downed.
+    pub fn present(&self) -> bool {
+        matches!(self.life, Life::Up | Life::Downed { .. })
     }
 
     /// Lying down where a doctor can work on them.
     pub fn lying(&self) -> bool {
-        self.downed || self.sleeping || self.resting
+        self.is_downed() || self.sleeping || self.resting
     }
 
     pub fn skill(&self, s: Skill) -> u8 {
@@ -813,7 +855,7 @@ impl Pawn {
                 t.push(("No proper quarters for a leader", -8.0));
             }
         }
-        if self.unburied_dead && !self.dead {
+        if self.unburied_dead && !self.is_dead() {
             t.push(("A colonist lies unburied", -5.0));
         }
         t
@@ -826,14 +868,14 @@ impl Pawn {
 
     /// A colonist who hasn't died (they may still be downed or away).
     pub fn is_living_colonist(&self) -> bool {
-        self.is_colonist() && !self.dead
+        self.is_colonist() && !self.is_dead()
     }
 
     pub fn status(&self) -> String {
-        if self.dead {
+        if self.is_dead() {
             return "dead".into();
         }
-        if self.downed {
+        if self.is_downed() {
             return match self.health.downed_reason() {
                 Some(r) => format!("downed ({})", r),
                 None => "downed".into(),
@@ -964,7 +1006,7 @@ mod tests {
     #[test]
     fn memories_refresh_instead_of_stacking() {
         let mut rng = Rng::new(1);
-        let mut p = Pawn::new_colonist(1, "Test".into(), (0, 0, 1), &mut rng);
+        let mut p = Pawn::new_colonist(PawnId::new(1), "Test".into(), (0, 0, 1), &mut rng);
         p.add_memory(Memory::SleptOutside);
         p.memories[0].left = 1.0;
         p.add_memory(Memory::SleptOutside);
@@ -975,7 +1017,7 @@ mod tests {
     #[test]
     fn starving_tanks_mood() {
         let mut rng = Rng::new(1);
-        let mut p = Pawn::new_colonist(1, "Test".into(), (0, 0, 1), &mut rng);
+        let mut p = Pawn::new_colonist(PawnId::new(1), "Test".into(), (0, 0, 1), &mut rng);
         p.hunger = 100.0;
         p.rest = 100.0;
         let happy = p.mood_target();
@@ -986,7 +1028,7 @@ mod tests {
     #[test]
     fn injuries_slow_work_and_walking() {
         let mut rng = Rng::new(1);
-        let mut p = Pawn::new_colonist(1, "Test".into(), (0, 0, 1), &mut rng);
+        let mut p = Pawn::new_colonist(PawnId::new(1), "Test".into(), (0, 0, 1), &mut rng);
         let (work, walk) = (p.work_speed(Skill::Mining), p.move_speed());
         p.health.injure(crate::health::Part::RightHand, 15.0, DamageKind::Cut, &mut rng);
         p.health.injure(crate::health::Part::LeftLeg, 20.0, DamageKind::Bruise, &mut rng);

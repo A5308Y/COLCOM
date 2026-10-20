@@ -115,7 +115,7 @@ mod tests {
             app.update();
         }
 
-        let ids: Vec<u32> = app.world().resource::<front::Sim>().world.pawns.iter().filter(|p| p.is_colonist()).map(|p| p.id).collect();
+        let ids: Vec<my_world::pawn::PawnId> = app.world().resource::<front::Sim>().world.pawns.iter().filter(|p| p.is_colonist()).map(|p| p.id).collect();
         assert!(ids.len() >= 3, "a starting colony has a few colonists");
         app.world_mut().resource_mut::<front::UiState>().select_pawns(ids[..2].to_vec());
         for _ in 0..3 {
@@ -416,7 +416,7 @@ mod tests {
             w.map.feature[i] = my_world::map::Feature::built("grave");
             let dead = w.spawn_colonist(grave);
             let k = w.pawn_index(dead).unwrap();
-            w.pawns[k].dead = true;
+            w.pawns[k].life = my_world::pawn::Life::Dead;
             w.pawns[k].buried = true;
             // The roof test's room, made a workshop.
             for (dx, id) in [(-1, "sawbench"), (1, "table")] {

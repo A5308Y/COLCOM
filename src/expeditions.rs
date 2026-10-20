@@ -20,7 +20,7 @@ use crate::battle::Parley;
 use crate::defs::ItemId;
 use crate::health::{DamageKind, Part};
 use crate::map::{Block, Feature, Map, Pos, Stack};
-use crate::pawn::Pawn;
+use crate::pawn::{Pawn, PawnId};
 use crate::rng::Rng;
 use crate::world::World;
 use crate::DAY_LEN;
@@ -436,7 +436,7 @@ impl World {
     }
 
     /// Send colonists `ids` on offer `offer`, packing `goods` (taken from the colony).
-    pub fn send_expedition(&mut self, offer: u32, ids: &[u32], goods: &[Stack]) -> Result<(), String> {
+    pub fn send_expedition(&mut self, offer: u32, ids: &[PawnId], goods: &[Stack]) -> Result<(), String> {
         let k = self.offers.iter().position(|o| o.id == offer).ok_or("that offer is gone")?;
         if ids.is_empty() {
             return Err("pick someone to go".into());
@@ -920,8 +920,8 @@ impl World {
         let Some(k) = self.expeditions.iter().position(|e| e.id == id) else { return };
         let won = site.pawns.iter().any(|p| p.is_colonist() && p.active());
         let members: Vec<Pawn> = site.pawns.drain(..).filter(|p| p.is_colonist()).collect();
-        let lost: Vec<String> = members.iter().filter(|p| p.dead).map(|p| p.name.clone()).collect();
-        self.expeditions[k].members = members.into_iter().filter(|p| !p.dead).collect();
+        let lost: Vec<String> = members.iter().filter(|p| p.is_dead()).map(|p| p.name.clone()).collect();
+        self.expeditions[k].members = members.into_iter().filter(|p| !p.is_dead()).collect();
         for name in &lost {
             self.expeditions[k].journal.push(format!("{} died in the fight.", name));
             self.push_log(format!("{} died on an expedition.", name));
@@ -1007,7 +1007,7 @@ mod tests {
     use crate::testing::{colonist, item, quiet_world, run};
 
     /// A colony of three with goods in store, and an offer of `kind` from faction `f`.
-    fn colony(kind: MissionKind, f: usize) -> (World, Vec<u32>, u32) {
+    fn colony(kind: MissionKind, f: usize) -> (World, Vec<PawnId>, u32) {
         let mut w = quiet_world(24, 16, 3);
         let ids = vec![colonist(&mut w, (5, 5, Z)), colonist(&mut w, (6, 5, Z)), colonist(&mut w, (7, 5, Z))];
         w.map.drop_item((3, 3, Z), st("steel", 60));

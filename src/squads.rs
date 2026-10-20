@@ -5,7 +5,7 @@
 //! same way (`fights_at_range`), whatever weapon exactly.
 
 use crate::defs::{ItemId, Slot};
-use crate::pawn::{Pawn, Role};
+use crate::pawn::{Pawn, PawnId, Role};
 use crate::world::World;
 
 /// Most colonists in one squad, the leader included.
@@ -59,20 +59,20 @@ pub fn style_name(ranged: bool) -> &'static str {
 
 impl World {
     /// The members of `leader`'s squad (not the leader).
-    pub fn squad_members(&self, leader: u32) -> Vec<u32> {
-        self.pawns.iter().filter(|p| p.role == Role::Member(leader) && !p.dead).map(|p| p.id).collect()
+    pub fn squad_members(&self, leader: PawnId) -> Vec<PawnId> {
+        self.pawns.iter().filter(|p| p.role == Role::Member(leader) && !p.is_dead()).map(|p| p.id).collect()
     }
 
     /// Give colonist `id` a role. Joining a squad needs a living leader with
     /// room in it; a leader stepping down releases their members.
-    pub fn set_role(&mut self, id: u32, role: Role) -> Result<(), String> {
+    pub fn set_role(&mut self, id: PawnId, role: Role) -> Result<(), String> {
         let p = self.pawn(id).ok_or("no such colonist")?;
-        if !p.is_colonist() || p.dead {
+        if !p.is_colonist() || p.is_dead() {
             return Err("only living colonists have roles".into());
         }
         if let Role::Member(leader) = role {
             let l = self.pawn(leader).ok_or("no such leader")?;
-            if leader == id || l.role != Role::Leader || l.dead {
+            if leader == id || l.role != Role::Leader || l.is_dead() {
                 return Err(format!("{} doesn't lead a squad", l.name));
             }
             if p.role != role && 1 + self.squad_members(leader).len() >= SQUAD_MAX {
@@ -98,7 +98,7 @@ impl World {
         Ok(())
     }
 
-    fn release_squad(&mut self, leader: u32) {
+    fn release_squad(&mut self, leader: PawnId) {
         for p in self.pawns.iter_mut().filter(|p| p.role == Role::Member(leader)) {
             p.role = Role::Fighter;
         }
@@ -106,7 +106,7 @@ impl World {
 
     /// Put `kind` in colonist `id`'s loadout, in place of what's there for its
     /// slot. A squad member taking a weapon of the other kind leaves the squad.
-    pub fn set_loadout_item(&mut self, id: u32, kind: ItemId) {
+    pub fn set_loadout_item(&mut self, id: PawnId, kind: ItemId) {
         let Some(p) = self.pawn(id) else { return };
         let mut items = p.loadout.clone();
         items.push(kind);
@@ -122,7 +122,7 @@ impl World {
 
     /// Set colonist `id`'s sidearm to fetch and keep (`None`: whatever they have).
     /// Only light weapons can be sidearms.
-    pub fn set_loadout_sidearm(&mut self, id: u32, kind: Option<ItemId>) -> Result<(), String> {
+    pub fn set_loadout_sidearm(&mut self, id: PawnId, kind: Option<ItemId>) -> Result<(), String> {
         if kind.is_some_and(|k| !k.def().weapon.as_ref().is_some_and(|w| w.sidearm)) {
             return Err("too heavy for a sidearm".into());
         }
@@ -139,7 +139,7 @@ impl World {
     /// apparel slot (later ones win, taking out what they overlap). A squad
     /// member can't take a weapon of the other kind than their squad's; a
     /// leader can, and the members who no longer fit leave the squad.
-    pub fn set_loadout(&mut self, id: u32, items: &[ItemId]) -> Result<(), String> {
+    pub fn set_loadout(&mut self, id: PawnId, items: &[ItemId]) -> Result<(), String> {
         let mut out: Vec<ItemId> = Vec::new();
         for &k in items {
             if !k.def().is_gear() {
@@ -180,11 +180,11 @@ impl World {
     /// Once a second: squads whose leader is gone break up, and leaders
     /// check their quarters.
     pub(crate) fn update_squads(&mut self) {
-        let gone: Vec<u32> = self
+        let gone: Vec<PawnId> = self
             .pawns
             .iter()
             .filter_map(|p| match p.role {
-                Role::Member(l) if self.pawn(l).is_none_or(|l| l.dead || l.left || l.role != Role::Leader) => Some(l),
+                Role::Member(l) if self.pawn(l).is_none_or(|l| !l.present() || l.role != Role::Leader) => Some(l),
                 _ => None,
             })
             .collect();
@@ -213,7 +213,7 @@ impl World {
             return false;
         }
         !self.pawns.iter().any(|o| {
-            o.id != p.id && !o.dead && o.bed.is_some_and(|b| m.room.get(m.idx(b)).copied() == Some(room))
+            o.id != p.id && !o.is_dead() && o.bed.is_some_and(|b| m.room.get(m.idx(b)).copied() == Some(room))
         })
     }
 }
@@ -223,7 +223,7 @@ mod tests {
     use super::*;
     use crate::map::{Feature, FLAT_Z as Z};
 
-    fn world() -> (World, Vec<u32>) {
+    fn world() -> (World, Vec<PawnId>) {
         let mut w = crate::testing::quiet_world(20, 20, 3);
         let ids = (0..7).map(|k| w.spawn_colonist((2 + k, 2, Z))).collect();
         (w, ids)
@@ -332,7 +332,7 @@ mod tests {
         assert!(thoughts(&w).contains(&"No proper quarters for a leader"));
     }
 
-    fn arm(w: &mut World, id: u32, weapon: Option<&str>) {
+    fn arm(w: &mut World, id: PawnId, weapon: Option<&str>) {
         let i = w.pawn_index(id).unwrap();
         w.pawns[i].weapon = weapon.map(ItemId::named);
     }

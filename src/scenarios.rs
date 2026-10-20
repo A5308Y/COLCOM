@@ -6,7 +6,7 @@ use crate::battle::Parley;
 use crate::defs::ItemId;
 use crate::health::CyberSlot;
 use crate::map::{Block, Feature, Map, Pos, Stack, Zone, FLAT_Z as Z};
-use crate::pawn::{Role, Skill};
+use crate::pawn::{PawnId, Role, Skill};
 use crate::production::Stockpile;
 use crate::rng::Rng;
 use crate::world::World;
@@ -39,7 +39,7 @@ fn build_at(w: &mut World, x: usize, y: usize, id: &str) {
 }
 
 /// A colonist with set skills and gear, fed, rested and content.
-fn colonist(w: &mut World, at: (usize, usize), shooting: u8, melee: u8, weapon: &str) -> u32 {
+fn colonist(w: &mut World, at: (usize, usize), shooting: u8, melee: u8, weapon: &str) -> PawnId {
     let id = w.spawn_colonist((at.0, at.1, Z));
     let i = w.pawn_index(id).unwrap();
     let p = &mut w.pawns[i];
@@ -355,7 +355,7 @@ mod tests {
         for (name, weapon) in [("Finn", "rifle"), ("Bram", "assault_rifle")] {
             let p = w.pawns.iter().find(|p| p.name == name).unwrap();
             assert_eq!(p.weapon, Some(item(weapon)), "{name}'s primary weapon is equipped");
-            assert!(!p.dead && !p.lying());
+            assert!(!p.is_dead() && !p.lying());
             let unit = &b.units[b.unit_of(p.id).expect("present in round one")];
             assert!(!unit.passive, "{name} should display the weapon in hand");
         }

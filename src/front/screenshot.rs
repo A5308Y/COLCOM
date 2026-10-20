@@ -17,6 +17,7 @@ use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
 use bevy_egui::egui::{self, epaint, Color32, Pos2, Rect};
 use bevy_egui::{EguiInput, EguiPostUpdateSet, EguiPreUpdateSet, EguiRenderOutput, PrimaryEguiContext};
+use my_world::pawn::PawnId;
 use my_world::defs::{BuildId, ItemId};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -35,7 +36,7 @@ pub struct Shot {
     pub setup: fn(&mut UiState, &mut Sim),
 }
 
-fn first_colonist(sim: &Sim) -> Option<u32> {
+fn first_colonist(sim: &Sim) -> Option<PawnId> {
     sim.world.pawns.iter().find(|p| p.is_living_colonist()).map(|p| p.id)
 }
 

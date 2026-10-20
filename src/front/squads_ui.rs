@@ -7,7 +7,7 @@ use super::theme;
 use bevy_egui::egui::{self, Align2, RichText};
 use my_world::defs::{ItemId, Slot};
 use my_world::map::Zone;
-use my_world::pawn::{Pawn, Role};
+use my_world::pawn::{Pawn, PawnId, Role};
 use my_world::battle::CELLS_PER_ROUND;
 use my_world::squads::{fights_at_range, loadout_worn, style_name, SQUAD_MAX};
 use my_world::world::World as SimWorld;
@@ -28,7 +28,7 @@ fn label_or_none(kind: Option<ItemId>) -> String {
 fn slot_choice(
     ui: &mut egui::Ui,
     w: &SimWorld,
-    id: u32,
+    id: PawnId,
     label: &str,
     current: Option<ItemId>,
     fits: impl Fn(ItemId) -> bool,
@@ -106,7 +106,7 @@ pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction
         ui.radio_value(&mut role, Role::Leader, "Squad leader")
             .on_hover_text("Others can join their squad; needs a decent bedroom of their own");
     });
-    let leaders: Vec<&Pawn> = w.pawns.iter().filter(|o| o.role == Role::Leader && o.id != p.id && !o.dead).collect();
+    let leaders: Vec<&Pawn> = w.pawns.iter().filter(|o| o.role == Role::Leader && o.id != p.id && !o.is_dead()).collect();
     if !leaders.is_empty() {
         ui.horizontal(|ui| {
             let current = match p.role {
@@ -202,7 +202,7 @@ pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction
     actions
 }
 
-pub fn apply(w: &mut SimWorld, id: u32, actions: Vec<CombatAction>) {
+pub fn apply(w: &mut SimWorld, id: PawnId, actions: Vec<CombatAction>) {
     for a in actions {
         match a {
             CombatAction::Role(role) => {
@@ -241,7 +241,7 @@ pub fn squads_window(ctx: &egui::Context, sim: &Sim, st: &mut UiState) {
     let colonists: Vec<&Pawn> = w.pawns.iter().filter(|p| p.is_living_colonist()).collect();
     let mut select = None;
     let mut open = st.show_squads;
-    let name = |ui: &mut egui::Ui, p: &Pawn, extra: String, select: &mut Option<u32>| {
+    let name = |ui: &mut egui::Ui, p: &Pawn, extra: String, select: &mut Option<PawnId>| {
         if ui.link(format!("{}{}", p.name, extra)).clicked() {
             *select = Some(p.id);
         }

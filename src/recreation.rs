@@ -14,7 +14,7 @@
 
 use crate::defs::Special;
 use crate::map::{Feature, Pos};
-use crate::pawn::{Job, Pawn, Task};
+use crate::pawn::{Job, Pawn, PawnId, Task};
 use crate::world::World;
 use crate::DAY_LEN;
 use serde::{Deserialize, Serialize};
@@ -68,7 +68,7 @@ pub const GET_UP: f32 = 1.2;
 
 impl World {
     /// Set what hour `hour` of colonist `id`'s day is for.
-    pub fn set_schedule(&mut self, id: u32, hour: usize, block: Block) {
+    pub fn set_schedule(&mut self, id: PawnId, hour: usize, block: Block) {
         if let Some(i) = self.pawn_index(id) {
             if hour < 24 {
                 self.pawns[i].schedule[hour] = block;
@@ -93,7 +93,7 @@ impl World {
             }
         };
         for i in 0..m.len() {
-            if self.res_target[i] != 0 {
+            if self.res_target[i].is_some() {
                 continue;
             }
             let at = m.pos(i);
@@ -147,10 +147,10 @@ impl World {
     }
 
     /// Nobody else is on the chair at `s` or on their way to it.
-    pub(crate) fn seat_free(&self, s: Pos, me: u32) -> bool {
+    pub(crate) fn seat_free(&self, s: Pos, me: PawnId) -> bool {
         !self.pawns.iter().any(|o| {
             o.id != me
-                && !o.dead
+                && !o.is_dead()
                 && (o.pos == s
                     || o.path_goal == Some(s)
                     || matches!(o.job, Some(Job::Eat { seat: Some(t), .. }) | Some(Job::Sit { at: t, .. }) | Some(Job::Relax { stand: t, .. }) if t == s))
@@ -264,7 +264,7 @@ mod tests {
     }
 
     /// A colonist with `joy`, hours all `block`.
-    fn person(w: &mut World, at: Pos, joy: f32, block: Block) -> u32 {
+    fn person(w: &mut World, at: Pos, joy: f32, block: Block) -> PawnId {
         let id = colonist(w, at);
         let i = w.pawn_index(id).unwrap();
         w.pawns[i].joy = joy;
@@ -272,7 +272,7 @@ mod tests {
         id
     }
 
-    fn job(w: &World, id: u32) -> Option<Job> {
+    fn job(w: &World, id: PawnId) -> Option<Job> {
         w.pawn(id).unwrap().job
     }
 

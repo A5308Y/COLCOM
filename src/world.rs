@@ -5,7 +5,7 @@ use crate::health::TickCtx;
 use crate::defs::{defs, BuildId, PlantId, Special};
 use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone};
 use crate::moving::Move;
-use crate::pawn::{Faction, Job, Memory, Pawn, WorkType};
+use crate::pawn::{Faction, Job, Life, Memory, Pawn, PawnId, WorkType};
 use crate::pathing::{bfs, DistField};
 use crate::production::{Bench, Stockpile};
 use crate::rooms::RoomStats;
@@ -84,17 +84,17 @@ pub(crate) enum Step {
 pub struct World {
     pub map: Map,
     pub pawns: Vec<Pawn>,
-    /// Per-tile reservations by pawn id (0 = free): work targets, item stacks
+    /// Per-tile reservations by pawn (None = free): work targets, item stacks
     /// being picked up, and stockpile cells being delivered to.
     #[serde(with = "crate::save::rle")]
-    pub res_target: Vec<u32>,
+    pub res_target: Vec<Option<PawnId>>,
     #[serde(with = "crate::save::rle")]
-    pub res_item: Vec<u32>,
+    pub res_item: Vec<Option<PawnId>>,
     #[serde(with = "crate::save::rle")]
-    pub res_cell: Vec<u32>,
+    pub res_cell: Vec<Option<PawnId>>,
     /// (patient, doctor) pairs, so two doctors don't treat the same patient.
     #[serde(default)]
-    pub res_patient: Vec<(u32, u32)>,
+    pub res_patient: Vec<(PawnId, PawnId)>,
     pub time: f32,
     /// The day length `time` was counted in (saves from before the longer
     /// days have none: 240), so loading can rescale the clock.
@@ -156,7 +156,7 @@ pub struct World {
     /// Colonists who can't walk to the edge of the map (shut in by
     /// furniture, walls or doors), checked once a second. They climb out.
     #[serde(skip)]
-    pub trapped: Vec<u32>,
+    pub trapped: Vec<PawnId>,
     /// The neighbouring factions, the missions on offer, and squads away (see `expeditions`).
     #[serde(default)]
     pub factions: Vec<crate::expeditions::Faction>,
@@ -207,9 +207,9 @@ impl World {
         World {
             map,
             pawns: Vec::new(),
-            res_target: vec![0; n],
-            res_item: vec![0; n],
-            res_cell: vec![0; n],
+            res_target: vec![None; n],
+            res_item: vec![None; n],
+            res_cell: vec![None; n],
             res_patient: Vec::new(),
             time: DAY_LEN * 0.25,
             day_len: DAY_LEN,
@@ -275,11 +275,11 @@ impl World {
         0.5 - 0.5 * (t * std::f32::consts::TAU).cos()
     }
 
-    pub fn pawn_index(&self, id: u32) -> Option<usize> {
+    pub fn pawn_index(&self, id: PawnId) -> Option<usize> {
         self.pawns.iter().position(|p| p.id == id)
     }
 
-    pub fn pawn(&self, id: u32) -> Option<&Pawn> {
+    pub fn pawn(&self, id: PawnId) -> Option<&Pawn> {
         self.pawns.iter().find(|p| p.id == id)
     }
 
@@ -315,9 +315,9 @@ impl World {
             if let Some(secs) = h.time_to_bleed_out() {
                 let hours = secs / DAY_LEN * 24.0;
                 out.push((format!("{} bleeding out (~{:.0}h)", p.name, hours.max(1.0)), true));
-            } else if p.downed && !self.in_bed(p) {
+            } else if p.is_downed() && !self.in_bed(p) {
                 out.push((format!("{} needs rescue", p.name), true));
-            } else if p.downed {
+            } else if p.is_downed() {
                 out.push((format!("{} is downed", p.name), true));
             } else if h.malnutrition > 0.0 && p.hunger <= 0.0 {
                 out.push((format!("{} is starving", p.name), true));
@@ -365,7 +365,7 @@ impl World {
         if gaps > 0 {
             out.push((format!("Roof can't reach {} cell(s): build a wall within 3", gaps), false));
         }
-        let unburied = self.pawns.iter().filter(|p| p.is_colonist() && p.dead && !p.buried).count();
+        let unburied = self.pawns.iter().filter(|p| p.is_colonist() && p.is_dead() && !p.buried).count();
         if unburied > 0 {
             let graves = self.empty_graves().len();
             let text = if graves >= unburied {
@@ -408,21 +408,21 @@ impl World {
 
     // ---------- spawning ----------
 
-    pub fn spawn_colonist(&mut self, pos: Pos) -> u32 {
+    pub fn spawn_colonist(&mut self, pos: Pos) -> PawnId {
         let name = COLONIST_NAMES
             .get(self.colonist_names_used)
             .map(|s| s.to_string())
             .unwrap_or_else(|| format!("Colonist {}", self.colonist_names_used + 1));
         self.colonist_names_used += 1;
-        let id = self.next_id;
+        let id = PawnId::new(self.next_id);
         self.next_id += 1;
         let p = Pawn::new_colonist(id, name, pos, &mut self.rng);
         self.pawns.push(p);
         id
     }
 
-    pub fn spawn_raider(&mut self, name: String, pos: Pos) -> u32 {
-        let id = self.next_id;
+    pub fn spawn_raider(&mut self, name: String, pos: Pos) -> PawnId {
+        let id = PawnId::new(self.next_id);
         self.next_id += 1;
         let p = Pawn::new_raider(id, name, pos, &mut self.rng);
         self.pawns.push(p);
@@ -481,7 +481,7 @@ impl World {
             self.update_pawn(&mut p, dt);
             self.pawns[i] = p;
         }
-        self.pawns.retain(|p| p.is_colonist() || !(p.dead || p.left));
+        self.pawns.retain(|p| p.is_colonist() || p.present());
 
         self.age_effects(dt);
     }
@@ -614,22 +614,22 @@ impl World {
     }
 
     fn update_pawn(&mut self, p: &mut Pawn, dt: f32) {
-        if p.dead || p.left {
+        if !p.present() {
             return;
         }
         self.fall_if_unsupported(p);
         p.cooldown = (p.cooldown - dt).max(0.0);
         self.update_health(p, dt);
-        if p.dead {
+        if p.is_dead() {
             return;
         }
         if p.is_colonist() {
             self.update_needs(p, dt);
         }
-        if p.downed {
-            p.downed_time += dt;
+        if let Life::Downed { time } = &mut p.life {
+            *time += dt;
             // Nobody treats raiders; left lying long enough, they die.
-            if p.faction == Faction::Raider && p.downed_time > 120.0 {
+            if p.faction == Faction::Raider && *time > 120.0 {
                 self.kill(p, "succumbed to their wounds");
             }
             return;
@@ -673,19 +673,18 @@ impl World {
             let i = self.map.idx(p.pos);
             self.map.blood[i] = (self.map.blood[i] + 0.5).min(1.0);
         }
-        match (p.downed, p.health.downed_reason()) {
-            (false, Some(reason)) => {
+        match (p.life, p.health.downed_reason()) {
+            (Life::Up, Some(reason)) => {
                 self.end_job(p);
-                p.downed = true;
-                p.downed_time = 0.0;
+                p.life = Life::Downed { time: 0.0 };
                 self.push_log(format!("{} collapsed ({}).", p.name, reason));
                 self.sound("thud", Some(p.pos));
             }
-            (true, None) => {
-                p.downed = false;
+            (Life::Downed { .. }, None) => {
+                p.life = Life::Up;
                 self.push_log(format!("{} got back up.", p.name));
             }
-            _ => {}
+            (Life::Up, None) | (Life::Downed { .. }, Some(_)) | (Life::Dead | Life::Left, _) => {}
         }
     }
 
@@ -712,7 +711,7 @@ impl World {
                 p.add_memory(Memory::Catharsis);
                 self.push_log(format!("{} has recovered from their mental break.", p.name));
             }
-        } else if p.mood < 20.0 && !p.downed && self.rng.chance(dt * 0.01) {
+        } else if p.mood < 20.0 && !p.is_downed() && self.rng.chance(dt * 0.01) {
             self.end_job(p);
             p.break_timer = 40.0;
             self.push_log(format!("{} is having a mental break and wanders off in a daze.", p.name));
@@ -736,7 +735,7 @@ impl World {
         } else {
             self.pawns
                 .iter()
-                .filter(|p| p.is_colonist() && p.active() && !p.left)
+                .filter(|p| p.is_colonist() && p.active())
                 .filter(|p| !self.reaches_edge(p.pos))
                 .map(|p| p.id)
                 .collect()
@@ -883,11 +882,11 @@ impl World {
 
     // ---------- jobs, reservations, movement ----------
 
-    pub(crate) fn release(&mut self, id: u32) {
+    pub(crate) fn release(&mut self, id: PawnId) {
         for v in [&mut self.res_target, &mut self.res_item, &mut self.res_cell] {
             for r in v.iter_mut() {
-                if *r == id {
-                    *r = 0;
+                if *r == Some(id) {
+                    *r = None;
                 }
             }
         }
@@ -899,24 +898,24 @@ impl World {
         match job {
             Job::Work { target, .. } => {
                 let i = self.map.idx(target);
-                self.res_target[i] = id;
+                self.res_target[i] = Some(id);
             }
             Job::Haul { from, to, deliver, .. } => {
                 let (fi, ti) = (self.map.idx(from), self.map.idx(to));
-                self.res_item[fi] = id;
+                self.res_item[fi] = Some(id);
                 if deliver {
-                    self.res_target[ti] = id;
+                    self.res_target[ti] = Some(id);
                 } else {
-                    self.res_cell[ti] = id;
+                    self.res_cell[ti] = Some(id);
                 }
             }
             Job::Eat { from, .. } | Job::Equip { from, .. } => {
                 let i = self.map.idx(from);
-                self.res_item[i] = id;
+                self.res_item[i] = Some(id);
             }
             Job::Relax { at, .. } => {
                 let i = self.map.idx(at);
-                self.res_target[i] = id;
+                self.res_target[i] = Some(id);
             }
             Job::Sleep { bed: Some(b) } => p.bed = Some(b),
             // Hospital beds and operating tables stay nobody's.
@@ -924,14 +923,14 @@ impl World {
             Job::Surgery { patient, prosthetic, .. } => {
                 if let Some(at) = prosthetic {
                     let i = self.map.idx(at);
-                    self.res_item[i] = id;
+                    self.res_item[i] = Some(id);
                 }
                 self.res_patient.push((patient, id));
             }
             Job::Tend { patient, medicine, .. } => {
                 if let Some(m) = medicine {
                     let i = self.map.idx(m);
-                    self.res_item[i] = id;
+                    self.res_item[i] = Some(id);
                 }
                 if patient != id {
                     self.res_patient.push((patient, id));
@@ -946,12 +945,12 @@ impl World {
             }
             Job::Feed { patient, food, .. } => {
                 let i = self.map.idx(food);
-                self.res_item[i] = id;
+                self.res_item[i] = Some(id);
                 self.res_patient.push((patient, id));
             }
             Job::Bury { corpse, grave, .. } => {
                 let i = self.map.idx(grave);
-                self.res_target[i] = id;
+                self.res_target[i] = Some(id);
                 self.res_patient.push((corpse, id));
             }
             _ => {}
@@ -1249,7 +1248,7 @@ impl World {
     }
 
     /// Run `f` on a copy of pawn `id` with full access to the world.
-    pub(crate) fn with_pawn(&mut self, id: u32, f: impl FnOnce(&mut World, &mut Pawn)) {
+    pub(crate) fn with_pawn(&mut self, id: PawnId, f: impl FnOnce(&mut World, &mut Pawn)) {
         if let Some(i) = self.pawn_index(id) {
             let mut p = self.pawns[i].clone();
             f(self, &mut p);
@@ -1259,11 +1258,11 @@ impl World {
 
     /// Have colonist `id` pick up the weapon, apparel or belt item lying at `at` and use
     /// it, keeping it even when something better turns up.
-    pub fn order_equip(&mut self, id: u32, at: Pos) -> bool {
+    pub fn order_equip(&mut self, id: PawnId, at: Pos) -> bool {
         let i = self.map.idx(at);
         // The first weapon or piece of apparel here (a shelf may hold several things).
         let Some(s) = self.map.stacks(i).find(|s| s.kind.def().is_gear()) else { return false };
-        if self.res_item[i] != 0 && self.res_item[i] != id {
+        if self.res_item[i].is_some_and(|holder| holder != id) {
             return false;
         }
         let kind = s.kind;
@@ -1282,7 +1281,7 @@ impl World {
         ordered
     }
 
-    pub fn set_priority(&mut self, id: u32, wt: WorkType, prio: u8) {
+    pub fn set_priority(&mut self, id: PawnId, wt: WorkType, prio: u8) {
         if let Some(i) = self.pawn_index(id) {
             self.pawns[i].priorities[wt as usize] = prio.min(4);
         }
@@ -1388,7 +1387,7 @@ mod tests {
     }
 
     /// Never thinks of anything to do, so stays where they are.
-    fn hold_still(w: &mut World, id: u32) {
+    fn hold_still(w: &mut World, id: PawnId) {
         let i = w.pawn_index(id).unwrap();
         w.pawns[i].think_timer = f32::MAX;
     }
@@ -1601,7 +1600,7 @@ mod tests {
         assert!(matches!(job, Some(Job::Work { task: crate::pawn::Task::Mine, .. })), "{:?}", job);
     }
 
-    fn wound(w: &mut World, id: u32, part: crate::health::Part, amount: f32, kind: crate::health::DamageKind) {
+    fn wound(w: &mut World, id: PawnId, part: crate::health::Part, amount: f32, kind: crate::health::DamageKind) {
         let i = w.pawn_index(id).unwrap();
         let mut rng = Rng::new(99);
         w.pawns[i].health.injure(part, amount, kind, &mut rng);
@@ -1640,8 +1639,25 @@ mod tests {
         wound(&mut w, patient, Part::RightLeg, 100.0, DamageKind::Bruise);
         run(&mut w, 30.0);
         let p = w.pawn(patient).unwrap();
-        assert!(p.downed);
+        assert!(p.is_downed());
         assert_eq!(p.pos, (4, 15, Z), "patient should be in the bed");
+    }
+
+    #[test]
+    fn collapsing_never_revives_the_dead_or_recalls_those_who_left() {
+        use crate::health::{DamageKind, Part};
+        for gone in [Life::Dead, Life::Left] {
+            let mut w = test_world(20, 20);
+            let id = colonist(&mut w, (5, 5, Z));
+            wound(&mut w, id, Part::LeftLeg, 100.0, DamageKind::Bruise);
+            wound(&mut w, id, Part::RightLeg, 100.0, DamageKind::Bruise);
+            let i = w.pawn_index(id).unwrap();
+            w.pawns[i].life = gone;
+            let mut p = w.pawns[i].clone();
+            assert!(p.health.downed_reason().is_some(), "wounds that would down a living pawn");
+            w.update_health(&mut p, 0.1);
+            assert_eq!(p.life, gone);
+        }
     }
 
     #[test]
@@ -1732,7 +1748,7 @@ mod tests {
         }
         run(&mut w, DAY_LEN / 2.0);
         assert_eq!(w.colonists_alive(), 3);
-        for p in w.pawns.iter().filter(|p| !p.dead) {
+        for p in w.pawns.iter().filter(|p| !p.is_dead()) {
             assert!(w.map.standable(p.pos) || p.path.is_empty(), "{} is somewhere sensible", p.name);
         }
     }
@@ -2141,13 +2157,13 @@ mod tests {
     #[test]
     fn deconstructed_roofs_come_back() {
         let mut w = test_world(16, 16);
-        colonist(&mut w, (7, 7, Z));
+        let id = colonist(&mut w, (7, 7, Z));
         house(&mut w, 5, 5, 9, 9);
         let i = w.map.idx((7, 7, Z + 1));
         w.map.set_feature(i, Feature::None);
         w.map.set_roof(i, true);
         assert!(w.apply_order((7, 7, Z + 1), Order::Desig(Desig::Deconstruct)));
-        let pi = w.pawn_index(1).unwrap();
+        let pi = w.pawn_index(id).unwrap();
         w.pawns[pi].priorities = [0; WorkType::ALL.len()];
         w.pawns[pi].priorities[WorkType::Construction as usize] = 1;
         run(&mut w, 10.0);

@@ -14,7 +14,7 @@ use bevy::prelude::*;
 use my_world::defs::{ItemId, Slot, Special, WornPiece};
 use my_world::map::{turn_dir, Feature, Map, Pos, DIRS};
 use my_world::recreation::GET_UP;
-use my_world::pawn::{Job, Pawn, Task};
+use my_world::pawn::{Job, Pawn, PawnId, Task};
 use my_world::world::World as SimWorld;
 use std::collections::HashMap;
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
@@ -76,7 +76,7 @@ struct PawnVis {
 #[derive(Resource, Default)]
 struct PawnVisuals {
     generation: Option<u64>,
-    map: HashMap<u32, PawnVis>,
+    map: HashMap<PawnId, PawnVis>,
 }
 
 #[derive(Resource)]
@@ -348,7 +348,7 @@ fn squad_slot(p: &Pawn, w: &SimWorld) -> Vec2 {
 /// along with it (see `props::snug`): asleep in such a bed, or working at
 /// such a bench from in front of it.
 fn snugged(p: &Pawn, m: &Map) -> Vec2 {
-    if p.lying() && !p.dead && m.feature[m.idx(p.pos)].is_bed() {
+    if p.lying() && !p.is_dead() && m.feature[m.idx(p.pos)].is_bed() {
         return props::built_snug(m, p.pos);
     }
     match p.job {
@@ -422,7 +422,7 @@ fn sync_pawns(
 
     // Drop visuals of pawns that left the map.
     visuals.map.retain(|id, v| {
-        let keep = w.pawn(*id).is_some_and(|p| !p.left && !p.buried);
+        let keep = w.pawn(*id).is_some_and(|p| !p.has_left() && !p.buried);
         if !keep {
             commands.entity(v.root).despawn();
         }
@@ -432,7 +432,7 @@ fn sync_pawns(
     let dt = time.delta_secs();
     // Simulation seconds per real second: animations other than walking run at this rate.
     let sim_rate = if sim.paused { 0.0 } else { sim.rate() as f32 };
-    for p in w.pawns.iter().filter(|p| !p.left && !p.buried) {
+    for p in w.pawns.iter().filter(|p| !p.has_left() && !p.buried) {
         let v = visuals
             .map
             .entry(p.id)
@@ -517,7 +517,7 @@ fn sync_pawns(
             v.dressed = Some(wearing);
         }
 
-        if p.dead && !v.dead {
+        if p.is_dead() && !v.dead {
             // Grey out the body (pawn_look already greys a dead pawn's colours).
             let look = pawn_look(p);
             let colors = [look.clothes, look.clothes.shade(0.6), look.skin, look.hair];
@@ -528,9 +528,9 @@ fn sync_pawns(
             }
             v.dead = true;
         }
-        if let Some((r, ..)) = rig.as_mut().filter(|_| rig_ready && v.rig_dead != p.dead) {
-            characters::set_dead(r, p.dead, &mut materials);
-            v.rig_dead = p.dead;
+        if let Some((r, ..)) = rig.as_mut().filter(|_| rig_ready && v.rig_dead != p.is_dead()) {
+            characters::set_dead(r, p.is_dead(), &mut materials);
+            v.rig_dead = p.is_dead();
         }
 
         // The drawn position trails the simulated one a little, which rounds
@@ -545,11 +545,11 @@ fn sync_pawns(
         let velocity = if dt > 0.0 { (v.shown - before) / dt } else { Vec2::ZERO };
         v.speed += (velocity.length() - v.speed) * (dt * 10.0).min(1.0);
 
-        let lying = p.dead || p.lying();
-        let in_bed = lying && !p.dead && m.feature[m.idx(p.pos)].is_bed();
+        let lying = p.is_dead() || p.lying();
+        let in_bed = lying && !p.is_dead() && m.feature[m.idx(p.pos)].is_bed();
         // The character collapses on the ground when downed or killed; in
         // bed, asleep or resting it (like the figure) is laid down flat.
-        let collapsed = rig_ready && (p.dead || p.downed) && !in_bed;
+        let collapsed = rig_ready && (p.is_dead() || p.is_downed()) && !in_bed;
         let tipped = lying && !collapsed;
         let moving = !lying && v.speed > STILL;
 
@@ -663,7 +663,7 @@ fn sync_pawns(
             let pose = if p.carrying.is_some() && !lying { pose.carrying() } else { pose };
             characters::play(&library, r, player, pose, restart, rate, dt);
             characters::cover_body(r, in_bed, &mut visibility);
-            characters::close_eyes(&mut commands, r, p.sleeping || p.downed || p.dead, &mut materials);
+            characters::close_eyes(&mut commands, r, p.sleeping || p.is_downed() || p.is_dead(), &mut materials);
             // Sitting leans back onto the seat: move forward and up onto the chair (gliding there and back).
             let target = if pose.sitting() { 1.0 } else { 0.0 };
             v.sit_shift += (target - v.sit_shift) * (dt * 4.0 * sim_rate.max(1.0)).min(1.0);

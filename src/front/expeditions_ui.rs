@@ -8,7 +8,7 @@ use bevy_egui::egui::{self, Align2, Color32, RichText};
 use my_world::defs::ItemId;
 use my_world::expeditions::{Expedition, Faction, Stage};
 use my_world::map::Stack;
-use my_world::pawn::{Pawn, Role, Skill};
+use my_world::pawn::{Pawn, PawnId, Role, Skill};
 use my_world::squads::{fights_at_range, style_name};
 use my_world::world::World as SimWorld;
 use my_world::DAY_LEN;
@@ -25,7 +25,7 @@ pub enum Tab {
 /// An expedition being planned: the offer, who goes, what they pack.
 pub struct Plan {
     offer: u32,
-    squad: Vec<u32>,
+    squad: Vec<PawnId>,
     pack: BTreeMap<ItemId, u32>,
 }
 
@@ -227,11 +227,11 @@ fn pct(v: f32) -> String {
 
 /// Who goes: whole squads with one click, or colonists one by one, with what
 /// matters on the road and in a fight.
-fn squad_picker(ui: &mut egui::Ui, w: &SimWorld, picked: &mut Vec<u32>) {
+fn squad_picker(ui: &mut egui::Ui, w: &SimWorld, picked: &mut Vec<PawnId>) {
     let squads = squads(w);
     ui.horizontal_wrapped(|ui| {
         for (l, members) in &squads {
-            let ids: Vec<u32> = std::iter::once(*l).chain(members.iter().copied()).filter(|p| p.active()).map(|p| p.id).collect();
+            let ids: Vec<PawnId> = std::iter::once(*l).chain(members.iter().copied()).filter(|p| p.active()).map(|p| p.id).collect();
             let all = !ids.is_empty() && ids.iter().all(|id| picked.contains(id));
             let text = format!("{}'s squad ({}, {})", l.name, ids.len(), style_name(fights_at_range(l)));
             if ui.add_enabled(!ids.is_empty(), egui::Button::new(text).selected(all)).on_hover_text("Click to add the whole squad, again to take it off").clicked() {
@@ -324,7 +324,7 @@ fn away(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
             let people: Vec<String> = e
                 .members
                 .iter()
-                .map(|p| if p.downed { format!("{} (downed)", p.name) } else if p.health.hediffs.is_empty() { p.name.clone() } else { format!("{} (hurt)", p.name) })
+                .map(|p| if p.is_downed() { format!("{} (downed)", p.name) } else if p.health.hediffs.is_empty() { p.name.clone() } else { format!("{} (hurt)", p.name) })
                 .collect();
             ui.label(people.join(", "));
             ui.label(RichText::new(stage_line(&sim.world, e)).color(if matches!(e.stage, Stage::Decide { .. } | Stage::Trading { .. }) { WARN } else { Color32::LIGHT_GRAY }));

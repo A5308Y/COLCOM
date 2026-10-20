@@ -4,6 +4,7 @@
 //! (`Task::Uninstall`), and then sets it down at the blueprint like any
 //! construction. A workbench keeps its bills and a bed its owner.
 
+use crate::pawn::PawnId;
 use crate::defs::{BuildId, Special};
 use crate::map::{Feature, Pos, Stack};
 use crate::production::Bill;
@@ -23,7 +24,7 @@ pub struct Move {
     /// A workbench's bills, kept while it's packed up.
     pub bills: Vec<Bill>,
     /// Who slept in it, if it's a bed.
-    pub owner: Option<u32>,
+    pub owner: Option<PawnId>,
     /// How it was turned where it stood.
     #[serde(default)]
     pub dir: u8,

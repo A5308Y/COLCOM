@@ -7,12 +7,12 @@
 use crate::defs::Special;
 use crate::map::Pos;
 use crate::pathing::DistField;
-use crate::pawn::{Job, Pawn};
+use crate::pawn::{Job, Pawn, PawnId};
 use crate::world::World;
 
 impl World {
     /// Who is buried in the grave at `grave`, if anyone.
-    pub fn grave_occupant(&self, grave: Pos) -> Option<u32> {
+    pub fn grave_occupant(&self, grave: Pos) -> Option<PawnId> {
         self.pawns.iter().find(|p| p.buried && p.pos == grave).map(|p| p.id)
     }
 
@@ -31,7 +31,7 @@ impl World {
 
     /// A dead colonist lying unburied (not already being carried).
     pub(crate) fn unburied(&self, p: &Pawn) -> bool {
-        p.is_colonist() && p.dead && !p.buried && !p.left
+        p.is_colonist() && p.is_dead() && !p.buried && !p.has_left()
     }
 
     /// The nearest dead colonist to bury, with the nearest free empty grave.
@@ -45,13 +45,13 @@ impl World {
         let grave = self
             .empty_graves()
             .into_iter()
-            .filter(|&g| self.res_target[self.map.idx(g)] == 0)
+            .filter(|&g| self.res_target[self.map.idx(g)].is_none())
             .filter_map(|g| Some((df.approach(&self.map, g, false)?.1, g)))
             .min_by_key(|g| g.0)?;
         Some((corpse.0, Job::Bury { corpse: corpse.1, grave: grave.1, carrying: false }))
     }
 
-    pub(crate) fn run_bury(&mut self, p: &mut Pawn, corpse: u32, grave: Pos, carrying: bool, dt: f32) {
+    pub(crate) fn run_bury(&mut self, p: &mut Pawn, corpse: PawnId, grave: Pos, carrying: bool, dt: f32) {
         let Some(ci) = self.pawn_index(corpse) else {
             self.end_job(p);
             return;
@@ -108,7 +108,7 @@ mod tests {
 
 
 
-    fn die(w: &mut World, id: u32) {
+    fn die(w: &mut World, id: PawnId) {
         let i = w.pawn_index(id).unwrap();
         let mut p = w.pawns[i].clone();
         w.kill(&mut p, "died");

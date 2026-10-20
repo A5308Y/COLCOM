@@ -7,12 +7,12 @@
 //! more to do there: materials delivered, then the building built.
 
 use crate::map::{Feature, Pos};
-use crate::pawn::{Job, Pawn, Task, WorkType};
+use crate::pawn::{Job, Pawn, PawnId, Task, WorkType};
 use crate::world::World;
 
 impl World {
     /// What colonist `id` could do at cell `at`, with a label for each.
-    pub fn job_options(&self, id: u32, at: Pos) -> Vec<(String, Job)> {
+    pub fn job_options(&self, id: PawnId, at: Pos) -> Vec<(String, Job)> {
         self.pawn(id).map_or(Vec::new(), |p| self.jobs_at(p, at))
     }
 
@@ -26,7 +26,7 @@ impl World {
         let mut jobs: Vec<Job> = Vec::new();
 
         // Gear lying here.
-        if (self.res_item[i] == 0 || self.res_item[i] == p.id) && m.stacks(i).any(|s| s.kind.def().is_gear()) {
+        if self.res_item[i].is_none_or(|holder| holder == p.id) && m.stacks(i).any(|s| s.kind.def().is_gear()) {
             jobs.push(Job::Equip { from: at, chosen: true, sidearm: false });
             let sidearm = self.first_gear(at).filter(|k| k.def().weapon.as_ref().is_some_and(|w| w.sidearm));
             if sidearm.is_some_and(|k| crate::squads::sidearm_fits_squad(p, k)) {
@@ -92,7 +92,7 @@ impl World {
             Feature::Blueprint { kind, .. } => kind.name().to_string(),
             f => f.name().to_string(),
         };
-        let who = |id: u32| self.pawn(id).map_or("someone".to_string(), |o| o.name.clone());
+        let who = |id: PawnId| self.pawn(id).map_or("someone".to_string(), |o| o.name.clone());
         let item = |p: Pos| self.map.stacks(self.map.idx(p)).next().map_or("it".to_string(), |s| s.kind.name().to_lowercase());
         let gear = |p: Pos| {
             let first = self.map.stacks(self.map.idx(p)).find(|s| s.kind.def().is_gear());
@@ -129,7 +129,7 @@ impl World {
 
     /// Have colonist `id` do `job` (one of `job_options(id, at)`) now,
     /// taking it over from whoever had it. Returns false if it isn't on offer.
-    pub fn prioritize(&mut self, id: u32, at: Pos, job: Job) -> bool {
+    pub fn prioritize(&mut self, id: PawnId, at: Pos, job: Job) -> bool {
         let Some(p) = self.pawn(id) else { return false };
         if !self.jobs_at(p, at).iter().any(|(_, j)| *j == job) {
             return false;
@@ -146,7 +146,7 @@ impl World {
 
     /// Anyone but `id` holding what `job` needs (its target, or its patient)
     /// lets go of it.
-    pub(crate) fn take_over(&mut self, id: u32, job: Job) {
+    pub(crate) fn take_over(&mut self, id: PawnId, job: Job) {
         let cell = match job {
             Job::Work { target, .. } => Some(target),
             Job::Haul { to, deliver: true, .. } => Some(to),
@@ -161,14 +161,14 @@ impl World {
             Job::Bury { corpse, .. } => Some(corpse),
             _ => None,
         };
-        let mut holders: Vec<u32> = Vec::new();
+        let mut holders: Vec<PawnId> = Vec::new();
         if let Some(c) = cell {
-            holders.push(self.res_target[self.map.idx(c)]);
+            holders.extend(self.res_target[self.map.idx(c)]);
         }
         if let Some(pt) = patient {
             holders.extend(self.res_patient.iter().filter(|r| r.0 == pt).map(|r| r.1));
         }
-        holders.retain(|&h| h != 0 && h != id);
+        holders.retain(|&h| h != id);
         holders.dedup();
         for h in holders {
             self.with_pawn(h, |w, o| w.end_job(o));

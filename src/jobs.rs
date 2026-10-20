@@ -4,7 +4,7 @@ use crate::defs::{defs, Defs, ItemId, PlantId, Special};
 use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone, STACK_MAX};
 use crate::moving::MOVE_SHARE;
 use crate::pathing::{bfs, DistField, ANY_DISTANCE};
-use crate::pawn::{Job, Memory, Pawn, Skill, Task, WorkType};
+use crate::pawn::{Job, Memory, Pawn, PawnId, Skill, Task, WorkType};
 use crate::world::{Reach, Step, World, SLEEP_GAIN};
 
 /// Base seconds to mine out one cell.
@@ -137,7 +137,7 @@ impl World {
                     nearest_item[k] = Some((d, pos));
                 }
             }
-            if let (Some(id), 0) = (m.zone[i].stockpile(), self.res_cell[i]) {
+            if let (Some(id), None) = (m.zone[i].stockpile(), self.res_cell[i]) {
                 let Some(store) = self.stockpiles.get(id as usize) else { continue };
                 let prio = store.priority as usize;
                 for kind in ItemId::all() {
@@ -216,7 +216,7 @@ impl World {
             // Handled per patient in `doctor_candidate`.
             WorkType::Doctor => return None,
             WorkType::Hauling => {
-                if self.res_item[i] == 0 && m.has_items(i) {
+                if self.res_item[i].is_none() && m.has_items(i) {
                     let d = df.dist(pos)?;
                     // The first stack here with somewhere better to go (a shelf may hold several).
                     let to = m.stacks(i).find_map(|s| {
@@ -231,7 +231,7 @@ impl World {
                     return to.map(|to| (d, Job::Haul { from: pos, to, deliver: false, picked: false }));
                 }
                 // Ingredients to a workbench, materials to what's planned for a wall.
-                if self.res_target[i] != 0 && !forced || !matches!(m.feature[i], Feature::Built { .. }) {
+                if self.res_target[i].is_some() && !forced || !matches!(m.feature[i], Feature::Built { .. }) {
                     return None;
                 }
                 let need = self.delivery_need(pos)?;
@@ -241,7 +241,7 @@ impl World {
             }
             _ => {}
         }
-        if self.res_target[i] != 0 && !forced {
+        if self.res_target[i].is_some() && !forced {
             return None;
         }
         if wt == WorkType::Mining && m.desig[i] == Some(Desig::Mine) && m.mineable(pos) {
@@ -371,7 +371,7 @@ impl World {
             Step::Arrived => {
                 let i = self.map.idx(from);
                 let got = take(self, i);
-                self.res_item[i] = 0;
+                self.res_item[i] = None;
                 match got {
                     Some(s) => {
                         p.carrying = Some(s);
@@ -686,7 +686,7 @@ impl World {
             let i = m.idx(p);
             m.zone[i] == Zone::None
                 && m.feature[i] == Feature::None
-                && self.res_cell[i] == 0
+                && self.res_cell[i].is_none()
                 && m.stacks(i).all(|s| s.kind == kind)
                 && m.can_accept(i, kind)
                 && df.dist(p).is_some()
@@ -736,13 +736,13 @@ impl World {
         let ti = self.map.idx(to);
         let target = self.storage_priority(ti, kind).unwrap_or(0);
         self.nearest_stack(&bfs(&self.map, from), NEARBY_STEPS, |i, s| {
-            i != ti && s.kind == kind && self.res_item[i] == 0 && self.storage_priority(i, kind).unwrap_or(0) < target
+            i != ti && s.kind == kind && self.res_item[i].is_none() && self.storage_priority(i, kind).unwrap_or(0) < target
         })
     }
 
     /// Blueprints within `NEARBY_STEPS` of `from` that need `kind`, nearest
     /// first, with how many; only free ones (or `me`'s).
-    fn nearby_blueprints(&self, from: Pos, kind: ItemId, me: u32) -> Vec<(Pos, u32)> {
+    fn nearby_blueprints(&self, from: Pos, kind: ItemId, me: PawnId) -> Vec<(Pos, u32)> {
         let df = bfs(&self.map, from);
         let m = &self.map;
         // Blueprints aren't walked onto, so look at the cells beside reachable ones too.
@@ -754,7 +754,7 @@ impl World {
                 if !matches!(m.feature[ci], Feature::Blueprint { .. }) || found.iter().any(|f| f.1 == c) {
                     continue;
                 }
-                if self.res_target[ci] != 0 && self.res_target[ci] != me {
+                if self.res_target[ci].is_some_and(|holder| holder != me) {
                     continue;
                 }
                 if let Some(need) = self.delivery_need(c).filter(|n| n.kind == kind) {
@@ -768,7 +768,7 @@ impl World {
 
     /// How many to pick up for blueprint `to` (needing `need`): enough for it
     /// and the free ones nearby needing the same, up to a stack.
-    fn delivery_load(&self, to: Pos, need: Stack, me: u32) -> u32 {
+    fn delivery_load(&self, to: Pos, need: Stack, me: PawnId) -> u32 {
         if !matches!(self.map.feature[self.map.idx(to)], Feature::Blueprint { .. }) {
             return need.count;
         }
@@ -777,7 +777,7 @@ impl World {
     }
 
     /// The nearest blueprint within reach of `from` still needing `kind`.
-    fn next_delivery(&self, from: Pos, kind: ItemId, me: u32) -> Option<Pos> {
+    fn next_delivery(&self, from: Pos, kind: ItemId, me: PawnId) -> Option<Pos> {
         self.nearby_blueprints(from, kind, me).first().map(|b| b.0)
     }
 
@@ -785,12 +785,12 @@ impl World {
     /// it, or there's more than one, so others can share it (whoever comes
     /// too late just looks again).
     pub(crate) fn item_free(&self, i: usize) -> bool {
-        self.res_item[i] == 0 || self.map.stacks(i).map(|s| s.count).sum::<u32>() > 1
+        self.res_item[i].is_none() || self.map.stacks(i).map(|s| s.count).sum::<u32>() > 1
     }
 
     /// Someone (alive, not buried) is in cell `p`.
     fn someone_at(&self, p: Pos) -> bool {
-        self.pawns.iter().any(|o| !o.dead && !o.left && o.pos == p)
+        self.pawns.iter().any(|o| o.present() && o.pos == p)
     }
 
     pub(crate) fn delivery_need(&self, at: Pos) -> Option<Stack> {
@@ -811,7 +811,7 @@ impl World {
                 Step::Unreachable => self.end_job(p),
                 Step::Arrived => {
                     let fi = self.map.idx(from);
-                    self.res_item[fi] = 0;
+                    self.res_item[fi] = None;
                     let carried = p.carrying.map_or(0, |c| c.count);
                     let here = self.pick_up_kind(fi, to, deliver, p.carrying);
                     // Gone, or not what's already in hand: carry on with what we have.
@@ -846,7 +846,7 @@ impl World {
                     let more = if deliver { None } else { self.gather_next(p.pos, kind, to, load - total) };
                     p.job = Some(match more {
                         Some(next) => {
-                            self.res_item[self.map.idx(next)] = p.id;
+                            self.res_item[self.map.idx(next)] = Some(p.id);
                             Job::Haul { from: next, to, deliver, picked: false }
                         }
                         None => Job::Haul { from, to, deliver, picked: true },
@@ -894,10 +894,10 @@ impl World {
                 p.carrying = (carry.count > used).then(|| Stack { kind: carry.kind, count: carry.count - used });
                 // The rest to the next blueprint nearby that needs it.
                 if let Some(next) = p.carrying.filter(|_| deliver).and_then(|c| self.next_delivery(p.pos, c.kind, p.id)) {
-                    if self.res_target[ti] == p.id {
-                        self.res_target[ti] = 0;
+                    if self.res_target[ti] == Some(p.id) {
+                        self.res_target[ti] = None;
                     }
-                    self.res_target[self.map.idx(next)] = p.id;
+                    self.res_target[self.map.idx(next)] = Some(p.id);
                     p.job = Some(Job::Haul { from: to, to: next, deliver: true, picked: true });
                     return;
                 }
@@ -1005,7 +1005,7 @@ impl World {
     }
 
     /// The nearest free seat at a table, not too far from the food at `near`.
-    fn find_seat(&self, near: Pos, me: u32) -> Option<Pos> {
+    fn find_seat(&self, near: Pos, me: PawnId) -> Option<Pos> {
         const MAX_WALK: i32 = 40;
         let taken = |s: Pos| {
             self.pawns.iter().any(|o| o.id != me && matches!(o.job, Some(Job::Eat { seat: Some(t), .. }) if t == s))
@@ -1026,19 +1026,19 @@ impl World {
         }
         self.nearest_cell(p.pos, ANY_DISTANCE, |i| {
             let pos = self.map.pos(i);
-            self.map.feature[i].is_bed() && !self.care_bed(pos) && !self.pawns.iter().any(|o| o.id != p.id && !o.dead && o.bed == Some(pos))
+            self.map.feature[i].is_bed() && !self.care_bed(pos) && !self.pawns.iter().any(|o| o.id != p.id && !o.is_dead() && o.bed == Some(pos))
         })
     }
 
     /// Who sleeps in the bed at `bed`, if anyone has claimed it.
-    pub fn bed_owner(&self, bed: Pos) -> Option<u32> {
-        self.pawns.iter().find(|o| !o.dead && o.bed == Some(bed)).map(|o| o.id)
+    pub fn bed_owner(&self, bed: Pos) -> Option<PawnId> {
+        self.pawns.iter().find(|o| !o.is_dead() && o.bed == Some(bed)).map(|o| o.id)
     }
 
     /// Give the bed at `bed` to colonist `owner` (whose old bed is freed), or
     /// to nobody (`None`: whoever needs it next). Whoever had it looks for
     /// another. Returns false if there's no bed there or no such colonist.
-    pub fn assign_bed(&mut self, bed: Pos, owner: Option<u32>) -> bool {
+    pub fn assign_bed(&mut self, bed: Pos, owner: Option<PawnId>) -> bool {
         if !self.map.feature[self.map.idx(bed)].is_bed() {
             return false;
         }

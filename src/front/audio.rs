@@ -12,7 +12,7 @@ use super::tile_point;
 use bevy::audio::{AudioSink, AudioSinkPlayback, SpatialListener, Volume};
 use bevy::prelude::*;
 use my_world::map::{Block, Feature};
-use my_world::pawn::{Job, Task};
+use my_world::pawn::{Job, PawnId, Task};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
@@ -276,13 +276,13 @@ fn pawn_sounds(
     rig: Res<CameraRig>,
     time: Res<Time>,
     mut queue: ResMut<SoundQueue>,
-    mut tracks: Local<HashMap<u32, PawnTrack>>,
+    mut tracks: Local<HashMap<PawnId, PawnTrack>>,
 ) {
     let w = &sim.world;
     let m = &w.map;
     let dt = time.delta_secs();
     tracks.retain(|id, _| w.pawn(*id).is_some());
-    for p in w.pawns.iter().filter(|p| !p.dead && !p.left) {
+    for p in w.pawns.iter().filter(|p| p.present()) {
         let here = Vec3::new(p.x, p.y, p.z);
         let t = tracks.entry(p.id).or_insert_with(|| PawnTrack { at: here, ..default() });
         let moved = (here - t.at).length();

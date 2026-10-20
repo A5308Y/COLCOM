@@ -4,7 +4,7 @@
 use crate::defs::{defs, Defs, ItemId};
 use crate::map::{Pos, Stack};
 use crate::pathing::{bfs, DistField, ANY_DISTANCE};
-use crate::pawn::{Job, Memory, Pawn, Skill, WorkType};
+use crate::pawn::{Job, Memory, Pawn, PawnId, Skill, WorkType};
 use crate::jobs::Fetch;
 use crate::world::{Step, World, SLEEP_GAIN};
 
@@ -24,12 +24,12 @@ impl World {
         self.map.feature[self.map.idx(p.pos)].is_bed()
     }
 
-    pub(crate) fn patient_reserved(&self, patient: u32) -> bool {
+    pub(crate) fn patient_reserved(&self, patient: PawnId) -> bool {
         self.res_patient.iter().any(|&(pt, _)| pt == patient)
     }
 
     /// Is anyone other than `id` able to doctor right now?
-    pub(crate) fn other_doctor_available(&self, id: u32) -> bool {
+    pub(crate) fn other_doctor_available(&self, id: PawnId) -> bool {
         self.pawns.iter().any(|o| {
             o.id != id
                 && o.is_colonist()
@@ -88,7 +88,7 @@ impl World {
     ) -> Option<(i32, Job)> {
         let mut best: Option<(i32, Job)> = None;
         for o in &self.pawns {
-            if !o.is_colonist() || o.dead || o.id == p.id || self.patient_reserved(o.id) {
+            if !o.is_colonist() || o.is_dead() || o.id == p.id || self.patient_reserved(o.id) {
                 continue;
             }
             let Some((_, d)) = df.approach(&self.map, o.pos, true) else { continue };
@@ -106,12 +106,12 @@ impl World {
     /// first: rescue > tend > feed. Scored so that medical work outranks
     /// other work of the same priority.
     pub(crate) fn doctor_job(&self, o: &Pawn, d: i32, medicine: Option<Pos>, food: Option<Pos>) -> Option<(i32, Job)> {
-        let rescue_bed = if o.downed && !self.in_bed(o) { self.find_patient_bed(o) } else { None };
+        let rescue_bed = if o.is_downed() && !self.in_bed(o) { self.find_patient_bed(o) } else { None };
         if let Some(bed) = rescue_bed {
             Some((d - 3000, Job::Rescue { patient: o.id, bed, carrying: false }))
         } else if o.health.needs_tending() && o.lying() {
             Some((d - 2000, Job::Tend { patient: o.id, medicine, picked: false }))
-        } else if o.downed && o.hunger < 30.0 {
+        } else if o.is_downed() && o.hunger < 30.0 {
             food.map(|f| (d - 1000, Job::Feed { patient: o.id, food: f, picked: false }))
         } else {
             None
@@ -165,13 +165,13 @@ impl World {
         }
     }
 
-    pub(crate) fn run_tend(&mut self, p: &mut Pawn, patient: u32, medicine: Option<Pos>, picked: bool, dt: f32) {
+    pub(crate) fn run_tend(&mut self, p: &mut Pawn, patient: PawnId, medicine: Option<Pos>, picked: bool, dt: f32) {
         let self_tend = patient == p.id;
         let target = if self_tend { None } else { self.pawn_index(patient) };
         let (ppos, ready, needs, in_bed) = match target {
             Some(pi) => {
                 let o = &self.pawns[pi];
-                (o.pos, o.lying(), !o.dead && o.health.needs_tending(), self.in_bed(o))
+                (o.pos, o.lying(), !o.is_dead() && o.health.needs_tending(), self.in_bed(o))
             }
             None if self_tend => (p.pos, true, p.health.needs_tending(), self.in_bed(p)),
             None => {
@@ -234,13 +234,13 @@ impl World {
         self.end_job(p);
     }
 
-    pub(crate) fn run_rescue(&mut self, p: &mut Pawn, patient: u32, bed: Pos, carrying: bool, dt: f32) {
+    pub(crate) fn run_rescue(&mut self, p: &mut Pawn, patient: PawnId, bed: Pos, carrying: bool, dt: f32) {
         let Some(pi) = self.pawn_index(patient) else {
             self.end_job(p);
             return;
         };
         let bed_ok = self.map.feature[self.map.idx(bed)].is_bed();
-        if self.pawns[pi].dead || !self.pawns[pi].downed || !bed_ok {
+        if self.pawns[pi].is_dead() || !self.pawns[pi].is_downed() || !bed_ok {
             self.end_job(p);
             return;
         }
@@ -262,12 +262,12 @@ impl World {
         }
     }
 
-    pub(crate) fn run_feed(&mut self, p: &mut Pawn, patient: u32, food: Pos, picked: bool, dt: f32) {
+    pub(crate) fn run_feed(&mut self, p: &mut Pawn, patient: PawnId, food: Pos, picked: bool, dt: f32) {
         let Some(pi) = self.pawn_index(patient) else {
             self.end_job(p);
             return;
         };
-        if self.pawns[pi].dead || !self.pawns[pi].downed {
+        if self.pawns[pi].is_dead() || !self.pawns[pi].is_downed() {
             self.end_job(p);
             return;
         }

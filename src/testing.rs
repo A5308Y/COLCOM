@@ -2,6 +2,7 @@
 
 use crate::defs::ItemId;
 use crate::map::{Feature, Map, Pos};
+use crate::pawn::PawnId;
 use crate::rng::Rng;
 use crate::world::World;
 use crate::TICK;
@@ -18,7 +19,7 @@ pub fn quiet_world(w: usize, h: usize, seed: u64) -> World {
 
 /// A fed, rested and entertained colonist at `at`, with no fixed hours (any
 /// hour for anything), so tests time only the work.
-pub fn colonist(w: &mut World, at: Pos) -> u32 {
+pub fn colonist(w: &mut World, at: Pos) -> PawnId {
     let id = w.spawn_colonist(at);
     let i = w.pawn_index(id).unwrap();
     w.pawns[i].hunger = 100.0;
@@ -30,7 +31,7 @@ pub fn colonist(w: &mut World, at: Pos) -> u32 {
 
 /// A fed and rested colonist in a steady mood (no mental breaks, no mood
 /// bonus to work speed), for tests that time things.
-pub fn content_colonist(w: &mut World, at: Pos) -> u32 {
+pub fn content_colonist(w: &mut World, at: Pos) -> PawnId {
     let id = colonist(w, at);
     let i = w.pawn_index(id).unwrap();
     w.pawns[i].mood = 60.0;

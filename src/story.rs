@@ -208,7 +208,7 @@ impl World {
 
     fn flu_outbreak(&mut self) {
         let candidates: Vec<usize> =
-            (0..self.pawns.len()).filter(|&i| self.pawns[i].is_colonist() && !self.pawns[i].dead).collect();
+            (0..self.pawns.len()).filter(|&i| self.pawns[i].is_colonist() && !self.pawns[i].is_dead()).collect();
         if candidates.is_empty() {
             return;
         }

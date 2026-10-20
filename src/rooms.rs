@@ -321,7 +321,7 @@ mod tests {
 
     /// Rest gained in one second asleep in the bed at `bed`, and the memories after a full sleep.
     fn sleep_in(w: &mut World, bed: Pos) -> (f32, Vec<Memory>) {
-        let mut p = Pawn::new_colonist(1, "Test".into(), bed, &mut Rng::new(2));
+        let mut p = Pawn::new_colonist(crate::pawn::PawnId::new(1), "Test".into(), bed, &mut Rng::new(2));
         p.rest = 10.0;
         p.job = Some(Job::Sleep { bed: Some(bed) });
         w.run_job(&mut p, 1.0);

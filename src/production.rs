@@ -510,7 +510,7 @@ impl World {
             };
             if let Some((kind, side)) = kind {
                 if self.take_gear(p, i, kind, side) {
-                    self.res_item[i] = 0;
+                    self.res_item[i] = None;
                     let what = kind.name().to_lowercase();
                     let msg = if side { format!("{} took {} as a sidearm.", p.name, what) } else { format!("{} picked up {}.", p.name, what) };
                     self.push_log(msg);
@@ -524,6 +524,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pawn::PawnId;
     use crate::testing::{colonist, item, quiet_world, run};
     use crate::defs::PlantId;
     use crate::map::{Block, Desig, FLAT_Z as Z};
@@ -717,7 +718,7 @@ mod tests {
         w.pawns[i].loadout = vec![item("steel_armor")];
         let mut v: serde_json::Value = serde_json::from_str(&w.save_json().unwrap()).unwrap();
         // As saved before: the player's kept rifle and armour (the loadout's armour slot is taken).
-        let pawn = v["world"]["pawns"].as_array_mut().unwrap().iter_mut().find(|p| p["id"] == id).unwrap();
+        let pawn = v["world"]["pawns"].as_array_mut().unwrap().iter_mut().find(|p| p["id"] == id.get()).unwrap();
         pawn["chosen"] = serde_json::json!(["rifle", "powered_armor"]);
         let loaded = World::load_json(&v.to_string()).unwrap();
         let p = loaded.pawn(id).unwrap();
@@ -954,7 +955,7 @@ mod tests {
     }
 
     /// Where the only (cooking) colonist stands once they're cooking at the stove at `stove`.
-    fn cooking_spot(w: &mut World, cook: u32, stove: Pos) -> Pos {
+    fn cooking_spot(w: &mut World, cook: PawnId, stove: Pos) -> Pos {
         let i = w.pawn_index(cook).unwrap();
         w.pawns[i].priorities = [0; crate::pawn::WorkType::ALL.len()];
         w.pawns[i].priorities[crate::pawn::WorkType::Cooking as usize] = 1;
@@ -993,7 +994,7 @@ mod tests {
     #[test]
     fn a_big_stack_feeds_everyone_at_once() {
         let mut w = test_world(20, 20);
-        let ids: Vec<u32> = (0..4).map(|k| colonist(&mut w, (2 + k, 2, Z))).collect();
+        let ids: Vec<PawnId> = (0..4).map(|k| colonist(&mut w, (2 + k, 2, Z))).collect();
         for &id in &ids {
             let i = w.pawn_index(id).unwrap();
             w.pawns[i].hunger = 10.0;

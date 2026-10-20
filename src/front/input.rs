@@ -12,7 +12,7 @@ use bevy::window::PrimaryWindow;
 use bevy_egui::input::{egui_wants_any_keyboard_input, EguiWantsInput};
 use my_world::defs::{defs, BuildId, Special};
 use my_world::map::{Block, Desig, Map, Pos, Zone, DIRS};
-use my_world::pawn::Faction;
+use my_world::pawn::{Faction, PawnId};
 use my_world::world::{Order, World as SimWorld};
 use std::f32::consts::FRAC_PI_2;
 use std::sync::LazyLock;
@@ -212,7 +212,7 @@ pub enum InspectorTab {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Selection {
-    Pawn(u32),
+    Pawn(PawnId),
     Tile(Pos),
 }
 
@@ -226,7 +226,7 @@ pub struct Hover {
 
 /// What a colonist could do where the player right-clicked (see `World::job_options`).
 pub struct JobMenu {
-    pub pawn: u32,
+    pub pawn: PawnId,
     /// Label, cell and job of each choice.
     pub options: Vec<(String, Pos, my_world::pawn::Job)>,
     /// Where it opens (taken from the pointer when it's first drawn).
@@ -239,7 +239,7 @@ pub struct UiState {
     /// What the inspector shows; with several colonists selected, the first.
     pub selected: Option<Selection>,
     /// Every selected colonist when there's more than one (else empty).
-    pub group: Vec<u32>,
+    pub group: Vec<PawnId>,
     /// Screen point where a box selection started (left drag with Select).
     pub box_start: Option<Vec2>,
     /// Cell where a paint drag started (its level is used for the whole box).
@@ -358,7 +358,7 @@ impl UiState {
     }
 
     /// Every selected pawn: the group, or the one selected pawn.
-    pub fn selected_pawns(&self) -> Vec<u32> {
+    pub fn selected_pawns(&self) -> Vec<PawnId> {
         match self.selected {
             _ if !self.group.is_empty() => self.group.clone(),
             Some(Selection::Pawn(id)) => vec![id],
@@ -366,12 +366,12 @@ impl UiState {
         }
     }
 
-    pub fn is_selected(&self, id: u32) -> bool {
+    pub fn is_selected(&self, id: PawnId) -> bool {
         self.selected == Some(Selection::Pawn(id)) || self.group.contains(&id)
     }
 
     /// Select exactly these pawns (the first is shown in the inspector).
-    pub fn select_pawns(&mut self, ids: Vec<u32>) {
+    pub fn select_pawns(&mut self, ids: Vec<PawnId>) {
         self.selected = ids.first().map(|&id| Selection::Pawn(id));
         self.group = if ids.len() > 1 { ids } else { Vec::new() };
     }
@@ -409,7 +409,7 @@ impl UiState {
     }
 
     /// Shift+click: add a pawn to the selection, or take it out.
-    pub fn toggle_pawn(&mut self, id: u32) {
+    pub fn toggle_pawn(&mut self, id: PawnId) {
         let mut ids = self.selected_pawns();
         match ids.iter().position(|&i| i == id) {
             Some(k) => {
@@ -594,11 +594,11 @@ fn wall_slot_at(ray: Ray3d, wall: Pos) -> Option<(u8, u8)> {
 }
 
 /// Pawn nearest to a cell (living ones preferred), if close enough.
-pub fn pawn_at(w: &SimWorld, t: Pos) -> Option<u32> {
-    let mut best: Option<(f32, u32)> = None;
-    for p in w.pawns.iter().filter(|p| !p.left && !p.buried) {
+pub fn pawn_at(w: &SimWorld, t: Pos) -> Option<PawnId> {
+    let mut best: Option<(f32, PawnId)> = None;
+    for p in w.pawns.iter().filter(|p| !p.has_left() && !p.buried) {
         let (dx, dy, dz) = (p.x - t.0 as f32, p.y - t.1 as f32, p.z - t.2 as f32);
-        let d = (dx * dx + dy * dy + dz * dz).sqrt() + if p.dead { 0.5 } else { 0.0 };
+        let d = (dx * dx + dy * dy + dz * dz).sqrt() + if p.is_dead() { 0.5 } else { 0.0 };
         if d < 0.9 && best.map_or(true, |(bd, _)| d < bd) {
             best = Some((d, p.id));
         }
@@ -609,13 +609,13 @@ pub fn pawn_at(w: &SimWorld, t: Pos) -> Option<u32> {
 // ---------- actions shared by keys and buttons ----------
 
 /// Colonists whose figures are inside a screen rectangle (box selection).
-fn colonists_in_box(sim: &Sim, ui: &UiState, cam: &Camera, gt: &GlobalTransform, a: Vec2, b: Vec2) -> Vec<u32> {
+fn colonists_in_box(sim: &Sim, ui: &UiState, cam: &Camera, gt: &GlobalTransform, a: Vec2, b: Vec2) -> Vec<PawnId> {
     let rect = Rect::from_corners(a, b);
     let m = &sim.world.map;
     sim.world
         .pawns
         .iter()
-        .filter(|p| p.is_living_colonist() && !p.left && ui.shows_at(m, p.x, p.y, p.z))
+        .filter(|p| p.is_living_colonist() && !p.has_left() && ui.shows_at(m, p.x, p.y, p.z))
         .filter(|p| {
             let at = tile_point(p.x, p.y, p.z) + Vec3::Y * 0.5;
             cam.world_to_viewport(gt, at).is_ok_and(|v| rect.contains(v))
@@ -1107,9 +1107,9 @@ fn paint_box(w: &mut SimWorld, a: Pos, b: Pos, order: Order, hollow: bool, dir: 
 }
 
 fn forget_missing_selection(sim: Res<Sim>, mut ui: ResMut<UiState>) {
-    let gone = |id: &u32| sim.world.pawn(*id).is_none_or(|p| p.left);
+    let gone = |id: &PawnId| sim.world.pawn(*id).is_none_or(|p| p.has_left());
     if ui.group.iter().any(gone) {
-        let ids: Vec<u32> = ui.group.iter().copied().filter(|id| !gone(id)).collect();
+        let ids: Vec<PawnId> = ui.group.iter().copied().filter(|id| !gone(id)).collect();
         ui.select_pawns(ids);
     }
     if let Some(Selection::Pawn(id)) = ui.selected {
@@ -1277,7 +1277,7 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
         }
     }
 
-    for p in w.pawns.iter().filter(|p| !p.left && !p.dead && ui.shows_at(m, p.x, p.y, p.z)) {
+    for p in w.pawns.iter().filter(|p| p.present() && ui.shows_at(m, p.x, p.y, p.z)) {
         let feet = Isometry3d::new(tile_point(p.x, p.y, p.z) + Vec3::Y * 0.03, Quat::from_rotation_x(FRAC_PI_2));
         if ui.is_selected(p.id) {
             gizmos.circle(feet, 0.48, Color::WHITE);
@@ -1442,20 +1442,21 @@ mod tests {
     #[test]
     fn selecting_several_colonists() {
         let mut ui = UiState::new();
-        ui.select(Some(Selection::Pawn(1)));
-        assert_eq!(ui.selected_pawns(), vec![1]);
-        ui.toggle_pawn(2);
-        ui.toggle_pawn(3);
-        assert_eq!(ui.selected_pawns(), vec![1, 2, 3]);
-        assert!(ui.is_selected(2) && ui.is_selected(3));
-        assert_eq!(ui.selected, Some(Selection::Pawn(1)), "the first stays in the inspector");
-        ui.toggle_pawn(1);
-        ui.toggle_pawn(3);
-        assert_eq!(ui.selected_pawns(), vec![2]);
+        let id = PawnId::new;
+        ui.select(Some(Selection::Pawn(id(1))));
+        assert_eq!(ui.selected_pawns(), vec![id(1)]);
+        ui.toggle_pawn(id(2));
+        ui.toggle_pawn(id(3));
+        assert_eq!(ui.selected_pawns(), vec![id(1), id(2), id(3)]);
+        assert!(ui.is_selected(id(2)) && ui.is_selected(id(3)));
+        assert_eq!(ui.selected, Some(Selection::Pawn(id(1))), "the first stays in the inspector");
+        ui.toggle_pawn(id(1));
+        ui.toggle_pawn(id(3));
+        assert_eq!(ui.selected_pawns(), vec![id(2)]);
         assert!(ui.group.is_empty(), "one left: a plain selection again");
-        ui.toggle_pawn(4);
+        ui.toggle_pawn(id(4));
         ui.select(Some(Selection::Tile((1, 1, 1))));
-        assert!(ui.selected_pawns().is_empty() && !ui.is_selected(4), "selecting a cell drops the group");
+        assert!(ui.selected_pawns().is_empty() && !ui.is_selected(id(4)), "selecting a cell drops the group");
     }
 
     #[test]

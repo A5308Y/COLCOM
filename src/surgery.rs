@@ -18,7 +18,7 @@ use crate::defs::{Defs, ItemId};
 use crate::health::{CyberSlot, DamageKind, Part};
 use crate::map::{Pos, Stack};
 use crate::pathing::{bfs, DistField, ANY_DISTANCE};
-use crate::pawn::{Job, Pawn, Skill};
+use crate::pawn::{Job, Pawn, PawnId, Skill};
 use crate::jobs::Fetch;
 use crate::world::{Step, World};
 use serde::{Deserialize, Serialize};
@@ -51,10 +51,10 @@ impl World {
     }
 
     /// Someone other than `me` owns the bed at `b`, lies in it, or is on their way to it.
-    fn bed_taken(&self, b: Pos, me: u32) -> bool {
+    fn bed_taken(&self, b: Pos, me: PawnId) -> bool {
         self.pawns.iter().any(|o| {
             o.id != me
-                && !o.dead
+                && !o.is_dead()
                 && (o.bed == Some(b)
                     || o.pos == b && o.lying()
                     || matches!(o.job, Some(Job::Patient { bed: Some(t) } | Job::Operation { table: t }) if t == b))
@@ -81,11 +81,11 @@ impl World {
     /// Order installing cyberware of kind `item` into colonist `id`'s `slot`
     /// (in place of a natural part or what's there). Returns false if it
     /// doesn't fit, is already there, or something is already ordered there.
-    pub fn order_operation(&mut self, id: u32, slot: CyberSlot, item: ItemId) -> bool {
+    pub fn order_operation(&mut self, id: PawnId, slot: CyberSlot, item: ItemId) -> bool {
         let Some(i) = self.pawn_index(id) else { return false };
         let p = &mut self.pawns[i];
         let fits = Self::cyberware_for(slot).any(|k| k == item);
-        if !p.is_colonist() || p.dead || !fits || p.surgeries.iter().any(|o| o.slot == slot) {
+        if !p.is_colonist() || p.is_dead() || !fits || p.surgeries.iter().any(|o| o.slot == slot) {
             return false;
         }
         let op = Operation { slot, item: Some(item) };
@@ -99,11 +99,11 @@ impl World {
     /// Order taking the cyberware out of colonist `id`'s `slot` (the item is
     /// left at the table). Not for organs and the spine, which can only be
     /// swapped.
-    pub fn order_removal(&mut self, id: u32, slot: CyberSlot) -> bool {
+    pub fn order_removal(&mut self, id: PawnId, slot: CyberSlot) -> bool {
         let Some(i) = self.pawn_index(id) else { return false };
         let p = &mut self.pawns[i];
         let op = Operation { slot, item: None };
-        if !p.is_colonist() || p.dead || !slot.removable() || p.surgeries.iter().any(|o| o.slot == slot) || !Self::still_to_do(p, op) {
+        if !p.is_colonist() || p.is_dead() || !slot.removable() || p.surgeries.iter().any(|o| o.slot == slot) || !Self::still_to_do(p, op) {
             return false;
         }
         p.surgeries.push(op);
@@ -111,7 +111,7 @@ impl World {
     }
 
     /// Call off the operation on colonist `id`'s `slot`. Returns false if none was ordered.
-    pub fn cancel_operation(&mut self, id: u32, slot: CyberSlot) -> bool {
+    pub fn cancel_operation(&mut self, id: PawnId, slot: CyberSlot) -> bool {
         let Some(i) = self.pawn_index(id) else { return false };
         let ops = &mut self.pawns[i].surgeries;
         let before = ops.len();
@@ -140,7 +140,7 @@ impl World {
 
     /// The nearest free cyberware ordered for `p`, by distance field `df`.
     pub(crate) fn nearest_cyberware(&self, p: &Pawn, df: &DistField) -> Option<Pos> {
-        self.nearest_stack(df, ANY_DISTANCE, |i, s| self.res_item[i] == 0 && Self::fits(p, s.kind).is_some())
+        self.nearest_stack(df, ANY_DISTANCE, |i, s| self.res_item[i].is_none() && Self::fits(p, s.kind).is_some())
     }
 
     /// The job for a doctor to operate on `o` (lying on the table): fetch
@@ -195,7 +195,7 @@ impl World {
     pub(crate) fn surgery_candidate(&self, p: &Pawn, df: &DistField) -> Option<(i32, Job)> {
         self.pawns
             .iter()
-            .filter(|o| o.id != p.id && !o.dead && !self.patient_reserved(o.id))
+            .filter(|o| o.id != p.id && !o.is_dead() && !self.patient_reserved(o.id))
             .filter(|o| matches!(o.job, Some(Job::Operation { table }) if o.pos == table && o.lying()))
             .filter_map(|o| {
                 let (_, d) = df.approach(&self.map, o.pos, true)?;
@@ -205,14 +205,14 @@ impl World {
     }
 
     /// The doctor: fetch the cyberware (if it's an install), then operate.
-    pub(crate) fn run_surgery(&mut self, p: &mut Pawn, patient: u32, prosthetic: Option<Pos>, picked: bool, dt: f32) {
+    pub(crate) fn run_surgery(&mut self, p: &mut Pawn, patient: PawnId, prosthetic: Option<Pos>, picked: bool, dt: f32) {
         let Some(pi) = self.pawn_index(patient) else {
             self.end_job(p);
             return;
         };
         let o = &self.pawns[pi];
         let table = match o.job {
-            Some(Job::Operation { table }) if !o.dead => table,
+            Some(Job::Operation { table }) if !o.is_dead() => table,
             _ => {
                 self.end_job(p);
                 return;
@@ -332,7 +332,7 @@ mod tests {
 
 
     /// Patient `id` lost their left leg a while ago (the stump has healed).
-    fn lose_leg(w: &mut World, id: u32) {
+    fn lose_leg(w: &mut World, id: PawnId) {
         let i = w.pawn_index(id).unwrap();
         let mut rng = Rng::new(1);
         let h = &mut w.pawns[i].health;
@@ -344,7 +344,7 @@ mod tests {
     }
 
     /// A doctor (good at it) and a patient who doesn't doctor, an operating table.
-    fn clinic(w: &mut World) -> (u32, u32) {
+    fn clinic(w: &mut World) -> (PawnId, PawnId) {
         let doctor = colonist(w, (3, 3, Z));
         let patient = colonist(w, (5, 3, Z));
         let (d, pt) = (w.pawn_index(doctor).unwrap(), w.pawn_index(patient).unwrap());
@@ -356,7 +356,7 @@ mod tests {
 
     /// Order `item` (or a removal) into `slot` and wait until it's done,
     /// ordering again (with a fresh item) after a botched try.
-    fn operate(w: &mut World, patient: u32, slot: CyberSlot, item: Option<ItemId>) {
+    fn operate(w: &mut World, patient: PawnId, slot: CyberSlot, item: Option<ItemId>) {
         let order = |w: &mut World| match item {
             Some(k) => {
                 if w.map.count_items(k) == 0 {

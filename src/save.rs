@@ -7,7 +7,7 @@ use crate::DAY_LEN;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Bump whenever the save format changes incompatibly.
-pub const SAVE_VERSION: u32 = 6;
+pub const SAVE_VERSION: u32 = 7;
 
 #[derive(Serialize)]
 struct SaveOut<'a> {
@@ -103,6 +103,19 @@ mod tests {
         assert_eq!(loaded.map.block, w.map.block);
         assert_eq!(loaded.map.items, w.map.items);
         assert_eq!(loaded.pawns.len(), w.pawns.len());
+    }
+
+    #[test]
+    fn reservations_and_life_states_round_trip() {
+        use crate::pawn::{Life, PawnId};
+        assert_eq!(std::mem::size_of::<Option<PawnId>>(), 4, "a free cell costs no more than an id");
+        let mut w = World::new(42);
+        let id = w.pawns[0].id;
+        w.res_target[7] = Some(id);
+        w.pawns[0].life = Life::Downed { time: 12.5 };
+        let loaded = from_json(&to_json(&w).unwrap()).unwrap();
+        assert_eq!(loaded.res_target, w.res_target);
+        assert_eq!(loaded.pawns[0].life, Life::Downed { time: 12.5 });
     }
 
     #[test]

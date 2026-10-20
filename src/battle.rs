@@ -14,7 +14,7 @@ use crate::defs::{defs, ItemId, UtilityEffect};
 use crate::health::CyberSlot;
 use crate::map::{adjacent, Pos, Stack, Zone};
 use crate::pathing::{bfs, bfs_avoiding, DistField};
-use crate::pawn::{attack_with, Attack, Faction, Memory, Pawn, Role, Skill};
+use crate::pawn::{attack_with, Attack, Faction, Life, Memory, Pawn, PawnId, Role, Skill};
 use crate::world::{Effect, Step, World, HUNGER_DRAIN, REST_DRAIN};
 use serde::{Deserialize, Serialize};
 
@@ -110,12 +110,12 @@ impl Cover {
 pub struct Unit {
     pub side: Faction,
     /// Pawn ids still fighting; a squad's leader comes first.
-    pub members: Vec<u32>,
+    pub members: Vec<PawnId>,
     /// A squad (led by `members[0]`) rather than a lone fighter.
     pub led: bool,
     /// Everyone who has fought in it, the fallen too (to show losses).
     #[serde(default)]
-    pub roster: Vec<u32>,
+    pub roster: Vec<PawnId>,
     pub ap: i32,
     /// AP at the start of this round (switching units is allowed until some is spent).
     pub ap_start: i32,
@@ -132,7 +132,7 @@ pub struct Unit {
 }
 
 impl Unit {
-    fn new(side: Faction, members: Vec<u32>, led: bool, morale: f32) -> Unit {
+    fn new(side: Faction, members: Vec<PawnId>, led: bool, morale: f32) -> Unit {
         Unit {
             side,
             roster: members.clone(),
@@ -180,16 +180,16 @@ impl Unit {
 /// together, at the pace of the slowest).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Mover {
-    pub pawn: u32,
+    pub pawn: PawnId,
     pub goal: Pos,
 }
 
 /// A shot or blow still to come in an attack, `delay` seconds from now.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Strike {
-    pub attacker: u32,
+    pub attacker: PawnId,
     /// Who they aim at to begin with (the actual target is picked when it fires).
-    pub target: u32,
+    pub target: PawnId,
     /// The unit attacked.
     #[serde(default)]
     pub unit: usize,
@@ -199,8 +199,8 @@ pub struct Strike {
 /// A squad member on the way to their leader.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Arrival {
-    pub pawn: u32,
-    pub leader: u32,
+    pub pawn: PawnId,
+    pub leader: PawnId,
     pub rounds: u32,
 }
 
@@ -291,7 +291,7 @@ impl Battle {
     }
 
     /// The unit pawn `id` fights in.
-    pub fn unit_of(&self, id: u32) -> Option<usize> {
+    pub fn unit_of(&self, id: PawnId) -> Option<usize> {
         self.units.iter().position(|u| u.members.contains(&id))
     }
 
@@ -417,7 +417,7 @@ impl World {
     /// Equip raider `id` as raider tier `tier` says (see `RaiderTier`): a
     /// weapon (of one kind, if `ranged` says), apparel, a sidearm, belt
     /// items and cyberware, each by its chance; better tiers fight better too.
-    pub fn equip_raider(&mut self, id: u32, tier: usize, ranged: Option<bool>) {
+    pub fn equip_raider(&mut self, id: PawnId, tier: usize, ranged: Option<bool>) {
         let tiers = &defs().raider_tiers;
         let tier = tier.min(tiers.len() - 1);
         let t = &tiers[tier];
@@ -499,7 +499,7 @@ impl World {
         };
         // Everyone drops what they're doing.
         for i in 0..self.pawns.len() {
-            if self.pawns[i].is_colonist() && !self.pawns[i].dead {
+            if self.pawns[i].is_colonist() && !self.pawns[i].is_dead() {
                 let mut p = self.pawns[i].clone();
                 self.end_job(&mut p);
                 self.pawns[i] = p;
@@ -512,7 +512,7 @@ impl World {
         let spots: Vec<Pos> = df.order.iter().map(|&i| self.map.pos(i)).collect();
         for (k, &size) in parley.squads.iter().enumerate() {
             let Some(&at) = spots.get(k * 6).or(spots.last()) else { break };
-            let mut members: Vec<u32> = Vec::new();
+            let mut members: Vec<PawnId> = Vec::new();
             for _ in 0..size {
                 let name = crate::story::raider_name(&mut self.rng);
                 let id = self.spawn_raider(name, at);
@@ -529,11 +529,11 @@ impl World {
 
         // The colony: squads around their leaders, lone fighters where they stand.
         let ready = |p: &Pawn| p.is_colonist() && p.active();
-        let colonists: Vec<(u32, Role, Pos)> =
+        let colonists: Vec<(PawnId, Role, Pos)> =
             self.pawns.iter().filter(|p| ready(p)).map(|p| (p.id, p.role, p.pos)).collect();
-        let leaders: Vec<(u32, Pos)> =
+        let leaders: Vec<(PawnId, Pos)> =
             colonists.iter().filter(|c| c.1 == Role::Leader).map(|c| (c.0, c.2)).collect();
-        let ranged = |w: &World, id: u32| w.pawn(id).is_some_and(|p| p.main_attack().ranged);
+        let ranged = |w: &World, id: PawnId| w.pawn(id).is_some_and(|p| p.main_attack().ranged);
         // Members armed the other way than their squad (say their gun wasn't
         // in storage) fight alone this time.
         let mut misfits = Vec::new();
@@ -620,7 +620,7 @@ impl World {
     }
 
     /// Starting morale: how the members feel.
-    fn unit_morale(&self, members: &[u32]) -> f32 {
+    fn unit_morale(&self, members: &[PawnId]) -> f32 {
         let moods: Vec<f32> = members.iter().filter_map(|&id| self.pawn(id)).map(|p| p.mood).collect();
         let avg = if moods.is_empty() { 50.0 } else { moods.iter().sum::<f32>() / moods.len() as f32 };
         avg.clamp(35.0, 85.0)
@@ -628,7 +628,7 @@ impl World {
 
     /// Take battle gear off and put their own things back on: only for
     /// battles saved while battle gear was still put on at their start.
-    fn gear_down(&mut self, id: u32) {
+    fn gear_down(&mut self, id: PawnId) {
         let Some(i) = self.pawn_index(id) else { return };
         let stash: Vec<(ItemId, Option<ItemId>)> = self.pawns[i].stash.drain(..).rev().collect();
         for (taken, prev) in stash {
@@ -653,7 +653,7 @@ impl World {
             // Shields are full again by the next fight.
             p.shield_drain = 0.0;
         }
-        let colonists: Vec<u32> = self.pawns.iter().filter(|p| p.is_living_colonist()).map(|p| p.id).collect();
+        let colonists: Vec<PawnId> = self.pawns.iter().filter(|p| p.is_living_colonist()).map(|p| p.id).collect();
         for &id in &colonists {
             self.gear_down(id);
         }
@@ -676,9 +676,9 @@ impl World {
         }
         // Raiders still standing leave; the downed stay where they fell.
         for p in self.pawns.iter_mut().filter(|p| !p.is_colonist() && p.active()) {
-            p.left = true;
+            p.life = Life::Left;
         }
-        self.pawns.retain(|p| p.is_colonist() || !p.left);
+        self.pawns.retain(|p| p.is_colonist() || !p.has_left());
     }
 
     // ---------- the turn order ----------
@@ -798,7 +798,7 @@ impl World {
 
     /// Extra action points a unit of `members` gets each round: the best
     /// field radio anyone standing in it carries (radios don't add up).
-    pub fn ap_bonus(&self, members: &[u32]) -> i32 {
+    pub fn ap_bonus(&self, members: &[PawnId]) -> i32 {
         members
             .iter()
             .filter_map(|&id| self.pawn(id))
@@ -812,7 +812,7 @@ impl World {
 
     /// Who in unit `u` could throw a grenade at unit `t` (someone there in
     /// range and sight): the thrower and the grenade.
-    pub fn throw_option(&self, u: usize, t: usize) -> Option<(u32, ItemId)> {
+    pub fn throw_option(&self, u: usize, t: usize) -> Option<(PawnId, ItemId)> {
         let b = self.battle.as_ref()?;
         let (unit, target) = (b.units.get(u)?, b.units.get(t)?);
         if unit.side == target.side || target.out() {
@@ -829,7 +829,7 @@ impl World {
     }
 
     /// Someone in unit `u` with a medkit, if anyone there has wounds to tend.
-    pub fn medkit_option(&self, u: usize) -> Option<(u32, ItemId)> {
+    pub fn medkit_option(&self, u: usize) -> Option<(PawnId, ItemId)> {
         let unit = self.battle.as_ref()?.units.get(u)?;
         let members: Vec<&Pawn> = unit.members.iter().filter_map(|&m| self.pawn(m)).collect();
         if !members.iter().any(|p| p.health.needs_tending()) {
@@ -843,7 +843,7 @@ impl World {
 
     /// `thrower` throws a grenade at unit `t`: it goes off among them,
     /// wounding everyone (armour helps, cover doesn't) and keeping heads down.
-    fn throw_grenade(&mut self, thrower: u32, t: usize) {
+    fn throw_grenade(&mut self, thrower: PawnId, t: usize) {
         let Some(ai) = self.pawn_index(thrower) else { return };
         let Some(kind) = self.pawns[ai].use_utility() else { return };
         let Some(UtilityEffect::Grenade { damage, .. }) = kind.def().utility.as_ref().map(|d| d.effect) else { return };
@@ -868,7 +868,7 @@ impl World {
     }
 
     /// `medic` uses a medkit on everyone in unit `u`.
-    fn use_medkit(&mut self, medic: u32, u: usize) {
+    fn use_medkit(&mut self, medic: PawnId, u: usize) {
         let Some(mi) = self.pawn_index(medic) else { return };
         let Some(kind) = self.pawns[mi].use_utility() else { return };
         let Some(UtilityEffect::Medkit { quality }) = kind.def().utility.as_ref().map(|d| d.effect) else { return };
@@ -933,7 +933,7 @@ impl World {
 
     /// How much faster a unit of `members` moves for fighting in melee
     /// (`MELEE_PACE` if all of them do, lightly equipped; else 1).
-    pub fn melee_pace(&self, members: &[u32]) -> f32 {
+    pub fn melee_pace(&self, members: &[PawnId]) -> f32 {
         let melee = !members.is_empty() && members.iter().filter_map(|&id| self.pawn(id)).all(|p| !p.main_attack().ranged);
         if melee {
             MELEE_PACE
@@ -993,7 +993,7 @@ impl World {
     }
 
     /// Who in unit `u` can attack whom in unit `t`: (attacker, target) pawn ids.
-    pub fn attack_options(&self, u: usize, t: usize) -> Vec<(u32, u32)> {
+    pub fn attack_options(&self, u: usize, t: usize) -> Vec<(PawnId, PawnId)> {
         let Some(b) = &self.battle else { return Vec::new() };
         let (Some(unit), Some(target)) = (b.units.get(u), b.units.get(t)) else { return Vec::new() };
         if unit.side == target.side {
@@ -1044,9 +1044,9 @@ impl World {
     }
 
     /// The weapons each attacker in unit `u` would use on unit `t` (on their first target in reach).
-    fn planned_weapons(&self, u: usize, t: usize) -> Vec<(u32, Option<ItemId>)> {
+    fn planned_weapons(&self, u: usize, t: usize) -> Vec<(PawnId, Option<ItemId>)> {
         let options = self.attack_options(u, t);
-        let mut out: Vec<(u32, Option<ItemId>)> = Vec::new();
+        let mut out: Vec<(PawnId, Option<ItemId>)> = Vec::new();
         for &(a, o) in &options {
             if out.iter().any(|x| x.0 == a) {
                 continue;
@@ -1097,12 +1097,12 @@ impl World {
         if options.is_empty() {
             return Err("out of reach (range, sight, or not next to them)".into());
         }
-        let mut attackers: Vec<u32> = options.iter().map(|o| o.0).collect();
+        let mut attackers: Vec<PawnId> = options.iter().map(|o| o.0).collect();
         attackers.dedup();
         // Shots go round the unit: everyone's first, then the second shots (rifles fire two).
         // Each with the weapon they'd use on their first target in reach.
         let chosen = self.planned_weapons(u, t);
-        let shots: Vec<(u32, u32)> =
+        let shots: Vec<(PawnId, u32)> =
             chosen.iter().map(|&(a, k)| (a, k.and_then(|k| k.def().weapon.as_ref()).map_or(1, |w| w.shots.max(1)))).collect();
         let most = shots.iter().map(|s| s.1).max().unwrap_or(1);
         let mut strikes = Vec::new();
@@ -1183,10 +1183,10 @@ impl World {
 
     /// Someone in unit `t` the pawn at index `ai` can reach, at random; a
     /// squad's leader only once nobody else in it is left standing.
-    fn pick_target(&mut self, ai: usize, t: usize) -> Option<u32> {
+    fn pick_target(&mut self, ai: usize, t: usize) -> Option<PawnId> {
         let b = self.battle.as_ref()?;
         let unit = b.units.get(t)?;
-        let mut targets: Vec<u32> = unit
+        let mut targets: Vec<PawnId> = unit
             .members
             .iter()
             .copied()
@@ -1200,7 +1200,7 @@ impl World {
     }
 
     /// Who pawn `id` is aiming at in the attack playing out, if anyone.
-    pub fn aim_target(&self, id: u32) -> Option<u32> {
+    pub fn aim_target(&self, id: PawnId) -> Option<PawnId> {
         self.battle.as_ref()?.strikes.iter().find(|s| s.attacker == id).map(|s| s.target)
     }
 
@@ -1224,7 +1224,7 @@ impl World {
             c *= CLOSE_QUARTERS;
         }
         let b = self.battle.as_ref();
-        let unit = |id: u32| b.and_then(|b| b.unit_of(id).map(|u| &b.units[u]));
+        let unit = |id: PawnId| b.and_then(|b| b.unit_of(id).map(|u| &b.units[u]));
         if w.ranged {
             c *= self.cover(from, o.pos).hit_factor();
             if unit(o.id).is_some_and(|u| u.hunkered) {
@@ -1345,7 +1345,7 @@ impl World {
         self.time += TURN_SECS;
         for i in 0..self.pawns.len() {
             let mut p = self.pawns[i].clone();
-            if !p.dead && !p.left {
+            if p.present() {
                 self.update_health(&mut p, TURN_SECS);
                 if p.is_colonist() {
                     p.hunger = (p.hunger - HUNGER_DRAIN * TURN_SECS).max(0.0);
@@ -1505,7 +1505,7 @@ impl World {
             let steps = if b.hurry { HURRY } else { 1 };
             // Everyone keeps to the pace of the slowest, so the squad stays together.
             let pace = moving.iter().filter_map(|m| self.pawn(m.pawn)).map(|p| p.move_speed()).fold(f32::MAX, f32::min);
-            let ids: Vec<u32> = moving.iter().map(|m| m.pawn).collect();
+            let ids: Vec<PawnId> = moving.iter().map(|m| m.pawn).collect();
             let pace = pace * self.melee_pace(&ids);
             let mut still = Vec::new();
             for m in moving {
@@ -1565,7 +1565,7 @@ impl World {
     fn escape_at_edges(&mut self) {
         let Some(b) = self.battle.as_ref() else { return };
         let (w, h) = (self.map.w, self.map.h);
-        let fleeing: Vec<u32> = b
+        let fleeing: Vec<PawnId> = b
             .units
             .iter()
             .filter(|u| u.side == Faction::Raider && u.broken())
@@ -1575,7 +1575,7 @@ impl World {
             let Some(i) = self.pawn_index(id) else { continue };
             let p = &mut self.pawns[i];
             if p.pos.0 == 0 || p.pos.1 == 0 || p.pos.0 == w - 1 || p.pos.1 == h - 1 {
-                p.left = true;
+                p.life = Life::Left;
                 let name = p.name.clone();
                 self.battle_event(format!("{} fled.", name));
             }
@@ -1715,7 +1715,7 @@ mod tests {
         }
     }
 
-    fn raiders(w: &World) -> Vec<u32> {
+    fn raiders(w: &World) -> Vec<PawnId> {
         w.pawns.iter().filter(|p| !p.is_colonist()).map(|p| p.id).collect()
     }
 
@@ -1800,7 +1800,7 @@ mod tests {
         let a = colonist(&mut w, (5, 5, Z));
         let b2 = colonist(&mut w, (5, 15, Z));
         fight(&mut w, 1, (39, 10, Z));
-        let unit = |w: &World, id: u32| battle(w).unit_of(id).unwrap();
+        let unit = |w: &World, id: PawnId| battle(w).unit_of(id).unwrap();
         let (ua, ub) = (unit(&w, a), unit(&w, b2));
         let raider = battle(&w).units.iter().position(|u| u.side == Faction::Raider).unwrap();
         assert_eq!(battle(&w).side_to_act, Faction::Colony, "the colony goes first");
@@ -1850,7 +1850,7 @@ mod tests {
         w.battle_order(BattleOrder::Move((8, 11, Z))).unwrap();
         for _ in 0..(0.7 / TICK) as usize {
             w.tick(TICK);
-            let at = |id: u32| {
+            let at = |id: PawnId| {
                 let p = w.pawn(id).unwrap();
                 (p.x, p.y)
             };
@@ -2177,7 +2177,7 @@ mod tests {
         let strikes = battle(&w).strikes.clone();
         assert_eq!(strikes.len(), 4, "rifles fire twice each");
         let (first, second) = strikes.split_at(2);
-        let mut volley: Vec<u32> = first.iter().map(|s| s.attacker).collect();
+        let mut volley: Vec<PawnId> = first.iter().map(|s| s.attacker).collect();
         volley.sort();
         let mut both = vec![leader, member];
         both.sort();
@@ -2223,7 +2223,7 @@ mod tests {
             assert_ne!(picked, leader, "not the leader while others stand");
         }
         // Down the other two: now the leader is the only target.
-        let others: Vec<u32> = battle(&w).units[t].members[1..].to_vec();
+        let others: Vec<PawnId> = battle(&w).units[t].members[1..].to_vec();
         for o in &others {
             let oi = w.pawn_index(*o).unwrap();
             let mut p = w.pawns[oi].clone();
@@ -2408,7 +2408,7 @@ mod tests {
     }
 
     /// Colonist `id` alone against one raider standing at `at`: (their unit, the raider's unit, the raider).
-    fn duel(w: &mut World, id: u32, at: Pos) -> (usize, usize, u32) {
+    fn duel(w: &mut World, id: PawnId, at: Pos) -> (usize, usize, PawnId) {
         fight(w, 1, (w.map.w - 1, 10, Z));
         let r = raiders(w)[0];
         let ri = w.pawn_index(r).unwrap();
@@ -2568,7 +2568,7 @@ mod tests {
         assert!(b.units[t].suppression >= SUPPRESS_BLAST);
         for &r in &b.units[t].roster {
             let p = w.pawn(r).unwrap();
-            assert!(p.dead || !p.health.hediffs.is_empty(), "{} was caught in the blast", p.name);
+            assert!(p.is_dead() || !p.health.hediffs.is_empty(), "{} was caught in the blast", p.name);
         }
     }
 

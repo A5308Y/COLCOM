@@ -20,7 +20,7 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::battle::{Battle, BattleOrder, Cover, Unit, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MAX, BROKEN, PINNED};
 use my_world::defs::UtilityEffect;
 use my_world::map::{Pos, DIRS};
-use my_world::pawn::Faction;
+use my_world::pawn::{Faction, PawnId};
 use my_world::world::World as SimWorld;
 use std::f32::consts::FRAC_PI_2;
 
@@ -366,7 +366,7 @@ fn my_unit(b: &Battle) -> Option<usize> {
     (b.side_to_act == Faction::Colony && !b.auto_colony).then_some(b.active).flatten()
 }
 
-fn names(w: &SimWorld, members: &[u32]) -> String {
+fn names(w: &SimWorld, members: &[PawnId]) -> String {
     let names: Vec<&str> = members.iter().filter_map(|&id| w.pawn(id)).map(|p| p.name.as_str()).collect();
     match names.len() {
         0 => "nobody".into(),
@@ -616,7 +616,7 @@ fn hovered_enemy(w: &SimWorld, b: &Battle, at: Pos) -> Option<usize> {
 
 /// Someone still fighting (in a unit) at or right next to cell `at`, nearest
 /// first: the downed lying there don't get in the way of clicking the living.
-fn fighter_at(w: &SimWorld, b: &Battle, at: Pos) -> Option<u32> {
+fn fighter_at(w: &SimWorld, b: &Battle, at: Pos) -> Option<PawnId> {
     w.pawns
         .iter()
         .filter(|p| b.unit_of(p.id).is_some())
@@ -647,7 +647,7 @@ fn cursor(
 
 /// Best chance anyone in unit `u` has against pawn `target`, if anyone can reach it.
 /// Best chance anyone in unit `u` would have against pawn `target` from cell `from`.
-fn best_chance_from(w: &SimWorld, u: usize, from: Pos, target: u32) -> Option<f32> {
+fn best_chance_from(w: &SimWorld, u: usize, from: Pos, target: PawnId) -> Option<f32> {
     let b = w.battle.as_ref()?;
     let target_pawn = w.pawn(target)?;
     b.units[u]
@@ -659,7 +659,7 @@ fn best_chance_from(w: &SimWorld, u: usize, from: Pos, target: u32) -> Option<f3
         .reduce(f32::max)
 }
 
-fn best_chance(w: &SimWorld, u: usize, target: u32) -> Option<f32> {
+fn best_chance(w: &SimWorld, u: usize, target: PawnId) -> Option<f32> {
     let b = w.battle.as_ref()?;
     let t = b.unit_of(target)?;
     let target_pawn = w.pawn(target)?;
@@ -739,7 +739,7 @@ fn battle_panels(
                 let x = left + k as f32 * (bw + gap);
                 let rect = egui::Rect::from_min_size(egui::pos2(x, p.y), egui::vec2(bw, bh));
                 painter.rect_filled(rect, 1.0, Color32::from_black_alpha(190));
-                if m.dead {
+                if m.is_dead() {
                     painter.line_segment([rect.left_top(), rect.right_bottom()], egui::Stroke::new(1.5, Color32::from_gray(150)));
                     painter.line_segment([rect.left_bottom(), rect.right_top()], egui::Stroke::new(1.5, Color32::from_gray(150)));
                 } else if !m.active() {
@@ -757,7 +757,7 @@ fn battle_panels(
                     inner.set_width(bw * h.max(0.1));
                     painter.rect_filled(inner, 1.0, fill);
                 }
-                if !m.dead && m.health.bleed_rate() > 0.0 {
+                if !m.is_dead() && m.health.bleed_rate() > 0.0 {
                     painter.circle_filled(egui::pos2(rect.center().x, rect.top() - 3.0), 2.0, theme::RED);
                 }
                 if unit.led && unit.members.first() == Some(&id) {
@@ -835,11 +835,11 @@ fn battle_panels(
         if let Some((h, t)) = target {
             let options = w.attack_options(u, t);
             let shooters = {
-                let mut a: Vec<u32> = options.iter().map(|o| o.0).collect();
+                let mut a: Vec<PawnId> = options.iter().map(|o| o.0).collect();
                 a.dedup();
                 a.len()
             };
-            let name = w.pawn(*b.units[t].members.first().unwrap_or(&0)).map_or("them".to_string(), |p| p.name.clone());
+            let name = b.units[t].members.first().and_then(|&id| w.pawn(id)).map_or("them".to_string(), |p| p.name.clone());
             let best = options.iter().filter_map(|o| Some(w.hit_chance(w.pawn(o.0)?, w.pawn(o.1)?))).reduce(f32::max);
             let ap = b.units[u].ap;
             let (text, color) = match best {

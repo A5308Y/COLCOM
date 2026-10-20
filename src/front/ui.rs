@@ -19,7 +19,7 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use my_world::health::{CyberSlot, HediffKind};
 use my_world::defs::{defs, ItemId, PlantId, RoomDef, Slot, Special};
 use my_world::map::{Block, Feature, Pos, Zone};
-use my_world::pawn::{Pawn, Role, Skill, WorkType};
+use my_world::pawn::{Pawn, PawnId, Role, Skill, WorkType};
 use my_world::production::{BillMode, PRIORITY_NAMES};
 use my_world::rooms::{Progress, RoomStats, TIERS};
 use my_world::world::{Order, World as SimWorld};
@@ -657,12 +657,12 @@ fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, rig: &mut Came
             // The buried are at rest in their graves (click one to see whose it is).
             for p in sim.world.pawns.iter().filter(|p| p.is_colonist() && !p.buried) {
                 let selected = st.is_selected(p.id);
-                let trouble = p.downed || p.hunger <= 0.0 || p.break_timer > 0.0 || p.health.bleed_rate() > 0.0;
+                let trouble = p.is_downed() || p.hunger <= 0.0 || p.break_timer > 0.0 || p.health.bleed_rate() > 0.0;
                 let stroke = if selected {
                     egui::Stroke::new(2.0, theme::CREAM_BRIGHT)
                 } else if sim.world.battle.as_ref().is_some_and(|b| b.unit_of(p.id).is_some_and(|u| b.units[u].can_act())) {
                     egui::Stroke::new(2.0, theme::AMBER)
-                } else if trouble && !p.dead {
+                } else if trouble && !p.is_dead() {
                     egui::Stroke::new(2.0, theme::RED)
                 } else {
                     egui::Stroke::new(1.0, theme::OLIVE)
@@ -720,7 +720,7 @@ fn alerts(ctx: &egui::Context, sim: &Sim) {
     });
 }
 
-fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: u32, left: f32) {
+fn pawn_inspector(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, id: PawnId, left: f32) {
     let Some(p) = sim.world.pawn(id) else { return };
     let combat = p.is_living_colonist();
     if !combat && st.inspector_tab == InspectorTab::Combat {
@@ -853,7 +853,7 @@ fn gear_list(ui: &mut egui::Ui, p: &Pawn) {
 /// Cyberware slots: what's in each, and the operations ordered for them
 /// (install, swap or take out; call it off).
 fn cyberware(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn, actions: &mut Vec<Action>) {
-    if !p.is_colonist() || p.dead {
+    if !p.is_colonist() || p.is_dead() {
         return;
     }
     ui.separator();
@@ -1510,7 +1510,7 @@ fn schedules(ui: &mut egui::Ui, sim: &mut Sim, st: &mut UiState) {
                Anything: work, and fun when bored. Hunger and exhaustion come first.";
     ui.label(RichText::new(how).small().weak());
     let now = (sim.world.hour() as usize).min(23);
-    let rows: Vec<(u32, String, [Block; 24])> =
+    let rows: Vec<(PawnId, String, [Block; 24])> =
         sim.world.pawns.iter().filter(|p| p.is_living_colonist()).map(|p| (p.id, p.name.clone(), p.schedule)).collect();
     let painting = ui.input(|i| i.pointer.primary_down());
     egui::Grid::new("schedule_grid").spacing([1.0, 3.0]).show(ui, |ui| {
@@ -1567,7 +1567,7 @@ fn priority_color(prio: u8) -> Color32 {
 }
 
 fn work_panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState) {
-    let rows: Vec<(u32, String, [u8; WorkType::ALL.len()], [u8; Skill::ALL.len()])> = sim
+    let rows: Vec<(PawnId, String, [u8; WorkType::ALL.len()], [u8; Skill::ALL.len()])> = sim
         .world
         .pawns
         .iter()

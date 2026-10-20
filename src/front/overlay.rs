@@ -7,7 +7,7 @@ use super::theme;
 use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, FontId, Pos2};
 use my_world::map::Feature;
-use my_world::pawn::{Faction, Job};
+use my_world::pawn::{Faction, Job, PawnId};
 use my_world::world::World as SimWorld;
 
 fn shadow_text(painter: &egui::Painter, pos: Pos2, align: Align2, text: &str, size: f32, color: Color32) {
@@ -62,14 +62,14 @@ pub fn draw(
 
     // In a battle, squads show their members in one status row (`battle_ui.rs`)
     // instead of labels stacked on one square.
-    let in_squad = |id: u32| {
+    let in_squad = |id: PawnId| {
         w.battle.as_ref().is_some_and(|b| b.units.iter().any(|u| u.roster.len() > 1 && u.roster.contains(&id)))
     };
-    for p in w.pawns.iter().filter(|p| !p.left && !p.buried && ui.shows_at(m, p.x, p.y, p.z) && !in_squad(p.id)) {
+    for p in w.pawns.iter().filter(|p| !p.has_left() && !p.buried && ui.shows_at(m, p.x, p.y, p.z) && !in_squad(p.id)) {
         let base = tile_point(p.x, p.y, p.z);
-        let lying = p.dead || p.lying();
+        let lying = p.is_dead() || p.lying();
         let Some(top) = to_screen(base + Vec3::Y * if lying { 0.7 } else { 1.15 }) else { continue };
-        if !p.dead {
+        if !p.is_dead() {
             let mut y = top.y;
             let health = p.health.summary();
             if health < 0.99 {
@@ -91,7 +91,7 @@ pub fn draw(
         }
         if distance < 45.0 {
             if let Some(feet) = to_screen(base - Vec3::Y * 0.05) {
-                let color = if p.dead {
+                let color = if p.is_dead() {
                     Color32::GRAY
                 } else if p.faction == Faction::Raider {
                     theme::RED

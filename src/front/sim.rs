@@ -189,7 +189,7 @@ mod tests {
         let mut world = SimWorld::new(7);
         world.story.next_raid = f32::MAX;
         world.offers.push(Offer { id: 500, kind: MissionKind::BanditCamp, faction: 2, days: 1.0, until: world.time + DAY_LEN });
-        let squad: Vec<u32> = world.pawns.iter().filter(|p| p.is_living_colonist()).take(2).map(|p| p.id).collect();
+        let squad: Vec<my_world::pawn::PawnId> = world.pawns.iter().filter(|p| p.is_living_colonist()).take(2).map(|p| p.id).collect();
         world.send_expedition(500, &squad, &[]).unwrap();
         let id = world.expeditions[0].id;
         while !matches!(world.expeditions[0].stage, Stage::Decide { .. }) {

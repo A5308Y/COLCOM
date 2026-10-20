@@ -338,7 +338,7 @@ fn build_library(
 
 /// Spawns a pawn's character (hidden until ready) under `parent`.
 pub fn spawn_rig(commands: &mut Commands, assets: &AssetServer, p: &Pawn, parent: Entity) -> Entity {
-    let h = |salt: u32| hash(p.id as i32, 41, salt);
+    let h = |salt: u32| hash(p.id.get() as i32, 41, salt);
     let female = h(1) < 0.5;
     let sex = if female { "Female" } else { "Male" };
     let raider = p.faction == Faction::Raider;
@@ -609,13 +609,6 @@ pub enum GarmentState {
 }
 
 impl GarmentState {
-    pub fn entity(self) -> Option<Entity> {
-        match self {
-            GarmentState::None => None,
-            GarmentState::Loading(e) | GarmentState::Ready(e) => Some(e),
-        }
-    }
-
     pub fn ready(self) -> Option<Entity> {
         match self {
             GarmentState::Ready(e) => Some(e),
@@ -1195,7 +1188,7 @@ mod tests {
         world.flush();
         instance_ready(&mut world, garment);
         assert_eq!(world.get::<SkinnedMesh>(cloth).unwrap().joints, vec![valid], "a stale completion cannot take over the replacement");
-        assert_eq!(world.get::<Rig>(character).unwrap().garment.entity(), Some(replacement));
+        assert_eq!(world.get::<Rig>(character).unwrap().garment, GarmentState::Loading(replacement));
         instance_ready(&mut world, replacement);
         assert!(world.get::<Rig>(character).unwrap().garment.ready().is_none(), "an empty scene also retains the fallbacks");
         for e in [outfit, fallback] { assert_eq!(world.get::<Visibility>(e), Some(&Visibility::Inherited)); }

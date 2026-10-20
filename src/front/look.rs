@@ -104,7 +104,7 @@ const HAIRS: [Rgb; 6] = [
 ];
 
 pub fn pawn_look(p: &Pawn) -> Look {
-    let h = |salt: u32| hash(p.id as i32, 17, salt);
+    let h = |salt: u32| hash(p.id.get() as i32, 17, salt);
     let skin = SKINS[(h(1) * SKINS.len() as f32) as usize % SKINS.len()];
     let look = match p.faction {
         Faction::Colony => Look {
@@ -115,7 +115,7 @@ pub fn pawn_look(p: &Pawn) -> Look {
         // Raiders: dark leathers and a steel helmet.
         Faction::Raider => Look { skin, hair: Rgb(0.42, 0.43, 0.46), clothes: Rgb(0.38, 0.17, 0.14) },
     };
-    if p.dead {
+    if p.is_dead() {
         let grey = Rgb(0.5, 0.5, 0.5);
         return Look { skin: look.skin.mix(grey, 0.6), hair: look.hair.mix(grey, 0.6), clothes: look.clothes.mix(grey, 0.6) };
     }

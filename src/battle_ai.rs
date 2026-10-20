@@ -5,7 +5,7 @@ use crate::battle::{battle_sight, BattleOrder, Cover, AP_ATTACK, AP_DEPLOY, AP_H
 use crate::defs::ItemId;
 use crate::map::Pos;
 use crate::pathing::bfs;
-use crate::pawn::Faction;
+use crate::pawn::{Faction, PawnId};
 use crate::world::World;
 
 /// Attacks at least this likely to hit are taken without looking for a better spot.
@@ -47,7 +47,7 @@ impl World {
     }
 
     /// Pawns on the other side who can still be attacked.
-    fn enemies_of(&self, side: Faction) -> Vec<u32> {
+    fn enemies_of(&self, side: Faction) -> Vec<PawnId> {
         let Some(b) = self.battle.as_ref() else { return Vec::new() };
         b.units.iter().filter(|u| u.side != side).flat_map(|u| u.members.iter().copied()).collect()
     }

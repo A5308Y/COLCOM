@@ -3,13 +3,13 @@
 use crate::defs::ItemId;
 use crate::health::DamageKind;
 use crate::map::{Pos, Stack};
-use crate::pawn::{Memory, Pawn};
+use crate::pawn::{Life, Memory, Pawn};
 use crate::world::World;
 
 impl World {
     pub fn damage(&mut self, ti: usize, amount: f32, kind: DamageKind, by: &str) {
         let mut t = self.pawns[ti].clone();
-        if t.dead {
+        if t.is_dead() {
             return;
         }
         let armor: Vec<f32> = crate::health::Part::ALL.iter().map(|&p| t.armor_at(p)).collect();
@@ -26,11 +26,10 @@ impl World {
             if let Some(h) = hit.filter(|h| h.destroyed) {
                 self.push_log(format!("{}'s {} was destroyed by {}.", t.name, h.part.name().to_lowercase(), by));
             }
-            if !t.downed {
+            if t.life == Life::Up {
                 if let Some(reason) = t.health.downed_reason() {
                     self.end_job(&mut t);
-                    t.downed = true;
-                    t.downed_time = 0.0;
+                    t.life = Life::Downed { time: 0.0 };
                     self.push_log(format!("{} was downed by {}{}: {}.", t.name, by, wound, reason));
                     self.sound("thud", Some(t.pos));
                 }
@@ -61,7 +60,7 @@ impl World {
     }
 
     pub(crate) fn kill(&mut self, p: &mut Pawn, cause: &str) {
-        if p.dead {
+        if p.is_dead() {
             return; 
         }
         self.end_job(p);
@@ -82,13 +81,12 @@ impl World {
                 }
             }
         }
-        p.dead = true;
-        p.downed = false;
+        p.life = Life::Dead;
         self.sound("death", Some(p.pos));
         self.push_log(format!("{} {}.", p.name, cause));
         if p.is_colonist() {
             for o in self.pawns.iter_mut() {
-                if o.is_colonist() && o.id != p.id && !o.dead {
+                if o.is_colonist() && o.id != p.id && !o.is_dead() {
                     o.add_memory(Memory::ColonistDied);
                 }
             }
