@@ -1,5 +1,5 @@
-//! Per-tile 3D objects: plants, structures, blueprints and items, built from
-//! the parts listed in their definitions (`assets/defs.ron`).
+//! Per-tile plants, structures, blueprints and items: definition-selected glTF
+//! scenes with shape fallbacks (`assets/defs.ron`).
 //!
 //! Compare map props when the map changes. Doors, beds and graves also
 //! follow pawn state each frame; changed props get their entity replaced.
@@ -15,7 +15,7 @@ use bevy::gltf::GltfAssetLabel;
 use bevy::gltf::GltfMaterialName;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot, WorldInstanceReady};
 use my_world::pawn::PawnId;
-use my_world::defs::{defs, BuildDef, BuildId, BuildLook, ItemId, ModelPose, Part, PlantId, Shape, Special, Storage, WornPiece};
+use my_world::defs::{defs, BuildDef, BuildId, BuildLook, ItemId, ModelPose, Part, PlantId, PlantVariant, Shape, Special, Storage, WornPiece};
 use my_world::map::{Dir, Feature, Map, Pos, DIRS};
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::{FRAC_PI_2, TAU};
@@ -167,6 +167,11 @@ fn setup_assets(
         }
     }
     for model in d.builds.iter().filter_map(|build| build.model.as_ref()) {
+        for scene in model.scenes.all() {
+            models.entry(model_key(&model.path, scene)).or_insert_with(|| server.load(GltfAssetLabel::Scene(scene).from_asset(model.path.clone())));
+        }
+    }
+    for model in d.plants.iter().flat_map(|p| &p.stages).flat_map(|s| &s.variants).filter_map(|v| v.model.as_ref()) {
         models.entry(model_key(&model.path, 0)).or_insert_with(|| server.load(GltfAssetLabel::Scene(0).from_asset(model.path.clone())));
     }
     let assets = PropAssets {
@@ -756,7 +761,8 @@ fn spawn_build_look(
     let root = commands.spawn((transform, Visibility::default())).id();
     let fallback = spawn_parts(commands, a, Transform::default(), def.parts(), pose, owner);
     commands.entity(fallback).insert(ChildOf(root));
-    let scene = attach_model(commands, a.models[&model_key(&model.path, 0)].clone(), root, model_transform(&model.pose), fallback);
+    let selected = model.scenes.select(pose.open, pose.links, pose.dir);
+    let scene = attach_model(commands, a.model(&model.path, selected), root, model_transform(&model.pose), fallback);
     commands.entity(scene).insert(BuildStyle {
         ghost: pose.ghost.then(|| a.blueprint.clone()),
         owner: model.owner_material.as_ref().map(|name| (name.clone(), owner.clone())),
@@ -768,6 +774,48 @@ fn hide_model_fallback(ready: On<WorldInstanceReady>, fallbacks: Query<&ModelFal
     if let Ok(fallback) = fallbacks.get(ready.event().entity) {
         commands.entity(fallback.0).insert(Visibility::Hidden);
     }
+}
+
+/// A multi-stalk plot changes over as a whole: a failed or delayed instance
+/// leaves its complete fallback visible instead of hiding plants prematurely.
+#[derive(Component)]
+struct PlantModels {
+    fallback: Entity,
+    scenes: Vec<Entity>,
+    waiting: HashSet<Entity>,
+}
+
+#[derive(Component)]
+struct PlantModelGroup(Entity);
+
+fn plant_models_ready(
+    ready: On<WorldInstanceReady>, members: Query<&PlantModelGroup>,
+    mut groups: Query<&mut PlantModels>, mut commands: Commands,
+) {
+    let entity = ready.event().entity;
+    let Ok(member) = members.get(entity) else { return };
+    let Ok(mut group) = groups.get_mut(member.0) else { return };
+    if group.waiting.remove(&entity) && group.waiting.is_empty() {
+        commands.entity(group.fallback).insert(Visibility::Hidden);
+        for &scene in &group.scenes {
+            commands.entity(scene).insert(Visibility::Inherited);
+        }
+    }
+}
+
+fn spawn_plant_look(commands: &mut Commands, a: &PropAssets, transform: Transform, variant: &PlantVariant) -> Entity {
+    let Some(model) = &variant.model else {
+        return spawn_parts(commands, a, transform, &variant.parts, Pose::default(), &a.blanket_free);
+    };
+    let root = commands.spawn((transform, Visibility::default())).id();
+    let fallback = spawn_parts(commands, a, Transform::default(), &variant.parts, Pose::default(), &a.blanket_free);
+    commands.entity(fallback).insert(ChildOf(root));
+    let scenes: Vec<_> = model.placements.iter().map(|pose| {
+        commands.spawn((WorldAssetRoot(a.model(&model.path, 0)), model_transform(pose),
+            Visibility::Hidden, ChildOf(root), PlantModelGroup(root))).observe(plant_models_ready).id()
+    }).collect();
+    commands.entity(root).insert(PlantModels { fallback, waiting: scenes.iter().copied().collect(), scenes });
+    root
 }
 
 fn spawn_item_look(commands: &mut Commands, a: &PropAssets, kind: ItemId, transform: Transform) -> Entity {
@@ -831,12 +879,12 @@ fn spawn_feature(
         PropKey::Plant { kind, stage } => {
             let def = kind.def();
             let variants = &def.stages[stage as usize].variants;
-            let parts = &variants[(hash(xi, yi, 23) * variants.len() as f32) as usize % variants.len()];
+            let variant = &variants[(hash(xi, yi, 23) * variants.len() as f32) as usize % variants.len()];
             let (lo, hi) = def.scale;
             let root = base
                 .with_rotation(Quat::from_rotation_y(hash(xi, yi, 22) * TAU))
                 .with_scale(Vec3::splat(lo + hash(xi, yi, 20) * (hi - lo)));
-            spawn_parts(commands, a, root, parts, Pose::default(), &blanket)
+            spawn_plant_look(commands, a, root, variant)
         }
         PropKey::Built { kind, dir, open, links, .. } => {
             let def = kind.def();
@@ -936,13 +984,155 @@ mod tests {
             }
         }
         for model in defs().builds.iter().filter_map(|build| build.model.as_ref()) {
-            models.insert(model_key(&model.path, 0), scenes.add(WorldAsset::new(World::new())));
+            for scene in model.scenes.all() {
+                models.insert(model_key(&model.path, scene), scenes.add(WorldAsset::new(World::new())));
+            }
+        }
+        for model in defs().plants.iter().flat_map(|p| &p.stages).flat_map(|s| &s.variants).filter_map(|v| v.model.as_ref()) {
+            models.entry(model_key(&model.path, 0)).or_insert_with(|| scenes.add(WorldAsset::new(World::new())));
         }
         let mut materials = Assets::<StandardMaterial>::default();
         PropAssets {
             cube: Handle::default(), sphere: Handle::default(), cylinder: Handle::default(), cone: Handle::default(),
             paints: HashMap::new(), metals: HashMap::new(), blueprint: materials.add(StandardMaterial::default()),
             blanket_free: materials.add(StandardMaterial::default()), models,
+        }
+    }
+
+    #[test]
+    fn plant_plots_wait_for_every_instance_and_cleanup_with_their_root() {
+        let a = test_assets();
+        let mut world = World::new();
+        let variant = &PlantId::named("corn").def().stages[3].variants[0];
+        let transform = Transform::from_xyz(2.0, 1.0, 3.0).with_scale(Vec3::splat(0.9));
+        let root = spawn_plant_look(&mut world.commands(), &a, transform, variant);
+        world.flush();
+        assert_eq!(world.get::<Transform>(root), Some(&transform));
+        let group = world.get::<PlantModels>(root).unwrap();
+        let (fallback, scenes) = (group.fallback, group.scenes.clone());
+        assert_eq!(scenes.len(), 4);
+        let handles: Vec<_> = scenes.iter().map(|e| world.get::<WorldAssetRoot>(*e).unwrap().0.clone()).collect();
+        assert!(handles.windows(2).all(|w| w[0] == w[1]));
+        let mut spawner = bevy::world_serialization::WorldInstanceSpawner::default();
+        for (k, (&entity, handle)) in scenes.iter().zip(handles).enumerate() {
+            world.trigger(WorldInstanceReady { entity, instance_id: spawner.spawn(handle) });
+            world.flush();
+            let complete = k == scenes.len() - 1;
+            assert_eq!(world.get::<Visibility>(fallback), Some(&if complete { Visibility::Hidden } else { Visibility::Inherited }));
+            for &scene in &scenes {
+                assert_eq!(world.get::<Visibility>(scene), Some(&if complete { Visibility::Inherited } else { Visibility::Hidden }));
+            }
+        }
+        world.despawn(root);
+        assert!(world.get_entity(fallback).is_err());
+        assert!(scenes.iter().all(|&e| world.get_entity(e).is_err()));
+        // A missing model description uses the original shape-only path.
+        let mut shapes = variant.clone();
+        shapes.model = None;
+        spawn_plant_look(&mut world.commands(), &a, transform, &shapes);
+        world.flush();
+        assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0);
+    }
+
+    #[test]
+    fn modelled_plants_follow_growth_caching_visibility_and_removal() {
+        use bevy::ecs::system::RunSystemOnce;
+        let mut sim = Sim::new(None);
+        let mut w = my_world::world::World::with_map(Map::flat(8, 8), my_world::rng::Rng::new(1));
+        let at = (3, 3, Z);
+        let i = w.map.idx(at);
+        let kind = PlantId::named("corn");
+        w.map.set_feature(i, Feature::Plant { kind, growth: 0.0 });
+        sim.replace(w);
+        let mut world = World::new();
+        world.insert_resource(sim);
+        world.insert_resource(UiState::new());
+        world.insert_resource(Props::default());
+        world.insert_resource(test_assets());
+        world.insert_resource(Assets::<StandardMaterial>::default());
+        world.insert_resource(SoundQueue::default());
+        world.run_system_once(sync_props).unwrap();
+        let first = world.resource::<Props>().features[i].unwrap().1;
+        world.run_system_once(sync_props).unwrap();
+        assert_eq!(world.resource::<Props>().features[i].unwrap().1, first, "idle frames retain the plot");
+        world.resource_mut::<Sim>().world.map.set_feature(i, Feature::Plant { kind, growth: 0.24 });
+        world.run_system_once(sync_props).unwrap();
+        assert_eq!(world.resource::<Props>().features[i].unwrap().1, first, "growth inside a stage retains the plot");
+        world.resource_mut::<Sim>().world.map.set_feature(i, Feature::Plant { kind, growth: 0.25 });
+        world.run_system_once(sync_props).unwrap();
+        let next = world.resource::<Props>().features[i].unwrap().1;
+        assert_ne!(first, next);
+        assert!(world.get_entity(first).is_err());
+        world.resource_mut::<UiState>().view_level = Some(Z - 1);
+        world.run_system_once(sync_props).unwrap();
+        assert_eq!(world.get::<Visibility>(next), Some(&Visibility::Hidden));
+        world.resource_mut::<Sim>().world.map.set_feature(i, Feature::None);
+        world.run_system_once(sync_props).unwrap();
+        assert!(world.get_entity(next).is_err());
+        assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0);
+    }
+
+    #[test]
+    fn cached_state_scenes_follow_new_fence_neighbours_and_burials() {
+        use bevy::ecs::system::RunSystemOnce;
+        use my_world::pawn::Life;
+        let mut w = my_world::world::World::with_map(Map::flat(8, 8), my_world::rng::Rng::new(1));
+        let fence = w.map.idx((3, 3, Z));
+        let grave = w.map.idx((1, 1, Z));
+        w.map.set_feature(fence, Feature::built("fence"));
+        w.map.set_feature(grave, Feature::built("grave"));
+        let id = w.spawn_colonist((1, 1, Z));
+        w.pawns[0].life = Life::Dead { buried: false };
+        let mut sim = Sim::new(None);
+        sim.replace(w);
+        let mut world = World::new();
+        world.insert_resource(sim);
+        world.insert_resource(UiState::new());
+        world.insert_resource(Props::default());
+        world.insert_resource(test_assets());
+        world.insert_resource(Assets::<StandardMaterial>::default());
+        world.insert_resource(SoundQueue::default());
+        world.run_system_once(sync_props).unwrap();
+        let old_fence = world.resource::<Props>().features[fence].unwrap().1;
+        let old_grave = world.resource::<Props>().features[grave].unwrap().1;
+        {
+            let mut sim = world.resource_mut::<Sim>();
+            let i = sim.world.map.idx((4, 3, Z));
+            sim.world.map.set_feature(i, Feature::built("fence"));
+        }
+        world.run_system_once(sync_props).unwrap();
+        let (key, new_fence) = world.resource::<Props>().features[fence].unwrap();
+        assert!(matches!(key, PropKey::Built { links: 1, .. }));
+        assert_ne!(new_fence, old_fence);
+        assert!(world.get_entity(old_fence).is_err());
+        let revision = world.resource::<Sim>().world.map.changes();
+        world.resource_mut::<Sim>().world.pawns.iter_mut().find(|p| p.id == id).unwrap().life = Life::Dead { buried: true };
+        world.run_system_once(sync_props).unwrap();
+        let (key, new_grave) = world.resource::<Props>().features[grave].unwrap();
+        assert!(matches!(key, PropKey::Built { open: false, .. }));
+        assert_ne!(new_grave, old_grave);
+        assert!(world.get_entity(old_grave).is_err());
+        assert_eq!(world.resource::<Sim>().world.map.changes(), revision);
+        let a = world.resource::<PropAssets>();
+        let expected = a.model(&BuildId::named("grave").def().model.as_ref().unwrap().path, 1);
+        let descendants: Vec<_> = world.get::<Children>(new_grave).unwrap().iter().collect();
+        assert!(descendants.iter().any(|&e| world.get::<WorldAssetRoot>(e).is_some_and(|s| s.0 == expected)));
+    }
+
+    #[test]
+    fn stateful_build_models_select_scenes_and_keep_blueprint_styles() {
+        let a = test_assets();
+        let mut world = World::new();
+        for (name, open, links, expected) in [("grave", true, 0, 0), ("grave", false, 0, 1),
+            ("fence", false, 0, 0), ("fence", false, 5, 5), ("fence", false, 15, 15)] {
+            let def = BuildId::named(name).def();
+            let root = spawn_build_look(&mut world.commands(), &a, def, Transform::default(),
+                Pose { open, links, ghost: true, ..default() }, &a.blanket_free);
+            world.flush();
+            let scene = world.query::<(&WorldAssetRoot, &BuildStyle)>().iter(&world).next().unwrap();
+            assert_eq!(scene.0.0, a.model(&def.model.as_ref().unwrap().path, expected));
+            assert_eq!(scene.1.ghost, Some(a.blueprint.clone()));
+            world.despawn(root);
         }
     }
 
@@ -1201,6 +1391,161 @@ mod tests {
         }
         assert_eq!(checked, defs().items.len(), "every inventory item has been checked");
     }
+    #[test]
+    fn tree_models_keep_authored_heights_and_anchor_trunks_at_cell_centres() {
+        let tree = PlantId::named("tree").def();
+        for (variant, height) in tree.stages[0].variants.iter().zip([1.46, 1.46, 1.46, 1.6, 1.6]) {
+            let model = variant.model.as_ref().unwrap();
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(&model.path);
+            let g: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let bytes = std::fs::read(path.with_extension("bin")).unwrap();
+            let mut points = Vec::new();
+            for mesh in g["meshes"].as_array().unwrap() {
+                for p in mesh["primitives"].as_array().unwrap() {
+                    let a = &g["accessors"][p["attributes"]["POSITION"].as_u64().unwrap() as usize];
+                    let v = &g["bufferViews"][a["bufferView"].as_u64().unwrap() as usize];
+                    let start = (v["byteOffset"].as_u64().unwrap_or(0) + a["byteOffset"].as_u64().unwrap_or(0)) as usize;
+                    for row in bytes[start..start + a["count"].as_u64().unwrap() as usize * 12].as_chunks::<4>().0.as_chunks::<3>().0 {
+                        points.push(Vec3::new(f32::from_le_bytes(row[0]), f32::from_le_bytes(row[1]), f32::from_le_bytes(row[2])));
+                    }
+                }
+            }
+            let bottom = points.iter().map(|p| p.y).reduce(f32::min).unwrap();
+            let top = points.iter().map(|p| p.y).reduce(f32::max).unwrap();
+            let (mut min, mut max) = (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY));
+            for &p in points.iter().filter(|p| p.y < bottom + 0.02) {
+                min = min.min(p);
+                max = max.max(p);
+            }
+            let pose = model_transform(&model.placements[0]);
+            let foot = pose.transform_point(Vec3::new((min.x + max.x) / 2.0, bottom, (min.z + max.z) / 2.0));
+            assert!(foot.length() < 1e-5, "{} trunk: {foot:?}", model.path);
+            assert!(((top - bottom) * pose.scale.y - height).abs() < 1e-5, "{} height", model.path);
+        }
+    }
+
+    #[test]
+    fn world_prop_models_keep_footprints_back_reach_and_scene_references() {
+        use my_world::defs::BuildScenes;
+        let mut checked = 0;
+        for def in defs().builds.iter().filter(|d| d.model.as_ref().is_some_and(|m| m.path.starts_with("models/world/"))) {
+            let model = def.model.as_ref().unwrap();
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(&model.path);
+            let g: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            let data = std::fs::read(path.with_extension("bin")).unwrap();
+            for scene in model.scenes.all() {
+                assert!(g["scenes"].get(scene).is_some(), "{}: scene {scene}", def.id);
+            }
+            let mut min = Vec3::splat(f32::INFINITY);
+            let mut max = Vec3::splat(f32::NEG_INFINITY);
+            for mesh in g["meshes"].as_array().unwrap() {
+                for primitive in mesh["primitives"].as_array().unwrap() {
+                    let a = &g["accessors"][primitive["attributes"]["POSITION"].as_u64().unwrap() as usize];
+                    let v = &g["bufferViews"][a["bufferView"].as_u64().unwrap() as usize];
+                    let offset = v["byteOffset"].as_u64().unwrap_or(0) as usize;
+                    for bytes in data[offset..offset + a["count"].as_u64().unwrap() as usize * 12].as_chunks::<12>().0 {
+                        let p = model_transform(&model.pose).transform_point(Vec3::new(
+                            f32::from_le_bytes(bytes[0..4].try_into().unwrap()),
+                            f32::from_le_bytes(bytes[4..8].try_into().unwrap()),
+                            f32::from_le_bytes(bytes[8..12].try_into().unwrap())));
+                        min = min.min(p);
+                        max = max.max(p);
+                    }
+                }
+            }
+            assert!(min.x >= -0.501 && max.x <= 0.501 && min.z >= -0.501 && max.z <= 0.501, "{}: {min:?} {max:?}", def.id);
+            if def.turnable() && def.special != Special::Stairs {
+                let (x, z) = def.front.opposite().offset();
+                let back = Vec3::new(x as f32, 0.0, z as f32);
+                let actual = (if x > 0 || z > 0 { max } else { min }).dot(back);
+                let expected = def.parts().iter().map(|p| p.at.0 * back.x + p.at.2 * back.z + if x != 0 { p.size.0 / 2.0 } else { p.size.2 / 2.0 }).fold(0.0f32, f32::max);
+                assert!((actual - expected).abs() < 0.01, "{}: back reach {actual} vs {expected}", def.id);
+            }
+            assert!(matches!((&model.scenes, def.special), (BuildScenes::Filled, Special::Grave)
+                | (BuildScenes::Connected, Special::None) | (BuildScenes::Static, Special::None | Special::Stairs)), "{}: scene semantics", def.id);
+            checked += 1;
+        }
+        assert_eq!(checked, 20);
+    }
+
+    #[test]
+    #[ignore = "manual CPU-only prop cache benchmark: run with --ignored --nocapture"]
+    fn benchmark_dense_world_prop_sync() {
+        use std::time::Instant;
+        // Identical 100x70 colony, including every crop stage and all world props.
+        // Empty scene assets isolate CPU spawning/cache work; this does not time
+        // glTF decoding, loaded mesh propagation or GPU rendering.
+        for models in [false, true] {
+            let mut w = my_world::world::World::with_map(Map::flat(100, 70), my_world::rng::Rng::new(42));
+            let kinds: Vec<_> = PlantId::all().collect();
+            let builds: Vec<_> = BuildId::all().filter(|k| k.def().model.as_ref().is_some_and(|m| m.path.starts_with("models/world/"))).collect();
+            for y in 1..69 {
+                for x in 1..99 {
+                    let i = w.map.idx((x, y, Z));
+                    let feature = if x % 10 == 0 && y % 5 == 0 {
+                        Feature::Built { kind: builds[(x + y) % builds.len()], dir: Dir::PlusX }
+                    } else {
+                        let kind = kinds[(x + y) % kinds.len()];
+                        let growth = kind.def().stages[(x * 3 + y) % kind.def().stages.len()].from;
+                        Feature::Plant { kind, growth }
+                    };
+                    w.map.set_feature(i, feature);
+                }
+            }
+            let a = test_assets();
+            let mut world = World::new();
+            let start = Instant::now();
+            let mut props = Props { features: vec![None; w.map.len()], items: vec![None; w.map.len()],
+                changes: Some(w.map.changes()), ..default() };
+            for y in 1..69 {
+                for x in 1..99 {
+                    let pos = (x, y, Z);
+                    let i = w.map.idx(pos);
+                    let key = prop_key(&w, i, &HashMap::new(), &HashSet::new()).unwrap();
+                    let transform = Transform::from_translation(tile_center(pos));
+                    let entity = match key {
+                        PropKey::Plant { kind, stage } => {
+                            let variants = &kind.def().stages[stage as usize].variants;
+                            let mut variant = variants[(hash(x as i32, y as i32, 23) * variants.len() as f32) as usize % variants.len()].clone();
+                            if !models { variant.model = None; }
+                            let (lo, hi) = kind.def().scale;
+                            let transform = transform.with_rotation(Quat::from_rotation_y(hash(x as i32, y as i32, 22) * TAU))
+                                .with_scale(Vec3::splat(lo + hash(x as i32, y as i32, 20) * (hi - lo)));
+                            spawn_plant_look(&mut world.commands(), &a, transform, &variant)
+                        }
+                        PropKey::Built { kind, dir, open, links, .. } => {
+                            let mut def = kind.def().clone();
+                            if !models { def.model = None; }
+                            spawn_build_look(&mut world.commands(), &a, &def, transform.with_rotation(facing(dir)),
+                                Pose { dir, open, links, ..default() }, &a.blanket_free)
+                        }
+                        PropKey::Blueprint { .. } => unreachable!("fixture has finished props"),
+                    };
+                    props.features[i] = Some((key, entity));
+                }
+            }
+            world.flush();
+            let spawn = start.elapsed();
+            let mut sim = Sim::new(None);
+            sim.replace(w);
+            props.generation = Some(sim.generation);
+            world.insert_resource(sim);
+            world.insert_resource(props);
+            world.insert_resource(a);
+            world.insert_resource(UiState::new());
+            world.insert_resource(Assets::<StandardMaterial>::default());
+            world.insert_resource(SoundQueue::default());
+            let system = world.register_system(sync_props);
+            for _ in 0..20 { world.run_system(system).unwrap(); }
+            let initial_entities = world.query::<Entity>().iter(&world).count();
+            let start = Instant::now();
+            for _ in 0..1000 { world.run_system(system).unwrap(); }
+            let idle = start.elapsed().as_secs_f64() * 1e6 / 1000.0;
+            assert_eq!(world.query::<Entity>().iter(&world).count(), initial_entities, "idle sync must not rebuild props");
+            eprintln!("models={models}: 6664 props, spawn {:.2} ms; idle sync {idle:.2} us; {initial_entities} entities", spawn.as_secs_f64() * 1e3);
+        }
+    }
+
     #[test]
     fn furniture_models_preserve_placement_storage_and_contact_surfaces() {
         let mut checked = 0;

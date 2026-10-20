@@ -696,6 +696,51 @@ pub struct BuildModel {
     /// Material replaced with the bed owner's blanket colour, when present.
     #[serde(default)]
     pub owner_material: Option<String>,
+    #[serde(default)]
+    pub scenes: BuildScenes,
+}
+
+/// Scene layouts shared with the generator: static scene 0, empty/filled
+/// scenes 0/1, or one scene per local four-direction connection mask (0..15).
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(try_from = "String")]
+pub enum BuildScenes {
+    #[default]
+    Static,
+    Filled,
+    Connected,
+}
+
+impl TryFrom<String> for BuildScenes {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "Static" => Ok(Self::Static),
+            "Filled" => Ok(Self::Filled),
+            "Connected" => Ok(Self::Connected),
+            _ => Err(format!("unknown model scene layout {value:?}: expected Static, Filled or Connected")),
+        }
+    }
+}
+
+impl BuildScenes {
+    pub fn all(&self) -> Vec<usize> {
+        match self {
+            Self::Static => vec![0],
+            Self::Filled => vec![0, 1],
+            Self::Connected => (0..16).collect(),
+        }
+    }
+
+    pub fn select(&self, open: bool, links: u8, facing: Dir) -> usize {
+        match self {
+            Self::Static => 0,
+            Self::Filled => usize::from(!open),
+            Self::Connected => Dir::ALL.iter().fold(0, |mask, &dir| {
+                mask | if links & (1 << dir.turned(facing).index()) != 0 { 1 << dir.index() } else { 0 }
+            }),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -982,7 +1027,21 @@ pub struct Stage {
     /// Growth from which this stage shows.
     pub from: f32,
     /// One is picked per cell.
-    pub variants: Vec<Vec<Part>>,
+    pub variants: Vec<PlantVariant>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct PlantVariant {
+    pub parts: Vec<Part>,
+    #[serde(default)]
+    pub model: Option<PlantModel>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct PlantModel {
+    pub path: String,
+    /// One tree/bush, or repeated stalks in a crop plot, all sharing a scene.
+    pub placements: Vec<ModelPose>,
 }
 
 fn plus_y() -> Dir {
@@ -1540,8 +1599,15 @@ impl Defs {
         for d in &self.builds {
             if let Some(model) = &d.model {
                 Self::check_model(&d.id, &model.path, &[&model.pose])?;
-                if !matches!(d.look, BuildLook::Parts(_)) || d.parts().iter().any(|p| p.hinge || p.link.is_some() || p.filled.is_some()) {
-                    return Err(format!("{}: a build model needs static Parts as its loading fallback", d.id));
+                let compatible = match &model.scenes {
+                    BuildScenes::Static => d.parts().iter().all(|p| !p.hinge && p.link.is_none() && p.filled.is_none()),
+                    BuildScenes::Filled => d.special == Special::Grave
+                        && d.parts().iter().all(|p| !p.hinge && p.link.is_none()),
+                    BuildScenes::Connected => d.parts().iter().any(|p| p.link.is_some())
+                        && d.parts().iter().all(|p| !p.hinge && p.filled.is_none()),
+                };
+                if !matches!(d.look, BuildLook::Parts(_)) || d.parts().is_empty() || !compatible {
+                    return Err(format!("{}: a build model needs compatible static Parts or state-matched Parts as its loading fallback", d.id));
                 }
             }
             if d.medical && d.special != Special::Bed {
@@ -1607,7 +1673,13 @@ impl Defs {
             }
             for s in &d.stages {
                 for v in &s.variants {
-                    self.check_parts(&d.id, v)?;
+                    self.check_parts(&d.id, &v.parts)?;
+                    if let Some(model) = &v.model {
+                        if model.placements.is_empty() || v.parts.is_empty() {
+                            return Err(format!("{}: plant models need placements and fallback parts", d.id));
+                        }
+                        Self::check_model(&d.id, &model.path, &model.placements.iter().collect::<Vec<_>>())?;
+                    }
                 }
             }
             if d.sow.is_some() && d.grow_time <= 0.0 {
@@ -1709,6 +1781,47 @@ impl Defs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plant_models_validate_placements_and_preserve_growth_stages() {
+        let mut d = Defs::parse(BUILT_IN).unwrap();
+        assert_eq!(d.plants.len(), 6);
+        for plant in &d.plants {
+            for stage in &plant.stages {
+                assert_eq!(plant.stage(stage.from), plant.stages.iter().position(|s| std::ptr::eq(s, stage)).unwrap());
+                for variant in &stage.variants {
+                    assert!(!variant.parts.is_empty());
+                    assert!(variant.model.as_ref().is_some_and(|m| !m.placements.is_empty()));
+                }
+            }
+        }
+        let model = d.plants[0].stages[0].variants[0].model.as_mut().unwrap();
+        let placements = std::mem::take(&mut model.placements);
+        assert!(d.check().unwrap_err().contains("placements"));
+        d.plants[0].stages[0].variants[0].model.as_mut().unwrap().placements = placements;
+        d.plants[0].stages[0].variants[0].model.as_mut().unwrap().placements[0].scale = f32::NAN;
+        assert!(d.check().unwrap_err().contains("finite"));
+    }
+
+    #[test]
+    fn build_model_scenes_follow_filled_state_and_rotated_connections() {
+        assert!(ron::from_str::<BuildScenes>("\"Connectd\"").unwrap_err().to_string().contains("unknown model scene layout"));
+        let grave = BuildId::named("grave").def().model.as_ref().unwrap();
+        assert_eq!(grave.scenes.select(true, 0, Dir::PlusX), 0);
+        assert_eq!(grave.scenes.select(false, 0, Dir::PlusX), 1);
+        let fence = BuildId::named("fence").def().model.as_ref().unwrap();
+        assert_eq!(fence.scenes.all(), (0..16).collect::<Vec<_>>());
+        for facing in Dir::ALL {
+            for local in 0..16 {
+                let world = Dir::ALL.iter().filter(|d| local & (1 << d.index()) != 0)
+                    .fold(0, |mask, d| mask | (1 << d.turned(facing).index()));
+                assert_eq!(fence.scenes.select(false, world, facing), local);
+            }
+        }
+        let mut d = Defs::parse(BUILT_IN).unwrap();
+        d.builds[BuildId::named("fence").index()].model.as_mut().unwrap().scenes = BuildScenes::Static;
+        assert!(d.check().unwrap_err().contains("state-matched"));
+    }
 
     #[test]
     fn ladders_are_stairs_that_look_different() {

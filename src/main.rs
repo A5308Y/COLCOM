@@ -682,6 +682,10 @@ mod tests {
             }
         }
         files.extend(my_world::defs::BuildId::all().filter_map(|kind| kind.def().model.as_ref().map(|model| model.path.as_str())));
+        files.extend(my_world::defs::defs().plants.iter().flat_map(|p| &p.stages)
+            .flat_map(|s| &s.variants).filter_map(|v| v.model.as_ref().map(|m| m.path.as_str())));
+        files.sort_unstable();
+        files.dedup();
         let handles: Vec<Handle<Gltf>> = files.iter().map(|f| app.world().resource::<AssetServer>().load(*f)).collect();
         for _ in 0..2000 {
             app.update();
@@ -696,7 +700,8 @@ mod tests {
             assert!(server.is_loaded_with_dependencies(h), "{} didn't load: {:?}", f, server.load_state(h));
         }
         let gltfs = app.world().resource::<Assets<Gltf>>();
-        let animations = gltfs.get(&handles[4]).unwrap().named_animations.len();
+        let animation_index = files.iter().position(|f| *f == "models/characters/animations/UAL1_Standard.glb").unwrap();
+        let animations = gltfs.get(&handles[animation_index]).unwrap().named_animations.len();
         assert!(animations > 20, "the animation library has {} animations", animations);
         eprintln!("animation library: {} animations", animations);
     }

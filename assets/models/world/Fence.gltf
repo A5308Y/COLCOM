@@ -1,0 +1,1000 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "My World make_world_props.py"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Links0",
+      "nodes": [
+        0
+      ]
+    },
+    {
+      "name": "Links1",
+      "nodes": [
+        1,
+        2
+      ]
+    },
+    {
+      "name": "Links2",
+      "nodes": [
+        3,
+        4
+      ]
+    },
+    {
+      "name": "Links3",
+      "nodes": [
+        5,
+        6,
+        7
+      ]
+    },
+    {
+      "name": "Links4",
+      "nodes": [
+        8,
+        9
+      ]
+    },
+    {
+      "name": "Links5",
+      "nodes": [
+        10,
+        11,
+        12
+      ]
+    },
+    {
+      "name": "Links6",
+      "nodes": [
+        13,
+        14,
+        15
+      ]
+    },
+    {
+      "name": "Links7",
+      "nodes": [
+        16,
+        17,
+        18,
+        19
+      ]
+    },
+    {
+      "name": "Links8",
+      "nodes": [
+        20,
+        21
+      ]
+    },
+    {
+      "name": "Links9",
+      "nodes": [
+        22,
+        23,
+        24
+      ]
+    },
+    {
+      "name": "Links10",
+      "nodes": [
+        25,
+        26,
+        27
+      ]
+    },
+    {
+      "name": "Links11",
+      "nodes": [
+        28,
+        29,
+        30,
+        31
+      ]
+    },
+    {
+      "name": "Links12",
+      "nodes": [
+        32,
+        33,
+        34
+      ]
+    },
+    {
+      "name": "Links13",
+      "nodes": [
+        35,
+        36,
+        37,
+        38
+      ]
+    },
+    {
+      "name": "Links14",
+      "nodes": [
+        39,
+        40,
+        41,
+        42
+      ]
+    },
+    {
+      "name": "Links15",
+      "nodes": [
+        43,
+        44,
+        45,
+        46,
+        47
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail0",
+      "mesh": 1,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail1",
+      "mesh": 2,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail0",
+      "mesh": 1,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail1",
+      "mesh": 2,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail2",
+      "mesh": 3,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail0",
+      "mesh": 1,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail2",
+      "mesh": 3,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail1",
+      "mesh": 2,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail2",
+      "mesh": 3,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail0",
+      "mesh": 1,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail1",
+      "mesh": 2,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail2",
+      "mesh": 3,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail3",
+      "mesh": 4,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail0",
+      "mesh": 1,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail3",
+      "mesh": 4,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail1",
+      "mesh": 2,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail3",
+      "mesh": 4,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail0",
+      "mesh": 1,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail1",
+      "mesh": 2,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail3",
+      "mesh": 4,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail2",
+      "mesh": 3,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail3",
+      "mesh": 4,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail0",
+      "mesh": 1,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail2",
+      "mesh": 3,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail3",
+      "mesh": 4,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail1",
+      "mesh": 2,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail2",
+      "mesh": 3,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail3",
+      "mesh": 4,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Post",
+      "mesh": 0,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail0",
+      "mesh": 1,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail1",
+      "mesh": 2,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail2",
+      "mesh": 3,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "Rail3",
+      "mesh": 4,
+      "translation": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Post",
+      "primitives": [
+        {
+          "material": 2,
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2
+        }
+      ]
+    },
+    {
+      "name": "Rail0",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 3,
+            "NORMAL": 4
+          },
+          "indices": 5
+        }
+      ]
+    },
+    {
+      "name": "Rail1",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 6,
+            "NORMAL": 7
+          },
+          "indices": 8
+        }
+      ]
+    },
+    {
+      "name": "Rail2",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 9,
+            "NORMAL": 10
+          },
+          "indices": 11
+        }
+      ]
+    },
+    {
+      "name": "Rail3",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 12,
+            "NORMAL": 13
+          },
+          "indices": 14
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Panels",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.10653922395082352,
+          0.12596738774090202,
+          0.05925352111727415,
+          1
+        ],
+        "metallicFactor": 0.12,
+        "roughnessFactor": 0.84
+      }
+    },
+    {
+      "name": "Gunmetal",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.05925352111727415,
+          0.07323895587840543,
+          0.06838485415816624,
+          1
+        ],
+        "metallicFactor": 0.65,
+        "roughnessFactor": 0.64
+      }
+    },
+    {
+      "name": "Work surface",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.19599417930148813,
+          0.10048150993772331,
+          0.039681909478526005,
+          1
+        ],
+        "metallicFactor": 0.1,
+        "roughnessFactor": 0.88
+      }
+    },
+    {
+      "name": "Status",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.7874122893956174,
+          0.20490176639819646,
+          0.021980947079887205,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.6
+      },
+      "emissiveFactor": [
+        0.45,
+        0.245,
+        0.08
+      ]
+    },
+    {
+      "name": "Trim",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.27383841647314605,
+          0.30699931892751636,
+          0.23302199930143813,
+          1
+        ],
+        "metallicFactor": 0.45,
+        "roughnessFactor": 0.65
+      }
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.06,
+        0.0,
+        -0.06
+      ],
+      "max": [
+        0.06,
+        0.7,
+        0.06
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5125,
+      "count": 84,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 96,
+      "type": "VEC3",
+      "min": [
+        0.0,
+        0.215,
+        -0.025
+      ],
+      "max": [
+        0.5,
+        0.535,
+        0.025
+      ]
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 96,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5125,
+      "count": 168,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 96,
+      "type": "VEC3",
+      "min": [
+        -0.5,
+        0.215,
+        -0.025
+      ],
+      "max": [
+        0.0,
+        0.535,
+        0.025
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 96,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5125,
+      "count": 168,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 9,
+      "componentType": 5126,
+      "count": 96,
+      "type": "VEC3",
+      "min": [
+        -0.025,
+        0.215,
+        0.0
+      ],
+      "max": [
+        0.025,
+        0.535,
+        0.5
+      ]
+    },
+    {
+      "bufferView": 10,
+      "componentType": 5126,
+      "count": 96,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 11,
+      "componentType": 5125,
+      "count": 168,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 12,
+      "componentType": 5126,
+      "count": 96,
+      "type": "VEC3",
+      "min": [
+        -0.025,
+        0.215,
+        -0.5
+      ],
+      "max": [
+        0.025,
+        0.535,
+        0.0
+      ]
+    },
+    {
+      "bufferView": 13,
+      "componentType": 5126,
+      "count": 96,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 14,
+      "componentType": 5125,
+      "count": 168,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 576,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1152,
+      "byteLength": 336,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1488,
+      "byteLength": 1152,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 2640,
+      "byteLength": 1152,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 3792,
+      "byteLength": 672,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 4464,
+      "byteLength": 1152,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 5616,
+      "byteLength": 1152,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 6768,
+      "byteLength": 672,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 7440,
+      "byteLength": 1152,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 8592,
+      "byteLength": 1152,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 9744,
+      "byteLength": 672,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 10416,
+      "byteLength": 1152,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 11568,
+      "byteLength": 1152,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 12720,
+      "byteLength": 672,
+      "target": 34963
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "Fence.bin",
+      "byteLength": 13392
+    }
+  ]
+}

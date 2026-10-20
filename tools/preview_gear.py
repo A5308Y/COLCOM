@@ -15,7 +15,7 @@ from asset_helpers import cross, dot, unit
 from preview_rifle import render
 
 
-def write_gallery(entries, out, title="weapons &amp; armor", subtitle="Frontier gear and fitted flak jackets; powered armor uses graphite, titanium and ion cyan."):
+def write_gallery(entries, out, title="weapons &amp; armor", subtitle="Frontier gear and fitted flak jackets; powered armor uses graphite, titanium and ion cyan.", *, cell_scale=None):
     out.mkdir(parents=True, exist_ok=True)
     cards = []
     for folder, name, geometry, _ in entries:
@@ -26,6 +26,8 @@ def write_gallery(entries, out, title="weapons &amp; armor", subtitle="Frontier 
         focus = [(min(p[i] for p in positions) + max(p[i] for p in positions)) / 2 for i in range(3)]
         spans = [max(dot(p, axis) for p in positions) - min(dot(p, axis) for p in positions) for axis in (right, up)]
         scale = min(1040 / spans[0], 420 / spans[1])
+        if cell_scale is not None:
+            scale, focus = cell_scale, (0, .6, 0)
         path = out / (name + ".png")
         render(geometry, path, eye, focus, scale)
         image = base64.b64encode(path.read_bytes()).decode()

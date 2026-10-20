@@ -15,6 +15,8 @@ import make_furniture
 import make_gear
 import make_heads
 import make_items
+import make_plants
+import make_world_props
 import make_skinned_clothes
 import make_skinned_legs
 import make_skinned_power_armor
@@ -59,6 +61,15 @@ class AssetRegeneration(unittest.TestCase):
                          for p in (MODELS / folder).iterdir() if p.suffix in (".gltf", ".bin")
                          and not p.stem.endswith(("Male", "Female"))}
             self.assertEqual(expected, committed, "update generator coverage when adding or removing models")
+
+    def test_world_props_and_plants_match_committed_files(self):
+        with TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            out = Path(tmp)
+            make_world_props.write_all(out / "world")
+            make_plants.write_all(out / "plants")
+            expected = {p.relative_to(MODELS) for folder in ("world", "plants")
+                        for p in (MODELS / folder).iterdir() if p.suffix in (".gltf", ".bin")}
+            self.assertEqual(self.compare_generated(out), expected)
 
     def test_skinned_models_match_committed_files(self):
         with TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):

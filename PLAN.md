@@ -29,8 +29,10 @@ notes for whoever works on it next.
     includes visible faces. A chunk is rebuilt only when something in it changes.
   - **Everything else:** pawns, trees, items and furniture each become a Bevy entity, kept in sync with
     the simulation by id.
-  - **Models:** characters are Quaternius glTF models; everything else is still low-poly shapes built
-    in code (10d replaces them).
+  - **Models:** characters use Quaternius glTF rigs; items, apparel, furniture, production/power
+    equipment and structure props use original generated models. Plants use flat-colour Quaternius
+    trees/berries/corn plus original healroot, cotton and rubber plants. Definition-selected scenes
+    share meshes/materials; shape parts remain visible until their replacement models are ready.
 - **Camera:** RTS-style: pan, rotate, zoom and tilt.
 - **Mouse clicks:** found by tracing a ray from the cursor through the block grid, respecting the layer
   view.
@@ -38,7 +40,7 @@ notes for whoever works on it next.
 - **Lighting:** a sun with shadows that moves through the day/night cycle, and lamps for interiors and
   caves.
 
-## Status (2026-10-19)
+## Status (2026-10-20)
 
 The original phases (agreed 2026-10-11) are done except for parts of the graphics work. Everything built
 so far has been checked visually and by ear in the game.
@@ -53,7 +55,7 @@ so far has been checked visually and by ear in the game.
 | 8 | More buildables and room quality | done |
 | 9 | Sound (Kenney and other real sounds, 2026-10-16) | done |
 | 10a–b | Graphics, Valheim-like: art direction, animated characters | done |
-| 10c–e | Smoothed terrain, glTF models, atmosphere | open (10e partly: seasonal colours) |
+| 10c–e | Smoothed terrain, glTF models, atmosphere | 10d implemented, GPU review pending; 10c open, 10e partly: seasonal colours |
 | 11 | Follow camera | later, optional |
 | 12 | Turn-based battles (MENACE-style), squads, loadouts, parley | done; the user is happy with them for now |
 
@@ -83,11 +85,21 @@ tests, structure and shared asset tools. The completed backlog was removed.
 
 In the suggested order. Graphics first: the content has settled, so the look can catch up.
 
-1. **10d. glTF models** for trees, plants, crops, furniture and buildings. The converted Quaternius
-   packs are already in `assets/models/nature|trees|crops|village`, so this changes the look the most
-   for the least new work.
-   Replace code-built shapes with glTF models category by category, through a `model` field in the
-   definitions (shapes stay as a fallback).
+1. **10d. GPU acceptance review.** Implementation is in place for all six plant types and the
+   remaining 20 buildable props (12 production stations, four power devices, graves, stairs, ladders
+   and fences), extending the already completed item, apparel and furniture work. Static/filled/
+   connected scene selection retains grave state and all fence masks; crop plots change from shape
+   fallback to models together only when every instance is ready. Stage thresholds, per-cell variation,
+   placement/contact dimensions, game rules and save format are unchanged.
+   CPU validation: 31 new asset pairs regenerate exactly; geometry, lifecycle and state-selection
+   tests pass. `python3 -B tools/preview_world_props.py` builds front/rear views at a common cell scale.
+   `cargo run --release --example look -- --world-props` shows actual definition transforms, growth
+   stages and all state scenes beside characters in the game's lighting. The app's existing optional
+   `character_models_load` GPU test now loads all plant models as well.
+   GPU rendering remains unverified: this session could not find a GPU, including outside the sandbox.
+   Before closing 10d, review daylight/night, gameplay zoom, rotated placements, construction ghosts,
+   occupied workstations, hidden roofs/layers and dense-colony GPU frame time. Keep walls, openings,
+   floors, roofs, wallpaper and structural joins in the grid renderer; no prefab-house replacement.
 2. **10e. Atmosphere**, the rest of it (seasonal colours and crop growth are done). Weather (rain,
    snow, fog) would build on seasons and temperature and could matter in play (cold, slower walking).
    Wind on grass and trees (custom shader), a water shader with gentle waves, volumetric fog and light

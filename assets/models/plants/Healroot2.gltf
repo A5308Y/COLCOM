@@ -1,0 +1,296 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "My World make_plants.py"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Healroot2",
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Healroot2",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2
+        },
+        {
+          "material": 1,
+          "attributes": {
+            "POSITION": 3,
+            "NORMAL": 4
+          },
+          "indices": 5
+        },
+        {
+          "material": 2,
+          "attributes": {
+            "POSITION": 6,
+            "NORMAL": 7
+          },
+          "indices": 8
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Stem",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.0835351274258047,
+          0.05087608817155679,
+          0.01960664851623822,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.95
+      }
+    },
+    {
+      "name": "Leaf",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.05087608817155679,
+          0.15487248594976835,
+          0.039681909478526005,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.95
+      }
+    },
+    {
+      "name": "New growth",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.15487248594976835,
+          0.29569980462568246,
+          0.06838485415816624,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.95
+      }
+    },
+    {
+      "name": "Flower",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.38005633644979925,
+          0.07323895587840543,
+          0.28464669032765505,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.9
+      }
+    },
+    {
+      "name": "Cotton / latex",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.748414103499371,
+          0.6738595407338318,
+          0.43387952044860834,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.95
+      }
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 36,
+      "type": "VEC3",
+      "min": [
+        -0.008,
+        0.0,
+        -0.006928203230275515
+      ],
+      "max": [
+        0.008,
+        0.198,
+        0.006928203230275516
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 36,
+      "type": "VEC3",
+      "min": [
+        -0.8660254037844388,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        0.8660254037844387,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5125,
+      "count": 60,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.0330129588122197,
+        0.033,
+        -0.11953975306030087
+      ],
+      "max": [
+        0.12,
+        0.12040000000000001,
+        0.03817663086869852
+      ]
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.5612810118493707,
+        -0.9333046359546301,
+        -0.5724294481557526
+      ],
+      "max": [
+        0.5612810118493708,
+        0.9333046359546301,
+        0.5724294481557525
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5125,
+      "count": 48,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.08848724586494945,
+        0.051699999999999996,
+        0
+      ],
+      "max": [
+        0.07300215774387063,
+        0.1391,
+        0.09524014366189831
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 48,
+      "type": "VEC3",
+      "min": [
+        -0.6733693507336123,
+        -0.925961447385205,
+        -0.6239371023141308
+      ],
+      "max": [
+        0.6733693507336123,
+        0.925961447385205,
+        0.6239371023141308
+      ]
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5125,
+      "count": 48,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 432,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 432,
+      "byteLength": 432,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 864,
+      "byteLength": 240,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1104,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 1680,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 2256,
+      "byteLength": 192,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 2448,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 3024,
+      "byteLength": 576,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 3600,
+      "byteLength": 192,
+      "target": 34963
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "Healroot2.bin",
+      "byteLength": 3792
+    }
+  ]
+}

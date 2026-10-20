@@ -1467,6 +1467,7 @@
             work_time: 8.0,
             passable: true,
             special: Grave,
+            model: Some((path: "models/world/Grave.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0), scenes: "Filled")),
             look: Parts([
                 // Open: a pit with the dug earth heaped beside it.
                 (shape: Cube, color: "earth_dark", at: (0.0, 0.01, 0.05), size: (0.46, 0.02, 0.78), filled: Some(false)),
@@ -1492,6 +1493,7 @@
             holds_floors: true,
             special: Stairs,
             // Rising towards +x; turned to face the way they're built.
+            model: Some((path: "models/world/Stairs.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "wood_light", at: (-0.375, 0.125, 0.0), size: (0.25, 0.25, 0.9)),
                 (shape: Cube, color: "wood_light", at: (-0.125, 0.25, 0.0), size: (0.25, 0.5, 0.9)),
@@ -1513,6 +1515,7 @@
             climb: true,
             // Against the +x side (turned to the wall it leans on), climbed from the open side.
             // Ladders stacked in a column make one long ladder.
+            model: Some((path: "models/world/Ladder.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "wood", at: (0.4, 0.5, -0.16), size: (0.04, 1.0, 0.04)),
                 (shape: Cube, color: "wood", at: (0.4, 0.5, 0.16), size: (0.04, 1.0, 0.04)),
@@ -1743,6 +1746,7 @@
             cost: ("wood", 2),
             work_time: 1.5,
             passable: false,
+            model: Some((path: "models/world/Fence.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0), scenes: "Connected")),
             look: Parts([
                 (shape: Cube, color: "wood", at: (0.0, 0.35, 0.0), size: (0.12, 0.7, 0.12)),
                 (shape: Cube, color: "wood_light", at: (0.25, 0.5, 0.0), size: (0.5, 0.07, 0.05), link: Some(0)),
@@ -2003,6 +2007,7 @@
             cost: ("wood", 10),
             work_time: 4.0,
             passable: false,
+            model: Some((path: "models/world/Stove.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "stone", at: (0.0, 0.35, 0.0), size: (0.9, 0.7, 0.75)),
                 (shape: Cube, color: "iron", at: (0.0, 0.72, 0.0), size: (0.92, 0.05, 0.77)),
@@ -2020,6 +2025,7 @@
             cost: ("wood", 10),
             work_time: 4.0,
             passable: false,
+            model: Some((path: "models/world/Sawbench.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "wood_light", at: (0.0, 0.5, 0.0), size: (0.95, 0.07, 0.6)),
                 (shape: Cube, color: "wood", at: (-0.4, 0.24, -0.22), size: (0.07, 0.48, 0.07)),
@@ -2039,6 +2045,7 @@
             cost: ("wood", 12),
             work_time: 4.0,
             passable: false,
+            model: Some((path: "models/world/Stonecutter.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "wood", at: (0.0, 0.25, 0.0), size: (0.8, 0.5, 0.55)),
                 (shape: Cube, color: "stone", at: (0.0, 0.54, 0.0), size: (0.95, 0.08, 0.65)),
@@ -2057,6 +2064,7 @@
             cost: ("stone_blocks", 20),
             work_time: 6.0,
             passable: false,
+            model: Some((path: "models/world/Smelter.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "stone_block", at: (0.0, 0.425, 0.0), size: (0.85, 0.85, 0.85)),
                 (shape: Cube, color: "ember", at: (0.0, 0.25, 0.43), size: (0.36, 0.24, 0.02)),
@@ -2072,6 +2080,7 @@
             cost: ("stone_blocks", 15),
             work_time: 5.0,
             passable: false,
+            model: Some((path: "models/world/Smithy.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "stone_block", at: (-0.25, 0.25, 0.0), size: (0.45, 0.5, 0.7)),
                 (shape: Cube, color: "ember", at: (-0.25, 0.51, 0.0), size: (0.3, 0.02, 0.45)),
@@ -2088,6 +2097,7 @@
             cost: ("planks", 10),
             work_time: 4.0,
             passable: false,
+            model: Some((path: "models/world/CraftingBench.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "wood", at: (0.0, 0.55, 0.0), size: (0.95, 0.07, 0.62)),
                 (shape: Cube, color: "wood", at: (-0.4, 0.26, -0.23), size: (0.07, 0.52, 0.07)),
@@ -2106,6 +2116,7 @@
             cost: [("structural_components", 8), ("steel", 30)],
             work_time: 12.0,
             passable: false,
+            model: Some((path: "models/world/MachinistBench.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "steel", at: (0.0, 0.5, 0.0), size: (0.92, 0.07, 0.6)),
                 (shape: Cube, color: "iron", at: (0.0, 0.24, 0.0), size: (0.8, 0.48, 0.5)),
@@ -2121,6 +2132,7 @@
             cost: [("structural_components", 6), ("mechanical_components", 6), ("stone_blocks", 30)],
             work_time: 14.0,
             passable: false,
+            model: Some((path: "models/world/Refinery.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cylinder, color: "steel", at: (-0.18, 0.45, 0.0), size: (0.5, 0.9, 0.5)),
                 (shape: Cylinder, color: "copper", at: (0.25, 0.3, 0.1), size: (0.26, 0.6, 0.26)),
@@ -2136,6 +2148,7 @@
             cost: [("structural_components", 6), ("mechanical_components", 4), ("textile_components", 4), ("copper", 15)],
             work_time: 12.0,
             passable: false,
+            model: Some((path: "models/world/ChemistryLab.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "white", at: (0.0, 0.5, 0.0), size: (0.92, 0.06, 0.6)),
                 (shape: Cube, color: "steel", at: (0.0, 0.24, 0.0), size: (0.84, 0.48, 0.5)),
@@ -2152,6 +2165,7 @@
             cost: [("structural_components", 8), ("mechanical_components", 6), ("chemical_components", 4), ("copper", 30)],
             work_time: 14.0,
             passable: false,
+            model: Some((path: "models/world/ElectronicsBench.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "wood_light", at: (0.0, 0.5, 0.0), size: (0.92, 0.06, 0.6)),
                 (shape: Cube, color: "iron", at: (0.0, 0.24, 0.0), size: (0.84, 0.48, 0.5)),
@@ -2168,6 +2182,7 @@
             cost: [("structural_components", 14), ("mechanical_components", 10), ("electrical_components", 8), ("optical_components", 6), ("chemical_components", 4)],
             work_time: 24.0,
             passable: false,
+            model: Some((path: "models/world/Fabricator.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "plating", at: (0.0, 0.45, 0.0), size: (0.94, 0.9, 0.7)),
                 (shape: Cube, color: "glass", at: (0.0, 0.5, 0.355), size: (0.6, 0.44, 0.01)),
@@ -2183,6 +2198,7 @@
             cost: [("structural_components", 6), ("mechanical_components", 6)],
             work_time: 10.0,
             passable: false,
+            model: Some((path: "models/world/SalvageBench.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "rust", at: (0.0, 0.5, 0.0), size: (0.92, 0.07, 0.6)),
                 (shape: Cube, color: "iron", at: (0.0, 0.24, 0.0), size: (0.8, 0.48, 0.5)),
@@ -2201,6 +2217,7 @@
             passable: false,
             open_sky: true,
             power: Some((output: 1000.0)),
+            model: Some((path: "models/world/PVSystem.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cylinder, color: "steel", at: (0.0, 0.3, 0.0), size: (0.08, 0.6, 0.08)),
                 (shape: Cube, color: "steel", at: (0.0, 0.66, 0.0), size: (0.96, 0.04, 0.8), turn: (25.0, 0.0, 0.0)),
@@ -2219,6 +2236,7 @@
             passable: false,
             heat: 20.0,
             power: Some((draw: 800.0)),
+            model: Some((path: "models/world/ElectricHeater.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "white", at: (0.0, 0.25, 0.0), size: (0.7, 0.42, 0.22)),
                 (shape: Cube, color: "ember", at: (0.0, 0.26, 0.115), size: (0.56, 0.24, 0.01)),
@@ -2236,6 +2254,7 @@
             passable: false,
             heat: -16.0,
             power: Some((draw: 800.0)),
+            model: Some((path: "models/world/Cooler.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "white", at: (0.0, 0.35, 0.0), size: (0.7, 0.66, 0.4)),
                 (shape: Cylinder, color: "iron", at: (0.0, 0.38, 0.205), size: (0.4, 0.4, 0.01), turn: (90.0, 0.0, 0.0)),
@@ -2252,6 +2271,7 @@
             work_time: 8.0,
             passable: false,
             power: Some((storage: 10000.0)),
+            model: Some((path: "models/world/HomeBattery.gltf", pose: (at: (0.0, 0.0, 0.0), turn: (0.0, 0.0, 0.0), scale: 1.0))),
             look: Parts([
                 (shape: Cube, color: "white", at: (0.0, 0.4, 0.1), size: (0.6, 0.8, 0.3)),
                 (shape: Cube, color: "led", at: (0.0, 0.62, -0.055), size: (0.12, 0.03, 0.01)),
@@ -2282,40 +2302,40 @@
             scale: (0.85, 1.2),
             stages: [
                 (from: 0.0, variants: [
-                    [
+                    (parts: [
                         (shape: Cylinder, color: "trunk", at: (0.0, 0.35, 0.0), size: (0.16, 0.7, 0.16)),
                         (shape: Sphere, color: "leaf", at: (-0.16, 0.9, 0.05), size: (0.62, 0.62, 0.62)),
                         (shape: Sphere, color: "leaf", at: (0.17, 0.85, -0.1), size: (0.56, 0.56, 0.56)),
                         (shape: Sphere, color: "leaf", at: (0.0, 1.15, 0.0), size: (0.62, 0.62, 0.62)),
                         (shape: Sphere, color: "leaf", at: (0.05, 0.82, 0.18), size: (0.5, 0.5, 0.5)),
-                    ],
-                    [
+                    ], model: Some((path: "models/nature/CommonTree_1.gltf", placements: [(at: (0.0017387, 0.0249910, -0.0050035), turn: (0.0, 0.0, 0.0), scale: 0.58857652)]))),
+                    (parts: [
                         (shape: Cylinder, color: "trunk", at: (0.0, 0.35, 0.0), size: (0.16, 0.7, 0.16)),
                         (shape: Sphere, color: "leaf_mid", at: (-0.16, 0.9, 0.05), size: (0.62, 0.62, 0.62)),
                         (shape: Sphere, color: "leaf_mid", at: (0.17, 0.85, -0.1), size: (0.56, 0.56, 0.56)),
                         (shape: Sphere, color: "leaf_mid", at: (0.0, 1.15, 0.0), size: (0.62, 0.62, 0.62)),
                         (shape: Sphere, color: "leaf_mid", at: (0.05, 0.82, 0.18), size: (0.5, 0.5, 0.5)),
-                    ],
-                    [
+                    ], model: Some((path: "models/nature/CommonTree_3.gltf", placements: [(at: (-0.0000004, 0.0304252, -0.0000000), turn: (0.0, 0.0, 0.0), scale: 0.42240849)]))),
+                    (parts: [
                         (shape: Cylinder, color: "trunk", at: (0.0, 0.35, 0.0), size: (0.16, 0.7, 0.16)),
                         (shape: Sphere, color: "leaf_light", at: (-0.16, 0.9, 0.05), size: (0.62, 0.62, 0.62)),
                         (shape: Sphere, color: "leaf_light", at: (0.17, 0.85, -0.1), size: (0.56, 0.56, 0.56)),
                         (shape: Sphere, color: "leaf_light", at: (0.0, 1.15, 0.0), size: (0.62, 0.62, 0.62)),
                         (shape: Sphere, color: "leaf_light", at: (0.05, 0.82, 0.18), size: (0.5, 0.5, 0.5)),
-                    ],
+                    ], model: Some((path: "models/nature/BirchTree_1.gltf", placements: [(at: (-0.0459552, 0.0024847, -0.0133215), turn: (0.0, 0.0, 0.0), scale: 0.40852873)]))),
                     // Conifers.
-                    [
+                    (parts: [
                         (shape: Cylinder, color: "trunk", at: (0.0, 0.35, 0.0), size: (0.16, 0.7, 0.16)),
                         (shape: Cone, color: "pine", at: (0.0, 0.775, 0.0), size: (0.95, 0.75, 0.95)),
                         (shape: Cone, color: "pine", at: (0.0, 1.075, 0.0), size: (0.75, 0.65, 0.75)),
                         (shape: Cone, color: "pine", at: (0.0, 1.325, 0.0), size: (0.5, 0.55, 0.5)),
-                    ],
-                    [
+                    ], model: Some((path: "models/nature/PineTree_1.gltf", placements: [(at: (0.0080290, 0.0077018, 0.0122443), turn: (0.0, 0.0, 0.0), scale: 0.59258665)]))),
+                    (parts: [
                         (shape: Cylinder, color: "trunk", at: (0.0, 0.35, 0.0), size: (0.16, 0.7, 0.16)),
                         (shape: Cone, color: "pine_light", at: (0.0, 0.775, 0.0), size: (0.95, 0.75, 0.95)),
                         (shape: Cone, color: "pine_light", at: (0.0, 1.075, 0.0), size: (0.75, 0.65, 0.75)),
                         (shape: Cone, color: "pine_light", at: (0.0, 1.325, 0.0), size: (0.5, 0.55, 0.5)),
-                    ],
+                    ], model: Some((path: "models/nature/PineTree_2.gltf", placements: [(at: (-0.0131021, 0.0073687, 0.0087308), turn: (0.0, 0.0, 0.0), scale: 0.44884726)]))),
                 ]),
             ],
         ),
@@ -2327,7 +2347,7 @@
             wild: Some((density: 0.025, regrow: 0.4)),
             harvest: (desig: Some(Forage), work: Growing, skill: Growing, time: 1.5, yields: ("raw_food", 4), verb: "foraging"),
             stages: [
-                (from: 0.0, variants: [[
+                (from: 0.0, variants: [(parts: [
                     (shape: Sphere, color: "leaf", at: (-0.12, 0.17, 0.05), size: (0.38, 0.304, 0.38)),
                     (shape: Sphere, color: "leaf", at: (0.13, 0.17, 0.06), size: (0.34, 0.272, 0.34)),
                     (shape: Sphere, color: "leaf", at: (0.0, 0.17, -0.1), size: (0.4, 0.32, 0.4)),
@@ -2335,7 +2355,7 @@
                     (shape: Sphere, color: "berry", at: (0.15, 0.3, -0.12), size: (0.08, 0.08, 0.08)),
                     (shape: Sphere, color: "berry", at: (0.05, 0.33, 0.15), size: (0.08, 0.08, 0.08)),
                     (shape: Sphere, color: "berry", at: (0.22, 0.2, 0.08), size: (0.08, 0.08, 0.08)),
-                ]]),
+                ], model: Some((path: "models/nature/BushBerries_1.gltf", placements: [(at: (0.0078989, 0.0093153, -0.0004748), turn: (0.0, 0.0, 0.0), scale: 0.28996932)])))]),
             ],
         ),
         (
@@ -2346,25 +2366,25 @@
             sow: Some((work: Growing, skill: Growing, time: 1.5)),
             harvest: (work: Growing, skill: Growing, time: 1.5, yields: ("raw_food", 6), verb: "harvesting"),
             stages: [
-                (from: 0.0, variants: [[
+                (from: 0.0, variants: [(parts: [
                     (shape: Cylinder, color: "sprout", at: (-0.22, 0.07, -0.22), size: (0.04, 0.14, 0.04)),
                     (shape: Cylinder, color: "sprout", at: (0.22, 0.07, -0.22), size: (0.04, 0.14, 0.04)),
                     (shape: Cylinder, color: "sprout", at: (-0.22, 0.07, 0.22), size: (0.04, 0.14, 0.04)),
                     (shape: Cylinder, color: "sprout", at: (0.22, 0.07, 0.22), size: (0.04, 0.14, 0.04)),
-                ]]),
-                (from: 0.25, variants: [[
+                ], model: Some((path: "models/crops/Corn_1.gltf", placements: [(at: (-0.2180506, -0.0003610, -0.2227636), turn: (0.0, 0.0, 0.0), scale: 0.36137146), (at: (0.2219494, -0.0003610, -0.2227636), turn: (0.0, 0.0, 0.0), scale: 0.36137146), (at: (-0.2180506, -0.0003610, 0.2172364), turn: (0.0, 0.0, 0.0), scale: 0.36137146), (at: (0.2219494, -0.0003610, 0.2172364), turn: (0.0, 0.0, 0.0), scale: 0.36137146)])))]),
+                (from: 0.25, variants: [(parts: [
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.0855, -0.22), size: (0.19, 0.171, 0.19)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.0855, -0.22), size: (0.19, 0.171, 0.19)),
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.0855, 0.22), size: (0.19, 0.171, 0.19)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.0855, 0.22), size: (0.19, 0.171, 0.19)),
-                ]]),
-                (from: 0.6, variants: [[
+                ], model: Some((path: "models/crops/Corn_2.gltf", placements: [(at: (-0.2344483, 0.0000167, -0.2255204), turn: (0.0, 0.0, 0.0), scale: 0.30363527), (at: (0.2055517, 0.0000167, -0.2255204), turn: (0.0, 0.0, 0.0), scale: 0.30363527), (at: (-0.2344483, 0.0000167, 0.2144796), turn: (0.0, 0.0, 0.0), scale: 0.30363527), (at: (0.2055517, 0.0000167, 0.2144796), turn: (0.0, 0.0, 0.0), scale: 0.30363527)])))]),
+                (from: 0.6, variants: [(parts: [
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.117, -0.22), size: (0.26, 0.234, 0.26)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.117, -0.22), size: (0.26, 0.234, 0.26)),
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.117, 0.22), size: (0.26, 0.234, 0.26)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.117, 0.22), size: (0.26, 0.234, 0.26)),
-                ]]),
-                (from: 1.0, variants: [[
+                ], model: Some((path: "models/crops/Corn_3.gltf", placements: [(at: (-0.2258221, 0.0000366, -0.2309443), turn: (0.0, 0.0, 0.0), scale: 0.32080250), (at: (0.2141779, 0.0000366, -0.2309443), turn: (0.0, 0.0, 0.0), scale: 0.32080250), (at: (-0.2258221, 0.0000366, 0.2090557), turn: (0.0, 0.0, 0.0), scale: 0.32080250), (at: (0.2141779, 0.0000366, 0.2090557), turn: (0.0, 0.0, 0.0), scale: 0.32080250)])))]),
+                (from: 1.0, variants: [(parts: [
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.1485, -0.22), size: (0.33, 0.297, 0.33)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.1485, -0.22), size: (0.33, 0.297, 0.33)),
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.1485, 0.22), size: (0.33, 0.297, 0.33)),
@@ -2373,7 +2393,7 @@
                     (shape: Sphere, color: "wheat", at: (0.22, 0.3135, -0.22), size: (0.1, 0.1, 0.1)),
                     (shape: Sphere, color: "wheat", at: (-0.22, 0.3135, 0.22), size: (0.1, 0.1, 0.1)),
                     (shape: Sphere, color: "wheat", at: (0.22, 0.3135, 0.22), size: (0.1, 0.1, 0.1)),
-                ]]),
+                ], model: Some((path: "models/crops/Corn_4.gltf", placements: [(at: (-0.2222972, -0.0011502, -0.2065686), turn: (0.0, 0.0, 0.0), scale: 0.33043618), (at: (0.2177028, -0.0011502, -0.2065686), turn: (0.0, 0.0, 0.0), scale: 0.33043618), (at: (-0.2222972, -0.0011502, 0.2334314), turn: (0.0, 0.0, 0.0), scale: 0.33043618), (at: (0.2177028, -0.0011502, 0.2334314), turn: (0.0, 0.0, 0.0), scale: 0.33043618)])))]),
             ],
         ),
         (
@@ -2384,25 +2404,25 @@
             sow: Some((work: Growing, skill: Growing, time: 1.5)),
             harvest: (work: Growing, skill: Growing, time: 1.5, yields: ("healroot", 3), verb: "harvesting"),
             stages: [
-                (from: 0.0, variants: [[
+                (from: 0.0, variants: [(parts: [
                     (shape: Cylinder, color: "sprout", at: (-0.22, 0.07, -0.22), size: (0.04, 0.14, 0.04)),
                     (shape: Cylinder, color: "sprout", at: (0.22, 0.07, -0.22), size: (0.04, 0.14, 0.04)),
                     (shape: Cylinder, color: "sprout", at: (-0.22, 0.07, 0.22), size: (0.04, 0.14, 0.04)),
                     (shape: Cylinder, color: "sprout", at: (0.22, 0.07, 0.22), size: (0.04, 0.14, 0.04)),
-                ]]),
-                (from: 0.25, variants: [[
+                ], model: Some((path: "models/plants/Healroot1.gltf", placements: [(at: (-0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (-0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000)])))]),
+                (from: 0.25, variants: [(parts: [
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.0855, -0.22), size: (0.19, 0.171, 0.19)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.0855, -0.22), size: (0.19, 0.171, 0.19)),
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.0855, 0.22), size: (0.19, 0.171, 0.19)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.0855, 0.22), size: (0.19, 0.171, 0.19)),
-                ]]),
-                (from: 0.6, variants: [[
+                ], model: Some((path: "models/plants/Healroot2.gltf", placements: [(at: (-0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (-0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000)])))]),
+                (from: 0.6, variants: [(parts: [
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.117, -0.22), size: (0.26, 0.234, 0.26)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.117, -0.22), size: (0.26, 0.234, 0.26)),
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.117, 0.22), size: (0.26, 0.234, 0.26)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.117, 0.22), size: (0.26, 0.234, 0.26)),
-                ]]),
-                (from: 1.0, variants: [[
+                ], model: Some((path: "models/plants/Healroot3.gltf", placements: [(at: (-0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (-0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000)])))]),
+                (from: 1.0, variants: [(parts: [
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.1485, -0.22), size: (0.33, 0.297, 0.33)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.1485, -0.22), size: (0.33, 0.297, 0.33)),
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.1485, 0.22), size: (0.33, 0.297, 0.33)),
@@ -2411,7 +2431,7 @@
                     (shape: Sphere, color: "healroot", at: (0.22, 0.3135, -0.22), size: (0.1, 0.1, 0.1)),
                     (shape: Sphere, color: "healroot", at: (-0.22, 0.3135, 0.22), size: (0.1, 0.1, 0.1)),
                     (shape: Sphere, color: "healroot", at: (0.22, 0.3135, 0.22), size: (0.1, 0.1, 0.1)),
-                ]]),
+                ], model: Some((path: "models/plants/Healroot4.gltf", placements: [(at: (-0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (-0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000)])))]),
             ],
         ),
         (
@@ -2422,25 +2442,25 @@
             sow: Some((work: Growing, skill: Growing, time: 1.5)),
             harvest: (work: Growing, skill: Growing, time: 1.5, yields: ("cotton", 6), verb: "harvesting"),
             stages: [
-                (from: 0.0, variants: [[
+                (from: 0.0, variants: [(parts: [
                     (shape: Cylinder, color: "sprout", at: (-0.22, 0.07, -0.22), size: (0.04, 0.14, 0.04)),
                     (shape: Cylinder, color: "sprout", at: (0.22, 0.07, -0.22), size: (0.04, 0.14, 0.04)),
                     (shape: Cylinder, color: "sprout", at: (-0.22, 0.07, 0.22), size: (0.04, 0.14, 0.04)),
                     (shape: Cylinder, color: "sprout", at: (0.22, 0.07, 0.22), size: (0.04, 0.14, 0.04)),
-                ]]),
-                (from: 0.25, variants: [[
+                ], model: Some((path: "models/plants/Cotton1.gltf", placements: [(at: (-0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (-0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000)])))]),
+                (from: 0.25, variants: [(parts: [
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.0855, -0.22), size: (0.19, 0.171, 0.19)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.0855, -0.22), size: (0.19, 0.171, 0.19)),
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.0855, 0.22), size: (0.19, 0.171, 0.19)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.0855, 0.22), size: (0.19, 0.171, 0.19)),
-                ]]),
-                (from: 0.6, variants: [[
+                ], model: Some((path: "models/plants/Cotton2.gltf", placements: [(at: (-0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (-0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000)])))]),
+                (from: 0.6, variants: [(parts: [
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.117, -0.22), size: (0.26, 0.234, 0.26)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.117, -0.22), size: (0.26, 0.234, 0.26)),
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.117, 0.22), size: (0.26, 0.234, 0.26)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.117, 0.22), size: (0.26, 0.234, 0.26)),
-                ]]),
-                (from: 1.0, variants: [[
+                ], model: Some((path: "models/plants/Cotton3.gltf", placements: [(at: (-0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (-0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000)])))]),
+                (from: 1.0, variants: [(parts: [
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.1485, -0.22), size: (0.33, 0.297, 0.33)),
                     (shape: Sphere, color: "sprout", at: (0.22, 0.1485, -0.22), size: (0.33, 0.297, 0.33)),
                     (shape: Sphere, color: "sprout", at: (-0.22, 0.1485, 0.22), size: (0.33, 0.297, 0.33)),
@@ -2449,7 +2469,7 @@
                     (shape: Sphere, color: "cotton", at: (0.22, 0.3135, -0.22), size: (0.1, 0.1, 0.1)),
                     (shape: Sphere, color: "cotton", at: (-0.22, 0.3135, 0.22), size: (0.1, 0.1, 0.1)),
                     (shape: Sphere, color: "cotton", at: (0.22, 0.3135, 0.22), size: (0.1, 0.1, 0.1)),
-                ]]),
+                ], model: Some((path: "models/plants/Cotton4.gltf", placements: [(at: (-0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, -0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (-0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000), (at: (0.2200000, 0.0000000, 0.2200000), turn: (0.0, 0.0, 0.0), scale: 1.00000000)])))]),
             ],
         ),
         (
@@ -2460,18 +2480,18 @@
             sow: Some((work: Growing, skill: Growing, time: 1.5)),
             harvest: (work: Growing, skill: Growing, time: 2.0, yields: ("latex", 5), verb: "tapping"),
             stages: [
-                (from: 0.0, variants: [[
+                (from: 0.0, variants: [(parts: [
                     (shape: Cylinder, color: "sprout", at: (0.0, 0.08, 0.0), size: (0.05, 0.16, 0.05)),
-                ]]),
-                (from: 0.4, variants: [[
+                ], model: Some((path: "models/plants/RubberPlant1.gltf", placements: [(at: (0.0000000, 0.0000000, 0.0000000), turn: (0.0, 0.0, 0.0), scale: 1.00000000)])))]),
+                (from: 0.4, variants: [(parts: [
                     (shape: Cylinder, color: "trunk", at: (0.0, 0.2, 0.0), size: (0.08, 0.4, 0.08)),
                     (shape: Sphere, color: "leaf", at: (0.0, 0.45, 0.0), size: (0.4, 0.3, 0.4)),
-                ]]),
-                (from: 1.0, variants: [[
+                ], model: Some((path: "models/plants/RubberPlant2.gltf", placements: [(at: (0.0000000, 0.0000000, 0.0000000), turn: (0.0, 0.0, 0.0), scale: 1.00000000)])))]),
+                (from: 1.0, variants: [(parts: [
                     (shape: Cylinder, color: "trunk", at: (0.0, 0.3, 0.0), size: (0.1, 0.6, 0.1)),
                     (shape: Sphere, color: "leaf", at: (0.0, 0.7, 0.0), size: (0.6, 0.45, 0.6)),
                     (shape: Cylinder, color: "latex", at: (0.06, 0.18, 0.06), size: (0.08, 0.08, 0.08)),
-                ]]),
+                ], model: Some((path: "models/plants/RubberPlant3.gltf", placements: [(at: (0.0000000, 0.0000000, 0.0000000), turn: (0.0, 0.0, 0.0), scale: 1.00000000)])))]),
             ],
         ),
     ],

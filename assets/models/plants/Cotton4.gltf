@@ -1,0 +1,360 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "My World make_plants.py"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "name": "Cotton4",
+      "mesh": 0
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Cotton4",
+      "primitives": [
+        {
+          "material": 0,
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1
+          },
+          "indices": 2
+        },
+        {
+          "material": 1,
+          "attributes": {
+            "POSITION": 3,
+            "NORMAL": 4
+          },
+          "indices": 5
+        },
+        {
+          "material": 2,
+          "attributes": {
+            "POSITION": 6,
+            "NORMAL": 7
+          },
+          "indices": 8
+        },
+        {
+          "material": 4,
+          "attributes": {
+            "POSITION": 9,
+            "NORMAL": 10
+          },
+          "indices": 11
+        }
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "name": "Stem",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.0835351274258047,
+          0.05087608817155679,
+          0.01960664851623822,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.95
+      }
+    },
+    {
+      "name": "Leaf",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.05087608817155679,
+          0.15487248594976835,
+          0.039681909478526005,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.95
+      }
+    },
+    {
+      "name": "New growth",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.15487248594976835,
+          0.29569980462568246,
+          0.06838485415816624,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.95
+      }
+    },
+    {
+      "name": "Flower",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.38005633644979925,
+          0.07323895587840543,
+          0.28464669032765505,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.9
+      }
+    },
+    {
+      "name": "Cotton / latex",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.748414103499371,
+          0.6738595407338318,
+          0.43387952044860834,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 0.95
+      }
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 360,
+      "type": "VEC3",
+      "min": [
+        -0.07010000000000004,
+        0.0,
+        -0.09101926993774449
+      ],
+      "max": [
+        0.035100000000000006,
+        0.5694682713554272,
+        0.0910192699377445
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 360,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "max": [
+        1.0,
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5125,
+      "count": 564,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5126,
+      "count": 72,
+      "type": "VEC3",
+      "min": [
+        -0.1575500569270603,
+        0.0885,
+        -0.1593863374137345
+      ],
+      "max": [
+        0.16,
+        0.33909999999999996,
+        0.05092129235162697
+      ]
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 72,
+      "type": "VEC3",
+      "min": [
+        -0.49210765351881275,
+        -0.9664958062328811,
+        -0.47594360054975
+      ],
+      "max": [
+        0.4921076535188128,
+        0.9664958062328811,
+        0.47594360054975
+      ]
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5125,
+      "count": 72,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 72,
+      "type": "VEC3",
+      "min": [
+        -0.11798299448659927,
+        0.13865,
+        -0.0858516668800696
+      ],
+      "max": [
+        0.13501663339719874,
+        0.38925,
+        0.12698685821586442
+      ]
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5126,
+      "count": 72,
+      "type": "VEC3",
+      "min": [
+        -0.5698609049225907,
+        -0.9625714192703148,
+        -0.5470122976484486
+      ],
+      "max": [
+        0.5698609049225907,
+        0.9625714192703148,
+        0.5470122976484485
+      ]
+    },
+    {
+      "bufferView": 8,
+      "componentType": 5125,
+      "count": 72,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 9,
+      "componentType": 5126,
+      "count": 972,
+      "type": "VEC3",
+      "min": [
+        -0.07610000000000004,
+        0.4734861519036092,
+        -0.10400965099451107
+      ],
+      "max": [
+        0.050100000000000006,
+        0.5865138480963906,
+        0.1040096509945111
+      ]
+    },
+    {
+      "bufferView": 10,
+      "componentType": 5126,
+      "count": 972,
+      "type": "VEC3",
+      "min": [
+        -1.0,
+        -1.0,
+        -0.8660254037844387
+      ],
+      "max": [
+        1.0,
+        1.0,
+        0.8660254037844387
+      ]
+    },
+    {
+      "bufferView": 11,
+      "componentType": 5125,
+      "count": 1512,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 4320,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 4320,
+      "byteLength": 4320,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 8640,
+      "byteLength": 2256,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 10896,
+      "byteLength": 864,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 11760,
+      "byteLength": 864,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 12624,
+      "byteLength": 288,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 12912,
+      "byteLength": 864,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 13776,
+      "byteLength": 864,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 14640,
+      "byteLength": 288,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 14928,
+      "byteLength": 11664,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 26592,
+      "byteLength": 11664,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 38256,
+      "byteLength": 6048,
+      "target": 34963
+    }
+  ],
+  "buffers": [
+    {
+      "uri": "Cotton4.bin",
+      "byteLength": 44304
+    }
+  ]
+}

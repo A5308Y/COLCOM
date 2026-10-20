@@ -11,7 +11,8 @@ cargo run --features dev       # faster rebuilds while developing (dynamic linki
 cargo run --release -- --scenario battle   # start in a prepared battle (Shift+N restarts it)
 cargo test                     # simulation tests + a headless run of the whole app
 cargo run --release --example profile   # time the simulation and saving on a busy colony
-cargo run --release --example look      # the downloaded models in the game's lighting (art direction test)
+cargo run --release --example look      # downloaded source packs in the game's lighting
+cargo run --release --example look -- --world-props  # selected plants, machinery and state scenes at gameplay scale
 cargo run --release -- --new --screenshot           # save every interface screen to target/screenshots/ and quit
 cargo run --release -- --screenshot help,menu       # only these shots (an unknown name lists them all)
 MY_WORLD_NO_GPU=1 cargo run --release -- --new --screenshot   # no GPU: the interface alone, drawn on the CPU (*-cpu.png)
@@ -362,12 +363,17 @@ harvested and every recipe made.
 - `assets/models/furniture/`: 20 matching beds, tables, seats, storage pieces, lights and wall
   furnishings; [asset notes](assets/models/furniture/README.md). Models preserve interaction heights,
   owner-colored blankets and blue construction previews, with shape parts as loading fallbacks.
+- `assets/models/world/`: the remaining 20 production, power and structure props; [asset notes](assets/models/world/README.md).
+  Grave and fence scenes share geometry and follow fill state and neighbouring connections.
+- `assets/models/plants/`: original healroot, cotton and rubber growth stages; [asset notes](assets/models/plants/README.md).
+  Trees, berry bushes and corn use the flat-colour `nature/` and `crops/` packs. Models are chosen per
+  growth-stage variant, with cell-stable rotation/size and shape fallbacks while loading.
 - `assets/models/nature/`, `trees/`, `crops/`, `village/`: Quaternius packs converted from OBJ by
   `python3 tools/obj_to_gltf.py` (from `asset-sources/`)
 - `asset-sources/`: the original downloads (FBX, OBJ, Blender files). Not used by the game and not in
   git (see `.gitignore`); `assets/CREDITS.md` says where everything comes from.
 
-`cargo test --release -- --ignored` loads the character models and animations with the GPU (it can't run
+`cargo test --release character_models_load -- --ignored` loads all referenced models and animations with the GPU (it can't run
 in a sandbox without one).
 
 ### Replacing the sounds

@@ -271,17 +271,29 @@ class Mesh:
         for side in (-1, 1):
             self.box((side * size * .32, y, z), (size * .36, .009, size * .28), 4, bevel=.001)
 
-    def write(self, name, out, pieces=None):
+    def write(self, name, out, pieces=None, *, scenes=None, generator="My World make_rifle.py"):
         """Write one prop, or shared armour meshes with inventory and bone scenes.
 
         `pieces`: (name, geometry, inventory translation) tuples. Scene zero
         assembles them; scenes 1..N expose each mesh around its bone origin.
+        `scenes`: optional (label, piece-index-list) assemblies sharing those
+        meshes. Omit it to preserve the stored/bone layout of existing assets.
         """
         # Preserve the existing metadata as well as geometry bytes during extraction.
-        gltf = {"asset": {"version": "2.0", "generator": "My World make_rifle.py"},
+        gltf = {"asset": {"version": "2.0", "generator": generator},
                 "scene": 0, "scenes": [], "nodes": [],
                 "meshes": [], "materials": [], "accessors": [], "bufferViews": []}
-        if pieces:
+        if scenes is not None:
+            # Composite scenes reference the same meshes: connected fences and
+            # filled graves need different assemblies, not duplicated geometry.
+            for label, members in scenes:
+                nodes = []
+                for index in members:
+                    piece_name, _, at = pieces[index]
+                    nodes.append(len(gltf["nodes"]))
+                    gltf["nodes"].append({"name": piece_name, "mesh": index, "translation": at})
+                gltf["scenes"].append({"name": label, "nodes": nodes})
+        elif pieces:
             gltf["nodes"].append({"name": name, "children": list(range(1, len(pieces) + 1))})
             gltf["scenes"].append({"name": "Stored", "nodes": [0]})
             for i, (label, _, at) in enumerate(pieces):

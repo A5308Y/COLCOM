@@ -1,11 +1,15 @@
 //! Look test (phase 10a): the downloaded models in the game's lighting, to
 //! judge the art direction before converting the game to them.
 //!
-//! `cargo run --release --example look`
+//! `cargo run --release --example look` browses the downloaded source packs.
+//! `cargo run --release --example look -- --world-props` reviews selected plants,
+//! machinery and state scenes with their actual definition transforms.
+//! `--world-manifest` exports those matrices as JSON for the CPU preview tool.
 //!
 //! Everything is shown at one scale (`SCALE`): a character is about one
-//! cell tall, as pawns are in the game, so the packs' relative sizes are
-//! true. A faint grid marks game cells.
+//! cell tall, as pawns are in the game, so the source packs' relative sizes are
+//! true. World-prop mode instead uses each definition's placement/scale directly.
+//! A faint grid marks game cells.
 //!
 //! Keys: right-drag or Q/E rotate, WASD pan, wheel zoom; Left/Right change
 //! the animation; T cycles textures (smooth, sharp, pixel); 1-4 time of day
@@ -34,6 +38,11 @@ const SCALE: f32 = 0.55;
 const ANIMATIONS: &str = "models/characters/animations/UAL1_Standard.glb";
 
 fn main() {
+    if std::env::args().any(|a| a == "--world-manifest") {
+        println!("{}", serde_json::to_string(&world_review_entries()).unwrap());
+        return;
+    }
+    let world_props = std::env::args().any(|a| a == "--world-props");
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window { title: "My World - look test".into(), ..default() }),
@@ -43,8 +52,9 @@ fn main() {
         .insert_resource(DirectionalLightShadowMap { size: 4096 })
         .insert_resource(ClearColor(Color::srgb(0.55, 0.72, 0.9)))
         .insert_resource(GlobalAmbientLight { brightness: 300.0, ..default() })
-        .insert_resource(View { yaw: 0.6, pitch: 0.5, distance: 14.0, focus: Vec3::new(0.0, 0.0, 2.0) })
+        .insert_resource(View { yaw: 0.6, pitch: 0.5, distance: if world_props { 32.0 } else { 14.0 }, focus: Vec3::new(0.0, 0.0, if world_props { 14.0 } else { 2.0 }) })
         .insert_resource(Settings { time_of_day: 0.4, textures: Textures::Smooth, grid: true })
+        .init_resource::<WorldLabels>()
         .init_resource::<Library>()
         .init_resource::<Originals>()
         .add_systems(Startup, setup)
@@ -115,7 +125,9 @@ fn setup(
     mut library: ResMut<Library>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut labels: ResMut<WorldLabels>,
 ) {
+    let reviewing_world = std::env::args().any(|a| a == "--world-props");
     library.gltf = assets.load(ANIMATIONS);
 
     commands.spawn((
@@ -141,7 +153,7 @@ fn setup(
 
     // Ground, and a few game blocks (walls, rock, soil) in today's colours for comparison.
     let grass = materials.add(StandardMaterial { base_color: Color::srgb(0.38, 0.52, 0.26), perceptual_roughness: 0.95, ..default() });
-    commands.spawn((Mesh3d(meshes.add(Plane3d::default().mesh().size(80.0, 60.0))), MeshMaterial3d(grass)));
+    commands.spawn((Mesh3d(meshes.add(Plane3d::default().mesh().size(80.0, if reviewing_world { 90.0 } else { 60.0 }))), MeshMaterial3d(grass)));
     let cube = meshes.add(Cuboid::new(1.0, 1.0, 1.0));
     for (x, z, color) in [
         (-9.5, -1.5, Color::srgb(0.6, 0.57, 0.53)),
@@ -171,6 +183,11 @@ fn setup(
             let path = format!("models/characters/{}.gltf", part);
             commands.spawn((model(&assets, &path), ChildOf(character))).observe(rig_skeleton);
         }
+    }
+
+    if reviewing_world {
+        world_props_review(&mut commands, &assets, &mut labels);
+        return;
     }
 
     // Rows of everything else, all at the same scale.
@@ -207,6 +224,76 @@ fn setup(
             commands.spawn((model(&assets, &path), Transform::from_translation(at).with_scale(Vec3::splat(SCALE))));
         }
     }
+}
+
+/// Labels project onto the selected models rather than using source-pack sizes.
+#[derive(Resource, Default)]
+struct WorldLabels(Vec<(Vec3, String)>);
+
+fn review_pose(p: &my_world::defs::ModelPose) -> Transform {
+    Transform::from_xyz(p.at.0, p.at.1, p.at.2)
+        .with_rotation(Quat::from_euler(EulerRot::XYZ, p.turn.0.to_radians(), p.turn.1.to_radians(), p.turn.2.to_radians()))
+        .with_scale(Vec3::splat(p.scale))
+}
+
+#[derive(serde::Serialize)]
+struct WorldReviewEntry {
+    label: String,
+    path: String,
+    scene: usize,
+    at: [f32; 3],
+    placements: Vec<[f32; 16]>,
+    scale_range: [f32; 2],
+}
+
+fn world_review_entries() -> Vec<WorldReviewEntry> {
+    let defs = my_world::defs::defs();
+    let mut entries = Vec::new();
+    for (row, plant) in defs.plants.iter().enumerate() {
+        let mut col = 0;
+        for stage in &plant.stages {
+            for (variant, look) in stage.variants.iter().enumerate() {
+                let Some(model) = &look.model else { continue };
+                entries.push(WorldReviewEntry {
+                    label: format!("{} {:.0}% / {}", plant.name, stage.from * 100.0, variant + 1),
+                    path: model.path.clone(), scene: 0,
+                    at: [-8.0 + col as f32 * 2.3, 0.0, 4.0 + row as f32 * 2.5],
+                    placements: model.placements.iter().map(|p| review_pose(p).to_matrix().to_cols_array()).collect(),
+                    scale_range: [plant.scale.0, plant.scale.1],
+                });
+                col += 1;
+            }
+        }
+    }
+    let mut col = 0;
+    for build in defs.builds.iter().filter(|d| d.model.as_ref().is_some_and(|m| m.path.starts_with("models/world/"))) {
+        let model = build.model.as_ref().unwrap();
+        for scene in model.scenes.all() {
+            entries.push(WorldReviewEntry {
+                label: format!("{} / {}", build.name, scene), path: model.path.clone(), scene,
+                at: [-10.0 + (col % 8) as f32 * 2.8, 0.0, 21.0 + (col / 8) as f32 * 2.8],
+                placements: vec![review_pose(&model.pose).to_matrix().to_cols_array()], scale_range: [1.0, 1.0],
+            });
+            col += 1;
+        }
+    }
+    entries
+}
+
+fn world_props_review(commands: &mut Commands, assets: &AssetServer, labels: &mut WorldLabels) {
+    for entry in world_review_entries() {
+        let at = Vec3::from_array(entry.at);
+        let root = commands.spawn((Transform::from_translation(at), Visibility::default())).id();
+        for placement in &entry.placements {
+            commands.spawn((model_scene(assets, &entry.path, entry.scene),
+                Transform::from_matrix(Mat4::from_cols_array(placement)), ChildOf(root)));
+        }
+        labels.0.push((at, entry.label));
+    }
+}
+
+fn model_scene(assets: &AssetServer, path: &str, scene: usize) -> WorldAssetRoot {
+    WorldAssetRoot(assets.load(GltfAssetLabel::Scene(scene).from_asset(path.to_owned())))
 }
 
 /// Character files have no animations of their own, so the glTF loader
@@ -455,7 +542,7 @@ fn draw_grid(settings: Res<Settings>, mut gizmos: Gizmos) {
     }
 }
 
-fn overlay(mut contexts: EguiContexts, library: Res<Library>, settings: Res<Settings>) -> Result {
+fn overlay(mut contexts: EguiContexts, library: Res<Library>, settings: Res<Settings>, labels: Res<WorldLabels>, camera: Single<(&Camera, &GlobalTransform), With<Camera3d>>) -> Result {
     let ctx = contexts.ctx_mut()?;
     egui::Window::new("Look test").anchor(egui::Align2::LEFT_TOP, [8.0, 8.0]).resizable(false).show(ctx, |ui| {
         let clip = library.clips.get(library.current).map_or("loading...", |(n, _)| n.as_str());
@@ -467,7 +554,20 @@ fn overlay(mut contexts: EguiContexts, library: Res<Library>, settings: Res<Sett
         ui.label("Right-drag or Q/E: rotate   WASD: pan   wheel: zoom");
         ui.separator();
         ui.label("Front: characters (bodies, ranger, peasant) and game blocks on the left");
-        ui.label("Behind: textured trees, low-poly trees, rocks and plants, crops, village");
+        if labels.0.is_empty() {
+            ui.label("Behind: textured trees, low-poly trees, rocks and plants, crops, village");
+        } else {
+            ui.label("Behind: actual plant stages, machinery, grave states and all fence connections");
+            ui.label("World props use their definition transforms; cell grid shows their gameplay footprint");
+        }
     });
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Background, egui::Id::new("world_labels")));
+    let (cam, gt) = *camera;
+    for (at, name) in &labels.0 {
+        if let Ok(p) = cam.world_to_viewport(gt, *at) {
+            painter.text(egui::pos2(p.x, p.y + 8.0), egui::Align2::CENTER_TOP, name,
+                egui::FontId::proportional(11.0), egui::Color32::WHITE);
+        }
+    }
     Ok(())
 }
