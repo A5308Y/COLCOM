@@ -333,7 +333,12 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 hour as u32,
                 ((hour - hour.floor()) * 60.0) as u32
             );
-            let colonists = format!("Colonists {}   Outside {:.0}°C", w.colonists_alive(), w.outdoor_temperature());
+            let colonists = format!(
+                "Colonists {}   Outside {:.0}°C, {}",
+                w.colonists_alive(),
+                w.outdoor_temperature(),
+                w.weather_name().to_lowercase()
+            );
             ui.horizontal(|ui| {
                 ui.label(theme::caps(clock, 16.0).color(theme::CREAM_BRIGHT));
                 ui.separator();

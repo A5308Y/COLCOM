@@ -23,6 +23,7 @@ mod squads_ui;
 mod terrain;
 mod theme;
 mod ui;
+mod weather;
 
 use bevy::prelude::*;
 use colcom::map::Pos;
@@ -62,6 +63,7 @@ impl Plugin for FrontPlugin {
             input::InputPlugin,
             ui::UiPlugin,
             audio::AudioPlugin,
+            weather::WeatherPlugin,
         ));
     }
 }

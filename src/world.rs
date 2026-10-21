@@ -173,6 +173,9 @@ pub struct World {
     pub offers: Vec<crate::expeditions::Offer>,
     #[serde(default)]
     pub expeditions: Vec<crate::expeditions::Expedition>,
+    /// The weather and when it changes (see `weather.rs`).
+    #[serde(default)]
+    pub weather: crate::weather::WeatherSpell,
 }
 
 impl World {
@@ -242,6 +245,7 @@ impl World {
             factions: crate::expeditions::starting_factions(),
             offers: Vec::new(),
             expeditions: Vec::new(),
+            weather: Default::default(),
         }
     }
 
@@ -494,6 +498,7 @@ impl World {
             self.update_graves();
             self.update_trapped();
             self.update_watches(1.0);
+            self.update_weather();
             self.update_expeditions();
             // Whole-map passes: once a second rather than every tick.
             self.grow_plants(1.0);
@@ -1060,8 +1065,9 @@ impl World {
                 p.path_goal = None;
                 return Step::Moving;
             }
-            // Climbing over furniture is slow going.
+            // Climbing over furniture is slow going, and so is rain or snow under the open sky.
             let dt = if over { dt * CLIMB_PACE } else { dt };
+            let dt = if self.map.covered(next) { dt } else { dt * self.outdoor_pace() };
             if move_towards(p, next, dt) {
                 p.pos = next;
                 p.path.pop();

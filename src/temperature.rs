@@ -61,7 +61,7 @@ pub fn outdoor_at(t: f32) -> f32 {
 
 impl World {
     pub fn outdoor_temperature(&self) -> f32 {
-        outdoor_at(self.time())
+        outdoor_at(self.time()) - self.weather_chill()
     }
 
     /// The temperature at `p`: its room's, or the outdoor one.

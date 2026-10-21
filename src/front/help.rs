@@ -64,6 +64,7 @@ pub const TOPICS: &[Topic] = &[
                 blocks: &[
                     Keys(&[("Space", "Pause and resume"), ("1-4", "Speed 1x, 2x, 5x, 10x")]),
                     Text("A year has four seasons of 5 days. Crops grow in spring and summer, slower in autumn and not at all in winter; winter's first frost kills those not yet ripe. Sow in time, and stock up for winter."),
+                    Text("Weather comes in spells: clear, fog, or rain (snow when it freezes). Rain and snow make it 2°C colder outside and slow walking under the open sky, snow the most. Roofed paths stay quick."),
                 ],
             },
         ],

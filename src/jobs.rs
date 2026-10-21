@@ -601,6 +601,7 @@ impl World {
                     if let Some(r) = yields {
                         self.drop_work_yields(target, vec![(r.item, r.count)]);
                     }
+                    self.plan_shaft_ladder(target);
                 }
             }
             Task::Deconstruct => self.complete_deconstruction(target),

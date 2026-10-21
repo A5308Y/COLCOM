@@ -7,7 +7,7 @@ notes for whoever works on it next.
 
 ## Design decisions (defaults agreed 2026-10-11)
 
-1. **World:** a 3D block grid, about 100×70 tiles and 12–16 levels deep. Each block is air, soil, rock,
+1. **World:** a 3D block grid, about 100×70 tiles (200×200 since 2026-10-21) and 12–16 levels deep. Each block is air, soil, rock,
    a wall or water, and can hold a floor, furniture, plants and items. Terrain comes from a height map:
    hills, cliffs and mountains you can dig into.
 2. **Getting between levels:** pawns walk up or down natural one-level slopes. Built walls are never
@@ -40,7 +40,7 @@ notes for whoever works on it next.
 - **Lighting:** a sun with shadows that moves through the day/night cycle, and lamps for interiors and
   caves.
 
-## Status (2026-10-20)
+## Status (2026-10-21)
 
 The original phases (agreed 2026-10-11) are done except for parts of the graphics work. Everything built
 so far has been checked visually and by ear in the game.
@@ -55,7 +55,7 @@ so far has been checked visually and by ear in the game.
 | 8 | More buildables and room quality | done |
 | 9 | Sound (Kenney and other real sounds, 2026-10-16) | done |
 | 10a–b | Graphics, Valheim-like: art direction, animated characters | done |
-| 10c–e | Smoothed terrain, glTF models, atmosphere | 10d implemented, GPU review pending; 10c open, 10e partly: seasonal colours |
+| 10c–e | Smoothed terrain, glTF models, atmosphere | 10d done (models reviewed in game by the user, 2026-10-21); 10c open; 10e partly: seasonal colours, weather (in game review pending) |
 | 11 | Follow camera | later, optional |
 | 12 | Turn-based battles (MENACE-style), squads, loadouts, parley | done; the user is happy with them for now |
 
@@ -78,6 +78,17 @@ Details are in the notes below, under each topic.
 - **Interface:** the game menu, save as, autosave, an info window for any item or building,
   multi-selection, a colonist bar, hide roofs, and battle readability (plates, hit chances, cover tiers).
 
+### Built 2026-10-21
+- **World:** the map is 200×200 (was 100×70); see the performance note under Saves, performance and history.
+- **Building:** walls and furniture can be planned over trees, bushes and crops, which are cleared first.
+- **Interface:** Hide zones (Shift+Z).
+- **Items:** a simple meal takes one raw food (cooking doubles the nutrition).
+- **Story and battles:** raiders enter a few rounds' walk from the colony instead of at the map edge;
+  lookout posts with assigned watchers, who stand there when a battle starts and keep watch daily.
+- **Design:** the story and setting direction (see the design record).
+- **Atmosphere:** weather: clear, fog, rain and snow, with colder air and slower walking outdoors in
+  rain and snow, falling rain and snow, overcast light, fog and a rain loop.
+
 The 2026-10-20 code health review is complete: bugs, type modelling, saves, performance,
 tests, structure and shared asset tools. The completed backlog was removed.
 
@@ -85,28 +96,13 @@ tests, structure and shared asset tools. The completed backlog was removed.
 
 In the suggested order. Graphics first: the content has settled, so the look can catch up.
 
-1. **10d. GPU acceptance review.** Implementation is in place for all six plant types and the
-   remaining 20 buildable props (12 production stations, four power devices, graves, stairs, ladders
-   and fences), extending the already completed item, apparel and furniture work. Static/filled/
-   connected scene selection retains grave state and all fence masks; crop plots change from shape
-   fallback to models together only when every instance is ready. Stage thresholds, per-cell variation,
-   placement/contact dimensions, game rules and save format are unchanged.
-   CPU validation: 31 new asset pairs regenerate exactly; geometry, lifecycle and state-selection
-   tests pass. `python3 -B tools/preview_world_props.py` builds front/rear views at a common cell scale.
-   `cargo run --release --example look -- --world-props` shows actual definition transforms, growth
-   stages and all state scenes beside characters in the game's lighting. The app's existing optional
-   `character_models_load` GPU test now loads all plant models as well.
-   GPU rendering remains unverified: this session could not find a GPU, including outside the sandbox.
-   Before closing 10d, review daylight/night, gameplay zoom, rotated placements, construction ghosts,
-   occupied workstations, hidden roofs/layers and dense-colony GPU frame time. Keep walls, openings,
-   floors, roofs, wallpaper and structural joins in the grid renderer; no prefab-house replacement.
-2. **10e. Atmosphere**, the rest of it (seasonal colours and crop growth are done). Weather (rain,
-   snow, fog) would build on seasons and temperature and could matter in play (cold, slower walking).
-   Wind on grass and trees (custom shader), a water shader with gentle waves, volumetric fog and light
+1. **10e. Atmosphere**, the rest of it (seasonal colours, crop growth and weather are done; weather
+   still needs a look and listen in game: rain and snow density, fog distance, overcast light, the
+   rain loop). Wind on grass and trees (custom shader), a water shader with gentle waves, volumetric fog and light
    shafts, plus the phase 4 tuning pass
    from real play: lamp brightness, bloom/ambient occlusion strength, water opacity, fog distance, hop
    height.
-3. **10c. Smoothed natural terrain.**
+2. **10c. Smoothed natural terrain.**
    Naturally generated ground (soil, rock, ore) is drawn as a smooth, rolling surface over the grid
    instead of cubes. Cells that have been mined, and anything built, stay blocky, so dug tunnels and
    shafts keep crisp edges. Needs: a flag per cell for "dug" (or natural vs. changed), a new mesher
@@ -324,6 +320,9 @@ slopes, and old save versions); the newer note in the same topic says so.
   are shown. Build menu groups start closed.
 - Work window (2026-10-18): left click raises a priority (never -> 4 -> ... -> 1), right click lowers it;
   each level has its own green (`priority_color`, `raise_priority`/`lower_priority`).
+- Hide zones (2026-10-21, Shift+Z, toolbar button): `UiState::hide_zones`; `zones_shown()` is false
+  while hidden unless a zone tool is in hand. Hides the no-roof outlines and the stockpile, safe and
+  quarry ground tints (`Cut::zones` in the chunk signature); grow zones stay as tilled soil.
 
 ### Terrain, building and digging
 
@@ -491,6 +490,16 @@ slopes, and old save versions); the newer note in the same topic says so.
   rock or soil beside) and over a rim onto standable ground; pawns climbing (`cling`, path left) don't
   fall, and `go_to_reach` keeps climbing mode while on a cling cell. Tests:
   `an_outcrop_in_the_zone_never_shuts_anyone_in`, `someone_shut_in_a_pit_climbs_out_up_its_wall`.
+- Building over plants (2026-10-21): `Feature::Blueprint::over` is `map::Over` (`Nothing`,
+  `Structure(kind, dir)` for a wall replaced by a door or window, `Plant { kind, growth }`). Untagged
+  serde, so old saves (`null` / `[kind, dir]`) load unchanged. A blueprint over a plant is cleared first
+  by a `Task::Harvest` of the plant's work type, at any growth (yield scaled by growth), then built;
+  nothing is delivered meanwhile. The cell acts as the plant (passability), the front end draws plant and
+  ghost together and marks it like a chop/forage designation. Cancelling leaves the plant.
+- Quarry shafts (2026-10-21): digging a shaft cell plans its ladder at once (`plan_shaft_ladder`,
+  called when a Mine completes). Before, the ladder above hung unsupported until the next
+  once-a-second `update_quarries`, and anyone on the pit floor counted as shut in; weather's extra
+  random draws made `an_outcrop_in_the_zone_never_shuts_anyone_in` hit it (3 of 30 seeds).
 
 ### Rooms and furniture
 
@@ -770,6 +779,8 @@ slopes, and old save versions); the newer note in the same topic says so.
   only get shields with melee weapons. Balance (AI vs AI, battle scenario): melee raiders are strong
   against this colony whatever `CLOSE_QUARTERS` (0.2–1.0) or `MELEE_PACE` (1.0–1.15): eight raiders
   (4+2+2) won 16 of 20; the scenario now has three pairs (2+2+2), and the colony wins about 21 of 30.
+- Meals (2026-10-21): `cook_meal` takes 1 raw food (40 nutrition) for 1 simple meal (80). One meal per
+  run so bill counts stay counts of meals.
 
 ### Seasons, temperature and power
 
@@ -809,6 +820,13 @@ slopes, and old save versions); the newer note in the same topic says so.
   `update_room_stats` (fires always count). `World::power` (`PowerState`) feeds the Resources window and
   the "Not enough power" alert; `device_state` the inspector. Possible later: cables and separate grids,
   more consumers (lamps, benches).
+- Weather (2026-10-21, `src/weather.rs`): `World::weather: WeatherSpell { now: Weather (Clear, Fog,
+  Rain), until }`, saved (old saves: clear, redrawn at once). Once a second, a finished spell draws the
+  next by the season's odds (`Season::weather_odds`; clear 0.5-2 days, fog 0.15-0.4, rain 0.25-1) and
+  logs the change. Rain is snow below 0.5°C (`World::falling`, from the temperature without the
+  weather). Rain and snow take 2°C off `outdoor_temperature`; walking under the open sky (`!covered`)
+  is 0.9x in rain and 0.75x in snow (`World::go_to`). Fog has no effect on play. `quiet_world` keeps it
+  clear for good.
 
 ### Battles and squads
 
@@ -986,6 +1004,14 @@ slopes, and old save versions); the newer note in the same topic says so.
 - Only ranged squads deploy (2026-10-19): `World::can_deploy(u)` (a led unit whose leader fights at
   range, or one already deployed so it can stand up); the order, the AI and the battle panel's button
   use it.
+- Lookout posts (2026-10-21, `src/lookout.rs`, `special: Lookout`, "lookout_post"): a passable frame
+  without cover; put it on a floor over walls with a ladder for height. `Pawn::watch: Option<Watch { post,
+  owed }>`, set with `World::set_watch` (fighters and squad leaders only, `lookout::can_watch`; one per
+  post, one post each), shown as an "On watch" picker on the post. Watch owed builds up at `WATCH_HOURS`
+  (2.5) a day, capped at 2 hours, not during battles; at 1 hour owed, in Work or Anything hours,
+  `Job::Watch` walks them there and works it off. `start_battle` calls `man_lookouts`: each watcher is
+  placed on their post, a leader with the members `form_colony_units` would gather. Posts nobody watches
+  stay empty. The watch ends when the post goes or the role changes; moved posts keep their watcher.
 
 ### Storyteller, raids and expeditions
 
@@ -1015,8 +1041,13 @@ slopes, and old save versions); the newer note in the same topic says so.
   offer from a random faction that `fits` the kind, past `MAX_OFFERS`; `skip_travel` sets an `Out` or
   `Back` leg's timer to now. The Offers tab has a mission picker and *Offer now*; journeys under way
   have *Skip travel*.
-- Reachable edge entries (2026-10-19): `World::random_edge_tile` (raids, wanderers, returning
-  expeditions and gifts) only picks a passable edge cell from which a living colonist can be reached on
+- Raid entry near the colony (2026-10-21): `World::raid_entry_tile` picks a random open-sky cell
+  `story::RAID_APPROACH` (25–35) walking steps from the nearest built cell, blueprint, floor or stockpile
+  (`pathing::walk_distances_to`, a backward search), so raids arrive about three rounds out on any map
+  size; falls back to the map edge with nothing built. Wanderers, returning expeditions and gifts still
+  use the edge.
+- Reachable edge entries (2026-10-19): `World::random_edge_tile` (wanderers, returning
+  expeditions and gifts; raids until 2026-10-21) only picks a passable edge cell from which a living colonist can be reached on
   foot (`bfs`, up to 40 tries), so nobody arrives in a pocket closed off by trees, cliffs or water.
   Falls back to any edge cell if nobody can be reached. Trees stay impassable.
 
@@ -1141,6 +1172,13 @@ slopes, and old save versions); the newer note in the same topic says so.
   `Sit`, `SitTalk` at chess, `Sit` + `Interact` crafting; `SitEnter` plays on sitting down and
   `SitExit` while `getting_up`; the seat offset glides. Idle sitters face the chair's front. The clips
   are constants in `Anim::clip` (to swap after a look).
+- Weather look (2026-10-21, `src/front/weather.rs`): `WeatherLook { overcast, fog, falling, snow }`
+  eases towards the weather (0.25 per real second). `scene.rs` dims the sun (to 35%) and ambient
+  light, greys the sky, and pulls the distance fog in (linear 90-240 to 6-45 in full fog). A pool of
+  2400 unlit drops (thin cuboids, or small cubes for snow) falls around the camera focus, a box of
+  0.7 x zoom distance (12-50), as many shown as `falling` says; each stops at the roof, floor or ground
+  of its column. The rain ambience loop (`amb_rain.wav`, made by `tools/make_rain_loop.py` from seeded
+  noise) follows `falling` outdoors, silent for snow and underground.
 
 ### Saves, performance and history
 
@@ -1164,3 +1202,7 @@ slopes, and old save versions); the newer note in the same topic says so.
 - Phase 7 performance (`--example profile`, now with three busy workbenches): 0.067 ms per tick on
   average (0.6% of a 60 fps frame at 3x speed); two days made 15 meals, ~100 planks and 31 clubs.
 - Phase 8 performance: 0.074 ms per tick in `--example profile` (0.7% of a frame at 3x speed).
+- Map 200×200 (2026-10-21, `MAP_W`/`MAP_H`): `examples/profile` went from 0.063 to 0.27 ms per tick on
+  average; the worst tick from 4.8 to 29 ms and ticks after map changes from 3.3 to 17 ms (rooms 0.7 to
+  4 ms), over a 60 fps frame. Making room recounts and job searches incremental would remove the spikes.
+  The library tests take about 11 s instead of 2 s. Saves keep their own map size.

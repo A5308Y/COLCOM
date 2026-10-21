@@ -1,7 +1,7 @@
 //! Sound: effects placed in the world and heard relative to the camera's
 //! focus (quieter further away and when zoomed out, panned left and right),
 //! footsteps and work sounds from what pawns are doing, interface clicks,
-//! and ambience loops for day, night and underground. Sound names, files and
+//! and ambience loops for day, night, underground and rain. Sound names, files and
 //! levels come from `assets/sounds.ron`.
 
 use super::camera::CameraRig;
@@ -77,6 +77,8 @@ pub struct AmbienceDefs {
     pub day: LoopDef,
     pub night: LoopDef,
     pub cave: LoopDef,
+    /// Over the others while it rains (not snow), outdoors.
+    pub rain: LoopDef,
     /// Music during a raid (from the parley to the battle's end), instead of the others.
     pub battle: LoopDef,
 }
@@ -179,6 +181,7 @@ enum AmbienceKind {
     Day,
     Night,
     Cave,
+    Rain,
 }
 
 #[derive(Component)]
@@ -223,6 +226,7 @@ fn setup(mut commands: Commands, assets: Res<AssetServer>) {
         (AmbienceKind::Day, &table.ambience.day),
         (AmbienceKind::Night, &table.ambience.night),
         (AmbienceKind::Cave, &table.ambience.cave),
+        (AmbienceKind::Rain, &table.ambience.rain),
     ] {
         commands.spawn((
             AudioPlayer::new(assets.load(def.file.as_str())),
@@ -451,11 +455,12 @@ fn play_queued(
 }
 
 /// Day, night and cave loops fade with the time of day and whether the
-/// camera looks at somewhere underground.
+/// camera looks at somewhere underground; the rain loop with the rain.
 fn ambience(
     sim: Res<Sim>,
     rig: Res<CameraRig>,
     ui: Res<UiState>,
+    weather: Res<super::weather::WeatherLook>,
     settings: Res<AudioSettings>,
     time: Res<Time>,
     mut loops: Query<(&mut AmbienceLoop, Option<&mut AudioSink>)>,
@@ -480,6 +485,10 @@ fn ambience(
             AmbienceKind::Day => (day * (1.0 - under as u8 as f32), &table.day),
             AmbienceKind::Night => ((1.0 - day) * (1.0 - under as u8 as f32), &table.night),
             AmbienceKind::Cave => (under as u8 as f32, &table.cave),
+            AmbienceKind::Rain => {
+                let rain = if weather.snow { 0.0 } else { weather.falling };
+                (rain * (1.0 - under as u8 as f32), &table.rain)
+            }
         };
         amb.level += (target * calm - amb.level) * ease;
         if let Some(mut sink) = sink {
@@ -592,7 +601,7 @@ mod tests {
             }
             assert!(def.volume > 0.0 && def.volume <= 1.0 && def.pitch.0 <= def.pitch.1 && def.max > 0, "{}", name);
         }
-        for l in [&t.ambience.day, &t.ambience.night, &t.ambience.cave, &t.ambience.battle] {
+        for l in [&t.ambience.day, &t.ambience.night, &t.ambience.cave, &t.ambience.rain, &t.ambience.battle] {
             assert!(exists(&l.file), "missing {}", l.file);
         }
     }

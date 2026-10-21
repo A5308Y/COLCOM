@@ -14,6 +14,8 @@ pub fn quiet_world(w: usize, h: usize, seed: u64) -> World {
     world.story.next_raid = f32::MAX;
     world.story.next_event = f32::MAX;
     world.regrow_timer = f32::MAX;
+    // Clear weather for good: it would change temperatures and walking times.
+    world.weather.until = f32::MAX;
     world
 }
 

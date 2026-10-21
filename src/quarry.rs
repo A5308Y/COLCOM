@@ -390,6 +390,24 @@ impl World {
         }
     }
 
+    /// A quarry shaft's cell at `p` was just dug out: plan its ladder at once.
+    /// The ladder above stands on the one planned here (`Map::supported`);
+    /// waiting for the next `update_quarries` would leave it hanging, and
+    /// anyone in the pit shut in, for up to a second.
+    pub(crate) fn plan_shaft_ladder(&mut self, p: Pos) {
+        let Some(kind) = defs().ladder().or(defs().stairs()) else { return };
+        let Some(k) = self.map.quarry_at(p.0, p.1) else { return };
+        let q = &self.quarries[k];
+        if q.shaft != Some((p.0 as u16, p.1 as u16)) || p.2 >= q.ground || p.2 < q.bottom() {
+            return;
+        }
+        let i = self.map.idx(p);
+        if self.map.feature[i] == Feature::None {
+            self.map.feature[i] = Feature::blueprint(kind, 0, q.out);
+            self.map.mark_changed();
+        }
+    }
+
     /// Stairs built in a quarry's shaft keep facing out of it, whatever the
     /// ground around them looks like while it's being dug.
     pub(crate) fn quarry_stairs_dir(&self, p: Pos) -> Option<Dir> {
@@ -465,6 +483,29 @@ mod tests {
         let shaft = q.shaft.unwrap();
         assert_eq!(shaft.0, 8, "on the east edge, facing them");
         assert_eq!(q.out, Dir::PlusX, "stairs out to the east");
+    }
+
+    #[test]
+    fn the_ladder_above_never_hangs_once_the_shaft_goes_deeper() {
+        let mut w = hill(16, 16);
+        paint(&mut w, 4, 4, 8, 7);
+        let shaft = w.quarries[0].shaft.unwrap();
+        let (sx, sy) = (shaft.0 as usize, shaft.1 as usize);
+        // A ladder in the first level down, then the cell under it dug out.
+        for z in [7, 6] {
+            let i = w.map.idx((sx, sy, z));
+            w.map.block[i] = Block::Air;
+        }
+        let ladder = defs().ladder().unwrap();
+        let i = w.map.idx((sx, sy, 7));
+        w.map.feature[i] = Feature::Built { kind: ladder, dir: w.quarries[0].out };
+        assert!(!w.map.supported((sx, sy, 7)), "hanging until the next ladder is planned");
+        w.plan_shaft_ladder((sx, sy, 6));
+        assert!(matches!(w.map.feature[w.map.idx((sx, sy, 6))], Feature::Blueprint { kind, .. } if kind == ladder));
+        assert!(w.map.supported((sx, sy, 7)), "the ladder above stands on the planned one");
+        // Not outside the shaft, or below the quarry's bottom.
+        w.plan_shaft_ladder((sx + 1, sy, 6));
+        assert_eq!(w.map.feature[w.map.idx((sx + 1, sy, 6))], Feature::None);
     }
 
     #[test]

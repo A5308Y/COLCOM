@@ -163,6 +163,8 @@
         day: (file: "sounds/amb_day.wav", volume: 0.35),
         night: (file: "sounds/amb_night.wav", volume: 0.35),
         cave: (file: "sounds/amb_cave.wav", volume: 0.45),
+        // Made by tools/make_rain_loop.py.
+        rain: (file: "sounds/amb_rain.wav", volume: 0.4),
         // Played from the start while raiders are at the gate and through the
         // battle (it doubles as the alarm), in place of the others.
         battle: (file: "sounds/music/dream_raid.mp3", volume: 0.5),
