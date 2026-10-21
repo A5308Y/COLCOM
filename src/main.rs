@@ -668,6 +668,8 @@ mod tests {
     fn character_models_load() {
         let mut app = App::new();
         app.add_plugins(DefaultPlugins.build().disable::<WinitPlugin>());
+        app.finish();
+        app.cleanup();
         let mut files = vec![
             "models/characters/base/Superhero_Male_FullBody.gltf",
             "models/characters/base/Superhero_Female_FullBody.gltf",

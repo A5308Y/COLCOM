@@ -55,7 +55,7 @@ so far has been checked visually and by ear in the game.
 | 8 | More buildables and room quality | done |
 | 9 | Sound (Kenney and other real sounds, 2026-10-16) | done |
 | 10a–b | Graphics, Valheim-like: art direction, animated characters | done |
-| 10c–e | Smoothed terrain, glTF models, atmosphere | 10d done (models reviewed in game by the user, 2026-10-21); 10c open; 10e partly: seasonal colours, weather (reviewed), wind sway (in game review pending) |
+| 10c–e | Smoothed terrain, glTF models, atmosphere | 10d done (models reviewed in game by the user, 2026-10-21); 10c open; 10e partly: seasonal colours, weather (reviewed), wind sway (reviewed) |
 | 11 | Follow camera | later, optional |
 | 12 | Turn-based battles (MENACE-style), squads, loadouts, parley | done; the user is happy with them for now |
 
@@ -96,8 +96,8 @@ tests, structure and shared asset tools. The completed backlog was removed.
 
 In the suggested order. Graphics first: the content has settled, so the look can catch up.
 
-1. **10e. Atmosphere**, the rest of it (seasonal colours, crop growth, weather and wind are done;
-   wind still needs a look in game). Left: a water shader with gentle waves, volumetric fog and light
+1. **10e. Atmosphere**, the rest of it (seasonal colours, crop growth, weather and wind are done
+   and reviewed). Left: a water shader with gentle waves, volumetric fog and light
    shafts, plus the phase 4 tuning pass from real play: lamp brightness, bloom/ambient occlusion
    strength, water opacity, fog distance, hop height.
 2. **10c. Smoothed natural terrain.**
