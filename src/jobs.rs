@@ -1,7 +1,7 @@
 //! Finding work for colonists and carrying jobs out step by step.
 
 use crate::defs::{defs, Defs, ItemId, PlantId, Special};
-use crate::map::{Block, Desig, Feature, Map, Pos, Stack, Zone, STACK_MAX};
+use crate::map::{Block, Desig, Feature, Map, Over, Pos, Stack, Zone, STACK_MAX};
 use crate::moving::MOVE_SHARE;
 use crate::pathing::{bfs, DistField, ANY_DISTANCE};
 use crate::pawn::{Job, Memory, Pawn, PawnId, Skill, Task, WorkType};
@@ -65,15 +65,17 @@ fn plantable(m: &Map, i: usize) -> bool {
         && !m.covered(p)
 }
 
-/// The grown plant in cell `i`, if it may be harvested now: automatically,
-/// or because it carries the designation its definition asks for.
+/// The plant in cell `i`, if it may be harvested now: grown, and automatically
+/// or because it carries the designation its definition asks for. One in the
+/// way of a blueprint is cleared whatever its growth.
 fn harvestable(m: &Map, i: usize) -> Option<PlantId> {
     match m.feature[i] {
         Feature::Plant { kind, growth } if growth >= 1.0 => {
             let desig = kind.def().harvest.desig;
             (desig.is_none() || desig == m.desig[i]).then_some(kind)
         }
-        _ => None,
+        Feature::Blueprint { over, .. } => over.plant(),
+        Feature::Plant { .. } | Feature::None | Feature::Built { .. } => None,
     }
 }
 
@@ -265,6 +267,12 @@ impl World {
         match m.feature[i] {
             Feature::Plant { kind, .. } => {
                 if kind.def().harvest.work == wt && harvestable(m, i).is_some() {
+                    return work(Task::Harvest(kind));
+                }
+            }
+            // A plant in the way is cleared before anything is brought.
+            Feature::Blueprint { over: Over::Plant { kind, .. }, .. } => {
+                if kind.def().harvest.work == wt {
                     return work(Task::Harvest(kind));
                 }
             }
@@ -477,6 +485,7 @@ impl World {
             Task::Deconstruct => d == Some(Desig::Deconstruct) && m.deconstructable(target),
             Task::Sow(_) => plantable(m, i),
             Task::Construct => match f {
+                Feature::Blueprint { over: Over::Plant { .. }, .. } => false,
                 Feature::Blueprint { kind, delivered, .. } => match self.move_to(target) {
                     Some(mv) => mv.is_lifted(),
                     None => delivered >= kind.def().total_cost(),
@@ -542,12 +551,21 @@ impl World {
         self.map.set_desig(i, None);
         match task {
             Task::Harvest(kind) => {
-                self.map.set_feature(i, Feature::None);
+                // Cleared for a blueprint: young plants give less.
+                let (rest, growth) = match self.map.feature[i] {
+                    Feature::Blueprint { kind, delivered, dir, over: Over::Plant { growth, .. } } => {
+                        (Feature::Blueprint { kind, delivered, dir, over: Over::Nothing }, growth)
+                    }
+                    Feature::Plant { growth, .. } => (Feature::None, growth),
+                    Feature::None | Feature::Built { .. } | Feature::Blueprint { .. } => (Feature::None, 1.0),
+                };
+                self.map.set_feature(i, rest);
                 if let Some(s) = kind.def().harvest.done_sound.as_deref() {
                     self.sound(s, Some(target));
                 }
                 let y = &kind.def().harvest.yields;
-                self.drop_work_yields(target, vec![(y.item, y.count)]);
+                let count = (y.count as f32 * growth.clamp(0.0, 1.0)).floor() as u32;
+                self.drop_work_yields(target, vec![(y.item, count)]);
             }
             Task::Sow(kind) => self.map.set_feature(i, Feature::Plant { kind, growth: 0.0 }),
             Task::Fill => {
@@ -641,7 +659,7 @@ impl World {
         }
         if let Feature::Blueprint { kind, dir, over, .. } = f {
             // The wall (door, window) it replaces comes down, giving back what it would.
-            if let Some((old, _)) = over {
+            if let Over::Structure(old, _) = over {
                 self.drop_work_yields(target, old.def().drops());
                 self.map.rooms_dirty = true;
             }

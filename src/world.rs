@@ -3,7 +3,7 @@
 use crate::battle::{Battle, Parley};
 use crate::health::TickCtx;
 use crate::defs::{defs, BuildId, PlantId, Special};
-use crate::map::{Block, Desig, Dir, Feature, Map, Pos, RoofPolicy, Stack, Zone};
+use crate::map::{Block, Desig, Dir, Feature, Map, Over, Pos, RoofPolicy, Stack, Zone};
 use crate::moving::Move;
 use crate::pawn::{Faction, Job, Life, Memory, Pawn, PawnId, WorkPriority, WorkType};
 use crate::pathing::{bfs, DistField};
@@ -606,8 +606,12 @@ impl World {
             if p.2 == 0 || self.map.block[i] != Block::Air || self.map.supported(p) {
                 continue;
             }
-            if matches!(self.map.feature[i], Feature::Plant { .. }) {
-                self.map.set_feature(i, Feature::None);
+            match self.map.feature[i] {
+                Feature::Plant { .. } => self.map.set_feature(i, Feature::None),
+                Feature::Blueprint { kind, delivered, dir, over: Over::Plant { .. } } => {
+                    self.map.set_feature(i, Feature::Blueprint { kind, delivered, dir, over: Over::Nothing });
+                }
+                Feature::None | Feature::Built { .. } | Feature::Blueprint { .. } => {}
             }
             let land = self.map.landing(p);
             self.map.move_items(i, land);
@@ -1113,7 +1117,10 @@ impl World {
             Order::Build(kind) => {
                 // A blueprint of something else is simply replaced.
                 let replacing = matches!(f, Feature::Blueprint { kind: other, .. } if other != kind);
-                let empty = f == Feature::None || replacing;
+                // A plant is cleared first (`Over::Plant`): judge the cell as it will be then.
+                let plant = matches!(f, Feature::Plant { .. });
+                let empty = f == Feature::None || replacing || plant;
+                let stands = m.standable(p) || f.plant_kind().is_some() && m.supported(p);
                 match kind.def().special {
                     // Over a roof too: the floor replaces it.
                     Special::Floor => {
@@ -1122,17 +1129,17 @@ impl World {
                     // Roofs come by themselves (`mark_roofs`).
                     Special::Roof => false,
                     Special::Stairs => {
-                        m.standable(p) && empty && m.above(p).is_some_and(|a| m.block[m.idx(a)] == Block::Air)
+                        stands && empty && m.above(p).is_some_and(|a| m.block[m.idx(a)] == Block::Air)
                     }
                     // Dug into natural soil.
                     Special::Grave => {
-                        m.standable(p) && empty && !m.floor[i] && m.below(p).is_some_and(|b| m.block[m.idx(b)] == Block::Soil)
+                        stands && empty && !m.floor[i] && m.below(p).is_some_and(|b| m.block[m.idx(b)] == Block::Soil)
                     }
                     // Walls, doors and windows also stack straight onto walls, doors and
                     // windows below them, built or planned (`stacked_on_plan`).
                     _ => {
                         empty
-                            && (m.standable(p)
+                            && (stands
                             || kind.def().blocks_room
                                 && m.open(p)
                                     && m.below(p).is_some_and(|b| m.feature[m.idx(b)].planned().is_some_and(|d| d.holds_floors)))
@@ -1194,11 +1201,12 @@ impl World {
                     // Planned stairs keep the roof off (see `recompute_rooms`).
                     self.map.rooms_dirty = true;
                 }
-                // Built over a standing wall (door, window), or one already being built over.
+                // Built over a standing wall (door, window) or a plant, or what one was already planned over.
                 let over = match self.map.feature[i] {
-                    Feature::Built { kind, dir } => Some((kind, dir)),
+                    Feature::Built { kind, dir } => Over::Structure(kind, dir),
+                    Feature::Plant { kind, growth } => Over::Plant { kind, growth },
                     Feature::Blueprint { over, .. } => over,
-                    _ => None,
+                    Feature::None => Over::Nothing,
                 };
                 self.map.feature[i] = Feature::Blueprint { kind, delivered: 0, dir: crate::map::Dir::PlusX, over };
             }
@@ -1220,13 +1228,13 @@ impl World {
             if kind.def().special == Special::Stairs {
                 self.map.rooms_dirty = true;
             }
-            self.map.feature[i] = over.map_or(Feature::None, |(kind, dir)| Feature::Built { kind, dir });
+            self.map.feature[i] = over.restored();
             self.map.mark_changed();
             let at = self.map.landing(p);
             for (item, count) in kind.def().delivered_split(delivered) {
                 self.map.drop_item(at, Stack { kind: item, count });
             }
-            if over.is_some() {
+            if let Over::Structure(..) = over {
                 break;
             }
             // Nothing holds up a wall planned on top any more.
@@ -1248,7 +1256,7 @@ impl World {
         let m = &self.map;
         matches!(m.feature[m.idx(p)], Feature::Blueprint { .. })
             && !m.standable(p)
-            && m.below(p).is_some_and(|b| matches!(m.feature[m.idx(b)], Feature::Blueprint { over: None, .. }))
+            && m.below(p).is_some_and(|b| matches!(m.feature[m.idx(b)], Feature::Blueprint { over: Over::Nothing | Over::Plant { .. }, .. }))
     }
 
     /// Testing: drop `count` of `kind` at `at` (spilling onto the cells around).
@@ -2434,6 +2442,68 @@ mod tests {
         assert_eq!(w.map.feature[i], Feature::built("window"));
         assert!(w.map.count_items(item("stone")) > stone, "the wall's stone is given back");
         assert!(w.map.roofed((7, 7, Z)), "still a room");
+    }
+
+    #[test]
+    fn walls_planned_over_trees_and_bushes_clear_them_first() {
+        let mut w = test_world(20, 20);
+        colonist(&mut w, (2, 2, Z));
+        let wall = BuildId::named("wall");
+        let (tree, bush) = ((10, 10, Z), (11, 10, Z));
+        let (ti, bi) = (w.map.idx(tree), w.map.idx(bush));
+        w.map.set_feature(ti, Feature::plant("tree"));
+        w.map.set_feature(bi, Feature::plant("berry_bush"));
+        assert!(w.apply_order(tree, Order::Build(wall)));
+        assert!(w.apply_order(bush, Order::Build(wall)));
+        assert_eq!(w.map.feature[ti].plant_kind(), Some(crate::defs::PlantId::named("tree")));
+        // The tree still stands in the way meanwhile.
+        assert!(!w.map.passable(tree));
+        w.map.drop_item((3, 8, Z), Stack { kind: item("stone"), count: 8 });
+        run(&mut w, 120.0);
+        assert_eq!(w.map.feature[ti], Feature::built("wall"));
+        assert_eq!(w.map.feature[bi], Feature::built("wall"));
+        assert!(w.map.count_items(item("wood")) > 0, "the tree gave its wood");
+        assert!(w.map.count_items(item("raw_food")) > 0, "the bush was picked");
+    }
+
+    #[test]
+    fn cancelling_a_blueprint_over_a_plant_leaves_the_plant() {
+        let mut w = test_world(16, 16);
+        let wall = BuildId::named("wall");
+        let at = (8, 8, Z);
+        let i = w.map.idx(at);
+        let sapling = Feature::Plant { kind: crate::defs::PlantId::named("tree"), growth: 0.3 };
+        w.map.set_feature(i, sapling);
+        assert!(w.apply_order(at, Order::Build(wall)));
+        // Replaced by another blueprint, the plant is still to be cleared.
+        assert!(w.apply_order(at, Order::Build(BuildId::named("door"))));
+        assert!(w.map.feature[i].plant_kind().is_some());
+        assert!(w.apply_order(at, Order::Cancel));
+        assert_eq!(w.map.feature[i], sapling);
+    }
+
+    #[test]
+    fn saplings_in_a_blueprints_way_are_cleared_for_less() {
+        let mut w = test_world(16, 16);
+        colonist(&mut w, (2, 2, Z));
+        let at = (8, 8, Z);
+        let i = w.map.idx(at);
+        w.map.set_feature(i, Feature::Plant { kind: crate::defs::PlantId::named("tree"), growth: 0.5 });
+        assert!(w.apply_order(at, Order::Build(BuildId::named("wall"))));
+        run(&mut w, 60.0);
+        assert!(matches!(w.map.feature[i], Feature::Blueprint { over: Over::Nothing, .. }), "{:?}", w.map.feature[i]);
+        assert_eq!(w.map.count_items(item("wood")), 5, "half grown, half the wood");
+    }
+
+    #[test]
+    fn blueprints_over_plants_survive_a_save() {
+        let mut w = test_world(16, 16);
+        let at = (8, 8, Z);
+        w.map.set_feature(w.map.idx(at), Feature::plant("berry_bush"));
+        assert!(w.apply_order(at, Order::Build(BuildId::named("wall"))));
+        assert!(w.apply_order((9, 8, Z), Order::Build(BuildId::named("wall"))));
+        let loaded = crate::save::from_json(&crate::save::to_json(&w).unwrap()).unwrap();
+        assert_eq!(loaded.map.feature, w.map.feature);
     }
 
     #[test]

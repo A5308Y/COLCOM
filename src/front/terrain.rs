@@ -53,10 +53,12 @@ struct Cut<'a> {
     kinds: &'a [u8],
     /// The season, which colours the grass (index into `Season::ALL`).
     season: u8,
+    /// Tint the ground of stockpiles, safe zones and quarries.
+    zones: bool,
 }
 
 impl Cut<'_> {
-    const NONE: Cut<'static> = Cut { level: usize::MAX, columns: &[], kinds: &[], season: 0 };
+    const NONE: Cut<'static> = Cut { level: usize::MAX, columns: &[], kinds: &[], season: 0, zones: true };
 
     /// The themed kind of the room cell `i` is in, if any.
     fn kind(&self, m: &Map, i: usize) -> Option<usize> {
@@ -184,7 +186,7 @@ fn update_chunks(
     let m = &sim.world.map;
     let kinds: Vec<u8> = sim.world.derived.room_stats.iter().map(|r| r.kind.map_or(0, |k| k.index() as u8 + 1)).collect();
     let season = Season::ALL.iter().position(|&s| s == sim.world.season()).unwrap_or(0) as u8;
-    let cut = Cut { level: ui.top_level(m), columns: &ui.roof_cut, kinds: &kinds, season };
+    let cut = Cut { level: ui.top_level(m), columns: &ui.roof_cut, kinds: &kinds, season, zones: ui.zones_shown() };
     let chunks = chunks.into_inner();
     let (cols, rows) = (m.w.div_ceil(CHUNK), m.h.div_ceil(CHUNK));
     if chunks.generation != sim.generation || chunks.cols != cols || chunks.rows != rows {
@@ -259,6 +261,7 @@ fn signature(m: &Map, cx: usize, cy: usize, cut: Cut) -> u64 {
     let mut mix = |v: u8| h = (h ^ v as u64).wrapping_mul(0x0000_0100_0000_01b3);
     mix(cut.level as u8);
     mix(cut.season);
+    mix(cut.zones as u8);
     let x0 = (cx * CHUNK).saturating_sub(1);
     let y0 = (cy * CHUNK).saturating_sub(1);
     let x1 = ((cx + 1) * CHUNK + 1).min(m.w);
@@ -457,14 +460,16 @@ fn ground_color(m: &Map, solid: Pos, look: Look3, cut: Cut) -> Rgb {
         }
     };
     if let Some(a) = above {
-        if zone.stockpile().is_some() {
-            c = c.mix(STOCKPILE, 0.22);
-        }
-        if zone == Zone::Safe {
-            c = c.mix(SAFE, 0.25);
-        }
-        if m.quarry_at(x, y).is_some() {
-            c = c.mix(QUARRY, 0.25);
+        if cut.zones {
+            if zone.stockpile().is_some() {
+                c = c.mix(STOCKPILE, 0.22);
+            }
+            if zone == Zone::Safe {
+                c = c.mix(SAFE, 0.25);
+            }
+            if m.quarry_at(x, y).is_some() {
+                c = c.mix(QUARRY, 0.25);
+            }
         }
         let blood = blood_level(m, a);
         if blood > 0 {
@@ -481,11 +486,12 @@ fn floor_color(m: &Map, p: Pos, cut: Cut) -> Rgb {
         Some(k) => themed_floor(k, p.0, p.1, p.2),
         None => FLOOR.shade(0.9 + hash(p.0 as i32, p.1 as i32 + 57 * p.2 as i32, 9) * 0.1),
     };
+    // Grow zones are tilled soil, shown even with zones hidden.
     match m.zone[i] {
-        Zone::Stockpile(_) => c = c.mix(STOCKPILE, 0.22),
+        Zone::Stockpile(_) if cut.zones => c = c.mix(STOCKPILE, 0.22),
         Zone::Grow(_) => c = c.mix(SOIL, 0.5),
-        Zone::Safe => c = c.mix(SAFE, 0.25),
-        Zone::None => {}
+        Zone::Safe if cut.zones => c = c.mix(SAFE, 0.25),
+        Zone::Stockpile(_) | Zone::Safe | Zone::None => {}
     }
     let blood = blood_level(m, i);
     if blood > 0 {
@@ -806,7 +812,7 @@ mod tests {
         }
         m.recompute_rooms();
         let colors = |kinds: &[u8]| {
-            let cut = Cut { level: Z, columns: &[], kinds, season: 0 };
+            let cut = Cut { level: Z, columns: &[], kinds, season: 0, zones: true };
             let (mesh, _) = build_chunk(&m, 0, 0, cut);
             let Some(bevy::mesh::VertexAttributeValues::Float32x4(c)) = mesh.attribute(Mesh::ATTRIBUTE_COLOR) else {
                 panic!("vertex colours")
@@ -850,7 +856,7 @@ mod tests {
         let k = defs().rooms.iter().position(|r| r.id == "workshop").unwrap();
         let mut kinds = vec![0u8; room + 1];
         kinds[room] = k as u8 + 1;
-        let (mesh, _) = build_chunk(&m, 0, 0, Cut { level: Z, columns: &[], kinds: &kinds, season: 0 });
+        let (mesh, _) = build_chunk(&m, 0, 0, Cut { level: Z, columns: &[], kinds: &kinds, season: 0, zones: true });
         let (Some(bevy::mesh::VertexAttributeValues::Float32x3(pos)), Some(bevy::mesh::VertexAttributeValues::Float32x4(col))) =
             (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.attribute(Mesh::ATTRIBUTE_COLOR))
         else {
@@ -882,7 +888,7 @@ mod tests {
         let k = defs().rooms.iter().position(|r| r.id == "workshop").unwrap();
         let mut kinds = vec![0u8; room + 1];
         kinds[room] = k as u8 + 1;
-        let cut = Cut { level: Z, columns: &[], kinds: &kinds, season: 0 };
+        let cut = Cut { level: Z, columns: &[], kinds: &kinds, season: 0, zones: true };
         let (mesh, _) = build_chunk(&m, 0, 0, cut);
         let (Some(bevy::mesh::VertexAttributeValues::Float32x3(pos)), Some(bevy::mesh::VertexAttributeValues::Float32x4(col))) =
             (mesh.attribute(Mesh::ATTRIBUTE_POSITION), mesh.attribute(Mesh::ATTRIBUTE_COLOR))

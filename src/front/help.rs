@@ -124,8 +124,9 @@ pub const TOPICS: &[Topic] = &[
                 blocks: &[
                     Point("Floors are for upper storeys; they need a wall, door, stairs or ground below within 3 cells."),
                     Point("Walls stack onto walls and doors below, even planned ones, to build several storeys high."),
+                    Point("Plan walls and furniture right over trees, bushes and crops: they're cut down or picked first, grown or not."),
                     Point("Stairs rise away from where you walk onto them, onto the level above beside them; ladders go straight up."),
-                    Keys(&[("PgDn / PgUp", "Layer view: hide everything above a level, and build on it"), ("[ / ]", "The same"), ("Shift+R", "Hide roofs, to look into buildings")]),
+                    Keys(&[("PgDn / PgUp", "Layer view: hide everything above a level, and build on it"), ("[ / ]", "The same"), ("Shift+R", "Hide roofs, to look into buildings"), ("Shift+Z", "Hide zones (they still show while painting zones)")]),
                 ],
             },
             Section {

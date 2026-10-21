@@ -162,17 +162,51 @@ pub enum Feature {
     /// and the only way in or out at this level is from the foot (the
     /// opposite side).
     Built { kind: BuildId, dir: Dir },
-    /// `dir`: how it's turned once built (as in `Built`). `over`: a wall,
-    /// door or window still standing here (and turned so) until this
-    /// replaces it; the cell acts as that meanwhile.
+    /// `dir`: how it's turned once built (as in `Built`). `over`: what still
+    /// stands here until this replaces it (see `Over`).
     Blueprint {
         kind: BuildId,
         delivered: u32,
         #[serde(default)]
         dir: Dir,
         #[serde(default)]
-        over: Option<(BuildId, Dir)>,
+        over: Over,
     },
+}
+
+/// What a blueprint is planned over. The cell acts as that meanwhile.
+///
+/// Untagged so saves from before plants could be built over still load
+/// (they stored `null` or `[kind, dir]`).
+#[derive(Clone, Copy, PartialEq, Debug, Default, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Over {
+    /// Open ground: building can start once the materials are in.
+    #[default]
+    Nothing,
+    /// A wall, door or window, turned so, that stands until the new one replaces it.
+    Structure(BuildId, Dir),
+    /// A tree, bush or crop that is cut down (or picked) first, grown or not.
+    Plant { kind: PlantId, growth: f32 },
+}
+
+impl Over {
+    /// The plant to clear before building can start, if any.
+    pub fn plant(self) -> Option<PlantId> {
+        match self {
+            Over::Plant { kind, .. } => Some(kind),
+            Over::Nothing | Over::Structure(..) => None,
+        }
+    }
+
+    /// What's left standing if the blueprint is cancelled.
+    pub fn restored(self) -> Feature {
+        match self {
+            Over::Nothing => Feature::None,
+            Over::Structure(kind, dir) => Feature::Built { kind, dir },
+            Over::Plant { kind, growth } => Feature::Plant { kind, growth },
+        }
+    }
 }
 
 impl Feature {
@@ -188,14 +222,14 @@ impl Feature {
 
     /// A blueprint of `kind`, to be built from scratch.
     pub fn blueprint(kind: BuildId, delivered: u32, dir: Dir) -> Feature {
-        Feature::Blueprint { kind, delivered, dir, over: None }
+        Feature::Blueprint { kind, delivered, dir, over: Over::Nothing }
     }
 
     /// Which buildable the finished structure here is, if any (one being
     /// built over counts until it's replaced).
     pub fn structure_id(self) -> Option<BuildId> {
         match self {
-            Feature::Built { kind, .. } | Feature::Blueprint { over: Some((kind, _)), .. } => Some(kind),
+            Feature::Built { kind, .. } | Feature::Blueprint { over: Over::Structure(kind, _), .. } => Some(kind),
             _ => None,
         }
     }
@@ -215,9 +249,9 @@ impl Feature {
 
     pub fn passable(self) -> bool {
         match self {
-            Feature::Blueprint { over: Some((kind, _)), .. } => kind.def().passable,
-            Feature::None | Feature::Blueprint { .. } => true,
-            Feature::Plant { kind, .. } => kind.def().passable,
+            Feature::Blueprint { over: Over::Structure(kind, _), .. } => kind.def().passable,
+            Feature::Plant { kind, .. } | Feature::Blueprint { over: Over::Plant { kind, .. }, .. } => kind.def().passable,
+            Feature::None | Feature::Blueprint { over: Over::Nothing, .. } => true,
             Feature::Built { kind, .. } => kind.def().passable,
         }
     }
@@ -246,6 +280,15 @@ impl Feature {
     /// A sown plant (crops in grow zones).
     pub fn is_crop(self) -> bool {
         matches!(self, Feature::Plant { kind, .. } if kind.def().sow.is_some())
+    }
+
+    /// The plant standing here: on its own, or to be cleared for a blueprint.
+    pub fn plant_kind(self) -> Option<PlantId> {
+        match self {
+            Feature::Plant { kind, .. } => Some(kind),
+            Feature::Blueprint { over, .. } => over.plant(),
+            Feature::None | Feature::Built { .. } => None,
+        }
     }
 
     /// The designation a player uses to have this harvested, if it's a plant that needs one.
@@ -1242,6 +1285,17 @@ fn noise(x: f32, y: f32, salt: u32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blueprints_keep_their_old_save_shape() {
+        let wall = BuildId::named("wall");
+        let over_wall = Feature::Blueprint { kind: wall, delivered: 1, dir: Dir::PlusX, over: Over::Structure(wall, Dir::MinusY) };
+        let old = serde_json::json!({ "Blueprint": { "kind": wall, "delivered": 1, "over": [wall, Dir::MinusY] } });
+        assert_eq!(serde_json::from_value::<Feature>(old.clone()).unwrap(), over_wall);
+        assert_eq!(serde_json::to_value(over_wall).unwrap()["Blueprint"]["over"], old["Blueprint"]["over"]);
+        let bare = serde_json::json!({ "Blueprint": { "kind": wall, "delivered": 0, "over": null } });
+        assert_eq!(serde_json::from_value::<Feature>(bare).unwrap(), Feature::blueprint(wall, 0, Dir::PlusX));
+    }
 
     #[test]
     fn quarter_turns_go_round() {

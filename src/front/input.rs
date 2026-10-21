@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::{egui_wants_any_keyboard_input, EguiWantsInput};
 use colcom::defs::{defs, BuildId, Special};
-use colcom::map::{Block, Desig, Dir, Map, Pos, RoofPolicy, Zone};
+use colcom::map::{Block, Desig, Dir, Feature, Map, Pos, RoofPolicy, Zone};
 use colcom::pawn::{Faction, PawnId};
 use colcom::world::{Order, World as SimWorld};
 use std::f32::consts::FRAC_PI_2;
@@ -279,6 +279,9 @@ pub struct UiState {
     /// cut), so you can look into buildings without the layer view.
     pub hide_roofs: bool,
     pub roof_cut: Vec<u8>,
+    /// Hide zone colours and outlines (stockpile, safe, quarry, no roof), except
+    /// while painting zones (see `zones_shown`).
+    pub hide_zones: bool,
     /// Bumped whenever `roof_cut` changes, for things that cache visibility.
     pub roof_version: u64,
     /// The last right press put a tool down (so its release doesn't also deselect).
@@ -343,6 +346,7 @@ impl UiState {
             view_level: None,
             hide_roofs: false,
             roof_cut: Vec::new(),
+            hide_zones: false,
             roof_version: 0,
             dropped_tool: false,
             job_menu: None,
@@ -422,6 +426,18 @@ impl UiState {
             None => ids.push(id),
         }
         self.select_pawns(ids);
+    }
+
+    /// Whether zones are drawn: unless hidden, and always while a zone tool is in hand.
+    pub fn zones_shown(&self) -> bool {
+        let painting = match self.tool {
+            Tool::Paint(order) => match order {
+                Order::Zone(_) | Order::Roof(_) | Order::Stockpile | Order::Quarry => true,
+                Order::Desig(_) | Order::Build(_) | Order::Cancel => false,
+            },
+            _ => false,
+        };
+        !self.hide_zones || painting
     }
 
     /// Highest level being shown.
@@ -922,7 +938,10 @@ fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMu
     if shift && keys.just_pressed(KeyCode::KeyR) {
         ui.hide_roofs = !ui.hide_roofs;
     }
-    // Shift+key is for other things (Shift+N, Shift+R).
+    if shift && keys.just_pressed(KeyCode::KeyZ) {
+        ui.hide_zones = !ui.hide_zones;
+    }
+    // Shift+key is for other things (Shift+N, Shift+R, Shift+Z).
     for e in TOOLS.iter().filter(|_| !shift && !battle) {
         if e.key.as_ref().is_some_and(|(_, k)| keys.just_pressed(*k)) {
             ui.tool = e.tool;
@@ -1223,7 +1242,12 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
                 Desig::Chop | Desig::Forage => false,
             };
             Some((m.pos(i), d, solid))
-        }).collect();
+        }).chain(m.feature.iter().enumerate().filter_map(|(i, f)| {
+            // A plant in a blueprint's way: marked as if designated, since it's cut down (or picked) first.
+            let Feature::Blueprint { over, .. } = f else { return None };
+            let d = over.plant()?.def().harvest.desig?;
+            Some((m.pos(i), d, false))
+        })).collect();
         markers.key = Some(key);
     }
     for &(p, d, solid) in &markers.cells {
@@ -1239,7 +1263,7 @@ fn draw_markers(mut gizmos: Gizmos, sim: Res<Sim>, ui: Res<UiState>, keys: Res<B
         else { floor_outline(&mut gizmos, p, 0.12, color); }
     }
 
-    for &i in &m.no_roof {
+    for &i in m.no_roof.iter().filter(|_| ui.zones_shown()) {
         let p = m.pos(i as usize);
         if p.2 <= ui.top_at(m, p.0, p.1) {
             floor_outline(&mut gizmos, p, 0.09, Color::srgb(0.85, 0.65, 1.0));

@@ -16,7 +16,7 @@ use bevy::gltf::GltfMaterialName;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot, WorldInstanceReady};
 use colcom::pawn::PawnId;
 use colcom::defs::{defs, BuildDef, BuildId, BuildLook, ItemId, ModelPose, Part, PlantId, PlantVariant, Shape, Special, Storage, WornPiece};
-use colcom::map::{Dir, Feature, Map, Pos, DIRS};
+use colcom::map::{Dir, Feature, Map, Over, Pos, DIRS};
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::{FRAC_PI_2, TAU};
 
@@ -30,7 +30,8 @@ enum PropKey {
     /// `snug`: how far it's drawn pushed back against a wall behind it (see `snug`).
     Built { kind: BuildId, dir: Dir, owner: Option<PawnId>, open: bool, links: u8, snug: (f32, f32) },
     /// `over`: around a wall still standing there (a slightly bigger ghost).
-    Blueprint { kind: BuildId, dir: Dir, over: bool, snug: (f32, f32) },
+    /// `plant`: a plant still standing in it, to be cleared first (kind and stage).
+    Blueprint { kind: BuildId, dir: Dir, over: bool, snug: (f32, f32), plant: Option<(PlantId, u8)> },
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -406,7 +407,9 @@ fn prop_key(w: &colcom::world::World, i: usize, owners: &HashMap<Pos, (PawnId, [
         Feature::None => None,
         Feature::Plant { kind, growth } => Some(PropKey::Plant { kind, stage: kind.def().stage(growth) as u8 }),
         // To be built over a wall that's drawn with the terrain.
-        Feature::Blueprint { kind, over: Some(_), .. } => Some(PropKey::Blueprint { kind, dir: Dir::PlusX, over: true, snug: (0.0, 0.0) }),
+        Feature::Blueprint { kind, over: Over::Structure(..), .. } => {
+            Some(PropKey::Blueprint { kind, dir: Dir::PlusX, over: true, snug: (0.0, 0.0), plant: None })
+        }
         // Drawn with the terrain.
         f if f.is_block() => None,
         Feature::Built { kind, dir } => Some({
@@ -439,10 +442,14 @@ fn prop_key(w: &colcom::world::World, i: usize, owners: &HashMap<Pos, (PawnId, [
             let snug = snug(m, pos, kind, dir);
             PropKey::Built { kind, dir, owner, open, links, snug: (snug.x, snug.y) }
         }),
-        Feature::Blueprint { kind, dir, .. } => {
+        Feature::Blueprint { kind, dir, over, .. } => {
             let dir = if kind.def().turnable() { dir } else { Dir::PlusX };
             let snug = snug(m, pos, kind, dir);
-            Some(PropKey::Blueprint { kind, dir, over: false, snug: (snug.x, snug.y) })
+            let plant = match over {
+                Over::Plant { kind, growth } => Some((kind, kind.def().stage(growth) as u8)),
+                Over::Nothing | Over::Structure(..) => None,
+            };
+            Some(PropKey::Blueprint { kind, dir, over: false, snug: (snug.x, snug.y), plant })
         }
     }
 }
@@ -553,10 +560,10 @@ fn preview_blueprints(
                 let over = matches!(m.feature[m.idx(p)], Feature::Built { .. });
                 let dir = if d.turnable() { ui.place_dir } else { colcom::map::Dir::PlusX };
                 let key = if over {
-                    PropKey::Blueprint { kind, dir: colcom::map::Dir::PlusX, over: true, snug: (0.0, 0.0) }
+                    PropKey::Blueprint { kind, dir: colcom::map::Dir::PlusX, over: true, snug: (0.0, 0.0), plant: None }
                 } else {
                     let s = snug(m, p, kind, dir);
-                    PropKey::Blueprint { kind, dir, over: false, snug: (s.x, s.y) }
+                    PropKey::Blueprint { kind, dir, over: false, snug: (s.x, s.y), plant: None }
                 };
                 cells.push((p, key));
             }
@@ -861,6 +868,18 @@ pub fn spawn_worn(commands: &mut Commands, a: &PropAssets, transform: Transform,
     root
 }
 
+fn spawn_plant(commands: &mut Commands, a: &PropAssets, kind: PlantId, stage: u8, pos: Pos, lift: f32) -> Entity {
+    let (xi, yi) = (pos.0 as i32, pos.1 as i32);
+    let def = kind.def();
+    let variants = &def.stages[stage as usize].variants;
+    let variant = &variants[(hash(xi, yi, 23) * variants.len() as f32) as usize % variants.len()];
+    let (lo, hi) = def.scale;
+    let root = Transform::from_translation(tile_center(pos) + Vec3::Y * lift)
+        .with_rotation(Quat::from_rotation_y(hash(xi, yi, 22) * TAU))
+        .with_scale(Vec3::splat(lo + hash(xi, yi, 20) * (hi - lo)));
+    spawn_plant_look(commands, a, root, variant)
+}
+
 fn spawn_feature(
     commands: &mut Commands,
     a: &PropAssets,
@@ -876,15 +895,12 @@ fn spawn_feature(
     let base = Transform::from_translation(tile_center(pos) + pushed + Vec3::Y * lift);
     let (xi, yi) = (pos.0 as i32, pos.1 as i32);
     match key {
-        PropKey::Plant { kind, stage } => {
-            let def = kind.def();
-            let variants = &def.stages[stage as usize].variants;
-            let variant = &variants[(hash(xi, yi, 23) * variants.len() as f32) as usize % variants.len()];
-            let (lo, hi) = def.scale;
-            let root = base
-                .with_rotation(Quat::from_rotation_y(hash(xi, yi, 22) * TAU))
-                .with_scale(Vec3::splat(lo + hash(xi, yi, 20) * (hi - lo)));
-            spawn_plant_look(commands, a, root, variant)
+        PropKey::Plant { kind, stage } => spawn_plant(commands, a, kind, stage, pos, lift),
+        // The plant still standing, with the ghost of what replaces it: both under one entity.
+        PropKey::Blueprint { kind, dir, over, snug, plant: Some((plant, stage)) } => {
+            let ghost = PropKey::Blueprint { kind, dir, over, snug, plant: None };
+            let children = [spawn_feature(commands, a, ghost, pos, lift, blanket), spawn_plant(commands, a, plant, stage, pos, lift)];
+            commands.spawn((Transform::default(), Visibility::default())).add_children(&children).id()
         }
         PropKey::Built { kind, dir, open, links, .. } => {
             let def = kind.def();
@@ -1230,7 +1246,7 @@ mod tests {
         assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0);
         let lamp = BuildId::named("lamp");
         let pos = (3, 3, Z);
-        spawn_feature(&mut world.commands(), &a, PropKey::Blueprint { kind: lamp, dir: colcom::map::Dir::PlusX, over: false, snug: (0.0, 0.0) }, pos, 0.0, a.blanket_free.clone());
+        spawn_feature(&mut world.commands(), &a, PropKey::Blueprint { kind: lamp, dir: colcom::map::Dir::PlusX, over: false, snug: (0.0, 0.0), plant: None }, pos, 0.0, a.blanket_free.clone());
         world.flush();
         assert_eq!(world.query::<&PointLight>().iter(&world).count(), 0, "previews do not cast light");
         spawn_feature(&mut world.commands(), &a, PropKey::Built { kind: lamp, dir: colcom::map::Dir::PlusX, owner: None, open: false, links: 0, snug: (0.0, 0.0) }, pos, 0.0, a.blanket_free.clone());

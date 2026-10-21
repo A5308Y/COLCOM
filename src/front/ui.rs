@@ -19,7 +19,7 @@ use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
 use colcom::health::{CyberSlot, HediffKind};
 use colcom::decor::DecorState;
 use colcom::defs::{defs, ItemCategory, ItemId, PlantId, RoomDef, RoomId, Slot, Special};
-use colcom::map::{Block, Feature, Pos, StockpileId, Zone};
+use colcom::map::{Block, Feature, Over, Pos, StockpileId, Zone};
 use colcom::pawn::{Pawn, PawnId, PerSkill, PerWork, Role, Skill, WorkPriority, WorkType};
 use colcom::production::{BillMode, StorePriority};
 use colcom::rooms::{Progress, RoomStats, TIERS};
@@ -379,6 +379,11 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 let roofs = egui::Button::new("Hide roofs (Shift+R)").selected(st.hide_roofs);
                 if ui.add(roofs).on_hover_text("Look into buildings: hides built roofs over rooms").clicked() {
                     st.hide_roofs = !st.hide_roofs;
+                }
+                let zones = egui::Button::new("Hide zones (Shift+Z)").selected(st.hide_zones);
+                let tip = "Hide stockpile, safe, quarry and no roof areas. They still show while you paint zones.";
+                if ui.add(zones).on_hover_text(tip).clicked() {
+                    st.hide_zones = !st.hide_zones;
                 }
                 ui.separator();
                 if ui.add(egui::Button::new("Squads").selected(st.show_squads)).clicked() {
@@ -1150,7 +1155,11 @@ fn tile_inspector(
                 f @ Feature::Plant { growth, .. } if f.is_crop() => format!("{}, {:.0}% grown", f.name(), growth * 100.0),
                 Feature::Blueprint { kind, delivered, over, .. } => {
                     let d = kind.def();
-                    let instead = over.map_or(String::new(), |(old, _)| format!(", to replace the {}", old.name().to_lowercase()));
+                    let instead = match over {
+                        Over::Nothing => String::new(),
+                        Over::Structure(old, _) => format!(", to replace the {}", old.name().to_lowercase()),
+                        Over::Plant { kind, .. } => format!(", once the {} is cleared", kind.name().to_lowercase()),
+                    };
                     let state = match d.missing(delivered) {
                         Some((item, n)) => format!(
                             "{} blueprint ({}/{} delivered; needs {} {} next)",
