@@ -754,8 +754,12 @@ mod tests {
             })
             .collect();
         // Both shape and model visuals now live beneath a stable hand attachment.
+        // The hand bone's own children include finger joints; only the rest are attachments.
+        let mut skins = app.world_mut().query::<&bevy::mesh::skinning::SkinnedMesh>();
+        let joints: std::collections::HashSet<Entity> = skins.iter(app.world()).flat_map(|skin| skin.joints.iter().copied()).collect();
         let mut held = app.world_mut().query::<(Entity, &ChildOf, &Children)>();
-        let held: Vec<Entity> = held.iter(app.world()).filter(|(_, parent, _)| hands.contains(&parent.parent())).map(|(e, _, _)| e).collect();
+        let held: Vec<Entity> = held.iter(app.world())
+            .filter(|(e, parent, _)| hands.contains(&parent.parent()) && !joints.contains(e)).map(|(e, _, _)| e).collect();
         assert!(!held.is_empty(), "weapons attach to the hands");
         let mut stack = held.clone();
         let mut descendants = Vec::new();
