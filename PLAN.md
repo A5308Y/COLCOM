@@ -935,6 +935,10 @@ slopes, and old save versions); the newer note in the same topic says so.
   Under way with decisions, the market and the journal, Factions); alerts for waiting decisions; the
   camera re-centres on a site. Possible later: faction raids by other factions, caravans visiting the
   colony, more varied site maps, a world map.
+- Missions on demand (2026-10-21, for testing): `World::offer_now(Option<MissionKind>)` adds an
+  offer from a random faction that `fits` the kind, past `MAX_OFFERS`; `skip_travel` sets an `Out` or
+  `Back` leg's timer to now. The Offers tab has a mission picker and *Offer now*; journeys under way
+  have *Skip travel*.
 - Reachable edge entries (2026-10-19): `World::random_edge_tile` (raids, wanderers, returning
   expeditions and gifts) only picks a passable edge cell from which a living colonist can be reached on
   foot (`bfs`, up to 40 tries), so nobody arrives in a pocket closed off by trees, cliffs or water.
@@ -987,6 +991,10 @@ slopes, and old save versions); the newer note in the same topic says so.
   labels; warnings have amber borders. The latest three events stay visible in separate cards,
   with the newest in larger type and an amber frame. Alerts and events scroll independently to
   keep long lists within the viewport. Gameplay, event storage and sounds are unchanged.
+  - Stability (2026-10-21): the UI delays idle-count changes for three real seconds, or two seconds
+    when clearing the warning, resetting this state on world changes. Urgent alerts remain immediate.
+    The alert section keeps a fixed height even when empty, so recent events (including save
+    confirmations) stay in position as alerts appear and clear. Save data and simulation are unchanged.
 - Hide roofs (Shift+R or the HUD button; like Going Medieval's roof toggle): every column is cut off
   just under its topmost roof (built or blueprint, finished room or not), or above the topmost roofed
   room whose ceiling is a built floor (`input::roof_cut`)

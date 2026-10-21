@@ -12,7 +12,7 @@ use super::squads_ui;
 use super::theme;
 use super::look::{pawn_look, Look, Rgb};
 use super::overlay;
-use super::sim::Sim;
+use super::sim::{Clock, Sim};
 use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, RichText};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
@@ -48,6 +48,7 @@ fn install_theme(mut contexts: EguiContexts) -> Result {
 fn draw_ui(
     mut contexts: EguiContexts,
     mut labels: Local<overlay::MapLabels>,
+    mut notices: Local<NotificationState>,
     mut sim: ResMut<Sim>,
     mut st: ResMut<UiState>,
     mut rig: ResMut<CameraRig>,
@@ -80,7 +81,10 @@ fn draw_ui(
     job_menu(&ctx, &mut sim, &mut st, &mut sounds);
     hud(&ctx, &mut sim, &mut st, &mut rig, left);
     colonist_bar(&ctx, &sim, &mut st, &mut rig, left);
-    notifications(&ctx, &sim);
+    // The battle panel takes the top right, with its own events.
+    if sim.world.battle.is_none() {
+        notifications(&ctx, &sim, &mut notices);
+    }
     match st.selected {
         Some(Selection::Pawn(id)) => pawn_inspector(&ctx, &mut sim, &mut st, id, left),
         Some(Selection::Tile(t)) => {
@@ -335,9 +339,14 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 ui.separator();
                 ui.label(colonists);
                 ui.separator();
-                let pause = if sim.paused { "Resume (Space)" } else { "Pause (Space)" };
-                if ui.button(pause).clicked() {
-                    sim.paused = !sim.paused;
+                // Pausing holds up the colony, never a battle.
+                let battle = sim.world.battle.is_some();
+                let pause = match sim.clock {
+                    Clock::Running | Clock::Frozen => "Pause (Space)",
+                    Clock::Paused => "Resume (Space)",
+                };
+                if ui.add_enabled(!battle, egui::Button::new(pause)).clicked() {
+                    sim.toggle_pause();
                 }
                 let speed = if sim.world.battle.is_some() {
                     "Speed 1x (battle)".to_string()
@@ -703,8 +712,64 @@ fn colonist_bar(ctx: &egui::Context, sim: &Sim, st: &mut UiState, rig: &mut Came
     });
 }
 
-fn notifications(ctx: &egui::Context, sim: &Sim) {
-    let alerts = sim.world.alerts();
+/// Idle counts fluctuate between jobs. Keep their presentation stable without
+/// delaying urgent alerts or changing the simulation or save data.
+#[derive(Default)]
+enum IdleNotice {
+    #[default]
+    Hidden,
+    Visible(usize),
+    Pending { shown: usize, next: usize, since: f64 },
+}
+
+impl IdleNotice {
+    fn update(&mut self, count: usize, now: f64) -> usize {
+        let (shown, pending) = match *self {
+            Self::Hidden => (0, None),
+            Self::Visible(shown) => (shown, None),
+            Self::Pending { shown, next, since } => (shown, Some((next, since))),
+        };
+        if count == shown {
+            *self = if shown == 0 { Self::Hidden } else { Self::Visible(shown) };
+            return shown;
+        }
+        let since = match pending {
+            Some((next, since)) if next == count => since,
+            Some(_) | None => now,
+        };
+        // Real seconds: fast simulation speeds must not make the notice flash.
+        let delay = if count == 0 { 2.0 } else { 3.0 };
+        if now - since >= delay {
+            *self = if count == 0 { Self::Hidden } else { Self::Visible(count) };
+            count
+        } else {
+            *self = Self::Pending { shown, next: count, since };
+            shown
+        }
+    }
+}
+
+#[derive(Default)]
+struct NotificationState {
+    generation: u64,
+    idle: IdleNotice,
+}
+
+impl NotificationState {
+    fn idle_count(&mut self, generation: u64, count: usize, now: f64) -> usize {
+        if self.generation != generation {
+            *self = Self { generation, ..Default::default() };
+        }
+        self.idle.update(count, now)
+    }
+}
+
+fn notifications(ctx: &egui::Context, sim: &Sim, state: &mut NotificationState) {
+    let mut alerts = sim.world.alerts();
+    let idle = state.idle_count(sim.generation, sim.world.idle_colonists(), ctx.input(|i| i.time));
+    if idle > 0 {
+        alerts.push((format!("{} idle colonist(s)", idle), false));
+    }
     if alerts.is_empty() && sim.world.log.is_empty() {
         return;
     }
@@ -713,12 +778,16 @@ fn notifications(ctx: &egui::Context, sim: &Sim) {
     egui::Area::new(egui::Id::new("notifications")).anchor(Align2::RIGHT_TOP, [-12.0, 12.0]).show(ctx, |ui| {
         theme::Plate::panel().stroke(egui::Stroke::new(2.0, theme::AMBER)).show(ui, |ui| {
             ui.set_width(width);
-            if !alerts.is_empty() {
+            {
                 let urgent = alerts.iter().any(|(_, urgent)| *urgent);
                 let accent = if urgent { theme::RED } else { theme::AMBER };
                 ui.label(theme::caps(format!("Colony alerts ({})", alerts.len()), 21.0).color(accent));
                 ui.add_space(4.0);
-                egui::ScrollArea::vertical().id_salt("colony_alerts").max_height(max_height * 0.55).show(ui, |ui| {
+                egui::ScrollArea::vertical().id_salt("colony_alerts").max_height(max_height * 0.55)
+                    .auto_shrink([false, false]).show(ui, |ui| {
+                    if alerts.is_empty() {
+                        ui.label(RichText::new("No active alerts").color(theme::CREAM_DIM));
+                    }
                     // Put urgent problems first so routine warnings can't push them out of view.
                     for (text, urgent) in alerts.iter().filter(|(_, urgent)| *urgent)
                         .chain(alerts.iter().filter(|(_, urgent)| !*urgent)) {
@@ -737,7 +806,9 @@ fn notifications(ctx: &egui::Context, sim: &Sim) {
             if !sim.world.log.is_empty() {
                 ui.label(theme::caps("Recent events", 19.0).color(theme::AMBER));
                 ui.add_space(4.0);
-                let events_height = if alerts.is_empty() { max_height } else { max_height * 0.45 };
+                // Reserve the same alert space even when a condition clears, so
+                // persistent events (including save confirmations) don't jump.
+                let events_height = max_height * 0.45;
                 egui::ScrollArea::vertical().id_salt("recent_events").max_height(events_height).show(ui, |ui| {
                     for (k, text) in sim.world.log.iter().rev().take(3).enumerate() {
                         let latest = k == 0;
@@ -1643,6 +1714,84 @@ fn work_panel(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn idle_notice_ignores_job_gaps_and_brief_returns_to_work() {
+        let mut notice = IdleNotice::default();
+        assert_eq!(notice.update(1, 0.0), 0);
+        assert_eq!(notice.update(0, 0.5), 0, "a brief gap between jobs isn't an alert");
+        assert_eq!(notice.update(1, 1.0), 0);
+        assert_eq!(notice.update(1, 3.9), 0);
+        assert_eq!(notice.update(1, 4.0), 1, "sustained idleness is shown");
+        assert_eq!(notice.update(0, 4.1), 1);
+        assert_eq!(notice.update(1, 5.0), 1, "a brief job doesn't make the warning disappear");
+        assert_eq!(notice.update(0, 6.0), 1);
+        assert_eq!(notice.update(0, 7.9), 1);
+        assert_eq!(notice.update(0, 8.0), 0, "sustained work clears the warning");
+    }
+
+    #[test]
+    fn idle_notice_keeps_the_last_stable_count_during_changes() {
+        let mut notice = IdleNotice::default();
+        notice.update(1, 0.0);
+        assert_eq!(notice.update(1, 3.0), 1);
+        assert_eq!(notice.update(2, 4.0), 1);
+        assert_eq!(notice.update(1, 5.0), 1);
+        assert_eq!(notice.update(2, 6.0), 1);
+        assert_eq!(notice.update(2, 9.0), 2);
+    }
+
+    #[test]
+    fn loading_another_world_resets_pending_and_visible_idle_notices() {
+        let mut state = NotificationState::default();
+        state.idle_count(0, 1, 0.0);
+        assert_eq!(state.idle_count(0, 1, 3.0), 1);
+        assert_eq!(state.idle_count(1, 0, 3.1), 0, "don't carry a previous world's warnings");
+        state.idle_count(1, 2, 4.0);
+        assert_eq!(state.idle_count(2, 2, 6.0), 0, "pending timers reset too");
+        assert_eq!(state.idle_count(2, 2, 9.0), 2);
+    }
+
+    #[test]
+    fn save_confirmation_stays_in_place_when_idle_alert_appears_and_clears() {
+        fn text_y(shape: &egui::Shape, text: &str) -> Option<f32> {
+            match shape {
+                egui::Shape::Text(t) if t.galley.text() == text => Some(t.pos.y),
+                egui::Shape::Vec(shapes) => shapes.iter().find_map(|s| text_y(s, text)),
+                _ => None,
+            }
+        }
+        let ctx = egui::Context::default();
+        theme::install(&ctx);
+        let mut sim = Sim::new(None);
+        sim.world = SimWorld::with_map(my_world::map::Map::flat(8, 8), my_world::rng::Rng::new(1));
+        let id = sim.world.spawn_colonist((3, 3, my_world::map::FLAT_Z));
+        sim.world.push_log("Game saved.".into());
+        let mut state = NotificationState::default();
+        let mut frame = |sim: &Sim, now| {
+            ctx.begin_pass(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1280.0, 800.0))),
+                time: Some(now),
+                ..Default::default()
+            });
+            notifications(&ctx, sim, &mut state);
+            let output = ctx.end_pass();
+            let y = output.shapes.iter().find_map(|s| text_y(&s.shape, "Game saved."));
+            output.drop_without_applying_deltas();
+            y
+        };
+        // Warm egui's area measurement and fonts before recording positions.
+        frame(&sim, 0.0);
+        frame(&sim, 0.1);
+        let before = frame(&sim, 0.2).expect("save confirmation visible");
+        let during = frame(&sim, 3.2).expect("still visible when idle alert appears");
+        let i = sim.world.pawn_index(id).unwrap();
+        sim.world.pawns[i].job = Some(my_world::pawn::Job::Goto { to: (4, 3, my_world::map::FLAT_Z) });
+        frame(&sim, 4.0);
+        let after = frame(&sim, 6.1).expect("still visible when idle alert clears");
+        assert!((before - during).abs() < 0.5, "event moved from {before} to {during}");
+        assert!((before - after).abs() < 0.5, "event moved from {before} to {after}");
+    }
 
     #[test]
     fn clicks_step_priorities_up_and_down() {

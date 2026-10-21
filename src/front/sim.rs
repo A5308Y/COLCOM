@@ -8,12 +8,22 @@ use my_world::TICK;
 /// Game speeds: keys 1-4 pick one, the speed button cycles through them.
 pub const SPEEDS: [u32; 4] = [1, 2, 5, 10];
 
+/// Whether the game clock runs.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Clock {
+    Running,
+    /// The player's pause: the colony waits, but a battle plays on.
+    Paused,
+    /// Everything stands still, battles too (screenshot mode).
+    Frozen,
+}
+
 #[derive(Resource)]
 pub struct Sim {
     pub world: SimWorld,
     /// Game seconds per real second: one of `SPEEDS`.
     pub speed: u32,
-    pub paused: bool,
+    pub clock: Clock,
     /// Bumped whenever `world` is replaced (new game, load), so visuals rebuild.
     pub generation: u64,
     /// The scenario the game started in (`--scenario <name>`); Shift+N restarts it.
@@ -28,7 +38,7 @@ impl Sim {
     /// A game in `scenario`, or the last saved game, or a new colony.
     pub fn new(mut scenario: Option<String>) -> Sim {
         let world = start_world(&mut scenario, true);
-        Sim { world, speed: 1, paused: false, generation: 0, scenario, home: None, acc: 0.0 }
+        Sim { world, speed: 1, clock: Clock::Running, generation: 0, scenario, home: None, acc: 0.0 }
     }
 
     /// A new game: the scenario again, or a new colony on a new map (never the save).
@@ -50,6 +60,33 @@ impl Sim {
         } else {
             self.speed
         }
+    }
+
+    /// Whether the world advances: the player's pause doesn't hold up a battle.
+    pub fn advancing(&self) -> bool {
+        match self.clock {
+            Clock::Running => true,
+            Clock::Paused => self.world.battle.is_some(),
+            Clock::Frozen => false,
+        }
+    }
+
+    /// Simulation seconds per real second, 0 while nothing advances.
+    pub fn effective_rate(&self) -> f32 {
+        if self.advancing() {
+            self.rate() as f32
+        } else {
+            0.0
+        }
+    }
+
+    /// Space or the Pause button. Screenshot mode's freeze stays put.
+    pub fn toggle_pause(&mut self) {
+        self.clock = match self.clock {
+            Clock::Running => Clock::Paused,
+            Clock::Paused => Clock::Running,
+            Clock::Frozen => Clock::Frozen,
+        };
     }
 
     /// The colony, also while a fight is played at an expedition's site.
@@ -156,7 +193,7 @@ impl Plugin for SimPlugin {
 fn step_simulation(time: Res<Time>, mut sim: ResMut<Sim>) {
     let sim = &mut *sim;
     sim.swap_sites();
-    if sim.paused || sim.lost() {
+    if !sim.advancing() || sim.lost() {
         return;
     }
     sim.acc += time.delta_secs().min(0.25) * sim.rate() as f32;
@@ -185,6 +222,24 @@ mod tests {
     use my_world::DAY_LEN;
 
     #[test]
+    fn pausing_holds_up_the_colony_but_not_a_battle() {
+        let mut sim = Sim::new(Some("battle".into()));
+        assert!(sim.world.battle.is_some());
+        sim.toggle_pause();
+        assert_eq!(sim.clock, Clock::Paused);
+        assert!(sim.advancing(), "a battle plays on through the pause");
+        sim.world.battle = None;
+        assert!(!sim.advancing() && sim.effective_rate() == 0.0, "the colony waits");
+        sim.toggle_pause();
+        assert!(sim.advancing());
+        // Screenshot mode stops everything, and the pause toggle can't undo it.
+        sim.world = scenarios::build("battle").unwrap();
+        sim.clock = Clock::Frozen;
+        sim.toggle_pause();
+        assert!(!sim.advancing());
+    }
+
+    #[test]
     fn an_expeditions_fight_is_played_in_place_of_the_colony_and_saved_with_it() {
         let mut world = SimWorld::new(7);
         world.story.next_raid = f32::MAX;
@@ -197,7 +252,7 @@ mod tests {
         }
         world.choose(id, 0).unwrap();
         let home_w = world.map.w;
-        let mut sim = Sim { world, speed: 1, paused: false, generation: 0, scenario: None, home: None, acc: 0.0 };
+        let mut sim = Sim { world, speed: 1, clock: Clock::Running, generation: 0, scenario: None, home: None, acc: 0.0 };
         sim.swap_sites();
         assert!(sim.home.is_some() && sim.generation == 1, "the site is played");
         assert!(sim.world.map.w < home_w && sim.world.battle.is_some());

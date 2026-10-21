@@ -30,6 +30,9 @@ headings in Barlow (SIL OFL, `assets/fonts/`). The handbook (`H`) is split into 
 Notifications occupy a framed panel at the top right: urgent colony alerts come first in red,
 followed by amber warnings and the three most recent events. The latest event has a larger amber
 card, and messages stay visible until newer events replace them. Long lists can be scrolled.
+Idle warnings appear after three real seconds of sustained idleness and clear after two seconds
+of sustained work, so brief gaps between jobs don't flash notices. The alert section reserves its
+space to keep recent events stationary as warnings appear and clear; urgent alerts appear immediately.
 
 Scenarios are fixed worlds for trying things out (`src/scenarios.rs`). `--scenario <name>` or
 `MY_WORLD_SCENARIO=<name>` picks one; an unknown name lists the ones there are. `battle` starts in
@@ -153,6 +156,8 @@ for), and `<` goes back.
   small map of its own; afterwards the squad carries on with its wounds and whatever the enemy dropped.
   At a market you barter what you carry for their stock at their prices (better with more goodwill).
   The raiders' goodwill spaces out raids, and allies (goodwill 50+) send gifts now and then.
+  For testing, **Offer now** (below the offers) brings any mission, or a chosen one, straight away, and
+  **Skip travel** (under way) ends the current leg of a journey.
 - **Seasons:** a year has four seasons of 5 days, starting in spring (the top bar shows the season and
   its day). Crops grow in spring and summer, slower in autumn and not at all in winter, and winter's
   first frost kills the ones not yet ripe (an alert warns the day before); wild plants don't grow back

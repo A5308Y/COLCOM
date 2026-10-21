@@ -6,7 +6,7 @@ use super::sim::Sim;
 use super::theme;
 use bevy_egui::egui::{self, Align2, Color32, RichText};
 use my_world::defs::ItemId;
-use my_world::expeditions::{Expedition, ExpeditionId, Faction, OfferId, Stage};
+use my_world::expeditions::{Expedition, ExpeditionId, Faction, MissionKind, OfferId, Stage};
 use my_world::map::Stack;
 use my_world::pawn::{Pawn, PawnId, Role, Skill};
 use my_world::squads::{fights_at_range, style_name};
@@ -50,6 +50,8 @@ pub struct ExpeditionsUi {
     haggle: Option<Haggle>,
     /// Why the last thing asked for couldn't be done.
     error: Option<String>,
+    /// The mission "Offer now" brings (`None`: any).
+    test_kind: Option<MissionKind>,
 }
 
 const WARN: Color32 = theme::AMBER;
@@ -156,6 +158,24 @@ fn offers(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
             }
         });
     }
+    offer_now(ui, sim, st);
+}
+
+/// A mission on offer straight away (for testing).
+fn offer_now(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        let shown = st.test_kind.map_or("Any mission", |k| k.name());
+        egui::ComboBox::from_id_salt("test_mission").selected_text(shown).show_ui(ui, |ui| {
+            ui.selectable_value(&mut st.test_kind, None, "Any mission");
+            for k in MissionKind::ALL {
+                ui.selectable_value(&mut st.test_kind, Some(k), k.name());
+            }
+        });
+        if ui.button("Offer now").on_hover_text("This mission is offered straight away (for testing).").clicked() {
+            st.error = sim.world.offer_now(st.test_kind).is_none().then(|| "no faction offers that".to_string());
+        }
+    });
 }
 
 fn planning(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
@@ -319,6 +339,7 @@ fn away(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
     }
     let mut chosen: Option<(ExpeditionId, usize)> = None;
     let mut leave = None;
+    let mut skip = None;
     for e in &sim.world.expeditions {
         let f = &sim.world.factions[e.faction];
         ui.group(|ui| {
@@ -361,8 +382,13 @@ fn away(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
                         leave = Some((e.id, None));
                     }
                 }
-                // Nothing for the player to decide while they travel or fight.
-                Stage::Out { .. } | Stage::Fighting { .. } | Stage::Back { .. } => {}
+                Stage::Out { .. } | Stage::Back { .. } => {
+                    if ui.small_button("Skip travel").on_hover_text("They reach the end of this leg straight away (for testing).").clicked() {
+                        skip = Some(e.id);
+                    }
+                }
+                // Nothing for the player to decide while they fight.
+                Stage::Fighting { .. } => {}
             }
             egui::CollapsingHeader::new("Journal").id_salt(("journal", e.id)).show(ui, |ui| {
                 for line in &e.journal {
@@ -373,6 +399,9 @@ fn away(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
     }
     if let Some((id, c)) = chosen {
         st.error = sim.world.choose(id, c).err();
+    }
+    if let Some(id) = skip {
+        sim.world.skip_travel(id);
     }
     match leave {
         Some((id, Some((sell, buy)))) => {

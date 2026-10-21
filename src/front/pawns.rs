@@ -656,7 +656,7 @@ fn sync_pawns(
 
     let dt = time.delta_secs();
     // Simulation seconds per real second: animations other than walking run at this rate.
-    let sim_rate = if sim.paused { 0.0 } else { sim.rate() as f32 };
+    let sim_rate = sim.effective_rate();
     for p in w.pawns.iter().filter(|p| !p.has_left() && !p.is_buried()) {
         let v = visuals
             .map

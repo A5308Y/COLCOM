@@ -4,7 +4,7 @@
 use super::audio::SoundQueue;
 use super::info::InfoTarget;
 use super::camera::{colony_center, CameraRig, DragTracker, MainCamera};
-use super::sim::{Sim, SPEEDS};
+use super::sim::{Clock, Sim, SPEEDS};
 use super::terrain::{FLOOR_T, LEVEL_H};
 use super::{tile_center, tile_point};
 use bevy::prelude::*;
@@ -880,16 +880,18 @@ fn update_roof_cut(sim: Res<Sim>, mut ui: ResMut<UiState>) {
 fn keyboard(keys: Res<ButtonInput<KeyCode>>, mut sim: ResMut<Sim>, mut ui: ResMut<UiState>, mut rig: ResMut<CameraRig>) {
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
     // In a battle, Space and Tab belong to the battle (`battle_ui.rs`), it
-    // always plays at 1x, and there's nothing to build.
+    // always plays at 1x (paused or not), and there's nothing to build.
     let battle = sim.world.battle.is_some();
     if keys.just_pressed(KeyCode::Space) && !battle {
-        sim.paused = !sim.paused;
+        sim.toggle_pause();
     }
     // 1-4 pick the speed (and carry on if paused).
     for (k, key) in SPEED_KEYS.into_iter().enumerate() {
         if keys.just_pressed(key) && !battle {
             sim.speed = SPEEDS[k];
-            sim.paused = false;
+            if sim.clock == Clock::Paused {
+                sim.clock = Clock::Running;
+            }
         }
     }
     // Esc, one step at a time: close a window, put the tool down (below),

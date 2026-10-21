@@ -406,14 +406,13 @@ impl World {
             };
             out.push((text, false));
         }
-        let idle = colonists
-            .iter()
-            .filter(|p| p.active() && matches!(p.job, None | Some(Job::Wander { .. })))
-            .count();
-        if idle > 0 {
-            out.push((format!("{} idle colonist(s)", idle), false));
-        }
         out
+    }
+
+    /// Current idle count; the UI delays this routine notice to ignore gaps between jobs.
+    pub fn idle_colonists(&self) -> usize {
+        self.pawns.iter().filter(|p| p.is_living_colonist() && p.active()
+            && matches!(p.job, None | Some(Job::Wander { .. }))).count()
     }
 
     /// Note a sound at a cell (`None`: everywhere).

@@ -468,6 +468,40 @@ impl World {
         let f = self.rng.below(self.factions.len());
         let kinds: Vec<MissionKind> = MissionKind::ALL.into_iter().filter(|k| k.fits(self.factions[f].kind)).collect();
         let kind = kinds[self.rng.below(kinds.len())];
+        self.add_offer(kind, f);
+    }
+
+    /// An offer of `kind` now (any kind at random if `None`), from a faction
+    /// that would make it, past the usual limit (for testing). `None` if no
+    /// faction would.
+    pub fn offer_now(&mut self, kind: Option<MissionKind>) -> Option<OfferId> {
+        if self.factions.is_empty() {
+            self.factions = starting_factions();
+        }
+        let kind = kind.unwrap_or_else(|| MissionKind::ALL[self.rng.below(MissionKind::ALL.len())]);
+        let fits: Vec<usize> = (0..self.factions.len()).filter(|&f| kind.fits(self.factions[f].kind)).collect();
+        if fits.is_empty() {
+            return None;
+        }
+        let f = fits[self.rng.below(fits.len())];
+        Some(self.add_offer(kind, f))
+    }
+
+    /// Expedition `id` reaches the end of its current leg on the next update,
+    /// on the road there or home (for testing). False if it isn't travelling.
+    pub fn skip_travel(&mut self, id: ExpeditionId) -> bool {
+        let now = self.time();
+        let Some(e) = self.expeditions.iter_mut().find(|e| e.id == id) else { return false };
+        match &mut e.stage {
+            Stage::Out { until, .. } | Stage::Back { until } => {
+                *until = until.min(now);
+                true
+            }
+            Stage::Decide { .. } | Stage::Trading { .. } | Stage::Fighting { .. } => false,
+        }
+    }
+
+    fn add_offer(&mut self, kind: MissionKind, f: usize) -> OfferId {
         let days = match kind {
             MissionKind::Trade | MissionKind::Envoy | MissionKind::Escort | MissionKind::PeaceTalks => self.factions[f].days,
             MissionKind::BanditCamp
@@ -480,6 +514,7 @@ impl World {
         let id = OfferId::new(self.take_id());
         self.offers.push(Offer { id, kind, faction: f, days, until: self.time() + OFFER_DAYS * DAY_LEN });
         self.push_log(format!("New expedition: {} ({}).", kind.name(), self.factions[f].name));
+        id
     }
 
     /// Send colonists `ids` on offer `offer`, packing `goods` (taken from the colony).
@@ -1107,6 +1142,27 @@ mod tests {
             assert!(way >= 2 || main >= 2 || kind == MissionKind::Trade, "{:?} offers no choice", kind);
             let _ = e;
         }
+    }
+
+    #[test]
+    fn missions_can_be_offered_and_hurried_for_testing() {
+        let (mut w, ids, _) = colony(MissionKind::Trade, 0);
+        for kind in MissionKind::ALL {
+            let id = w.offer_now(Some(kind)).unwrap();
+            let o = w.offers.iter().find(|o| o.id == id).unwrap();
+            assert_eq!(o.kind, kind);
+            assert!(kind.fits(w.factions[o.faction].kind), "{:?} from the wrong faction", kind);
+        }
+        assert!(w.offers.len() > MAX_OFFERS, "testing offers ignore the limit");
+        assert!(w.offer_now(None).is_some());
+
+        let offer = w.offers.iter().find(|o| o.kind == MissionKind::Hunt).unwrap().id;
+        w.send_expedition(offer, &ids, &[]).unwrap();
+        let e = w.expeditions[0].id;
+        assert!(w.skip_travel(e));
+        run(&mut w, 1.5);
+        assert!(matches!(w.expeditions[0].stage, Stage::Decide { .. }), "the event comes straight away");
+        assert!(!w.skip_travel(e), "nothing to skip while deciding");
     }
 
     #[test]

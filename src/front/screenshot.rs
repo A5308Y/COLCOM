@@ -1,6 +1,6 @@
 //! Screenshot mode: `--screenshot [name,name...]` (or `MY_WORLD_SCREENSHOT`)
 //! opens one interface state after another (`SHOTS`), saves each as
-//! `target/screenshots/<name>.png` (`<scenario>-<name>.png` with `--scenario`) and quits. The simulation is paused, so
+//! `target/screenshots/<name>.png` (`<scenario>-<name>.png` with `--scenario`) and quits. The simulation is frozen (battles too), so
 //! shots of the same game are comparable before and after a UI change.
 //!
 //! With a GPU the whole window is captured. With `MY_WORLD_NO_GPU=1` the app
@@ -10,7 +10,7 @@
 
 use super::info::InfoTarget;
 use super::input::{InspectorTab, Selection, UiState};
-use super::sim::Sim;
+use super::sim::{Clock, Sim};
 use bevy::app::AppExit;
 use image::{Rgb, RgbImage};
 use bevy::prelude::*;
@@ -209,7 +209,7 @@ fn reset(st: &mut UiState) {
 }
 
 fn step(mut plan: ResMut<Plan>, mut st: ResMut<UiState>, mut sim: ResMut<Sim>, mut commands: Commands, mut exit: MessageWriter<AppExit>) {
-    sim.paused = true;
+    sim.clock = Clock::Frozen;
     if plan.pending {
         return;
     }
