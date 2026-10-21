@@ -207,7 +207,7 @@ pub const TOPICS: &[Topic] = &[
             Section {
                 heading: "Food",
                 blocks: &[
-                    Text("Raw food can cause food poisoning - cook meals at a stove. Cooked meals are better and fill more."),
+                    Text("Raw food can cause food poisoning - cook meals at a stove. Cooking doubles the nutrition: one raw food makes a meal that fills twice as much."),
                 ],
             },
             Section {

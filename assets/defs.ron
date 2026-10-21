@@ -2594,7 +2594,7 @@
     // `sound`: heard while working (names from assets/sounds.ron).
     recipes: [
         (id: "cook_meal", name: "Cook simple meal", bench: "stove", work: Cooking, skill: Cooking, time: 5.0,
-            ingredients: [("raw_food", 2)], products: [("meal", 1)], sound: Some("sizzle")),
+            ingredients: [("raw_food", 1)], products: [("meal", 1)], sound: Some("sizzle")),
         (id: "saw_planks", name: "Saw planks", bench: "sawbench", work: Crafting, skill: Crafting, time: 4.0,
             ingredients: [("wood", 5)], products: [("planks", 5)], sound: Some("saw")),
         (id: "cut_blocks", name: "Cut stone blocks", bench: "stonecutter", work: Crafting, skill: Crafting, time: 5.0,

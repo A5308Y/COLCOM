@@ -650,7 +650,7 @@ mod tests {
         w.add_bill(stove, cook, BillMode::Until(2));
         run(&mut w, 90.0);
         assert_eq!(w.map.count_items(item("meal")), 2);
-        assert_eq!(w.map.count_items(item("raw_food")), 8, "leftover ingredients are put back");
+        assert_eq!(w.map.count_items(item("raw_food")), 10, "leftover ingredients are put back");
         assert_eq!(w.bench_at(stove).unwrap().bills.len(), 1, "until-bills stay");
     }
 
@@ -1226,11 +1226,11 @@ mod tests {
         let raw = item("raw_food");
         w.map.drop_item((2, 2, Z), Stack { kind: raw, count: 5 });
         w.choose_recipes();
-        assert_eq!(w.stock_bench(at, Stack { kind: raw, count: 5 }), 2, "only what the recipe needs");
+        assert_eq!(w.stock_bench(at, Stack { kind: raw, count: 5 }), 1, "only what the recipe needs");
         let i = w.map.idx(at);
         w.map.set_feature(i, Feature::None);
         run(&mut w, 2.0);
         assert!(w.bench_at(at).is_none());
-        assert_eq!(w.map.count_items(raw), 7, "the 2 delivered come back");
+        assert_eq!(w.map.count_items(raw), 6, "the one delivered comes back");
     }
 }
