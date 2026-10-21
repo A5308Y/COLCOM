@@ -1175,10 +1175,10 @@ slopes, and old save versions); the newer note in the same topic says so.
 - Weather look (2026-10-21, `src/front/weather.rs`): `WeatherLook { overcast, fog, falling, snow }`
   eases towards the weather (0.25 per real second). `scene.rs` dims the sun (to 35%) and ambient
   light, greys the sky, and pulls the distance fog in (linear 90-240 to 6-45 in full fog). A pool of
-  2400 unlit drops (thin cuboids, or small cubes for snow) falls around the camera focus, a box of
+  800 unlit drops (thin, faint cuboids, or small cubes for snow) falls around the camera focus, a box of
   0.7 x zoom distance (12-50), as many shown as `falling` says; each stops at the roof, floor or ground
-  of its column. The rain ambience loop (`amb_rain.wav`, made by `tools/make_rain_loop.py` from seeded
-  noise) follows `falling` outdoors, silent for snow and underground.
+  of its column. The rain ambience loop (`amb_rain.ogg`, "Rain (loopable)" by Ylmir, CC0, from
+  OpenGameArt; downloaded by the user) follows `falling` outdoors, silent for snow and underground.
 
 ### Saves, performance and history
 

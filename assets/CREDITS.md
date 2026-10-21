@@ -64,6 +64,7 @@ assets in `asset-sources/quaternius/`.
 | Folder | Source | Licence |
 |---|---|---|
 | `sounds/kenney/` | Kenney (https://www.kenney.nl): Impact Sounds, RPG Audio, UI Audio | CC0 1.0 |
+| `sounds/amb_rain.ogg` | "Rain (loopable)" by Ylmir, https://opengameart.org/content/rain-loopable | CC0 1.0 |
 | `sounds/music/dream_raid.mp3` | "Dream Raid (Cinematic Action Soundtrack)" by Matthew Pablo, https://opengameart.org/content/dream-raid-cinematic-action-soundtrack (full version) | CC-BY 3.0: credit required |
 
 Credit line for the music (needed wherever the game is shared): *"Dream Raid" by Matthew Pablo

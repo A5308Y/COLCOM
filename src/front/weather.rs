@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use colcom::weather::{Precipitation, Weather};
 
 /// Drops (or flakes) in the pool; as many as are shown in full rain.
-const POOL: usize = 2400;
+const POOL: usize = 800;
 /// How fast the look follows the weather (share per real second).
 const EASE: f32 = 0.25;
 
@@ -66,9 +66,9 @@ fn spawn_drops(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mat
         materials.add(StandardMaterial { base_color: c, unlit: true, alpha_mode: AlphaMode::Blend, ..default() })
     };
     let looks = DropLooks {
-        rain: look(Color::srgba(0.72, 0.78, 0.88, 0.45)),
+        rain: look(Color::srgba(0.75, 0.8, 0.9, 0.22)),
         snow: look(Color::srgba(0.97, 0.98, 1.0, 0.9)),
-        rain_mesh: meshes.add(Cuboid::new(0.012, 0.32, 0.012)),
+        rain_mesh: meshes.add(Cuboid::new(0.01, 0.24, 0.01)),
         snow_mesh: meshes.add(Cuboid::new(0.05, 0.05, 0.05)),
         showing_snow: false,
     };
@@ -90,7 +90,7 @@ fn ease_weather(sim: Res<Sim>, time: Res<Time>, mut look: ResMut<WeatherLook>) {
     let (overcast, fog, falling) = match w.weather() {
         Weather::Clear => (0.0, 0.0, 0.0),
         Weather::Fog => (0.5, 1.0, 0.0),
-        Weather::Rain => (1.0, 0.35, 1.0),
+        Weather::Rain => (0.6, 0.12, 1.0),
     };
     let k = (EASE * time.delta_secs()).min(1.0);
     look.overcast += (overcast - look.overcast) * k;
