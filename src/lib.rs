@@ -10,6 +10,7 @@ pub mod expeditions;
 pub mod graves;
 pub mod health;
 pub mod jobs;
+pub mod lookout;
 pub mod map;
 pub mod medical;
 pub mod moving;

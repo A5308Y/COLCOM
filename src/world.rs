@@ -493,6 +493,7 @@ impl World {
             self.update_squads();
             self.update_graves();
             self.update_trapped();
+            self.update_watches(1.0);
             self.update_expeditions();
             // Whole-map passes: once a second rather than every tick.
             self.grow_plants(1.0);
@@ -888,6 +889,11 @@ impl World {
         p.surgeries = ops.into_iter().filter(|&o| Self::still_to_do(p, o)).collect();
         if let Some(table) = self.operation_table(p) {
             self.start_job(p, Job::Operation { table });
+            return;
+        }
+        // Their watch at a lookout post, when a shift is due.
+        if let Some(job) = self.watch_shift(p, block) {
+            self.start_job(p, job);
             return;
         }
         // Their hours for fun, or bored in hours for anything.

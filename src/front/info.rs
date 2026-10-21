@@ -291,7 +291,7 @@ pub fn purpose(d: &BuildDef) -> Option<&'static str> {
         Special::Table => "Colonists eat here, sitting on a chair beside it",
         Special::Seat => "Put it beside a table to eat at",
         Special::Grave => "Dug into soil; haulers bury a dead colonist in it",
-        Special::Lookout => "When raiders come, a ranged fighter or ranged squad is already standing here, as if on watch. Put it up high for the height advantage",
+        Special::Lookout => "Whoever you put on watch here stands here when raiders come, and spends part of each day here. Put it up high for the height advantage",
         Special::None => return None,
     })
 }

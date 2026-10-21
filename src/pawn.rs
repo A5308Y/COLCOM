@@ -348,6 +348,16 @@ pub enum Job {
     Sit { at: Pos, until: f32 },
     /// Freezing: get warm at `to` (see `temperature.rs`).
     WarmUp { to: Pos },
+    /// Stand watch at their lookout post until the time owed is made up (see `lookout.rs`).
+    Watch { post: Pos },
+}
+
+/// A colonist's watch duty: their lookout post, and the seconds of watch
+/// they owe (building up through the day, worked off standing there).
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
+pub struct Watch {
+    pub post: Pos,
+    pub owed: f32,
 }
 
 impl Job {
@@ -371,6 +381,7 @@ impl Job {
             Job::Relax { .. } => "having fun",
             Job::Stroll { .. } => "strolling",
             Job::Sit { .. } => "sitting",
+            Job::Watch { .. } => "keeping watch",
             Job::WarmUp { .. } => "warming up",
         }
     }
@@ -554,6 +565,9 @@ pub struct Pawn {
     #[serde(default)]
     pub surgeries: Vec<crate::surgery::Operation>,
     pub bed: Option<Pos>,
+    /// The lookout post they keep watch at, if they've been given one (`World::set_watch`).
+    #[serde(default)]
+    pub watch: Option<Watch>,
     pub color: [f32; 3],
     pub think_timer: f32,
     pub break_timer: f32,
@@ -638,6 +652,7 @@ impl Pawn {
             surgeries: Vec::new(),
             forced: None,
             bed: None,
+            watch: None,
             color: [rng.range_f32(0.5, 1.0), rng.range_f32(0.45, 0.95), rng.range_f32(0.45, 0.95)],
             think_timer: rng.f32(),
             break_timer: 0.0,

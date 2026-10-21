@@ -354,6 +354,7 @@ impl World {
             Job::Stroll { to } => self.run_stroll(p, to, dt),
             Job::Sit { at, until } => self.run_sit(p, at, until, dt),
             Job::WarmUp { to } => self.run_warm_up(p, to, dt),
+            Job::Watch { post } => self.run_watch(p, post, dt),
             Job::Surgery { patient, prosthetic, picked } => self.run_surgery(p, patient, prosthetic, picked, dt),
         }
     }
@@ -463,11 +464,15 @@ impl World {
             _ => (1.0, 1.0),
         };
         if self.work_on(p, skill, time, rates, dt) {
-            // Setting down their own bed: `p` is a copy, so it's given back here.
-            let own_bed = task == Task::Construct && self.move_to(target).is_some_and(|mv| mv.owner() == Some(p.id));
+            // Setting down their own bed or lookout post: `p` is a copy, so it's given back here.
+            let own = task == Task::Construct && self.move_to(target).is_some_and(|mv| mv.owner() == Some(p.id));
             self.complete_work(target, task, &p.name);
-            if own_bed {
-                p.bed = Some(target);
+            if own {
+                if self.is_lookout(target) {
+                    p.watch = self.pawn(p.id).and_then(|q| q.watch);
+                } else {
+                    p.bed = Some(target);
+                }
             }
             self.end_job(p);
         }

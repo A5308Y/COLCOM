@@ -10,9 +10,9 @@
 //! hunger. Squad members who were far from their leader arrive a few
 //! rounds in, already in their combat gear.
 
-use crate::defs::{defs, ItemId, Special, UtilityEffect};
+use crate::defs::{defs, ItemId, UtilityEffect};
 use crate::health::CyberSlot;
-use crate::map::{adjacent, Feature, Pos, Stack, Zone};
+use crate::map::{adjacent, Pos, Stack, Zone};
 use crate::pathing::{bfs, bfs_avoiding, DistField};
 use crate::pawn::{attack_with, Attack, Faction, Life, Memory, Pawn, PawnId, Role, Skill};
 use crate::world::{Effect, Step, World, HUNGER_DRAIN, REST_DRAIN};
@@ -594,38 +594,25 @@ impl World {
         self.push_log(format!("Battle! {} the colony.", who));
     }
 
-    /// Lookout posts are manned when raiders come, as if someone had been on
-    /// watch there: each takes the nearest ranged lone fighter or ranged squad
-    /// leader (with the members close enough to join them). Moves them in
-    /// `colonists` too; returns the names of those placed.
+    /// Lookout posts are manned when raiders come: their watchers (`World::set_watch`)
+    /// are there, a leader with the members close enough to join them. Moves
+    /// them in `colonists` too; returns the names of those placed.
     fn man_lookouts(&mut self, colonists: &mut [(PawnId, Role, Pos)]) -> Vec<String> {
-        let m = &self.map;
-        let mut posts: Vec<Pos> = (0..m.len())
-            .filter(|&i| matches!(m.feature[i], Feature::Built { kind, .. } if kind.def().special == Special::Lookout))
-            .map(|i| m.pos(i))
-            .filter(|&p| m.standable(p))
-            .collect();
         let ranged = |w: &World, id: PawnId| w.pawn(id).is_some_and(|p| p.main_attack().ranged);
-        let mut free: Vec<usize> = (0..colonists.len())
-            .filter(|&k| matches!(colonists[k].1, Role::Fighter | Role::Leader) && ranged(self, colonists[k].0))
-            .collect();
-        let far = |a: Pos, b: Pos| a.0.abs_diff(b.0) + a.1.abs_diff(b.1) + a.2.abs_diff(b.2);
         let mut names = Vec::new();
-        // Closest pairs first.
-        while let Some((pi, fi)) = (0..posts.len())
-            .flat_map(|pi| (0..free.len()).map(move |fi| (pi, fi)))
-            .min_by_key(|&(pi, fi)| far(posts[pi], colonists[free[fi]].2))
-        {
-            let post = posts.swap_remove(pi);
-            let k = free.swap_remove(fi);
+        for k in 0..colonists.len() {
             let (id, role, from) = colonists[k];
+            let Some(post) = self.pawn(id).and_then(|p| p.watch).map(|w| w.post) else { continue };
+            if !crate::lookout::can_watch(role) || !self.is_lookout(post) || !self.map.standable(post) {
+                continue;
+            }
             let mut moving = vec![k];
             if role == Role::Leader {
                 // Their squad, as `form_colony_units` would gather it where they stood.
                 let df = bfs(&self.map, from);
                 moving.extend((0..colonists.len()).filter(|&j| {
                     colonists[j].1 == Role::Member(id)
-                        && ranged(self, colonists[j].0)
+                        && ranged(self, colonists[j].0) == ranged(self, id)
                         && df.dist(colonists[j].2).is_some_and(|d| d as usize <= WITH_LEADER)
                 }));
             }
@@ -1827,11 +1814,10 @@ mod tests {
     }
 
     #[test]
-    fn lookout_posts_are_manned_by_ranged_fighters_and_squads() {
+    fn lookout_posts_are_manned_by_their_watchers() {
         let mut w = world(40, 40, 5);
-        let near_post = (20, 20, Z);
-        let far_post = (30, 30, Z);
-        for p in [near_post, far_post] {
+        let (post, squad_post, empty_post) = ((20, 20, Z), (30, 30, Z), (25, 5, Z));
+        for p in [post, squad_post, empty_post] {
             let i = w.map.idx(p);
             w.map.set_feature(i, Feature::built("lookout_post"));
         }
@@ -1839,9 +1825,9 @@ mod tests {
             let i = w.pawn_index(id).unwrap();
             w.pawns[i].weapon = Some(item(gun));
         };
-        let (shooter, brawler) = (colonist(&mut w, (18, 2, Z)), colonist(&mut w, (19, 19, Z)));
-        arm(&mut w, shooter, "rifle");
-        arm(&mut w, brawler, "club");
+        let (watcher, idle) = (colonist(&mut w, (18, 2, Z)), colonist(&mut w, (24, 5, Z)));
+        arm(&mut w, watcher, "club");
+        arm(&mut w, idle, "rifle");
         let (lead, mate, straggler) = (colonist(&mut w, (2, 30, Z)), colonist(&mut w, (2, 31, Z)), colonist(&mut w, (2, 38, Z)));
         for id in [lead, mate, straggler] {
             arm(&mut w, id, "rifle");
@@ -1849,14 +1835,16 @@ mod tests {
         w.set_role(lead, Role::Leader).unwrap();
         w.set_role(mate, Role::Member(lead)).unwrap();
         w.set_role(straggler, Role::Member(lead)).unwrap();
+        assert!(w.set_watch(post, Some(mate)).is_err(), "members stay with their leader");
+        w.set_watch(post, Some(watcher)).unwrap();
+        w.set_watch(squad_post, Some(lead)).unwrap();
         fight(&mut w, 1, (39, 0, Z));
         let at = |id: PawnId| w.pawn(id).unwrap().pos;
-        // Nearest pairs first: the shooter takes the near post, the squad the other.
-        assert_eq!(at(lead), far_post);
-        assert_eq!(at(mate), far_post, "the squad's member beside them comes along");
-        assert_eq!(at(shooter), near_post);
-        assert_eq!(at(brawler), (19, 19, Z), "melee fighters aren't posted");
+        assert_eq!(at(watcher), post, "whoever is on watch, melee or not");
+        assert_eq!(at(lead), squad_post);
+        assert_eq!(at(mate), squad_post, "the squad's member beside them comes along");
         assert_eq!(at(straggler), (2, 38, Z), "too far from the leader: they still have to walk there");
+        assert_eq!(at(idle), (24, 5, Z), "a post with nobody on watch stays empty");
         let b = battle(&w);
         assert_eq!(b.units[b.unit_of(lead).unwrap()].members, vec![lead, mate]);
         assert!(b.arrivals.iter().any(|a| a.pawn == straggler));

@@ -92,6 +92,9 @@ impl World {
         let was_leader = p.role == Role::Leader;
         let i = self.pawn_index(id).unwrap();
         self.pawns[i].role = role;
+        if !crate::lookout::can_watch(role) {
+            self.pawns[i].watch = None;
+        }
         if was_leader && role != Role::Leader {
             self.release_squad(id);
         }

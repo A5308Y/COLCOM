@@ -1286,6 +1286,8 @@ fn tile_inspector(
                 ui.label(RichText::new(text).weak());
             } else if m.feature[i].is_bed() {
                 bed_owner(ui, w, t, &mut actions);
+            } else if w.is_lookout(t) {
+                lookout_watcher(ui, w, t, &mut actions);
             }
             furniture_move(ui, w, t, move_from, &mut actions);
             if m.feature[i].is_special(Special::Grave) {
@@ -1467,6 +1469,38 @@ fn bed_owner(ui: &mut egui::Ui, w: &SimWorld, t: Pos, actions: &mut Vec<Action>)
             ui.label(RichText::new(why).color(theme::RED));
         }
     }
+}
+
+/// Who keeps watch at the lookout post at `t`, to choose from the fighters and squad leaders.
+fn lookout_watcher(ui: &mut egui::Ui, w: &SimWorld, t: Pos, actions: &mut Vec<Action>) {
+    ui.separator();
+    let label = |p: &Pawn| if p.role == Role::Leader { format!("{} (and squad)", p.name) } else { p.name.clone() };
+    let watcher = w.watcher(t).and_then(|id| w.pawn(id));
+    ui.horizontal(|ui| {
+        ui.label("On watch");
+        let current = watcher.map_or("Nobody".to_string(), label);
+        egui::ComboBox::from_id_salt(("watch", t)).selected_text(current).show_ui(ui, |ui| {
+            if ui.selectable_label(watcher.is_none(), "Nobody (left empty)").clicked() {
+                actions.push(Box::new(move |w| {
+                    let _ = w.set_watch(t, None);
+                }));
+            }
+            for p in w.pawns.iter().filter(|p| p.is_living_colonist() && colcom::lookout::can_watch(p.role)) {
+                let id = p.id;
+                if ui.selectable_label(watcher.is_some_and(|o| o.id == id), label(p)).clicked() {
+                    actions.push(Box::new(move |w| {
+                        let _ = w.set_watch(t, Some(id));
+                    }));
+                }
+            }
+        });
+    });
+    let text = format!(
+        "Stands here when raiders come. Keeps watch about {} hours a day for it, in their work and anything hours. \
+         Squad members and civilians can't keep watch.",
+        colcom::lookout::WATCH_HOURS
+    );
+    ui.label(RichText::new(text).weak());
 }
 
 fn stockpile_settings(ui: &mut egui::Ui, w: &SimWorld, id: StockpileId, actions: &mut Vec<Action>) {

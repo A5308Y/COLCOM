@@ -2,7 +2,7 @@
 //! for it (`World::order_move`). A blueprint of it goes up at the new cell
 //! (needing no materials), a builder packs the furniture up where it stands
 //! (`Task::Uninstall`), and then sets it down at the blueprint like any
-//! construction. A workbench keeps its bills and a bed its owner.
+//! construction. A workbench keeps its bills, a bed its owner and a lookout post its watcher.
 
 use crate::pawn::PawnId;
 use crate::defs::{BuildId, Special};
@@ -30,7 +30,7 @@ pub enum MoveState {
     /// Still standing at `from`, waiting to be packed up.
     Standing,
     /// Packed up: gone from `from`, waiting to be set down at `to`, with a
-    /// workbench's bills and whoever slept in it if it's a bed.
+    /// workbench's bills, and whoever slept in it or kept watch at it.
     Lifted { bills: Vec<Bill>, owner: Option<PawnId> },
 }
 
@@ -39,7 +39,7 @@ impl Move {
         matches!(self.state, MoveState::Lifted { .. })
     }
 
-    /// Whose bed it is, while it's packed up.
+    /// Whose bed or lookout post it is, while it's packed up.
     pub fn owner(&self) -> Option<PawnId> {
         match self.state {
             MoveState::Lifted { owner, .. } => owner,
@@ -144,7 +144,14 @@ impl World {
             return;
         }
         let bills = self.bench_at(from).map(|b| b.bills.clone()).unwrap_or_default();
-        let owner = if self.map.feature[fi].is_bed() { self.bed_owner(from) } else { None };
+        // Whoever sleeps in a bed, or keeps watch at a lookout post.
+        let owner = if self.map.feature[fi].is_bed() {
+            self.bed_owner(from)
+        } else if self.is_lookout(from) {
+            self.watcher(from)
+        } else {
+            None
+        };
         let storage = self.moves[k].kind.def().storage.is_some();
         self.moves[k].state = MoveState::Lifted { bills, owner };
         self.map.set_feature(fi, Feature::None);
@@ -187,7 +194,12 @@ impl World {
                 self.choose_recipes();
             }
             if let Some(id) = *owner {
-                self.assign_bed(at, Some(id));
+                if self.is_lookout(at) {
+                    // Gone if they can't keep watch any more.
+                    let _ = self.set_watch(at, Some(id));
+                } else {
+                    self.assign_bed(at, Some(id));
+                }
             }
         }
         if mv.kind.def().storage.is_some() {
@@ -252,6 +264,23 @@ mod tests {
         assert_eq!(feature(&w, to), Feature::built("bed"));
         assert_eq!(w.bed_owner(to), Some(id), "the bed is still theirs");
         assert_eq!(w.item_totals().iter().sum::<u32>(), 0, "no materials needed or left over");
+    }
+
+    #[test]
+    fn a_moved_lookout_post_keeps_its_watcher() {
+        let mut w = test_world();
+        let id = w.spawn_colonist((2, 2, Z));
+        let i = w.pawn_index(id).unwrap();
+        w.pawns[i].hunger = 100.0;
+        w.pawns[i].rest = 100.0;
+        let (from, to) = ((5, 5, Z), (10, 9, Z));
+        build(&mut w, from, "lookout_post");
+        w.set_watch(from, Some(id)).unwrap();
+        assert!(w.order_move(from, to));
+        run(&mut w, 60.0);
+        assert!(w.moves.is_empty(), "done");
+        assert_eq!(w.watcher(to), Some(id), "they set it down themselves, and keep watch there");
+        assert_eq!(w.pawn(id).unwrap().bed, None, "it's not their bed");
     }
 
     #[test]
