@@ -1759,6 +1759,30 @@
                 (shape: Cube, color: "wood_light", at: (0.0, 0.25, -0.25), size: (0.05, 0.07, 0.5), link: Some(3)),
             ]),
         ),
+        // Manned when raiders come (see `World::man_lookouts`): a frame to stand in,
+        // best put up high (on a floor over walls, with a ladder) for the height.
+        (
+            id: "lookout_post",
+            any_way: true,
+            cover: Some(None),
+            name: "Lookout post",
+            category: "Structure",
+            cost: ("wood", 6),
+            work_time: 3.0,
+            passable: true,
+            special: Lookout,
+            look: Parts([
+                (shape: Cube, color: "wood", at: (-0.42, 0.27, -0.42), size: (0.07, 0.54, 0.07)),
+                (shape: Cube, color: "wood", at: (0.42, 0.27, -0.42), size: (0.07, 0.54, 0.07)),
+                (shape: Cube, color: "wood", at: (-0.42, 0.27, 0.42), size: (0.07, 0.54, 0.07)),
+                (shape: Cube, color: "wood", at: (0.42, 0.45, 0.42), size: (0.05, 0.9, 0.05)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.5, -0.42), size: (0.9, 0.05, 0.05)),
+                (shape: Cube, color: "wood_light", at: (0.0, 0.5, 0.42), size: (0.9, 0.05, 0.05)),
+                (shape: Cube, color: "wood_light", at: (-0.42, 0.5, 0.0), size: (0.05, 0.05, 0.9)),
+                (shape: Cube, color: "wood_light", at: (0.42, 0.5, 0.0), size: (0.05, 0.05, 0.9)),
+                (shape: Cube, color: "cloth", at: (0.42, 0.8, 0.29), size: (0.02, 0.16, 0.24)),
+            ]),
+        ),
         // Things to have fun at (`fun`: how fast; see `recreation.rs`).
         (
             id: "chess_table",

@@ -13,6 +13,9 @@ const RAIDER_NAMES: [&str; 12] = [
 
 /// Largest raid at size ×1 (bigger sizes raise it in proportion).
 const MAX_RAID: usize = 8;
+/// How far raiders come in from the colony's buildings and stockpiles, in
+/// steps: about three battle rounds of walking, however big the map is.
+pub const RAID_APPROACH: std::ops::RangeInclusive<i32> = 25..=35;
 /// Range of the raid size multiplier.
 pub const RAID_SIZES: std::ops::RangeInclusive<f32> = 0.25..=3.0;
 
@@ -123,13 +126,46 @@ impl World {
 
     pub fn spawn_raid(&mut self) {
         let size = self.raid_size();
-        let Some(entry) = self.random_edge_tile() else { return };
+        let Some(entry) = self.raid_entry_tile() else { return };
         self.story.raids += 1;
         let tier = self.raid_tier();
         self.open_parley(size, entry, tier);
         let who = if size == 1 { "A raider is".to_string() } else { format!("{} raiders are", size) };
         let gear = &crate::defs::defs().raider_tiers[tier].name;
         self.push_log(format!("Raiders! {} at the edge of the colony, demanding goods ({}).", who, gear.to_lowercase()));
+    }
+
+    /// Where raiders come in: under open sky, `RAID_APPROACH` steps' walk from
+    /// the colony's buildings, floors and stockpiles (nobody watches every side,
+    /// and nobody waits for them to cross the map). From the map edge if
+    /// nothing's built yet or nowhere is that far.
+    pub(crate) fn raid_entry_tile(&mut self) -> Option<Pos> {
+        let m = &self.map;
+        let colony = |i: usize| {
+            matches!(m.feature[i], Feature::Built { .. } | Feature::Blueprint { .. }) || m.floor[i] || m.zone[i].stockpile().is_some()
+        };
+        // Where to walk to: the colony's cells, or beside them (walls).
+        let mut goals = Vec::new();
+        for i in (0..m.len()).filter(|&i| colony(i)) {
+            let p = m.pos(i);
+            let beside = crate::map::DIRS.iter().filter_map(|&(dx, dy)| m.at(p.0 as i32 + dx, p.1 as i32 + dy, p.2 as i32));
+            goals.extend(std::iter::once(p).chain(beside).filter(|&c| m.standable(c)));
+        }
+        if goals.is_empty() {
+            return self.random_edge_tile();
+        }
+        let field = crate::pathing::walk_distances_to(m, &goals, *RAID_APPROACH.end() as u32);
+        let band: Vec<Pos> = field
+            .order
+            .iter()
+            .filter(|&&i| field.dist_i(i).is_some_and(|d| RAID_APPROACH.contains(&d)))
+            .map(|&i| m.pos(i))
+            .filter(|&c| m.standable(c) && !m.covered(c))
+            .collect();
+        if band.is_empty() {
+            return self.random_edge_tile();
+        }
+        Some(band[self.rng.below(band.len())])
     }
 
     /// A cell at the edge of the map to come in at, from which a colonist can

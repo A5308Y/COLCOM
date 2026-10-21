@@ -10,9 +10,9 @@
 //! hunger. Squad members who were far from their leader arrive a few
 //! rounds in, already in their combat gear.
 
-use crate::defs::{defs, ItemId, UtilityEffect};
+use crate::defs::{defs, ItemId, Special, UtilityEffect};
 use crate::health::CyberSlot;
-use crate::map::{adjacent, Pos, Stack, Zone};
+use crate::map::{adjacent, Feature, Pos, Stack, Zone};
 use crate::pathing::{bfs, bfs_avoiding, DistField};
 use crate::pawn::{attack_with, Attack, Faction, Life, Memory, Pawn, PawnId, Role, Skill};
 use crate::world::{Effect, Step, World, HUNGER_DRAIN, REST_DRAIN};
@@ -566,8 +566,14 @@ impl World {
         }
 
         self.form_raider_units(&parley, &mut b);
-        let colonists: Vec<(PawnId, Role, Pos)> = self.pawns.iter()
+        let mut colonists: Vec<(PawnId, Role, Pos)> = self.pawns.iter()
             .filter(|p| p.is_colonist() && p.active()).map(|p| (p.id, p.role, p.pos)).collect();
+        let watch = self.man_lookouts(&mut colonists);
+        if !watch.is_empty() {
+            let msg = format!("On watch at the lookout posts: {}.", watch.join(", "));
+            b.events.push(msg.clone());
+            self.push_log(msg);
+        }
         self.form_colony_units(&colonists, &mut b);
         self.shelter_civilians(&colonists, &mut b);
 
@@ -586,6 +592,51 @@ impl World {
         }
         self.battle = Some(b);
         self.push_log(format!("Battle! {} the colony.", who));
+    }
+
+    /// Lookout posts are manned when raiders come, as if someone had been on
+    /// watch there: each takes the nearest ranged lone fighter or ranged squad
+    /// leader (with the members close enough to join them). Moves them in
+    /// `colonists` too; returns the names of those placed.
+    fn man_lookouts(&mut self, colonists: &mut [(PawnId, Role, Pos)]) -> Vec<String> {
+        let m = &self.map;
+        let mut posts: Vec<Pos> = (0..m.len())
+            .filter(|&i| matches!(m.feature[i], Feature::Built { kind, .. } if kind.def().special == Special::Lookout))
+            .map(|i| m.pos(i))
+            .filter(|&p| m.standable(p))
+            .collect();
+        let ranged = |w: &World, id: PawnId| w.pawn(id).is_some_and(|p| p.main_attack().ranged);
+        let mut free: Vec<usize> = (0..colonists.len())
+            .filter(|&k| matches!(colonists[k].1, Role::Fighter | Role::Leader) && ranged(self, colonists[k].0))
+            .collect();
+        let far = |a: Pos, b: Pos| a.0.abs_diff(b.0) + a.1.abs_diff(b.1) + a.2.abs_diff(b.2);
+        let mut names = Vec::new();
+        // Closest pairs first.
+        while let Some((pi, fi)) = (0..posts.len())
+            .flat_map(|pi| (0..free.len()).map(move |fi| (pi, fi)))
+            .min_by_key(|&(pi, fi)| far(posts[pi], colonists[free[fi]].2))
+        {
+            let post = posts.swap_remove(pi);
+            let k = free.swap_remove(fi);
+            let (id, role, from) = colonists[k];
+            let mut moving = vec![k];
+            if role == Role::Leader {
+                // Their squad, as `form_colony_units` would gather it where they stood.
+                let df = bfs(&self.map, from);
+                moving.extend((0..colonists.len()).filter(|&j| {
+                    colonists[j].1 == Role::Member(id)
+                        && ranged(self, colonists[j].0)
+                        && df.dist(colonists[j].2).is_some_and(|d| d as usize <= WITH_LEADER)
+                }));
+            }
+            for j in moving {
+                colonists[j].2 = post;
+                let i = self.pawn_index(colonists[j].0).unwrap();
+                place(&mut self.pawns[i], post);
+                names.push(self.pawns[i].name.clone());
+            }
+        }
+        names
     }
 
     fn form_raider_units(&mut self, parley: &Parley, b: &mut Battle) {
@@ -1772,6 +1823,60 @@ mod tests {
         for u in b.units.iter().filter(|u| u.side == Faction::Raider) {
             let kinds: Vec<bool> = u.members.iter().map(|&id| w.pawn(id).unwrap().main_attack().ranged).collect();
             assert!(kinds.windows(2).all(|k| k[0] == k[1]), "{:?}", kinds);
+        }
+    }
+
+    #[test]
+    fn lookout_posts_are_manned_by_ranged_fighters_and_squads() {
+        let mut w = world(40, 40, 5);
+        let near_post = (20, 20, Z);
+        let far_post = (30, 30, Z);
+        for p in [near_post, far_post] {
+            let i = w.map.idx(p);
+            w.map.set_feature(i, Feature::built("lookout_post"));
+        }
+        let arm = |w: &mut World, id: PawnId, gun: &str| {
+            let i = w.pawn_index(id).unwrap();
+            w.pawns[i].weapon = Some(item(gun));
+        };
+        let (shooter, brawler) = (colonist(&mut w, (18, 2, Z)), colonist(&mut w, (19, 19, Z)));
+        arm(&mut w, shooter, "rifle");
+        arm(&mut w, brawler, "club");
+        let (lead, mate, straggler) = (colonist(&mut w, (2, 30, Z)), colonist(&mut w, (2, 31, Z)), colonist(&mut w, (2, 38, Z)));
+        for id in [lead, mate, straggler] {
+            arm(&mut w, id, "rifle");
+        }
+        w.set_role(lead, Role::Leader).unwrap();
+        w.set_role(mate, Role::Member(lead)).unwrap();
+        w.set_role(straggler, Role::Member(lead)).unwrap();
+        fight(&mut w, 1, (39, 0, Z));
+        let at = |id: PawnId| w.pawn(id).unwrap().pos;
+        // Nearest pairs first: the shooter takes the near post, the squad the other.
+        assert_eq!(at(lead), far_post);
+        assert_eq!(at(mate), far_post, "the squad's member beside them comes along");
+        assert_eq!(at(shooter), near_post);
+        assert_eq!(at(brawler), (19, 19, Z), "melee fighters aren't posted");
+        assert_eq!(at(straggler), (2, 38, Z), "too far from the leader: they still have to walk there");
+        let b = battle(&w);
+        assert_eq!(b.units[b.unit_of(lead).unwrap()].members, vec![lead, mate]);
+        assert!(b.arrivals.iter().any(|a| a.pawn == straggler));
+    }
+
+    #[test]
+    fn raiders_come_in_a_few_rounds_from_the_colony() {
+        let mut w = world(120, 120, 6);
+        let wall = (60, 60, Z);
+        colonist(&mut w, (62, 62, Z));
+        // Nothing built yet: the map edge.
+        let edge = w.raid_entry_tile().unwrap();
+        assert!(edge.0 == 0 || edge.1 == 0 || edge.0 == 119 || edge.1 == 119, "{:?}", edge);
+        let i = w.map.idx(wall);
+        w.map.set_feature(i, Feature::built("wall"));
+        for _ in 0..20 {
+            let at = w.raid_entry_tile().unwrap();
+            // Walked (no diagonals) to beside the wall.
+            let steps = (at.0.abs_diff(wall.0) + at.1.abs_diff(wall.1)) as i32 - 1;
+            assert!(crate::story::RAID_APPROACH.contains(&steps), "{:?}", at);
         }
     }
 

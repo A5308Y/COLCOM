@@ -14,8 +14,8 @@ use crate::story::Storyteller;
 use crate::DAY_LEN;
 use serde::{Deserialize, Serialize};
 
-pub const MAP_W: usize = 100;
-pub const MAP_H: usize = 70;
+pub const MAP_W: usize = 200;
+pub const MAP_H: usize = 200;
 pub const MAP_D: usize = 16;
 
 const COLONIST_NAMES: [&str; 16] = [

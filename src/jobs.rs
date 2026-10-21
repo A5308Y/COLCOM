@@ -694,7 +694,7 @@ impl World {
                         }
                     }
                 }
-                Special::None | Special::Bed | Special::Door | Special::Table | Special::Seat | Special::Grave => {
+                Special::None | Special::Bed | Special::Door | Special::Table | Special::Seat | Special::Grave | Special::Lookout => {
                     self.map.set_feature(i, Feature::Built { kind, dir });
                 }
             }

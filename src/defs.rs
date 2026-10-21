@@ -643,6 +643,8 @@ pub enum Special {
     Seat,
     /// Dug into soil; haulers bury a dead colonist in it (`Job::Bury`).
     Grave,
+    /// A post someone was on watch at: manned when a battle starts (`World::man_lookouts`).
+    Lookout,
 }
 
 #[derive(Clone, Debug, Deserialize)]

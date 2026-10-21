@@ -203,6 +203,35 @@ pub fn edge_reach(map: &Map) -> EdgeReach {
     EdgeReach { field: DistField { steps, parent, order, w: map.w, h: map.h, queue } }
 }
 
+/// Steps to walk from each cell to the nearest of `goals`, searched no further
+/// than `max` steps out: the walking graph traversed backwards, as in `edge_reach`.
+pub fn walk_distances_to(map: &Map, goals: &[Pos], max: u32) -> DistField {
+    let Buffers { mut steps, parent, mut order, mut queue } = Buffers::take(map.len());
+    for &p in goals {
+        let i = map.idx(p);
+        if steps[i] == 0 {
+            steps[i] = 1;
+            order.push(i);
+            queue.push_back(p);
+        }
+    }
+    while let Some(p) = queue.pop_front() {
+        let d = steps[map.idx(p)];
+        if d > max {
+            continue;
+        }
+        for nb in map.walk_predecessors(p) {
+            let i = map.idx(nb);
+            if steps[i] == 0 {
+                steps[i] = d + 1;
+                order.push(i);
+                queue.push_back(nb);
+            }
+        }
+    }
+    DistField { steps, parent, order, w: map.w, h: map.h, queue }
+}
+
 /// Scratch space for `nearest`, kept between searches: cells are marked
 /// with the search's number, so nothing has to be cleared or allocated.
 struct Scratch {

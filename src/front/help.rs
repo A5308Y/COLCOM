@@ -264,7 +264,11 @@ pub const TOPICS: &[Topic] = &[
         sections: &[
             Section {
                 heading: "Raids",
-                blocks: &[Text("Raids come every few days. Pay what the raiders demand, or fight a turn-based battle (the colony stops).")],
+                blocks: &[
+                    Text("Raids come every few days. Pay what the raiders demand, or fight a turn-based battle (the colony stops)."),
+                    Point("Raiders turn up a few rounds' walk from your buildings and stockpiles, from any side."),
+                    Point("Lookout posts are manned when a battle starts: each by the nearest ranged fighter or ranged squad leader, with the members beside them. Put one on a floor over walls, with a ladder up, to fire from above."),
+                ],
             },
             Section {
                 heading: "In battle",

@@ -423,7 +423,7 @@ fn prop_key(w: &colcom::world::World, i: usize, owners: &HashMap<Pos, (PawnId, [
                         && (p.z - pos.2 as f32).abs() < 0.9
                 }),
                 Special::Grave => !filled.contains(&pos),
-                Special::None | Special::Floor | Special::Roof | Special::Stairs | Special::Bed | Special::Table | Special::Seat => false,
+                Special::None | Special::Floor | Special::Roof | Special::Stairs | Special::Bed | Special::Table | Special::Seat | Special::Lookout => false,
             };
             // Modelled spanning x; a quarter turn when the walls run along y.
             let dir = if def.along_walls {
