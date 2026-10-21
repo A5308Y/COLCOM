@@ -1082,7 +1082,14 @@ pub struct PlantDef {
     /// Random size range.
     #[serde(default = "one")]
     pub scale: (f32, f32),
+    /// Most it leans in the wind, in degrees (drawing only).
+    #[serde(default = "default_sway")]
+    pub sway: f32,
     pub stages: Vec<Stage>,
+}
+
+fn default_sway() -> f32 {
+    3.0
 }
 
 impl PlantDef {
@@ -1667,6 +1674,9 @@ impl Defs {
     fn check_plants(&self) -> Result<(), String> {
         let mut wild = 0.0;
         for d in &self.plants {
+            if !(0.0..=15.0).contains(&d.sway) {
+                return Err(format!("{}: sway must be 0..15 degrees", d.id));
+            }
             if d.stages.is_empty() || d.stages[0].from != 0.0 || d.stages.iter().any(|s| s.variants.is_empty()) {
                 return Err(format!("{}: stages must start at 0 and each have a variant", d.id));
             }

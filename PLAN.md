@@ -55,7 +55,7 @@ so far has been checked visually and by ear in the game.
 | 8 | More buildables and room quality | done |
 | 9 | Sound (Kenney and other real sounds, 2026-10-16) | done |
 | 10a–b | Graphics, Valheim-like: art direction, animated characters | done |
-| 10c–e | Smoothed terrain, glTF models, atmosphere | 10d done (models reviewed in game by the user, 2026-10-21); 10c open; 10e partly: seasonal colours, weather (in game review pending) |
+| 10c–e | Smoothed terrain, glTF models, atmosphere | 10d done (models reviewed in game by the user, 2026-10-21); 10c open; 10e partly: seasonal colours, weather (reviewed), wind sway (in game review pending) |
 | 11 | Follow camera | later, optional |
 | 12 | Turn-based battles (MENACE-style), squads, loadouts, parley | done; the user is happy with them for now |
 
@@ -96,12 +96,10 @@ tests, structure and shared asset tools. The completed backlog was removed.
 
 In the suggested order. Graphics first: the content has settled, so the look can catch up.
 
-1. **10e. Atmosphere**, the rest of it (seasonal colours, crop growth and weather are done; weather
-   still needs a look and listen in game: rain and snow density, fog distance, overcast light, the
-   rain loop). Wind on grass and trees (custom shader), a water shader with gentle waves, volumetric fog and light
-   shafts, plus the phase 4 tuning pass
-   from real play: lamp brightness, bloom/ambient occlusion strength, water opacity, fog distance, hop
-   height.
+1. **10e. Atmosphere**, the rest of it (seasonal colours, crop growth, weather and wind are done;
+   wind still needs a look in game). Left: a water shader with gentle waves, volumetric fog and light
+   shafts, plus the phase 4 tuning pass from real play: lamp brightness, bloom/ambient occlusion
+   strength, water opacity, fog distance, hop height.
 2. **10c. Smoothed natural terrain.**
    Naturally generated ground (soil, rock, ore) is drawn as a smooth, rolling surface over the grid
    instead of cubes. Cells that have been mined, and anything built, stay blocky, so dug tunnels and
@@ -1179,6 +1177,12 @@ slopes, and old save versions); the newer note in the same topic says so.
   0.7 x zoom distance (12-50), as many shown as `falling` says; each stops at the roof, floor or ground
   of its column. The rain ambience loop (`amb_rain.ogg`, "Rain (loopable)" by Ylmir, CC0, from
   OpenGameArt; downloaded by the user) follows `falling` outdoors, silent for snow and underground.
+- Wind (2026-10-21, `front/weather.rs`): plants lean downwind (+x) and sway about their base on the
+  CPU, not in a shader (no GPU here to check WGSL). `Sway { base, most, phase }` on each plant root
+  (`props::spawn_plant`); most lean per plant `PlantDef::sway` in degrees (default 3, trees 1.5,
+  checked 0-15 at load). Strength `WeatherLook::wind` eases to 0.45 clear, 0.15 fog, 1 rain/snow;
+  gusts roll across the map; snow drifts with it. Only plants within 1.2 x zoom distance (at least 30)
+  of the focus are updated each frame; at full zoom-out that is every plant on the map.
 
 ### Saves, performance and history
 

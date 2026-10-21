@@ -1,6 +1,7 @@
-//! Weather as drawn: rain or snow falling around where the camera looks, and
-//! how overcast and foggy it is (used by `scene.rs` for the light and haze).
-//! Everything eases in and out, so a change of weather fades rather than flips.
+//! Weather as drawn: rain or snow falling around where the camera looks, wind
+//! swaying plants near it, and how overcast and foggy it is (used by
+//! `scene.rs` for the light and haze). Everything eases in and out, so a
+//! change of weather fades rather than flips.
 
 use super::camera::CameraRig;
 use super::sim::Sim;
@@ -22,7 +23,27 @@ pub struct WeatherLook {
     pub fog: f32,
     /// How much is falling (rain or snow).
     pub falling: f32,
+    /// How hard the wind blows.
+    pub wind: f32,
     pub snow: bool,
+}
+
+/// A plant that leans and sways in the wind, about its base.
+#[derive(Component)]
+pub struct Sway {
+    /// Its rotation in still air.
+    base: Quat,
+    /// Most it leans (radians).
+    most: f32,
+    phase: f32,
+}
+
+impl Sway {
+    /// For a plant turned `base`, leaning at most `degrees`, at world position `at`.
+    pub fn new(base: Quat, degrees: f32, at: Vec3) -> Sway {
+        let seed = (at.x * 92.7 + at.z * 31.3) as i32 as u32;
+        Sway { base, most: degrees.to_radians(), phase: scatter(seed) * std::f32::consts::TAU }
+    }
 }
 
 #[derive(Component)]
@@ -48,7 +69,7 @@ impl Plugin for WeatherPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WeatherLook>()
             .add_systems(Startup, spawn_drops)
-            .add_systems(Update, (ease_weather, fall).chain());
+            .add_systems(Update, (ease_weather, fall, sway).chain());
     }
 }
 
@@ -87,15 +108,16 @@ fn spawn_drops(mut commands: Commands, mut meshes: ResMut<Assets<Mesh>>, mut mat
 
 fn ease_weather(sim: Res<Sim>, time: Res<Time>, mut look: ResMut<WeatherLook>) {
     let w = &sim.world;
-    let (overcast, fog, falling) = match w.weather() {
-        Weather::Clear => (0.0, 0.0, 0.0),
-        Weather::Fog => (0.5, 1.0, 0.0),
-        Weather::Rain => (0.6, 0.12, 1.0),
+    let (overcast, fog, falling, wind) = match w.weather() {
+        Weather::Clear => (0.0, 0.0, 0.0, 0.45),
+        Weather::Fog => (0.5, 1.0, 0.0, 0.15),
+        Weather::Rain => (0.6, 0.12, 1.0, 1.0),
     };
     let k = (EASE * time.delta_secs()).min(1.0);
     look.overcast += (overcast - look.overcast) * k;
     look.fog += (fog - look.fog) * k;
     look.falling += (falling - look.falling) * k;
+    look.wind += (wind - look.wind) * k;
     // What falls changes at once with the temperature; only how much eases.
     look.snow = w.falling().map_or(look.snow, |f| f == Precipitation::Snow);
 }
@@ -131,7 +153,7 @@ fn fall(
     // Around where the camera looks, wider when zoomed out.
     let half = (rig.distance * 0.7).clamp(12.0, 50.0);
     let height = 18.0;
-    let (speed, sway) = if look.snow { (1.6, 0.4) } else { (16.0, 0.0) };
+    let (speed, sway) = if look.snow { (1.6, 0.3 + 1.2 * look.wind) } else { (16.0, 0.0) };
     let t = time.elapsed_secs();
     for (k, (mut drop, mut tf, mut vis, mut mesh, mut mat)) in drops.iter_mut().enumerate() {
         if swap {
@@ -162,5 +184,47 @@ fn fall(
             *p = Vec3::new(x, drop.floor + scatter(n * 3 + 2) * (top - drop.floor).max(1.0), z);
             *vis = Visibility::Inherited;
         }
+    }
+}
+
+/// Plants near where the camera looks lean downwind (towards +x) and sway,
+/// in gusts that roll across the map. Those further off keep their last pose.
+fn sway(time: Res<Time>, rig: Res<CameraRig>, look: Res<WeatherLook>, mut plants: Query<(&Sway, &mut Transform)>) {
+    let t = time.elapsed_secs();
+    let reach = (rig.distance * 1.2).max(30.0);
+    for (s, mut tf) in &mut plants {
+        let p = tf.translation;
+        if (p.x - rig.focus.x).abs() > reach || (p.z - rig.focus.z).abs() > reach {
+            continue;
+        }
+        let gust = 0.65 + 0.35 * (0.35 * t - 0.08 * p.x + 0.05 * p.z).sin();
+        let flutter = 0.5 * (1.7 * t + s.phase).sin() + 0.2 * (2.9 * t + 1.3 * s.phase).sin();
+        let lean = s.most * look.wind * gust * (0.6 + 0.4 * flutter);
+        tf.rotation = Quat::from_rotation_z(-lean) * s.base;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sway_leans_downwind_within_its_limit() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(CameraRig { focus: Vec3::ZERO, yaw: 0.0, pitch: 1.0, distance: 20.0 })
+            .insert_resource(WeatherLook { wind: 1.0, ..default() })
+            .add_systems(Update, sway);
+        let base = Quat::from_rotation_y(0.7);
+        let near = app.world_mut().spawn((Sway::new(base, 3.0, Vec3::new(2.0, 0.0, 3.0)), Transform::from_xyz(2.0, 0.0, 3.0).with_rotation(base))).id();
+        let far = app.world_mut().spawn((Sway::new(base, 3.0, Vec3::ZERO), Transform::from_xyz(500.0, 0.0, 0.0).with_rotation(base))).id();
+        for _ in 0..30 {
+            app.update();
+            let tf = app.world().get::<Transform>(near).unwrap();
+            let up = tf.rotation * Vec3::Y;
+            assert!(up.x > 0.0, "leans towards +x: {:?}", up);
+            assert!(up.angle_between(Vec3::Y) <= 3.0f32.to_radians() + 1e-4);
+        }
+        assert_eq!(app.world().get::<Transform>(far).unwrap().rotation, base, "far off: left alone");
     }
 }

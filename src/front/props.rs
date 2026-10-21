@@ -877,7 +877,9 @@ fn spawn_plant(commands: &mut Commands, a: &PropAssets, kind: PlantId, stage: u8
     let root = Transform::from_translation(tile_center(pos) + Vec3::Y * lift)
         .with_rotation(Quat::from_rotation_y(hash(xi, yi, 22) * TAU))
         .with_scale(Vec3::splat(lo + hash(xi, yi, 20) * (hi - lo)));
-    spawn_plant_look(commands, a, root, variant)
+    let e = spawn_plant_look(commands, a, root, variant);
+    commands.entity(e).insert(super::weather::Sway::new(root.rotation, def.sway, root.translation));
+    e
 }
 
 fn spawn_feature(

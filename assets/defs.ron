@@ -2314,6 +2314,7 @@
     // Looks: `stages` by growth, each with variants picked at random per cell,
     // scaled by a random factor in `scale`. `cover` in battle: None, Light,
     // Medium or Heavy (default: Medium if it can't be walked through, else None).
+    // `sway`: most it leans in the wind, in degrees (3 if not given).
     plants: [
         (
             id: "tree",
@@ -2324,6 +2325,8 @@
             harvest: (desig: Some(Chop), work: PlantCutting, skill: Plants, time: 3.0, yields: ("wood", 10), verb: "chopping",
                 sound: Some("chop"), done_sound: Some("tree_fall")),
             scale: (0.85, 1.2),
+            // Tall: a small lean moves the top a long way.
+            sway: 1.5,
             stages: [
                 (from: 0.0, variants: [
                     (parts: [
