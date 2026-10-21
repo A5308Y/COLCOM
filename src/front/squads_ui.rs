@@ -5,12 +5,12 @@ use super::input::{Selection, UiState};
 use super::sim::Sim;
 use super::theme;
 use bevy_egui::egui::{self, Align2, RichText};
-use my_world::defs::{ItemId, Slot};
-use my_world::map::Zone;
-use my_world::pawn::{Pawn, PawnId, Role};
-use my_world::battle::CELLS_PER_ROUND;
-use my_world::squads::{fights_at_range, loadout_worn, style_name, SQUAD_MAX};
-use my_world::world::World as SimWorld;
+use colcom::defs::{ItemId, Slot};
+use colcom::map::Zone;
+use colcom::pawn::{Pawn, PawnId, Role};
+use colcom::battle::CELLS_PER_ROUND;
+use colcom::squads::{fights_at_range, loadout_worn, style_name, SQUAD_MAX};
+use colcom::world::World as SimWorld;
 
 
 /// A change asked for in the Combat tab, applied after drawing.
@@ -54,8 +54,8 @@ fn slot_choice(
 /// How well a colonist fights: their skills, and the chances to hit with the
 /// weapon they have (before cover and the like).
 fn fighting(ui: &mut egui::Ui, p: &Pawn) {
-    use my_world::battle::base_hit_chance;
-    use my_world::pawn::Skill;
+    use colcom::battle::base_hit_chance;
+    use colcom::pawn::Skill;
     theme::section(ui, "Fighting");
     ui.label(format!("Shooting {}   Melee {}", p.skill(Skill::Shooting), p.skill(Skill::Melee)));
     let w = p.main_attack();
@@ -80,8 +80,8 @@ fn fighting(ui: &mut egui::Ui, p: &Pawn) {
         ui.label(format!("Sidearm {}: {} {} (drawn when it suits better)", side.name().to_lowercase(), pct(chance), at));
         let quick = format!(
             "An attack with sidearms only costs {} AP instead of {}. Rifles aim badly at someone right next to them; pistols don't.",
-            my_world::battle::AP_SIDEARM_ATTACK,
-            my_world::battle::AP_ATTACK
+            colcom::battle::AP_SIDEARM_ATTACK,
+            colcom::battle::AP_ATTACK
         );
         ui.label(RichText::new(quick).small().weak());
     }
@@ -168,7 +168,7 @@ pub fn combat_tab(ui: &mut egui::Ui, w: &SimWorld, p: &Pawn) -> Vec<CombatAction
         change = Some((weapon, c));
     }
     // A ranged squad's sidearms shoot too; melee squads may take a pistol.
-    let sidearm = |k: ItemId| k.def().weapon.as_ref().is_some_and(|w| w.sidearm) && my_world::squads::sidearm_fits_squad(p, k);
+    let sidearm = |k: ItemId| k.def().weapon.as_ref().is_some_and(|w| w.sidearm) && colcom::squads::sidearm_fits_squad(p, k);
     if let Some(c) = slot_choice(ui, w, p.id, "Sidearm", p.loadout_sidearm, sidearm) {
         actions.push(CombatAction::Sidearm(c));
     }

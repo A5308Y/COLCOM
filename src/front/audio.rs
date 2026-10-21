@@ -11,8 +11,8 @@ use super::terrain::LEVEL_H;
 use super::tile_point;
 use bevy::audio::{AudioSink, AudioSinkPlayback, SpatialListener, Volume};
 use bevy::prelude::*;
-use my_world::map::{Block, Feature};
-use my_world::pawn::{Job, PawnId, Task};
+use colcom::map::{Block, Feature};
+use colcom::pawn::{Job, PawnId, Task};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::LazyLock;
@@ -95,7 +95,7 @@ pub fn sound_table() -> &'static SoundTable {
     &TABLE
 }
 
-/// Names the front end itself plays (the simulation's are in `my_world::world::SIM_SOUNDS`).
+/// Names the front end itself plays (the simulation's are in `colcom::world::SIM_SOUNDS`).
 #[cfg(test)]
 const FRONT_SOUNDS: [&str; 16] = [
     "step_grass",
@@ -245,7 +245,7 @@ fn sim_sounds(mut sim: ResMut<Sim>, mut queue: ResMut<SoundQueue>) {
 }
 
 /// The sound of a stroke of work.
-fn work_sound(w: &my_world::world::World, target: my_world::map::Pos, task: Task) -> &'static str {
+fn work_sound(w: &colcom::world::World, target: colcom::map::Pos, task: Task) -> &'static str {
     let m = &w.map;
     let i = m.idx(target);
     match task {
@@ -570,7 +570,7 @@ pub fn settings_ui(ui: &mut bevy_egui::egui::Ui, s: &mut AudioSettings) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use my_world::defs::{BuildId, ItemId, PlantId, RecipeId};
+    use colcom::defs::{BuildId, ItemId, PlantId, RecipeId};
 
     fn exists(file: &str) -> bool {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join(file).is_file()
@@ -600,7 +600,7 @@ mod tests {
     #[test]
     fn every_sound_the_game_uses_is_defined() {
         let mut used: Vec<&str> = FRONT_SOUNDS.to_vec();
-        used.extend(my_world::world::SIM_SOUNDS);
+        used.extend(colcom::world::SIM_SOUNDS);
         for k in PlantId::all() {
             let d = k.def();
             used.extend(d.harvest.sound.as_deref());

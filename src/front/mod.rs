@@ -25,7 +25,7 @@ mod theme;
 mod ui;
 
 use bevy::prelude::*;
-use my_world::map::Pos;
+use colcom::map::Pos;
 
 #[cfg(test)]
 pub use input::{InspectorTab, JobMenu, Selection, Tool, UiState};

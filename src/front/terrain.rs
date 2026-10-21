@@ -15,10 +15,10 @@ use super::sim::Sim;
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
-use my_world::defs::{defs, BuildLook, Wallpaper};
-use my_world::decor::{WALL_A, WALL_B};
-use my_world::seasons::Season;
-use my_world::map::{Block, Map, Pos, Zone, DIRS};
+use colcom::defs::{defs, BuildLook, Wallpaper};
+use colcom::decor::{WALL_A, WALL_B};
+use colcom::seasons::Season;
+use colcom::map::{Block, Map, Pos, Zone, DIRS};
 
 const CHUNK: usize = 16;
 /// World units per level.
@@ -788,7 +788,7 @@ fn opening(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use my_world::map::{Feature, FLAT_Z as Z};
+    use colcom::map::{Feature, FLAT_Z as Z};
 
     #[test]
     fn themed_rooms_are_papered() {
@@ -1003,7 +1003,7 @@ mod tests {
 
     #[test]
     fn every_pattern_shows_both_colours() {
-        use my_world::defs::Pattern::*;
+        use colcom::defs::Pattern::*;
         for p in [Stripes, Checks, Dots, Tiles, Bricks, Planks, Diamonds] {
             let squares: Vec<bool> = (0..16).flat_map(|u| (1..8).map(move |v| p.accent(u, v))).collect();
             assert!(squares.contains(&true) && squares.contains(&false), "{:?}", p);

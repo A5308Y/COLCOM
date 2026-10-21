@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 use bevy_egui::egui;
-use my_world::pawn::{Faction, Pawn};
+use colcom::pawn::{Faction, Pawn};
 
 /// An sRGB colour as plain floats, convertible to Bevy, vertex and egui colours.
 #[derive(Clone, Copy, Debug, PartialEq)]

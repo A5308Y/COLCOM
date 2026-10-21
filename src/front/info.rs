@@ -6,10 +6,10 @@
 use super::input::UiState;
 use super::theme;
 use bevy_egui::egui::{self, Align2, RichText};
-use my_world::defs::{defs, Amount, BuildDef, BuildId, ItemId, PlantId, RecipeId, Slot, Special, UtilityEffect};
-use my_world::map::STACK_MAX;
-use my_world::world::{DAWN, DUSK, HUNGER_DRAIN};
-use my_world::DAY_LEN;
+use colcom::defs::{defs, Amount, BuildDef, BuildId, ItemId, PlantId, RecipeId, Slot, Special, UtilityEffect};
+use colcom::map::STACK_MAX;
+use colcom::world::{DAWN, DUSK, HUNGER_DRAIN};
+use colcom::DAY_LEN;
 
 /// What the info window shows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -364,8 +364,8 @@ fn build_sheet(k: BuildId) -> Sheet {
     if d.heat != 0.0 {
         let (what, when) = match (d.heat > 0.0, electric) {
             (true, false) => ("warms", String::new()),
-            (true, true) => ("warms", format!(", while it runs: when the room is below {:.0}°C", my_world::power::HEAT_BELOW)),
-            (false, _) => ("cools", format!(", while it runs: when the room is above {:.0}°C", my_world::power::COOL_ABOVE)),
+            (true, true) => ("warms", format!(", while it runs: when the room is below {:.0}°C", colcom::power::HEAT_BELOW)),
+            (false, _) => ("cools", format!(", while it runs: when the room is above {:.0}°C", colcom::power::COOL_ABOVE)),
         };
         props.push(row("Heat", format!("{} its room by about {:.0}°C (less in a big room){}", what, d.heat.abs(), when)));
     }

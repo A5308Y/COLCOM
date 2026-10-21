@@ -1,9 +1,9 @@
-//! Screenshot mode: `--screenshot [name,name...]` (or `MY_WORLD_SCREENSHOT`)
+//! Screenshot mode: `--screenshot [name,name...]` (or `COLCOM_SCREENSHOT`)
 //! opens one interface state after another (`SHOTS`), saves each as
 //! `target/screenshots/<name>.png` (`<scenario>-<name>.png` with `--scenario`) and quits. The simulation is frozen (battles too), so
 //! shots of the same game are comparable before and after a UI change.
 //!
-//! With a GPU the whole window is captured. With `MY_WORLD_NO_GPU=1` the app
+//! With a GPU the whole window is captured. With `COLCOM_NO_GPU=1` the app
 //! runs without a window and only the egui interface is drawn, by a small
 //! software rasterizer, over a plain backdrop: enough to review layout and
 //! colours, not the 3D scene. These are marked `-cpu` in their file names.
@@ -17,8 +17,8 @@ use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
 use bevy_egui::egui::{self, epaint, Color32, Pos2, Rect};
 use bevy_egui::{EguiInput, EguiPostUpdateSet, EguiPreUpdateSet, EguiRenderOutput, PrimaryEguiContext};
-use my_world::pawn::PawnId;
-use my_world::defs::{BuildId, ItemId};
+use colcom::pawn::PawnId;
+use colcom::defs::{BuildId, ItemId};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -117,7 +117,7 @@ pub fn requested() -> Option<Vec<&'static Shot>> {
     let arg = args.iter().position(|a| a == "--screenshot").map(|k| {
         args.get(k + 1).filter(|a| !a.starts_with("--")).cloned().unwrap_or_default()
     });
-    let names = arg.or_else(|| std::env::var("MY_WORLD_SCREENSHOT").ok())?;
+    let names = arg.or_else(|| std::env::var("COLCOM_SCREENSHOT").ok())?;
     let names: Vec<&str> = names.split(',').map(str::trim).filter(|n| !n.is_empty() && *n != "all").collect();
     if names.is_empty() {
         return Some(SHOTS.iter().collect());
@@ -135,9 +135,9 @@ pub fn requested() -> Option<Vec<&'static Shot>> {
     Some(shots)
 }
 
-/// Whether drawing is off (`MY_WORLD_NO_GPU`): shots are then rasterized on the CPU.
+/// Whether drawing is off (`COLCOM_NO_GPU`): shots are then rasterized on the CPU.
 pub fn cpu_only() -> bool {
-    std::env::var_os("MY_WORLD_NO_GPU").is_some()
+    std::env::var_os("COLCOM_NO_GPU").is_some()
 }
 
 pub fn out_dir() -> PathBuf {

@@ -5,7 +5,7 @@ use super::sim::Sim;
 use bevy::light::{CascadeShadowConfigBuilder, DirectionalLightShadowMap, GlobalAmbientLight};
 use bevy::pbr::DistanceFog;
 use bevy::prelude::*;
-use my_world::DAY_LEN;
+use colcom::DAY_LEN;
 use std::f32::consts::TAU;
 
 #[derive(Component)]

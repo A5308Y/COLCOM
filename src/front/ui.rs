@@ -16,15 +16,15 @@ use super::sim::{Clock, Sim};
 use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, RichText};
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
-use my_world::health::{CyberSlot, HediffKind};
-use my_world::decor::DecorState;
-use my_world::defs::{defs, ItemCategory, ItemId, PlantId, RoomDef, RoomId, Slot, Special};
-use my_world::map::{Block, Feature, Pos, StockpileId, Zone};
-use my_world::pawn::{Pawn, PawnId, PerSkill, PerWork, Role, Skill, WorkPriority, WorkType};
-use my_world::production::{BillMode, StorePriority};
-use my_world::rooms::{Progress, RoomStats, TIERS};
-use my_world::world::{Order, World as SimWorld};
-use my_world::DAY_LEN;
+use colcom::health::{CyberSlot, HediffKind};
+use colcom::decor::DecorState;
+use colcom::defs::{defs, ItemCategory, ItemId, PlantId, RoomDef, RoomId, Slot, Special};
+use colcom::map::{Block, Feature, Pos, StockpileId, Zone};
+use colcom::pawn::{Pawn, PawnId, PerSkill, PerWork, Role, Skill, WorkPriority, WorkType};
+use colcom::production::{BillMode, StorePriority};
+use colcom::rooms::{Progress, RoomStats, TIERS};
+use colcom::world::{Order, World as SimWorld};
+use colcom::DAY_LEN;
 
 pub struct UiPlugin;
 
@@ -329,7 +329,7 @@ fn hud(ctx: &egui::Context, sim: &mut Sim, st: &mut UiState, rig: &mut CameraRig
                 w.day(),
                 w.season().name(),
                 w.day_of_season(),
-                my_world::seasons::SEASON_DAYS,
+                colcom::seasons::SEASON_DAYS,
                 hour as u32,
                 ((hour - hour.floor()) * 60.0) as u32
             );
@@ -555,7 +555,7 @@ fn difficulty_ui(ui: &mut egui::Ui, sim: &mut Sim) -> bool {
     ui.add_enabled_ui(w.difficulty.raids, |ui| {
         ui.horizontal(|ui| {
             ui.label("Raid size");
-            ui.add(egui::Slider::new(&mut w.difficulty.raid_size, my_world::story::RAID_SIZES).step_by(0.25).suffix("×"));
+            ui.add(egui::Slider::new(&mut w.difficulty.raid_size, colcom::story::RAID_SIZES).step_by(0.25).suffix("×"));
         });
         let hours = ((w.story.next_raid - w.time()).max(0.0) / DAY_LEN * 24.0).round();
         let tiers = &defs().raider_tiers;
@@ -1217,7 +1217,7 @@ fn tile_inspector(
                 ui.label(RichText::new(power).weak());
             }
             if let Some(state) = w.device_state(i) {
-                use my_world::power::DeviceState;
+                use colcom::power::DeviceState;
                 let (text, color) = match state {
                     DeviceState::Running => ("Running", theme::GREEN),
                     DeviceState::Idle => ("Idle: its room needs nothing", Color32::LIGHT_GRAY),
@@ -1306,11 +1306,11 @@ fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<
             actions.push(Box::new(move |w| w.set_quarry_depth(k, depth - 1)));
         }
         ui.label(format!("{} levels", depth));
-        if ui.add_enabled(depth < my_world::quarry::MAX_DEPTH, egui::Button::new("+").small()).clicked() {
+        if ui.add_enabled(depth < colcom::quarry::MAX_DEPTH, egui::Button::new("+").small()).clicked() {
             actions.push(Box::new(move |w| w.set_quarry_depth(k, depth + 1)));
         }
     });
-    use my_world::quarry::QuarryState;
+    use colcom::quarry::QuarryState;
     let bottom = q.bottom();
     let state = match w.quarry_state(k) {
         QuarryState::Digging { level, left } => format!("Digging level {}: {} to go there (down to level {}).", level, left, bottom),
@@ -1340,7 +1340,7 @@ fn quarry_settings(ui: &mut egui::Ui, w: &SimWorld, k: usize, actions: &mut Vec<
 
 /// Blue when cold, orange when hot, plain in between (see `temperature.rs`).
 fn temp_color(t: f32) -> Color32 {
-    use my_world::temperature::{COLD, HOT};
+    use colcom::temperature::{COLD, HOT};
     if t < COLD {
         theme::TEAL
     } else if t > HOT {
@@ -1520,7 +1520,7 @@ fn mode_label(mode: BillMode) -> String {
     }
 }
 
-fn bills(ui: &mut egui::Ui, w: &SimWorld, t: Pos, kind: my_world::defs::BuildId, actions: &mut Vec<Action>) {
+fn bills(ui: &mut egui::Ui, w: &SimWorld, t: Pos, kind: colcom::defs::BuildId, actions: &mut Vec<Action>) {
     ui.separator();
     theme::section(ui, "Bills");
     let bench = w.bench_at(t);
@@ -1595,8 +1595,8 @@ fn bills(ui: &mut egui::Ui, w: &SimWorld, t: Pos, kind: my_world::defs::BuildId,
 }
 
 /// The colour of a schedule block.
-fn block_color(b: my_world::recreation::Block) -> Color32 {
-    use my_world::recreation::Block;
+fn block_color(b: colcom::recreation::Block) -> Color32 {
+    use colcom::recreation::Block;
     match b {
         // Deeper than the accents, so names on them stay readable.
         Block::Anything => Color32::from_rgb(72, 68, 60),
@@ -1608,7 +1608,7 @@ fn block_color(b: my_world::recreation::Block) -> Color32 {
 
 /// Every colonist's day, an hour a cell: pick a block, then click or drag over hours to paint it.
 fn schedules(ui: &mut egui::Ui, sim: &mut Sim, st: &mut UiState) {
-    use my_world::recreation::Block;
+    use colcom::recreation::Block;
     ui.horizontal(|ui| {
         ui.label("Paint:");
         for b in Block::ALL {
@@ -1775,8 +1775,8 @@ mod tests {
         let ctx = egui::Context::default();
         theme::install(&ctx);
         let mut sim = Sim::new(None);
-        sim.world = SimWorld::with_map(my_world::map::Map::flat(8, 8), my_world::rng::Rng::new(1));
-        let id = sim.world.spawn_colonist((3, 3, my_world::map::FLAT_Z));
+        sim.world = SimWorld::with_map(colcom::map::Map::flat(8, 8), colcom::rng::Rng::new(1));
+        let id = sim.world.spawn_colonist((3, 3, colcom::map::FLAT_Z));
         sim.world.push_log("Game saved.".into());
         let mut state = NotificationState::default();
         let mut frame = |sim: &Sim, now| {
@@ -1797,7 +1797,7 @@ mod tests {
         let before = frame(&sim, 0.2).expect("save confirmation visible");
         let during = frame(&sim, 3.2).expect("still visible when idle alert appears");
         let i = sim.world.pawn_index(id).unwrap();
-        sim.world.pawns[i].job = Some(my_world::pawn::Job::Goto { to: (4, 3, my_world::map::FLAT_Z) });
+        sim.world.pawns[i].job = Some(colcom::pawn::Job::Goto { to: (4, 3, colcom::map::FLAT_Z) });
         frame(&sim, 4.0);
         let after = frame(&sim, 6.1).expect("still visible when idle alert clears");
         assert!((before - during).abs() < 0.5, "event moved from {before} to {during}");

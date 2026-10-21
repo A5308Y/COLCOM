@@ -45,7 +45,7 @@ fn main() {
     let world_props = std::env::args().any(|a| a == "--world-props");
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window { title: "My World - look test".into(), ..default() }),
+            primary_window: Some(Window { title: "COLCOM - look test".into(), ..default() }),
             ..default()
         }))
         .add_plugins(EguiPlugin::default())
@@ -230,7 +230,7 @@ fn setup(
 #[derive(Resource, Default)]
 struct WorldLabels(Vec<(Vec3, String)>);
 
-fn review_pose(p: &my_world::defs::ModelPose) -> Transform {
+fn review_pose(p: &colcom::defs::ModelPose) -> Transform {
     Transform::from_xyz(p.at.0, p.at.1, p.at.2)
         .with_rotation(Quat::from_euler(EulerRot::XYZ, p.turn.0.to_radians(), p.turn.1.to_radians(), p.turn.2.to_radians()))
         .with_scale(Vec3::splat(p.scale))
@@ -247,7 +247,7 @@ struct WorldReviewEntry {
 }
 
 fn world_review_entries() -> Vec<WorldReviewEntry> {
-    let defs = my_world::defs::defs();
+    let defs = colcom::defs::defs();
     let mut entries = Vec::new();
     for (row, plant) in defs.plants.iter().enumerate() {
         let mut col = 0;

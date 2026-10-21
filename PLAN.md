@@ -185,11 +185,11 @@ play shows a need.
 - Build and test from the sandbox with
   `PATH="$HOME/.cargo/bin:$PATH" CARGO_HOME="$TMPDIR/cargo-home" cargo test`
   (the sandbox can read but not write `~/.cargo`; crates.io is allowed).
-- The sandbox has no GPU: the game can't be seen there. `cargo test --bin my-world` runs the whole app
+- The sandbox has no GPU: the game can't be seen there. `cargo test --bin colcom` runs the whole app
   headless for a few hundred frames (catches Bevy setup and query errors); the user checks visuals.
 - `cargo run --release --example profile` times the simulation and saving on a busy colony.
 - Scenarios (`src/scenarios.rs`) are fixed test worlds: `cargo run --release -- --scenario battle`
-  (or `MY_WORLD_SCENARIO=battle`) starts straight in round 1 of a battle, the colony's turn; Shift+N
+  (or `COLCOM_SCENARIO=battle`) starts straight in round 1 of a battle, the colony's turn; Shift+N
   restarts the scenario. New ones go in `SCENARIOS` and `build`, built like the battle tests
   (`World::with_map(Map::flat(..))`, storyteller off, set skills and weapons, fixed rng seed).
   `main.rs::battle_scenario_runs_headless` runs the app in it.

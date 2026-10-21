@@ -1,4 +1,4 @@
-//! Simulation core for My World. Nothing in here touches Bevy, so the
+//! Simulation core for COLCOM. Nothing in here touches Bevy, so the
 //! whole colony can be simulated (and unit tested) without a window.
 
 pub mod battle;

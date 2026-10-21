@@ -4,7 +4,7 @@
 use super::input::UiState;
 use super::theme::{self, FieldWindow};
 use bevy_egui::egui::{self, Align2, RichText};
-use my_world::defs::{BuildId, Special};
+use colcom::defs::{BuildId, Special};
 
 /// One piece of a page.
 enum Block {

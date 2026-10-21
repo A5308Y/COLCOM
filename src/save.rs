@@ -38,10 +38,10 @@ pub fn from_json(s: &str) -> Result<World, String> {
     match header.version {
         Some(SAVE_VERSION) => {}
         Some(v) if v > SAVE_VERSION => {
-            return Err(format!("this save is from a newer version of My World (format {})", v));
+            return Err(format!("this save is from a newer version of COLCOM (format {})", v));
         }
-        Some(v) => return Err(format!("this save is from an older version of My World (format {})", v)),
-        None => return Err("this save is from an older version of My World".into()),
+        Some(v) => return Err(format!("this save is from an older version of COLCOM (format {})", v)),
+        None => return Err("this save is from an older version of COLCOM".into()),
     }
     let save: SaveIn = serde_json::from_str(s).map_err(|e| format!("the save file is damaged ({})", e))?;
     check(&save.world).map_err(|e| format!("the save file is damaged ({})", e))?;

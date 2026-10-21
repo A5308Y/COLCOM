@@ -7,9 +7,9 @@ use super::{tile_center, tile_point};
 use super::theme;
 use bevy::prelude::*;
 use bevy_egui::egui::{self, Align2, Color32, FontId, Pos2};
-use my_world::map::{Feature, Pos};
-use my_world::pawn::{Faction, Job, PawnId};
-use my_world::world::World as SimWorld;
+use colcom::map::{Feature, Pos};
+use colcom::pawn::{Faction, Job, PawnId};
+use colcom::world::World as SimWorld;
 
 fn shadow_text(painter: &egui::Painter, pos: Pos2, align: Align2, text: &str, size: f32, color: Color32) {
     let font = FontId::proportional(size);
@@ -148,9 +148,9 @@ pub fn draw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use my_world::defs::{BuildId, ItemId};
-    use my_world::map::{Map, Stack, Dir, FLAT_Z};
-    use my_world::rng::Rng;
+    use colcom::defs::{BuildId, ItemId};
+    use colcom::map::{Map, Stack, Dir, FLAT_Z};
+    use colcom::rng::Rng;
 
     #[test]
     fn labels_update_after_pickup_delivery_and_world_replacement() {

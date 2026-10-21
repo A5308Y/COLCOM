@@ -6,8 +6,8 @@ use super::input::{ToolEntry, Tool, UiState, TOOLS};
 use super::sim::Sim;
 use super::theme;
 use bevy_egui::egui::{self, Color32, RichText};
-use my_world::defs::{BuildDef, Special};
-use my_world::world::Order;
+use colcom::defs::{BuildDef, Special};
+use colcom::world::Order;
 
 const OPEN_WIDTH: f32 = 250.0;
 const CLOSED_WIDTH: f32 = 30.0;
@@ -340,7 +340,7 @@ fn details(ui: &mut egui::Ui, e: &ToolEntry, def: Option<&BuildDef>, totals: &[u
         facts.push(format!(
             "Storage by itself: holds {} stacks of {} (different things); click it to choose what goes on it",
             s.slots,
-            my_world::map::STACK_MAX
+            colcom::map::STACK_MAX
         ));
     }
     if d.beauty != 0.0 {

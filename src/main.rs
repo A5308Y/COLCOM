@@ -1,4 +1,4 @@
-//! My World: a small RimWorld-style colony sim. The simulation lives in the
+//! COLCOM: a small RimWorld-style colony sim. The simulation lives in the
 //! library crate; this binary is the Bevy app that shows and controls it.
 
 mod front;
@@ -10,10 +10,10 @@ use bevy::window::ExitCondition;
 use bevy_egui::EguiPlugin;
 
 fn main() {
-    // MY_WORLD_NO_GPU=1 runs everything except drawing: a smoke test for
+    // COLCOM_NO_GPU=1 runs everything except drawing: a smoke test for
     // machines (or sandboxes) without GPU access.
     let mut wgpu = WgpuSettings::default();
-    let no_gpu = std::env::var_os("MY_WORLD_NO_GPU").is_some();
+    let no_gpu = std::env::var_os("COLCOM_NO_GPU").is_some();
     if no_gpu {
         wgpu.backends = None;
     }
@@ -24,7 +24,7 @@ fn main() {
     let mut plugins = DefaultPlugins
         .set(WindowPlugin {
             primary_window: (!windowless).then(|| Window {
-                title: "My World".into(),
+                title: "COLCOM".into(),
                 resolution: (1280u32, 800u32).into(),
                 ..default()
             }),
@@ -96,15 +96,15 @@ mod tests {
             let (cx, cy) = (m.w / 2, m.h / 2);
             let z = m.surface(cx, cy).unwrap();
             let stairs = m.idx((cx + 3, cy, z));
-            m.feature[stairs] = my_world::map::Feature::built("stairs");
+            m.feature[stairs] = colcom::map::Feature::built("stairs");
             for x in cx + 3..cx + 7 {
                 let i = m.idx((x, cy, z + 1));
                 m.set_floor(i, true);
             }
             let lamp = m.idx((cx, cy + 2, z));
-            m.feature[lamp] = my_world::map::Feature::built("lamp");
+            m.feature[lamp] = colcom::map::Feature::built("lamp");
             let (fx, fy, fz) = (cx as f32, cy as f32, z as f32);
-            sim.world.effects.push(my_world::world::Effect { from: (fx, fy, fz), to: (fx + 5.0, fy, fz), ttl: 0.15, hit: true });
+            sim.world.effects.push(colcom::world::Effect { from: (fx, fy, fz), to: (fx + 5.0, fy, fz), ttl: 0.15, hit: true });
         }
         app.world_mut().resource_mut::<front::UiState>().view_level = Some(5);
         for _ in 0..30 {
@@ -115,7 +115,7 @@ mod tests {
             app.update();
         }
 
-        let ids: Vec<my_world::pawn::PawnId> = app.world().resource::<front::Sim>().world.pawns.iter().filter(|p| p.is_colonist()).map(|p| p.id).collect();
+        let ids: Vec<colcom::pawn::PawnId> = app.world().resource::<front::Sim>().world.pawns.iter().filter(|p| p.is_colonist()).map(|p| p.id).collect();
         assert!(ids.len() >= 3, "a starting colony has a few colonists");
         app.world_mut().resource_mut::<front::UiState>().select_pawns(ids[..2].to_vec());
         for _ in 0..3 {
@@ -126,9 +126,9 @@ mod tests {
         {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             let w = &mut sim.world;
-            w.set_role(ids[0], my_world::pawn::Role::Leader).unwrap();
-            w.set_role(ids[1], my_world::pawn::Role::Member(ids[0])).unwrap();
-            w.set_role(ids[2], my_world::pawn::Role::Civilian).unwrap();
+            w.set_role(ids[0], colcom::pawn::Role::Leader).unwrap();
+            w.set_role(ids[1], colcom::pawn::Role::Member(ids[0])).unwrap();
+            w.set_role(ids[2], colcom::pawn::Role::Civilian).unwrap();
         }
         {
             let mut ui = app.world_mut().resource_mut::<front::UiState>();
@@ -146,12 +146,12 @@ mod tests {
             let w = &mut sim.world;
             let i = w.pawn_index(ids[2]).unwrap();
             let healthy = w.pawns[i].health.clone();
-            let mut rng = my_world::rng::Rng::new(1);
+            let mut rng = colcom::rng::Rng::new(1);
             let h = &mut w.pawns[i].health;
-            while !h.is_missing(my_world::health::Part::LeftLeg) {
-                h.injure(my_world::health::Part::LeftLeg, 50.0, my_world::health::DamageKind::Cut, &mut rng);
+            while !h.is_missing(colcom::health::Part::LeftLeg) {
+                h.injure(colcom::health::Part::LeftLeg, 50.0, colcom::health::DamageKind::Cut, &mut rng);
             }
-            h.install(my_world::health::CyberSlot::Eyes, my_world::defs::ItemId::named("bionic_eyes"), 1.25);
+            h.install(colcom::health::CyberSlot::Eyes, colcom::defs::ItemId::named("bionic_eyes"), 1.25);
             h.recompute();
             healthy
         };
@@ -163,10 +163,10 @@ mod tests {
         }
         for ordered in [false, true] {
             if ordered {
-                let leg = my_world::defs::ItemId::named("prosthetic_leg");
+                let leg = colcom::defs::ItemId::named("prosthetic_leg");
                 let mut sim = app.world_mut().resource_mut::<front::Sim>();
-                assert!(sim.world.order_operation(ids[2], my_world::health::CyberSlot::LeftLeg, leg));
-                assert!(sim.world.order_removal(ids[2], my_world::health::CyberSlot::Eyes));
+                assert!(sim.world.order_operation(ids[2], colcom::health::CyberSlot::LeftLeg, leg));
+                assert!(sim.world.order_removal(ids[2], colcom::health::CyberSlot::Eyes));
             }
             for _ in 0..3 {
                 app.update();
@@ -184,11 +184,11 @@ mod tests {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             let i = sim.world.pawn_index(ids[1]).unwrap();
             for kind in ["steel_armor", "steel_helmet"] {
-                sim.world.pawns[i].apparel.push(my_world::defs::ItemId::named(kind));
+                sim.world.pawns[i].apparel.push(colcom::defs::ItemId::named(kind));
             }
             let i = sim.world.pawn_index(ids[0]).unwrap();
-            sim.world.pawns[i].apparel.push(my_world::defs::ItemId::named("powered_armor"));
-            sim.world.pawns[i].weapon = Some(my_world::defs::ItemId::named("laser_rifle"));
+            sim.world.pawns[i].apparel.push(colcom::defs::ItemId::named("powered_armor"));
+            sim.world.pawns[i].weapon = Some(colcom::defs::ItemId::named("laser_rifle"));
         }
         for _ in 0..3 {
             app.update();
@@ -197,7 +197,7 @@ mod tests {
         {
             let mut ui = app.world_mut().resource_mut::<front::UiState>();
             ui.show_spawn = true;
-            ui.tool = front::Tool::Spawn(my_world::defs::ItemId::named("copper"));
+            ui.tool = front::Tool::Spawn(colcom::defs::ItemId::named("copper"));
         }
         for _ in 0..3 {
             app.update();
@@ -215,8 +215,8 @@ mod tests {
             let i = w.pawn_index(ids[0]).unwrap();
             w.pawns[i].break_timer = 0.0;
             let p = w.pawns[i].pos;
-            let rifle = my_world::defs::ItemId::named("rifle");
-            w.map.drop_item(p, my_world::map::Stack { kind: rifle, count: 1 });
+            let rifle = colcom::defs::ItemId::named("rifle");
+            w.map.drop_item(p, colcom::map::Stack { kind: rifle, count: 1 });
             // Where it landed (beside them if their own cell was taken).
             let at = (0..w.map.len())
                 .filter(|&k| w.map.items[k].is_some_and(|s| s.kind == rifle))
@@ -244,7 +244,7 @@ mod tests {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             let w = &mut sim.world;
             w.map.drop_item((w.map.w / 2, w.map.h / 2 + 3, w.map.surface(w.map.w / 2, w.map.h / 2 + 3).unwrap()),
-                my_world::map::Stack { kind: my_world::defs::ItemId::named("steel"), count: 40 });
+                colcom::map::Stack { kind: colcom::defs::ItemId::named("steel"), count: 40 });
             w.spawn_raid();
             assert!(w.parley.is_some(), "raiders make a demand");
         }
@@ -260,14 +260,14 @@ mod tests {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             let w = &mut sim.world;
             let b = w.battle.as_ref().expect("a battle");
-            assert_eq!(b.side_to_act, my_world::pawn::Faction::Colony);
-            let u = (0..b.units.len()).find(|&u| b.units[u].side == my_world::pawn::Faction::Colony && b.units[u].can_act()).unwrap();
+            assert_eq!(b.side_to_act, colcom::pawn::Faction::Colony);
+            let u = (0..b.units.len()).find(|&u| b.units[u].side == colcom::pawn::Faction::Colony && b.units[u].can_act()).unwrap();
             let leader = b.units[u].members[0];
-            w.battle_order(my_world::battle::BattleOrder::Activate(u)).unwrap();
+            w.battle_order(colcom::battle::BattleOrder::Activate(u)).unwrap();
             let lead = w.pawn(leader).unwrap().pos;
             let to = (lead.0 + 1, lead.1, lead.2);
             if w.move_cost(u, to).is_ok() {
-                w.battle_order(my_world::battle::BattleOrder::Move(to)).unwrap();
+                w.battle_order(colcom::battle::BattleOrder::Move(to)).unwrap();
             }
         }
         for _ in 0..30 {
@@ -293,10 +293,10 @@ mod tests {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             let m = &mut sim.world.map;
             // A flat, empty 5x5 patch near the middle (the map is random).
-            let flat = |m: &my_world::map::Map, cx: usize, cy: usize| {
+            let flat = |m: &colcom::map::Map, cx: usize, cy: usize| {
                 let z = m.surface(cx, cy)?;
                 (cy..cy + 5)
-                    .all(|y| (cx..cx + 5).all(|x| m.surface(x, y) == Some(z) && m.feature[m.idx((x, y, z))] == my_world::map::Feature::None))
+                    .all(|y| (cx..cx + 5).all(|x| m.surface(x, y) == Some(z) && m.feature[m.idx((x, y, z))] == colcom::map::Feature::None))
                     .then_some(z)
             };
             let (cx, cy, z) = (8..m.h - 8)
@@ -307,7 +307,7 @@ mod tests {
                 for x in cx..cx + 5 {
                     let i = m.idx((x, y, z));
                     if x == cx || y == cy || x == cx + 4 || y == cy + 4 {
-                        m.set_feature(i, my_world::map::Feature::built("wall"));
+                        m.set_feature(i, colcom::map::Feature::built("wall"));
                     } else {
                         let above = m.idx((x, y, z + 1));
                         m.set_roof(above, true);
@@ -366,59 +366,59 @@ mod tests {
             let z = w.map.surface(cx, cy).unwrap();
             let bench = (cx + 5, cy - 3, z);
             let i = w.map.idx(bench);
-            w.map.feature[i] = my_world::map::Feature::built("stove");
-            let cook = my_world::defs::RecipeId::named("cook_meal");
-            w.add_bill(bench, cook, my_world::production::BillMode::Until(5));
+            w.map.feature[i] = colcom::map::Feature::built("stove");
+            let cook = colcom::defs::RecipeId::named("cook_meal");
+            w.add_bill(bench, cook, colcom::production::BillMode::Until(5));
             let grow = (cx - 6, cy - 3, z);
-            let crop = my_world::defs::defs().sown().unwrap();
-            w.apply_order(grow, my_world::world::Order::Zone(my_world::map::Zone::Grow(crop)));
+            let crop = colcom::defs::defs().sown().unwrap();
+            w.apply_order(grow, colcom::world::Order::Zone(colcom::map::Zone::Grow(crop)));
             // Phase 8 pieces: fence rails join up, glass, a flickering torch, items on a shelf.
             for (k, id) in ["fence", "fence", "fence", "window", "torch", "shelf", "table", "chair"].into_iter().enumerate() {
                 let i = w.map.idx((cx - 6 + k, cy + 6, z));
-                w.map.feature[i] = my_world::map::Feature::built(id);
+                w.map.feature[i] = colcom::map::Feature::built(id);
             }
             // A wall with things on it: up, planned, and a wall shelf holding wood.
             for x in cx + 6..=cx + 8 {
                 let i = w.map.idx((x, cy + 8, z));
-                w.map.feature[i] = my_world::map::Feature::built("wall");
+                w.map.feature[i] = colcom::map::Feature::built("wall");
             }
             let decor_wall = w.map.idx((cx + 7, cy + 8, z));
-            let up = |id: &str, face, slot, built: bool| my_world::decor::Decor {
-                kind: my_world::defs::BuildId::named(id),
+            let up = |id: &str, face, slot, built: bool| colcom::decor::Decor {
+                kind: colcom::defs::BuildId::named(id),
                 face,
                 slot,
-                state: if built { my_world::decor::DecorState::Up } else { my_world::decor::DecorState::Planned { delivered: 0 } },
+                state: if built { colcom::decor::DecorState::Up } else { colcom::decor::DecorState::Planned { delivered: 0 } },
             };
-            let things = vec![up("painting", my_world::map::Dir::PlusY, 0, true), up("wall_lamp", my_world::map::Dir::PlusY, 2, true), up("wall_shelf", my_world::map::Dir::PlusY, 4, true), up("poster", my_world::map::Dir::MinusY, 1, false)];
+            let things = vec![up("painting", colcom::map::Dir::PlusY, 0, true), up("wall_lamp", colcom::map::Dir::PlusY, 2, true), up("wall_shelf", colcom::map::Dir::PlusY, 4, true), up("poster", colcom::map::Dir::MinusY, 1, false)];
             w.map.decor.insert(decor_wall as u32, things);
-            w.map.set_stacks(decor_wall, vec![my_world::map::Stack { kind: my_world::defs::ItemId::named("wood"), count: 20 }]);
+            w.map.set_stacks(decor_wall, vec![colcom::map::Stack { kind: colcom::defs::ItemId::named("wood"), count: 20 }]);
             // A window to be built into a standing wall.
             let old_wall = w.map.idx((cx + 3, cy + 6, z));
-            w.map.feature[old_wall] = my_world::map::Feature::built("wall");
-            assert!(w.apply_order((cx + 3, cy + 6, z), my_world::world::Order::Build(my_world::defs::BuildId::named("window"))));
+            w.map.feature[old_wall] = colcom::map::Feature::built("wall");
+            assert!(w.apply_order((cx + 3, cy + 6, z), colcom::world::Order::Build(colcom::defs::BuildId::named("window"))));
             let shelf = w.map.idx((cx - 1, cy + 6, z));
             // Four different things on it: two on top, two on the lower board.
             let stacks = ["wood", "steel", "copper", "mechanical_components"]
-                .map(|id| my_world::map::Stack { kind: my_world::defs::ItemId::named(id), count: 30 });
+                .map(|id| colcom::map::Stack { kind: colcom::defs::ItemId::named(id), count: 30 });
             w.map.set_stacks(shelf, stacks.to_vec());
             // A bed given to a squad leader.
             let bed = (cx + 5, cy - 5, z);
             let i = w.map.idx(bed);
-            w.map.feature[i] = my_world::map::Feature::built("bed");
+            w.map.feature[i] = colcom::map::Feature::built("bed");
             let leader = w.pawns[0].id;
-            w.set_role(leader, my_world::pawn::Role::Leader).unwrap();
+            w.set_role(leader, colcom::pawn::Role::Leader).unwrap();
             assert!(w.assign_bed(bed, Some(leader)));
             // A grave with someone in it.
             let grave = (cx + 7, cy - 5, z);
             let i = w.map.idx(grave);
-            w.map.feature[i] = my_world::map::Feature::built("grave");
+            w.map.feature[i] = colcom::map::Feature::built("grave");
             let dead = w.spawn_colonist(grave);
             let k = w.pawn_index(dead).unwrap();
-            w.pawns[k].life = my_world::pawn::Life::Dead { buried: true };
+            w.pawns[k].life = colcom::pawn::Life::Dead { buried: true };
             // The roof test's room, made a workshop.
             for (dx, id) in [(-1, "sawbench"), (1, "table")] {
                 let i = w.map.idx(((room.0 as i32 + dx) as usize, room.1, room_z));
-                w.map.feature[i] = my_world::map::Feature::built(id);
+                w.map.feature[i] = colcom::map::Feature::built(id);
             }
             w.map.rooms_dirty = true;
             (bench, (cx - 4, cy + 2, z), grow, bed, grave)
@@ -449,7 +449,7 @@ mod tests {
             let w = &mut sim.world;
             let (cx, cy) = (w.map.w / 2, w.map.h / 2);
             // Somewhere dry near the middle (the map is random: there may be a lake).
-            let dry = |w: &my_world::world::World, x0: usize, y0: usize| {
+            let dry = |w: &colcom::world::World, x0: usize, y0: usize| {
                 (y0..y0 + 3).all(|y| (x0..x0 + 4).all(|x| w.map.ground_level(x, y).is_some() && w.map.quarry_at(x, y).is_none()))
             };
             let (x0, y0) = (0..20)
@@ -459,7 +459,7 @@ mod tests {
             for y in y0..y0 + 3 {
                 for x in x0..x0 + 4 {
                     let z = w.map.ground_level(x, y).unwrap();
-                    assert!(w.apply_order((x, y, z), my_world::world::Order::Quarry));
+                    assert!(w.apply_order((x, y, z), colcom::world::Order::Quarry));
                 }
             }
             assert!(!w.quarries.is_empty(), "a quarry");
@@ -472,7 +472,7 @@ mod tests {
                 (x, y, w.map.ground_level(x, y).unwrap_or(0))
             };
             let mut ui = app.world_mut().resource_mut::<front::UiState>();
-            ui.tool = front::Tool::Paint(my_world::world::Order::Quarry);
+            ui.tool = front::Tool::Paint(colcom::world::Order::Quarry);
             ui.selected = Some(front::Selection::Tile(quarry));
         }
         app.update();
@@ -485,7 +485,7 @@ mod tests {
                 (cx, cy - 2, w.map.surface(cx, cy - 2).unwrap_or(1))
             };
             let mut ui = app.world_mut().resource_mut::<front::UiState>();
-            ui.tool = front::Tool::Paint(my_world::world::Order::Build(my_world::defs::BuildId::named("wall")));
+            ui.tool = front::Tool::Paint(colcom::world::Order::Build(colcom::defs::BuildId::named("wall")));
             ui.hover = Some(front::Hover { solid: (at.0, at.1, at.2 - 1), stand: at });
             ui.drag_start = Some((at.0 - 3, at.1 - 2, at.2));
         }
@@ -505,8 +505,8 @@ mod tests {
                 (cx + 7, cy + 8, w.map.surface(cx, cy).unwrap())
             };
             let mut ui = app.world_mut().resource_mut::<front::UiState>();
-            ui.tool = front::Tool::Paint(my_world::world::Order::Build(my_world::defs::BuildId::named("painting")));
-            ui.wall_slot = Some((wall, my_world::map::Dir::PlusY, 1));
+            ui.tool = front::Tool::Paint(colcom::world::Order::Build(colcom::defs::BuildId::named("painting")));
+            ui.wall_slot = Some((wall, colcom::map::Dir::PlusY, 1));
             ui.selected = Some(front::Selection::Tile(wall));
         }
         app.update();
@@ -514,8 +514,8 @@ mod tests {
         // The info window: a weapon's stats, with the lookup searching.
         {
             let mut ui = app.world_mut().resource_mut::<front::UiState>();
-            ui.open_info(front::InfoTarget::Build(my_world::defs::BuildId::named("stove")));
-            ui.open_info(front::InfoTarget::Item(my_world::defs::ItemId::named("rifle")));
+            ui.open_info(front::InfoTarget::Build(colcom::defs::BuildId::named("stove")));
+            ui.open_info(front::InfoTarget::Item(colcom::defs::ItemId::named("rifle")));
             ui.info_filter = "ri".into();
             assert_eq!(ui.info_back.len(), 1, "the stove to go back to");
         }
@@ -567,7 +567,7 @@ mod tests {
         assert!(app.world_mut().resource_mut::<front::Sim>().world.order_move_facing(bed, spot, turned));
         {
             let w = &app.world().resource::<front::Sim>().world;
-            assert!(matches!(w.map.feature[w.map.idx(spot)], my_world::map::Feature::Blueprint { dir, .. } if dir == turned));
+            assert!(matches!(w.map.feature[w.map.idx(spot)], colcom::map::Feature::Blueprint { dir, .. } if dir == turned));
         }
         for t in [bed, spot] {
             app.world_mut().resource_mut::<front::UiState>().selected = Some(front::Selection::Tile(t));
@@ -635,12 +635,12 @@ mod tests {
             let w = &mut sim.world;
             let b = w.battle.as_ref().expect("the scenario starts in battle");
             assert_eq!(b.round, 1);
-            let u = (0..b.units.len()).find(|&u| b.units[u].side == my_world::pawn::Faction::Colony && b.units[u].is_squad()).unwrap();
+            let u = (0..b.units.len()).find(|&u| b.units[u].side == colcom::pawn::Faction::Colony && b.units[u].is_squad()).unwrap();
             let leader = b.units[u].members[0];
-            w.battle_order(my_world::battle::BattleOrder::Activate(u)).unwrap();
+            w.battle_order(colcom::battle::BattleOrder::Activate(u)).unwrap();
             let lead = w.pawn(leader).unwrap().pos;
             let to = (lead.0 + 2, lead.1, lead.2);
-            w.battle_order(my_world::battle::BattleOrder::Move(to)).unwrap();
+            w.battle_order(colcom::battle::BattleOrder::Move(to)).unwrap();
             (leader, to)
         };
         for _ in 0..240 {
@@ -675,14 +675,14 @@ mod tests {
             "models/characters/hair/Hair_SimpleParted.gltf",
             "models/characters/animations/UAL1_Standard.glb",
         ];
-        files.extend(my_world::defs::ItemId::all().filter_map(|kind| kind.def().model.as_ref().map(|model| model.path.as_str())));
-        for kind in my_world::defs::ItemId::all() {
+        files.extend(colcom::defs::ItemId::all().filter_map(|kind| kind.def().model.as_ref().map(|model| model.path.as_str())));
+        for kind in colcom::defs::ItemId::all() {
             if let Some(skin) = kind.def().apparel.as_ref().and_then(|a| a.skinned.as_ref()) {
                 files.extend([skin.male.as_str(), skin.female.as_str()]);
             }
         }
-        files.extend(my_world::defs::BuildId::all().filter_map(|kind| kind.def().model.as_ref().map(|model| model.path.as_str())));
-        files.extend(my_world::defs::defs().plants.iter().flat_map(|p| &p.stages)
+        files.extend(colcom::defs::BuildId::all().filter_map(|kind| kind.def().model.as_ref().map(|model| model.path.as_str())));
+        files.extend(colcom::defs::defs().plants.iter().flat_map(|p| &p.stages)
             .flat_map(|s| &s.variants).filter_map(|v| v.model.as_ref().map(|m| m.path.as_str())));
         files.sort_unstable();
         files.dedup();
@@ -723,8 +723,8 @@ mod tests {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
             for (i, pawn) in sim.world.pawns.iter_mut().enumerate() {
                 let armor = if i % 2 == 0 { "steel_armor" } else { "powered_armor" };
-                pawn.apparel.push(my_world::defs::ItemId::named(armor));
-                pawn.apparel.push(my_world::defs::ItemId::named("steel_helmet"));
+                pawn.apparel.push(colcom::defs::ItemId::named(armor));
+                pawn.apparel.push(colcom::defs::ItemId::named("steel_helmet"));
             }
         }
         let ready = |app: &mut App| {
@@ -782,8 +782,8 @@ mod tests {
         // Switching from armor to fabric must use live skinned joints in gun poses.
         {
             let mut sim = app.world_mut().resource_mut::<front::Sim>();
-            sim.world.pawns[0].apparel = vec![my_world::defs::ItemId::named("clothes"), my_world::defs::ItemId::named("cargo_trousers")];
-            sim.world.pawns[1].apparel = vec![my_world::defs::ItemId::named("parka"), my_world::defs::ItemId::named("flak_leg_guards")];
+            sim.world.pawns[0].apparel = vec![colcom::defs::ItemId::named("clothes"), colcom::defs::ItemId::named("cargo_trousers")];
+            sim.world.pawns[1].apparel = vec![colcom::defs::ItemId::named("parka"), colcom::defs::ItemId::named("flak_leg_guards")];
         }
         let cloth_skins = |app: &mut App| {
             let mut query = app.world_mut().query::<(&Name, &bevy::mesh::skinning::SkinnedMesh)>();
@@ -804,7 +804,7 @@ mod tests {
         }
         assert!(complete(&skins), "upper clothing, leg apparel and boots on both clothed characters");
         assert!(skins.iter().flat_map(|(_, joints)| joints).all(|&joint| app.world().get::<bevy::animation::AnimatedBy>(joint).is_some()), "clothes follow the character animation, with no imported bind-pose joints left");
-        app.world_mut().resource_mut::<front::Sim>().world.pawns[0].apparel = vec![my_world::defs::ItemId::named("powered_armor")];
+        app.world_mut().resource_mut::<front::Sim>().world.pawns[0].apparel = vec![colcom::defs::ItemId::named("powered_armor")];
         let mut suit = Vec::new();
         for _ in 0..2000 {
             app.update();

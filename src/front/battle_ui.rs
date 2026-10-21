@@ -17,11 +17,11 @@ use bevy::window::{CursorIcon, PrimaryWindow, SystemCursorIcon};
 use bevy_egui::egui::{self, Align2, Color32, RichText};
 use bevy_egui::input::EguiWantsInput;
 use bevy_egui::{EguiContexts, EguiPrimaryContextPass};
-use my_world::battle::{Battle, BattleOrder, Cover, Unit, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MAX, BROKEN, PINNED};
-use my_world::defs::UtilityEffect;
-use my_world::map::{Pos, DIRS};
-use my_world::pawn::{Faction, PawnId};
-use my_world::world::World as SimWorld;
+use colcom::battle::{Battle, BattleOrder, Cover, Unit, AP_ATTACK, AP_DEPLOY, AP_HUNKER, AP_MAX, BROKEN, PINNED};
+use colcom::defs::UtilityEffect;
+use colcom::map::{Pos, DIRS};
+use colcom::pawn::{Faction, PawnId};
+use colcom::world::World as SimWorld;
 use std::f32::consts::FRAC_PI_2;
 
 pub struct BattleUiPlugin;
@@ -286,7 +286,7 @@ fn setup(mut config: ResMut<GizmoConfigStore>, mut area: ResMut<ReachArea>, mut 
 }
 
 /// Height of the floor a pawn stands on in cell `c`.
-fn floor_y(m: &my_world::map::Map, c: Pos) -> f32 {
+fn floor_y(m: &colcom::map::Map, c: Pos) -> f32 {
     c.2 as f32 * LEVEL_H + if m.floor[m.idx(c)] { FLOOR_T } else { 0.0 }
 }
 
@@ -924,7 +924,7 @@ fn active_unit_panel(
         panel.label(
             RichText::new(format!(
                 "Click a cell to move ({} AP a step), an enemy to attack ({} AP, {} if everyone uses a sidearm; rifles are clumsy up close, so members draw pistols there).",
-                w.step_ap(u), AP_ATTACK, my_world::battle::AP_SIDEARM_ATTACK
+                w.step_ap(u), AP_ATTACK, colcom::battle::AP_SIDEARM_ATTACK
             ))
             .small()
             .weak(),
@@ -1170,7 +1170,7 @@ fn parley_dialog(ctx: &egui::Context, sim: &mut Sim, sounds: &mut SoundQueue) {
                 groups,
                 if groups == 1 { "" } else { "s" }
             ));
-            if let Some(t) = my_world::defs::defs().raider_tiers.get(p.tier) {
+            if let Some(t) = colcom::defs::defs().raider_tiers.get(p.tier) {
                 ui.label(RichText::new(format!("{}: {}", t.name, tier_look(p.tier))).color(theme::WARN));
             }
             if p.demand.is_empty() {
@@ -1214,7 +1214,7 @@ mod tests {
 
     #[test]
     fn changes_to_morale_and_suppression_pop_up() {
-        let mut w = my_world::scenarios::build("battle").expect("the battle scenario");
+        let mut w = colcom::scenarios::build("battle").expect("the battle scenario");
         let mut view = BattleView::default();
         update_popups(&mut view, w.battle.as_ref().unwrap(), 0.0);
         assert!(view.popups.is_empty(), "nothing has happened yet");

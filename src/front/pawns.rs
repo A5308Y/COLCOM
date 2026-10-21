@@ -11,11 +11,11 @@ use super::props::{self, lit, PropAssets};
 use super::sim::Sim;
 use super::tile_point;
 use bevy::prelude::*;
-use my_world::defs::{Bone, ItemId, Slot, Special, WornPiece};
-use my_world::map::{Feature, Map, Pos, DIRS};
-use my_world::recreation::GET_UP;
-use my_world::pawn::{Job, Pawn, PawnId, Task};
-use my_world::world::World as SimWorld;
+use colcom::defs::{Bone, ItemId, Slot, Special, WornPiece};
+use colcom::map::{Feature, Map, Pos, DIRS};
+use colcom::recreation::GET_UP;
+use colcom::pawn::{Job, Pawn, PawnId, Task};
+use colcom::world::World as SimWorld;
 use std::collections::HashMap;
 use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
@@ -324,7 +324,7 @@ fn squad_slot(p: &Pawn, w: &SimWorld) -> Vec2 {
             .filter_map(|(cx, cy)| {
                 let c = m.at(p.pos.0 as i32 + cx, p.pos.1 as i32 + cy, p.pos.2 as i32)?;
                 let cover = w.cover_at(c);
-                (cover != my_world::battle::Cover::None).then_some((cover, cx, cy))
+                (cover != colcom::battle::Cover::None).then_some((cover, cx, cy))
             })
             .max_by_key(|c| c.0)
     });
@@ -794,7 +794,7 @@ fn sync_pawns(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use my_world::map::{Feature, FLAT_Z as Z};
+    use colcom::map::{Feature, FLAT_Z as Z};
 
     #[test]
     fn battle_models_keep_finn_and_bram_armed() {

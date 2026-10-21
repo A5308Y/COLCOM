@@ -2,11 +2,11 @@
 //!
 //! `cargo run --release --example profile`
 
-use my_world::defs::{ItemId, RecipeId};
-use my_world::map::{Block, Desig, Feature, Stack};
-use my_world::production::BillMode;
-use my_world::world::{Order, World};
-use my_world::{DAY_LEN, TICK};
+use colcom::defs::{ItemId, RecipeId};
+use colcom::map::{Block, Desig, Feature, Stack};
+use colcom::production::BillMode;
+use colcom::world::{Order, World};
+use colcom::{DAY_LEN, TICK};
 use std::time::Instant;
 
 fn main() {

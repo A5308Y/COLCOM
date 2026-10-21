@@ -10,10 +10,10 @@ use super::{tile_center, tile_point};
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::{egui_wants_any_keyboard_input, EguiWantsInput};
-use my_world::defs::{defs, BuildId, Special};
-use my_world::map::{Block, Desig, Dir, Map, Pos, RoofPolicy, Zone};
-use my_world::pawn::{Faction, PawnId};
-use my_world::world::{Order, World as SimWorld};
+use colcom::defs::{defs, BuildId, Special};
+use colcom::map::{Block, Desig, Dir, Map, Pos, RoofPolicy, Zone};
+use colcom::pawn::{Faction, PawnId};
+use colcom::world::{Order, World as SimWorld};
 use std::f32::consts::FRAC_PI_2;
 use std::sync::LazyLock;
 
@@ -30,7 +30,7 @@ pub enum Tool {
     /// Move furniture: first which (`None`), then where it goes.
     Move(Option<Pos>),
     /// Testing: drop `UiState::spawn_count` of this item where clicked.
-    Spawn(my_world::defs::ItemId),
+    Spawn(colcom::defs::ItemId),
 }
 
 /// One tool in the build menu.
@@ -232,7 +232,7 @@ pub struct Hover {
 pub struct JobMenu {
     pub pawn: PawnId,
     /// Label, cell and job of each choice.
-    pub options: Vec<(String, Pos, my_world::pawn::Job)>,
+    pub options: Vec<(String, Pos, colcom::pawn::Job)>,
     /// Where it opens (taken from the pointer when it's first drawn).
     pub at: Option<bevy_egui::egui::Pos2>,
 }
@@ -254,7 +254,7 @@ pub struct UiState {
     pub show_work: bool,
     /// The Work window's tab: priorities (false) or schedules (true), and the block being painted.
     pub work_schedule: bool,
-    pub schedule_brush: my_world::recreation::Block,
+    pub schedule_brush: colcom::recreation::Block,
     pub show_help: bool,
     /// The handbook's open topic (index into `help::TOPICS`) and search text.
     pub help_topic: usize,
@@ -329,7 +329,7 @@ impl UiState {
             hover: None,
             show_work: false,
             work_schedule: false,
-            schedule_brush: my_world::recreation::Block::Work,
+            schedule_brush: colcom::recreation::Block::Work,
             show_help: false,
             help_topic: 0,
             help_filter: String::new(),
@@ -346,7 +346,7 @@ impl UiState {
             roof_version: 0,
             dropped_tool: false,
             job_menu: None,
-            place_dir: my_world::map::Dir::PlusX,
+            place_dir: colcom::map::Dir::PlusX,
             show_build: true,
             build_filter: String::new(),
             dock_width: 0.0,
@@ -579,7 +579,7 @@ fn update_hover(
 /// The face of the wall at `wall` the ray meets first, and the slot on it
 /// (faces turned away from the camera don't count).
 fn wall_slot_at(ray: Ray3d, wall: Pos) -> Option<(Dir, u8)> {
-    use my_world::decor::{SLOTS, WALL_A, WALL_B};
+    use colcom::decor::{SLOTS, WALL_A, WALL_B};
     let (o, d) = (ray.origin, *ray.direction);
     let (x, y) = (wall.0 as f32, wall.1 as f32);
     let (lo, hi) = (wall.2 as f32 * LEVEL_H, (wall.2 + 1) as f32 * LEVEL_H);
@@ -1404,8 +1404,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("my-world-safe-saves-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("game.json");
-        let first = SimWorld::with_map(Map::flat(8, 8), my_world::rng::Rng::new(1));
-        let second = SimWorld::with_map(Map::flat(9, 9), my_world::rng::Rng::new(2));
+        let first = SimWorld::with_map(Map::flat(8, 8), colcom::rng::Rng::new(1));
+        let second = SimWorld::with_map(Map::flat(9, 9), colcom::rng::Rng::new(2));
         write_save(&path, &first.save_json().unwrap()).unwrap();
         write_save(&path, &second.save_json().unwrap()).unwrap();
         assert!(!dir.join("game.json.tmp").exists(), "no leftovers");
@@ -1425,7 +1425,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         assert_eq!(save_file_in(&dir, "  "), None, "a name is needed");
         assert_eq!(save_file_in(&dir, "Test ground/../x?"), Some(dir.join("Test groundx.json")), "only safe characters");
-        let w = SimWorld::with_map(Map::flat(8, 8), my_world::rng::Rng::new(1));
+        let w = SimWorld::with_map(Map::flat(8, 8), colcom::rng::Rng::new(1));
         for name in ["older", "Test ground"] {
             std::fs::write(save_file_in(&dir, name).unwrap(), w.save_json().unwrap()).unwrap();
             std::thread::sleep(std::time::Duration::from_millis(20));
@@ -1440,30 +1440,30 @@ mod tests {
 
     #[test]
     fn the_preview_shows_the_cells_a_click_would_take() {
-        let mut w = SimWorld::with_map(Map::flat(10, 10), my_world::rng::Rng::new(1));
+        let mut w = SimWorld::with_map(Map::flat(10, 10), colcom::rng::Rng::new(1));
         let z = (0..w.map.d).find(|&z| w.map.standable((3, 3, z))).unwrap();
-        let wall = Order::Build(my_world::defs::BuildId::named("wall"));
+        let wall = Order::Build(colcom::defs::BuildId::named("wall"));
         // Walls: the outline of the box (Shift: all of it).
         assert_eq!(box_cells(&w, (2, 2, z), (5, 4, z), wall, hollow(wall, false)).len(), 4 * 3 - 2);
         assert_eq!(box_cells(&w, (2, 2, z), (5, 4, z), wall, hollow(wall, true)).len(), 4 * 3);
         // Only where it can go: not where a chair stands.
         let i = w.map.idx((2, 2, z));
-        w.map.set_feature(i, my_world::map::Feature::built("chair"));
+        w.map.set_feature(i, colcom::map::Feature::built("chair"));
         let cells = box_cells(&w, (2, 2, z), (5, 4, z), wall, true);
         assert!(!cells.iter().any(|c| (c.0, c.1) == (2, 2)) && cells.len() == 4 * 3 - 2 - 1, "the outline but the chair's cell: {:?}", cells);
         // And painting takes just those.
-        assert_eq!(paint_box(&mut w, (2, 2, z), (5, 4, z), wall, true, my_world::map::Dir::PlusX), cells.len());
+        assert_eq!(paint_box(&mut w, (2, 2, z), (5, 4, z), wall, true, colcom::map::Dir::PlusX), cells.len());
     }
 
     #[test]
     fn windows_go_into_the_clicked_wall_and_walls_on_top() {
-        let mut w = SimWorld::with_map(Map::flat(8, 8), my_world::rng::Rng::new(1));
+        let mut w = SimWorld::with_map(Map::flat(8, 8), colcom::rng::Rng::new(1));
         let z = (0..w.map.d).find(|&z| w.map.standable((3, 3, z))).unwrap();
         let wall = (3, 3, z);
         let i = w.map.idx(wall);
-        w.map.set_feature(i, my_world::map::Feature::built("wall"));
+        w.map.set_feature(i, colcom::map::Feature::built("wall"));
         let h = Hover { solid: wall, stand: (3, 3, z + 1) };
-        let build = |id: &str| Order::Build(my_world::defs::BuildId::named(id));
+        let build = |id: &str| Order::Build(colcom::defs::BuildId::named(id));
         assert_eq!(order_target(&w, h, build("window")), wall, "replacing the wall");
         assert_eq!(order_target(&w, h, build("door")), wall);
         assert_eq!(order_target(&w, h, build("wall")), (3, 3, z + 1), "stacked on top");
@@ -1471,8 +1471,8 @@ mod tests {
 
     #[test]
     fn roof_area_tools_target_the_room_below_visible_roofs() {
-        use my_world::map::{Feature, FLAT_Z as Z};
-        let mut w = SimWorld::with_map(Map::flat(8, 8), my_world::rng::Rng::new(1));
+        use colcom::map::{Feature, FLAT_Z as Z};
+        let mut w = SimWorld::with_map(Map::flat(8, 8), colcom::rng::Rng::new(1));
         let p = (3, 3, Z);
         let above = (3, 3, Z + 1);
         let i = w.map.idx(above);
@@ -1522,24 +1522,24 @@ mod tests {
 
     #[test]
     fn walls_go_around_the_dragged_rectangle() {
-        use my_world::map::{Feature, FLAT_Z as Z};
-        use my_world::rng::Rng;
+        use colcom::map::{Feature, FLAT_Z as Z};
+        use colcom::rng::Rng;
         let mut w = SimWorld::with_map(Map::flat(12, 12), Rng::new(1));
         let wall = Order::Build(BuildId::named("wall"));
-        assert_eq!(paint_box(&mut w, (2, 2, Z), (6, 5, Z), wall, hollow(wall, false), my_world::map::Dir::PlusX), 14, "5×4 edge");
+        assert_eq!(paint_box(&mut w, (2, 2, Z), (6, 5, Z), wall, hollow(wall, false), colcom::map::Dir::PlusX), 14, "5×4 edge");
         let at = |w: &SimWorld, x, y| matches!(w.map.feature[w.map.idx((x, y, Z))], Feature::Blueprint { .. });
         assert!(at(&w, 2, 2) && at(&w, 6, 5) && at(&w, 4, 2) && at(&w, 2, 4));
         assert!(!at(&w, 3, 3) && !at(&w, 5, 4), "the inside stays empty");
         assert!(hollow(wall, false) && !hollow(wall, true), "Shift fills");
         let chair = Order::Build(BuildId::named("chair"));
         assert!(!hollow(chair, false), "furniture fills the rectangle");
-        assert_eq!(paint_box(&mut w, (8, 8, Z), (9, 9, Z), chair, false, my_world::map::Dir::PlusY), 4);
-        assert!(matches!(w.map.feature[w.map.idx((8, 8, Z))], Feature::Blueprint { dir: my_world::map::Dir::PlusY, .. }), "turned as placed");
+        assert_eq!(paint_box(&mut w, (8, 8, Z), (9, 9, Z), chair, false, colcom::map::Dir::PlusY), 4);
+        assert!(matches!(w.map.feature[w.map.idx((8, 8, Z))], Feature::Blueprint { dir: colcom::map::Dir::PlusY, .. }), "turned as placed");
     }
 
     #[test]
     fn hiding_roofs_hides_unfinished_ones_too() {
-        use my_world::map::{Feature, FLAT_Z as Z};
+        use colcom::map::{Feature, FLAT_Z as Z};
         let mut m = Map::flat(12, 12);
         // A walled room with a hole in its roof (so not a room yet) and a roof blueprint.
         for y in 2..=6 {
@@ -1548,7 +1548,7 @@ mod tests {
                 if x == 2 || y == 2 || x == 6 || y == 6 {
                     m.set_feature(i, Feature::built("wall"));
                 } else if (x, y) == (4, 4) {
-                    m.feature[above] = Feature::blueprint(defs().roof().unwrap(), 0, my_world::map::Dir::PlusX);
+                    m.feature[above] = Feature::blueprint(defs().roof().unwrap(), 0, colcom::map::Dir::PlusX);
                 } else if (x, y) != (3, 3) {
                     m.set_roof(above, true);
                 }

@@ -17,7 +17,7 @@ use super::terrain::LEVEL_H;
 use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
-use my_world::map::{Block, Feature, Map};
+use colcom::map::{Block, Feature, Map};
 use std::collections::VecDeque;
 
 /// Height gained per cell inwards from the edge, in levels.

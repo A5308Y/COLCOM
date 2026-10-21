@@ -14,9 +14,9 @@ use bevy::prelude::*;
 use bevy::gltf::GltfAssetLabel;
 use bevy::gltf::GltfMaterialName;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot, WorldInstanceReady};
-use my_world::pawn::PawnId;
-use my_world::defs::{defs, BuildDef, BuildId, BuildLook, ItemId, ModelPose, Part, PlantId, PlantVariant, Shape, Special, Storage, WornPiece};
-use my_world::map::{Dir, Feature, Map, Pos, DIRS};
+use colcom::pawn::PawnId;
+use colcom::defs::{defs, BuildDef, BuildId, BuildLook, ItemId, ModelPose, Part, PlantId, PlantVariant, Shape, Special, Storage, WornPiece};
+use colcom::map::{Dir, Feature, Map, Pos, DIRS};
 use std::collections::{HashMap, HashSet};
 use std::f32::consts::{FRAC_PI_2, TAU};
 
@@ -249,7 +249,7 @@ pub fn snug(m: &Map, pos: Pos, kind: BuildId, dir: Dir) -> Vec2 {
     let face = if m.block[bi].solid() {
         0.5
     } else if m.feature[bi].blocks_room() && !m.feature[bi].is_special(Special::Door) {
-        1.0 - my_world::decor::WALL_T / 2.0
+        1.0 - colcom::decor::WALL_T / 2.0
     } else {
         return Vec2::ZERO;
     };
@@ -267,7 +267,7 @@ pub fn snug(m: &Map, pos: Pos, kind: BuildId, dir: Dir) -> Vec2 {
 /// `snug` for what's built at `pos` (zero if it's not furniture).
 pub fn built_snug(m: &Map, pos: Pos) -> Vec2 {
     match m.feature[m.idx(pos)] {
-        my_world::map::Feature::Built { kind, dir } => snug(m, pos, kind, dir),
+        colcom::map::Feature::Built { kind, dir } => snug(m, pos, kind, dir),
         _ => Vec2::ZERO,
     }
 }
@@ -399,7 +399,7 @@ impl Props {
     }
 }
 
-fn prop_key(w: &my_world::world::World, i: usize, owners: &HashMap<Pos, (PawnId, [f32; 3])>, filled: &HashSet<Pos>) -> Option<PropKey> {
+fn prop_key(w: &colcom::world::World, i: usize, owners: &HashMap<Pos, (PawnId, [f32; 3])>, filled: &HashSet<Pos>) -> Option<PropKey> {
     let m = &w.map;
     let pos = m.pos(i);
     match m.feature[i] {
@@ -537,7 +537,7 @@ fn preview_blueprints(
     let m = &w.map;
     let mut cells = Vec::new();
     let mut decor = None;
-    if let (Tool::Paint(order @ my_world::world::Order::Build(kind)), Some(h)) = (ui.tool, ui.hover) {
+    if let (Tool::Paint(order @ colcom::world::Order::Build(kind)), Some(h)) = (ui.tool, ui.hover) {
         let d = kind.def();
         if d.on_wall {
             decor = ui.wall_slot.filter(|&(at, f, s)| w.decor_ok(at, f, s, kind)).map(|(at, f, s)| (at, f, s, kind));
@@ -551,9 +551,9 @@ fn preview_blueprints(
                 }
                 // Into a standing wall (a window): the shell around it, as once planned.
                 let over = matches!(m.feature[m.idx(p)], Feature::Built { .. });
-                let dir = if d.turnable() { ui.place_dir } else { my_world::map::Dir::PlusX };
+                let dir = if d.turnable() { ui.place_dir } else { colcom::map::Dir::PlusX };
                 let key = if over {
-                    PropKey::Blueprint { kind, dir: my_world::map::Dir::PlusX, over: true, snug: (0.0, 0.0) }
+                    PropKey::Blueprint { kind, dir: colcom::map::Dir::PlusX, over: true, snug: (0.0, 0.0) }
                 } else {
                     let s = snug(m, p, kind, dir);
                     PropKey::Blueprint { kind, dir, over: false, snug: (s.x, s.y) }
@@ -596,11 +596,11 @@ fn key_along_walls(key: PropKey) -> bool {
 pub fn decor_transform(pos: Pos, face: Dir, slot: u8, lift: f32) -> Transform {
     let (nx, ny) = face.offset();
     let n = Vec3::new(nx as f32, 0.0, ny as f32);
-    let (_, plus) = my_world::decor::slot_axis(face);
+    let (_, plus) = colcom::decor::slot_axis(face);
     let (ux, uy) = plus.offset();
     let u = Vec3::new(ux as f32, 0.0, uy as f32);
-    let (s0, s1) = my_world::decor::slot_span(slot);
-    let at = tile_center(pos) + n * (my_world::decor::WALL_T / 2.0) + u * ((s0 + s1) / 2.0 - 0.5) + Vec3::Y * lift;
+    let (s0, s1) = colcom::decor::slot_span(slot);
+    let at = tile_center(pos) + n * (colcom::decor::WALL_T / 2.0) + u * ((s0 + s1) / 2.0 - 0.5) + Vec3::Y * lift;
     let x = Vec3::Y.cross(n);
     Transform::from_translation(at).with_rotation(Quat::from_mat3(&Mat3::from_cols(x, Vec3::Y, n)))
 }
@@ -961,8 +961,8 @@ fn spawn_item(commands: &mut Commands, a: &PropAssets, key: ItemKey, pos: Pos, l
 #[cfg(test)]
 mod tests {
     use super::*;
-    use my_world::defs::BuildCategory;
-    use my_world::map::FLAT_Z as Z;
+    use colcom::defs::BuildCategory;
+    use colcom::map::FLAT_Z as Z;
 
     fn test_assets() -> PropAssets {
         let mut scenes = Assets::<WorldAsset>::default();
@@ -1038,7 +1038,7 @@ mod tests {
     fn modelled_plants_follow_growth_caching_visibility_and_removal() {
         use bevy::ecs::system::RunSystemOnce;
         let mut sim = Sim::new(None);
-        let mut w = my_world::world::World::with_map(Map::flat(8, 8), my_world::rng::Rng::new(1));
+        let mut w = colcom::world::World::with_map(Map::flat(8, 8), colcom::rng::Rng::new(1));
         let at = (3, 3, Z);
         let i = w.map.idx(at);
         let kind = PlantId::named("corn");
@@ -1075,8 +1075,8 @@ mod tests {
     #[test]
     fn cached_state_scenes_follow_new_fence_neighbours_and_burials() {
         use bevy::ecs::system::RunSystemOnce;
-        use my_world::pawn::Life;
-        let mut w = my_world::world::World::with_map(Map::flat(8, 8), my_world::rng::Rng::new(1));
+        use colcom::pawn::Life;
+        let mut w = colcom::world::World::with_map(Map::flat(8, 8), colcom::rng::Rng::new(1));
         let fence = w.map.idx((3, 3, Z));
         let grave = w.map.idx((1, 1, Z));
         w.map.set_feature(fence, Feature::built("fence"));
@@ -1139,8 +1139,8 @@ mod tests {
     #[test]
     fn cached_props_follow_map_edits_pawns_visibility_and_world_replacement() {
         use bevy::ecs::system::RunSystemOnce;
-        use my_world::rng::Rng;
-        use my_world::world::World as SimWorld;
+        use colcom::rng::Rng;
+        use colcom::world::World as SimWorld;
         let mut w = SimWorld::with_map(Map::flat(8, 8), Rng::new(1));
         let door = (3, 3, Z);
         let di = w.map.idx(door);
@@ -1230,10 +1230,10 @@ mod tests {
         assert_eq!(world.query::<&WorldAssetRoot>().iter(&world).count(), 0);
         let lamp = BuildId::named("lamp");
         let pos = (3, 3, Z);
-        spawn_feature(&mut world.commands(), &a, PropKey::Blueprint { kind: lamp, dir: my_world::map::Dir::PlusX, over: false, snug: (0.0, 0.0) }, pos, 0.0, a.blanket_free.clone());
+        spawn_feature(&mut world.commands(), &a, PropKey::Blueprint { kind: lamp, dir: colcom::map::Dir::PlusX, over: false, snug: (0.0, 0.0) }, pos, 0.0, a.blanket_free.clone());
         world.flush();
         assert_eq!(world.query::<&PointLight>().iter(&world).count(), 0, "previews do not cast light");
-        spawn_feature(&mut world.commands(), &a, PropKey::Built { kind: lamp, dir: my_world::map::Dir::PlusX, owner: None, open: false, links: 0, snug: (0.0, 0.0) }, pos, 0.0, a.blanket_free.clone());
+        spawn_feature(&mut world.commands(), &a, PropKey::Built { kind: lamp, dir: colcom::map::Dir::PlusX, owner: None, open: false, links: 0, snug: (0.0, 0.0) }, pos, 0.0, a.blanket_free.clone());
         world.flush();
         let light = world.query::<&PointLight>().single(&world).unwrap();
         assert_eq!(light.intensity, lamp.def().light.as_ref().unwrap().intensity);
@@ -1426,7 +1426,7 @@ mod tests {
 
     #[test]
     fn world_prop_models_keep_footprints_back_reach_and_scene_references() {
-        use my_world::defs::BuildScenes;
+        use colcom::defs::BuildScenes;
         let mut checked = 0;
         for def in defs().builds.iter().filter(|d| d.model.as_ref().is_some_and(|m| m.path.starts_with("models/world/"))) {
             let model = def.model.as_ref().unwrap();
@@ -1476,7 +1476,7 @@ mod tests {
         // Empty scene assets isolate CPU spawning/cache work; this does not time
         // glTF decoding, loaded mesh propagation or GPU rendering.
         for models in [false, true] {
-            let mut w = my_world::world::World::with_map(Map::flat(100, 70), my_world::rng::Rng::new(42));
+            let mut w = colcom::world::World::with_map(Map::flat(100, 70), colcom::rng::Rng::new(42));
             let kinds: Vec<_> = PlantId::all().collect();
             let builds: Vec<_> = BuildId::all().filter(|k| k.def().model.as_ref().is_some_and(|m| m.path.starts_with("models/world/"))).collect();
             for y in 1..69 {
@@ -1614,32 +1614,32 @@ mod tests {
         let bed = BuildId::named("bed");
         // Unturned, a bed's head (pillow) is towards -y.
         let at = (4, 4, Z);
-        assert_eq!(snug(&m, at, bed, my_world::map::Dir::PlusX), Vec2::ZERO, "nothing behind it");
+        assert_eq!(snug(&m, at, bed, colcom::map::Dir::PlusX), Vec2::ZERO, "nothing behind it");
         let wall = m.idx((4, 3, Z));
         m.set_feature(wall, Feature::built("wall"));
-        let s = snug(&m, at, bed, my_world::map::Dir::PlusX);
+        let s = snug(&m, at, bed, colcom::map::Dir::PlusX);
         assert!(s.x == 0.0 && s.y < -0.4, "pushed back to the wall: {:?}", s);
         // Its far end then just touches the wall's face.
-        assert!((0.46 - s.y - (1.0 - my_world::decor::WALL_T / 2.0)).abs() < 0.02);
-        assert_eq!(snug(&m, at, bed, my_world::map::Dir::PlusY), Vec2::ZERO, "turned, its head isn't at the wall");
+        assert!((0.46 - s.y - (1.0 - colcom::decor::WALL_T / 2.0)).abs() < 0.02);
+        assert_eq!(snug(&m, at, bed, colcom::map::Dir::PlusY), Vec2::ZERO, "turned, its head isn't at the wall");
         m.set_feature(wall, Feature::built("door"));
-        assert_eq!(snug(&m, at, bed, my_world::map::Dir::PlusX), Vec2::ZERO, "not into a doorway");
+        assert_eq!(snug(&m, at, bed, colcom::map::Dir::PlusX), Vec2::ZERO, "not into a doorway");
         m.set_feature(wall, Feature::built("wall"));
-        assert_eq!(snug(&m, at, BuildId::named("chair"), my_world::map::Dir::PlusX), Vec2::ZERO, "chairs stay by their table");
-        assert_eq!(snug(&m, at, BuildId::named("stairs"), my_world::map::Dir::MinusX), Vec2::ZERO);
+        assert_eq!(snug(&m, at, BuildId::named("chair"), colcom::map::Dir::PlusX), Vec2::ZERO, "chairs stay by their table");
+        assert_eq!(snug(&m, at, BuildId::named("stairs"), colcom::map::Dir::MinusX), Vec2::ZERO);
     }
 
     #[test]
     fn decor_sits_on_its_wall_face() {
         let wall = (3, 3, Z);
         // The +y face (world +z), first slot: towards -x, a wall's half thickness out.
-        let t = decor_transform(wall, my_world::map::Dir::PlusY, 0, 0.0);
+        let t = decor_transform(wall, colcom::map::Dir::PlusY, 0, 0.0);
         let c = tile_center(wall);
-        assert!((t.translation.z - (c.z + my_world::decor::WALL_T / 2.0)).abs() < 1e-4);
+        assert!((t.translation.z - (c.z + colcom::decor::WALL_T / 2.0)).abs() < 1e-4);
         assert!((t.translation.x - (c.x - 0.4)).abs() < 1e-4);
         assert!((t.rotation * Vec3::Z - Vec3::Z).length() < 1e-4, "looking out of the wall");
         // The -x face: looking -x, its slots running along +z.
-        let t = decor_transform(wall, my_world::map::Dir::MinusX, 4, 0.0);
+        let t = decor_transform(wall, colcom::map::Dir::MinusX, 4, 0.0);
         assert!((t.rotation * Vec3::Z - Vec3::NEG_X).length() < 1e-4);
         assert!((t.translation.z - (c.z + 0.4)).abs() < 1e-4);
         assert!((t.rotation * Vec3::Y - Vec3::Y).length() < 1e-4, "upright");

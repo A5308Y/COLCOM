@@ -14,10 +14,10 @@ use bevy::gltf::{Gltf, GltfAssetLabel, GltfMaterialName, GltfNode};
 use bevy::prelude::*;
 use bevy::mesh::skinning::SkinnedMesh;
 use bevy::world_serialization::{WorldAsset, WorldAssetRoot, WorldInstanceReady};
-use my_world::defs::{Bone, ItemId};
-use my_world::map::{Desig, Feature};
-use my_world::pawn::{Faction, Job, Pawn, Task};
-use my_world::world::World as SimWorld;
+use colcom::defs::{Bone, ItemId};
+use colcom::map::{Desig, Feature};
+use colcom::pawn::{Faction, Job, Pawn, Task};
+use colcom::world::World as SimWorld;
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -1340,7 +1340,7 @@ mod tests {
 
     #[test]
     fn locomotion_matches_speed() {
-        use my_world::pawn::{RUN_SPEED, WALK_SPEED};
+        use colcom::pawn::{RUN_SPEED, WALK_SPEED};
         // Walking, a clip played at its own speed doesn't slide.
         let (a, rate) = locomotion(super::WALK_SPEED, 1.0, false);
         assert_eq!(a, Anim::Walk);
@@ -1360,15 +1360,15 @@ mod tests {
 
     #[test]
     fn poses_layer_legs_and_upper_body() {
-        use my_world::map::{Map, FLAT_Z as Z};
-        use my_world::pawn::Job;
+        use colcom::map::{Map, FLAT_Z as Z};
+        use colcom::pawn::Job;
         // Carrying: arms out over walking or standing, nothing else changed.
         assert_eq!(Pose::full(Anim::Walk).carrying(), Pose::split(Anim::Walk, Anim::Carry));
         assert_eq!(Pose::full(Anim::Kneel).carrying(), Pose::full(Anim::Kneel));
         assert_eq!(Pose::split(Anim::Walk, Anim::Carry).layers(), vec![(Anim::Walk, Layer::Lower), (Anim::Carry, Layer::Upper)]);
 
         // Seated: chess gestures, crafting with the hands, otherwise just sitting.
-        let mut w = SimWorld::with_map(Map::flat(12, 12), my_world::rng::Rng::new(1));
+        let mut w = SimWorld::with_map(Map::flat(12, 12), colcom::rng::Rng::new(1));
         let at = (5, 5, Z);
         let i = w.map.idx(at);
         w.map.set_feature(i, Feature::built("chair"));
@@ -1381,11 +1381,11 @@ mod tests {
         assert!(activity(&w.pawns[k], &w, false).sitting());
 
         // A deployed squad kneels, aiming.
-        let mut w = my_world::scenarios::build("battle").unwrap();
+        let mut w = colcom::scenarios::build("battle").unwrap();
         let b = w.battle.as_ref().unwrap();
         let u = (0..b.units.len()).find(|&u| w.can_deploy(u)).expect("a ranged squad");
         let member = b.units[u].members[0];
-        w.battle.as_mut().unwrap().units[u].stance = my_world::battle::Stance::Deployed;
+        w.battle.as_mut().unwrap().units[u].stance = colcom::battle::Stance::Deployed;
         let p = w.pawn(member).unwrap();
         assert_eq!(activity(p, &w, true), Pose::split(Anim::Kneel, Anim::Aim));
     }

@@ -1,4 +1,4 @@
-# My World
+# COLCOM
 
 A small RimWorld-style colony sim in Rust, shown in 3D with [Bevy](https://bevy.org).
 
@@ -15,7 +15,7 @@ cargo run --release --example look      # downloaded source packs in the game's 
 cargo run --release --example look -- --world-props  # selected plants, machinery and state scenes at gameplay scale
 cargo run --release -- --new --screenshot           # save every interface screen to target/screenshots/ and quit
 cargo run --release -- --screenshot help,menu       # only these shots (an unknown name lists them all)
-MY_WORLD_NO_GPU=1 cargo run --release -- --new --screenshot   # no GPU: the interface alone, drawn on the CPU (*-cpu.png)
+COLCOM_NO_GPU=1 cargo run --release -- --new --screenshot   # no GPU: the interface alone, drawn on the CPU (*-cpu.png)
 ```
 
 Screenshot mode pauses the game, opens one screen after another (HUD, handbook pages, menu, work,
@@ -35,7 +35,7 @@ of sustained work, so brief gaps between jobs don't flash notices. The alert sec
 space to keep recent events stationary as warnings appear and clear; urgent alerts appear immediately.
 
 Scenarios are fixed worlds for trying things out (`src/scenarios.rs`). `--scenario <name>` or
-`MY_WORLD_SCENARIO=<name>` picks one; an unknown name lists the ones there are. `battle` starts in
+`COLCOM_SCENARIO=<name>` picks one; an unknown name lists the ones there are. `battle` starts in
 round 1 of a battle on a 48×32 yard: Ada's squad (one member arrives two rounds late; Ada carries the field
 radio), two lone fighters (one gears up from the stockpile), a civilian in the house, and six raiders from
 the east in three pairs: mercenaries (assault rifles, flak armour, grenades, a medic), elite raiders with

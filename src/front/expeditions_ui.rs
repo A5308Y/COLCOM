@@ -5,13 +5,13 @@
 use super::sim::Sim;
 use super::theme;
 use bevy_egui::egui::{self, Align2, Color32, RichText};
-use my_world::defs::ItemId;
-use my_world::expeditions::{Expedition, ExpeditionId, Faction, MissionKind, OfferId, Stage};
-use my_world::map::Stack;
-use my_world::pawn::{Pawn, PawnId, Role, Skill};
-use my_world::squads::{fights_at_range, style_name};
-use my_world::world::World as SimWorld;
-use my_world::DAY_LEN;
+use colcom::defs::ItemId;
+use colcom::expeditions::{Expedition, ExpeditionId, Faction, MissionKind, OfferId, Stage};
+use colcom::map::Stack;
+use colcom::pawn::{Pawn, PawnId, Role, Skill};
+use colcom::squads::{fights_at_range, style_name};
+use colcom::world::World as SimWorld;
+use colcom::DAY_LEN;
 use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -192,10 +192,10 @@ fn planning(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
     squad_picker(ui, w, &mut plan.squad);
     ui.add_space(4.0);
     let packed = stacks(&plan.pack);
-    let can = my_world::expeditions::carry_capacity(plan.squad.iter().filter_map(|&id| w.pawn(id)));
+    let can = colcom::expeditions::carry_capacity(plan.squad.iter().filter_map(|&id| w.pawn(id)));
     let load: u32 = packed.iter().map(|s| s.count).sum();
     theme::section(ui, format!("Pack (worth {:.0}): {} of {} they can carry", worth(&packed), load, can));
-    let each = format!("Each carries {} things; backpacks carry more. Loot that doesn't fit is left behind.", my_world::pawn::CARRY_EACH);
+    let each = format!("Each carries {} things; backpacks carry more. Loot that doesn't fit is left behind.", colcom::pawn::CARRY_EACH);
     ui.label(RichText::new(each).small().weak());
     if kind.packs() {
         ui.label(RichText::new("Whatever they pack can be traded, given or paid on the way.").small().weak());
@@ -216,7 +216,7 @@ fn planning(ui: &mut egui::Ui, sim: &mut Sim, st: &mut ExpeditionsUi) {
     let mut send = false;
     let mut cancel = false;
     ui.horizontal(|ui| {
-        let ready = !plan.squad.is_empty() && (kind != my_world::expeditions::MissionKind::Trade || !packed.is_empty()) && load <= can;
+        let ready = !plan.squad.is_empty() && (kind != colcom::expeditions::MissionKind::Trade || !packed.is_empty()) && load <= can;
         send = ui.add_enabled(ready, egui::Button::new("Send them")).on_disabled_hover_text("Pick who goes (and, to trade, what to sell), and no more than they can carry").clicked();
         cancel = ui.button("Back").clicked();
     });

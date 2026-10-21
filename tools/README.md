@@ -55,7 +55,7 @@ add under 0.1 seconds, and regeneration covers all 31 new pairs. The opt-in CPU 
 benchmark does not add time to ordinary `cargo test`:
 
 ```sh
-cargo test --release --bin my-world benchmark_dense_world_prop_sync -- --ignored --nocapture
+cargo test --release --bin colcom benchmark_dense_world_prop_sync -- --ignored --nocapture
 ```
 
 It compares identical 100x70 colonies with 6,664 props, using model roots or the

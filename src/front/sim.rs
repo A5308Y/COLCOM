@@ -1,9 +1,9 @@
 //! Owns the simulation and advances it in fixed steps.
 
 use bevy::prelude::*;
-use my_world::scenarios;
-use my_world::world::World as SimWorld;
-use my_world::TICK;
+use colcom::scenarios;
+use colcom::world::World as SimWorld;
+use colcom::TICK;
 
 /// Game speeds: keys 1-4 pick one, the speed button cycles through them.
 pub const SPEEDS: [u32; 4] = [1, 2, 5, 10];
@@ -30,7 +30,7 @@ pub struct Sim {
     pub scenario: Option<String>,
     /// While an expedition's fight is played, `world` is its site and the
     /// colony waits here (with the expedition's id).
-    pub home: Option<(my_world::expeditions::ExpeditionId, SimWorld)>,
+    pub home: Option<(colcom::expeditions::ExpeditionId, SimWorld)>,
     acc: f32,
 }
 
@@ -174,11 +174,11 @@ fn start_world(scenario: &mut Option<String>, resume: bool) -> SimWorld {
     SimWorld::new(seed())
 }
 
-/// The scenario asked for with `--scenario <name>` or `MY_WORLD_SCENARIO`.
+/// The scenario asked for with `--scenario <name>` or `COLCOM_SCENARIO`.
 fn scenario_option() -> Option<String> {
     let args: Vec<String> = std::env::args().collect();
     let arg = args.iter().position(|a| a == "--scenario").and_then(|k| args.get(k + 1)).cloned();
-    arg.or_else(|| std::env::var("MY_WORLD_SCENARIO").ok()).filter(|s| !s.is_empty())
+    arg.or_else(|| std::env::var("COLCOM_SCENARIO").ok()).filter(|s| !s.is_empty())
 }
 
 pub struct SimPlugin;
@@ -218,8 +218,8 @@ fn step_simulation(time: Res<Time>, mut sim: ResMut<Sim>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use my_world::expeditions::{MissionKind, Offer, Stage};
-    use my_world::DAY_LEN;
+    use colcom::expeditions::{MissionKind, Offer, Stage};
+    use colcom::DAY_LEN;
 
     #[test]
     fn pausing_holds_up_the_colony_but_not_a_battle() {
@@ -243,9 +243,9 @@ mod tests {
     fn an_expeditions_fight_is_played_in_place_of_the_colony_and_saved_with_it() {
         let mut world = SimWorld::new(7);
         world.story.next_raid = f32::MAX;
-        world.offers.push(Offer { id: my_world::expeditions::OfferId::new(500), kind: MissionKind::BanditCamp, faction: 2, days: 1.0, until: world.time() + DAY_LEN });
-        let squad: Vec<my_world::pawn::PawnId> = world.pawns.iter().filter(|p| p.is_living_colonist()).take(2).map(|p| p.id).collect();
-        world.send_expedition(my_world::expeditions::OfferId::new(500), &squad, &[]).unwrap();
+        world.offers.push(Offer { id: colcom::expeditions::OfferId::new(500), kind: MissionKind::BanditCamp, faction: 2, days: 1.0, until: world.time() + DAY_LEN });
+        let squad: Vec<colcom::pawn::PawnId> = world.pawns.iter().filter(|p| p.is_living_colonist()).take(2).map(|p| p.id).collect();
+        world.send_expedition(colcom::expeditions::OfferId::new(500), &squad, &[]).unwrap();
         let id = world.expeditions[0].id;
         while !matches!(world.expeditions[0].stage, Stage::Decide { .. }) {
             world.tick(TICK);
@@ -259,7 +259,7 @@ mod tests {
         assert!(!sim.lost());
         // A save made now has the site in its expedition, and plays it again when loaded.
         let saved = SimWorld::load_json(&sim.saveable().save_json().unwrap()).unwrap();
-        assert!(matches!(saved.expeditions[0].stage, my_world::expeditions::Stage::Fighting { site: Some(_), .. }));
+        assert!(matches!(saved.expeditions[0].stage, colcom::expeditions::Stage::Fighting { site: Some(_), .. }));
         // The fight ends: back to the colony, with the squad in the expedition again.
         sim.world.battle = None;
         sim.swap_sites();

@@ -175,12 +175,12 @@ fn mouse_controls(
 /// The level just above the highest ground, water, built floor or roof in a
 /// column (what the camera sees from above; walls don't count, so it
 /// doesn't bump over buildings).
-fn visible_top(m: &my_world::map::Map, x: usize, y: usize) -> usize {
+fn visible_top(m: &colcom::map::Map, x: usize, y: usize) -> usize {
     (0..m.d)
         .rev()
         .find_map(|z| {
             let i = m.idx((x, y, z));
-            if m.block[i] != my_world::map::Block::Air {
+            if m.block[i] != colcom::map::Block::Air {
                 Some(z + 1)
             } else if m.floor[i] || m.roof[i] {
                 Some(z)
@@ -231,7 +231,7 @@ fn apply_rig(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use my_world::map::{Block, Map, FLAT_Z as Z};
+    use colcom::map::{Block, Map, FLAT_Z as Z};
 
     #[test]
     fn lakes_count_by_their_surface() {
