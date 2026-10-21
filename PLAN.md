@@ -115,6 +115,9 @@ In the suggested order. Graphics first: the content has settled, so the look can
    level follow the smooth surface instead of hopping.
 
 ### Later or optional
+- Story and setting (see the design record): COLCOM pathfinder intro, the anomaly and earlier waves,
+  the damaged Fabricator with repair tiers and blueprints, factions as earlier waves' survivors, raids
+  targeting the Fabricator, the beacon endgame (a charted path through the anomaly).
 - Follow camera (phase 11): a close third-person view of one colonist, to show off the animations.
 - Keyboard shortcuts: a thought-out scheme (all letters are taken; categories, rebinding?).
 - Battles (12d, only if play shows a need): tuning AP costs, odds, morale, raid sizes and demand;
@@ -179,6 +182,79 @@ normal play. Decisions:
 Milestones 12a (squads in normal play), 12b (battle core), 12c (battle UI) are done and play-tested
 (2026-10-19: the user likes the battles as they are). 12d (tuning, see the notes) is optional, only if
 play shows a need.
+
+### Story and setting (agreed direction, 2026-10-21; not built yet)
+Gives the colony's military side a reason, and replaces open-ended progression with the Fabricator.
+Nothing here is implemented; the current game still has the plain crash-landing intro, the Fabricator
+as the last bench of the chain, and generic factions.
+
+**Premise.** COLCOM is Colonial Command, the military arm that opens new worlds for settlement. Ahead
+of each colony fleet it sends a pathfinder team: a handful of soldiers with a seed Fabricator, to secure
+a landing zone, bootstrap infrastructure and hold it until the colonists arrive. The player's three
+colonists are such a team. Their ship broke up in orbit, the pod came down off target, the Fabricator
+was damaged in the landing, and contact with the fleet is lost: late, lost or never sent, nobody knows.
+This explains the low headcount, the military training and gear, why three people own the most valuable
+machine in the region, and why everyone else wants it.
+
+**The anomaly, and why COLCOM keeps trying.** An anomaly in space around the planet wrecks ships on
+approach. This team's crash is not bad luck: it is one more attempt that went wrong, like the ones
+before it.
+- **The anomaly is the prize.** Something exists here only because of the anomaly, and whoever holds
+  the planet controls it. Every failure is worth another try. (What exactly it is stays open; it may tie
+  into the Fabricator's highest repair tier.)
+- **Command knows the odds and doesn't say.** Each team is briefed as if theirs were the first attempt;
+  earlier ones are filed as lost in transit. Pathfinder teams are small because they are expendable:
+  three soldiers and a Fabricator cost far less than a colony ship. The colonists find out by coming
+  across wrecks with COLCOM markings older than their briefing.
+- **Texture: each attempt got further.** The first ships broke up in orbit, later ones reached the
+  ground, and some survivors lasted. The wrecks of earlier waves are a timeline the player pieces
+  together, in item descriptions, expedition journals and site maps. They are background, not a
+  progression system.
+
+**The factions are survivors of earlier waves** and their descendants:
+- Some kept what their wave brought and trade it, blueprints included (now: Riverford Traders).
+- Some built their own settlements and are wary of COLCOM's return (now: Iron Pact).
+- Some feel COLCOM abandoned them and see the new team as occupiers, or simply want the Fabricator
+  (now: Ash Raiders). This gives raids a motive beyond loot.
+The factions may be renamed to fit; their kinds and mechanics stay.
+
+**Where blueprints come from.** Fabricator blueprints are data, recovered rather than researched:
+- Debris of the team's own ship (cargo pods, crash sites nearby): a few early, easy blueprints.
+- What earlier waves left: wrecked ships and landers, depots, buried archives, collapsed outposts
+  (salvage and ruins expeditions).
+- Faction trade and goodwill rewards, raider loot, rare cargo pods.
+Decided against: tying blueprints to the era of the wave they come from (a spread of tiers by wreck age).
+
+**The Fabricator.** One unique machine, at the colony from the start, damaged.
+- Repairing it is the progression: each module repaired (paid with the components the bench chain
+  makes) unlocks a tier. Blueprints unlock specific items within the repaired tiers.
+- It needs power, and is worth protecting: some raids aim to grab or wreck it instead of only
+  demanding goods, which gives battles an objective (lookout posts, walls).
+- Losing it is a setback, not game over: damage needs repair; carried off, it can be recovered by an
+  expedition.
+
+**Endgame (provisional: may be replaced later).** Recover flight recorders from earlier waves' wrecks
+(expeditions, salvage) and chart a safe path through the anomaly. Repair the Fabricator, build a beacon
+and hold it while it sends the path to the fleet. Then the team chooses whether to send it at all,
+knowing what COLCOM wants here: either the colony fleet arrives, or the team keeps the way closed and
+decides what the colony is now (perhaps joining or leading the earlier waves' survivors). Both are
+endings; play can continue after either.
+
+**Tone: dry, professional, quietly grey.** Soldiers doing a job, discovering the job is murkier than
+briefed: command knew the odds, and the "raiders" have a point. The tone lives mostly in writing, which
+is cheap to make and change: log lines and event text stay short and matter-of-fact, like mission
+reports. Faction descriptions, wreck descriptions and expedition journals carry the grey; nothing needs
+to be spelled out.
+
+**Look.** Fits the existing art direction (flat-coloured low-poly, mood from light) and is the cheapest
+to make: COLCOM equipment is clean, standardised and boxy (crates, plating, prefab parts, consoles);
+earlier waves' leftovers are the same designs weathered and patched; the factions use repurposed
+leftovers, made from the same models plus scrap. One style in two states of wear covers most of it.
+
+**Open questions.** What the anomaly makes possible (the prize); how the bench chain and the Fabricator
+share progression (which items move to blueprints); how many repair tiers; whether the fleet ending is
+fixed or chosen by events; whether to keep this endgame; faction names; whether the intro gets a short briefing screen; whether the
+anomaly shows up in play (events such as electronics failing or wreckage falling from orbit).
 
 ## Working in this repo (handoff notes)
 
