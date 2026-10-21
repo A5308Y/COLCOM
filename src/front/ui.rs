@@ -749,6 +749,9 @@ impl IdleNotice {
     }
 }
 
+/// How many of the latest log entries the notification panel lists.
+const RECENT_EVENTS: usize = 15;
+
 #[derive(Default)]
 struct NotificationState {
     generation: u64,
@@ -804,26 +807,34 @@ fn notifications(ctx: &egui::Context, sim: &Sim, state: &mut NotificationState) 
                 ui.add_space(8.0);
             }
             if !sim.world.log.is_empty() {
-                ui.label(theme::caps("Recent events", 19.0).color(theme::AMBER));
-                ui.add_space(4.0);
-                // Reserve the same alert space even when a condition clears, so
-                // persistent events (including save confirmations) don't jump.
-                let events_height = max_height * 0.45;
-                egui::ScrollArea::vertical().id_salt("recent_events").max_height(events_height).show(ui, |ui| {
-                    for (k, text) in sim.world.log.iter().rev().take(3).enumerate() {
-                        let latest = k == 0;
-                        let accent = if latest { theme::AMBER } else { theme::STEEL };
-                        theme::Plate::inset().fill(if latest { theme::RAISED } else { theme::PANEL_DEEP })
-                            .stroke(egui::Stroke::new(if latest { 2.0 } else { 1.0 }, accent)).margin(9).show(ui, |ui| {
-                                ui.set_width((width - 20.0).max(0.0));
-                                if latest {
-                                    ui.label(theme::caps("Latest", 13.0).color(theme::AMBER));
-                                }
-                                ui.label(RichText::new(text).size(if latest { 17.0 } else { 15.0 })
-                                    .color(theme::CREAM_BRIGHT));
-                            });
-                        ui.add_space(5.0);
-                    }
+                let shown = sim.world.log.len().min(RECENT_EVENTS);
+                let header = theme::caps(format!("Recent events ({})", shown), 19.0).color(theme::AMBER);
+                // Events keep the panel's full width rather than indenting under the header.
+                ui.spacing_mut().indent = 0.0;
+                egui::CollapsingHeader::new(header).id_salt("recent_events_header").default_open(true).show(ui, |ui| {
+                    // Reserve the same alert space even when a condition clears, so
+                    // persistent events (including save confirmations) don't jump.
+                    let events_height = max_height * 0.45;
+                    egui::ScrollArea::vertical().id_salt("recent_events").max_height(events_height)
+                        .min_scrolled_height(events_height).show(ui, |ui| {
+                        for (k, text) in sim.world.log.iter().rev().take(RECENT_EVENTS).enumerate() {
+                            let latest = k == 0;
+                            let accent = if latest { theme::AMBER } else { theme::STEEL };
+                            // Older events are more compact, but every card spans the panel.
+                            let margin: i8 = if latest { 9 } else { 6 };
+                            theme::Plate::inset().fill(if latest { theme::RAISED } else { theme::PANEL_DEEP })
+                                .stroke(egui::Stroke::new(if latest { 2.0 } else { 1.0 }, accent))
+                                .margin(margin).show(ui, |ui| {
+                                    ui.set_width((width - 2.0 * f32::from(margin) - 2.0).max(0.0));
+                                    if latest {
+                                        ui.label(theme::caps("Latest", 13.0).color(theme::AMBER));
+                                    }
+                                    ui.label(RichText::new(text).size(if latest { 17.0 } else { 15.0 })
+                                        .color(theme::CREAM_BRIGHT));
+                                });
+                            ui.add_space(if latest { 5.0 } else { 3.0 });
+                        }
+                    });
                 });
             }
         });
